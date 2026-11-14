@@ -1,4 +1,4 @@
-// Ctrl+K: one box to find people and run commands. Arrow keys move, Enter runs, Esc closes.
+// Ctrl+G (GO TO): one box to find people and conversations and run commands. Arrow keys move, Enter runs, Esc closes.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, PublicUser } from '@dex/core';
 import { Avatar, Icon, presenceFor } from './ui.tsx';
@@ -70,13 +70,13 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
 
   return (
     <div className="scrim palette-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Search and commands">
+      <div className="palette" role="dialog" aria-modal="true" aria-label="Go to">
         <div className="palette-input">
-          <Icon name="search" size={18} />
+          <span className="palette-goto">Go to ▸</span>
           <input
             ref={input}
             value={q}
-            placeholder="Find a person, a conversation or a command"
+            placeholder="A person, a conversation, a command or words in a message"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(results.length - 1, i + 1)); }
@@ -95,7 +95,7 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
               onMouseEnter={() => setIndex(i)} onMouseDown={(e) => { e.preventDefault(); run(i); }}>
               {r.kind === 'message' ? (
                 <>
-                  <span className="pal-icon"><Icon name="chat" size={16} /></span>
+                  <span className="pal-icon"><Icon name="doc" size={16} /></span>
                   <span className="pal-main pal-snippet"><Snippet text={r.hit.snippet} /></span>
                   <span className="pal-meta">{users.find((u) => u.id === r.hit.message.authorId)?.displayName.split(' ')[0]} · {convName?.(r.hit.message.convId) ?? ''}</span>
                 </>

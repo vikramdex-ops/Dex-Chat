@@ -1,56 +1,97 @@
-// The Direct and Spaces lenses: Switchboard on the left, the open conversation beside it.
-import { useEffect, useState } from 'react';
+// The Direct and Spaces lenses share one view: the Switchboard (narrowed by lens chips) and up to
+// three Panes side by side. With a Pane open the Switchboard folds to a strip of tiles.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Conversation, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { Dialog, Icon, Segmented, Toggle, useToast } from '../ui.tsx';
 import { Pane, PeoplePicker } from './Pane.tsx';
 import { Switchboard } from './Switchboard.tsx';
+import type { Chip } from './Switchboard.tsx';
 import { addConversation, useChat } from './store.ts';
+import { CONV_DRAG, closePane, focusPane, openBeside, openInPane, prunePanes, usePanes } from './panes.ts';
 
-export function ChatView({ kind, state, session, openId, setOpenId }: {
-  kind: 'direct' | 'space';
+const FOLD_KEY = 'dex-sb-open';
+
+export function ChatView({ chip, setChip, state, session }: {
+  chip: Chip;
+  setChip: (c: Chip) => void;
   state: AppState;
   session: Session;
-  openId: string | null;
-  setOpenId: (id: string | null) => void;
 }) {
-  const users = new Map(session.users.map((u) => [u.id, u] as const));
-  const online = new Set(session.online);
+  const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
+  const online = useMemo(() => new Set(session.online), [session.online]);
   const meId = session.me.id;
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
+  const guest = session.me.role === 'guest';
   const conversations = useChat((s) => s.conversations);
+  const ready = useChat((s) => s.ready);
+  const panes = usePanes();
   const [dialog, setDialog] = useState<'new' | 'browse' | null>(null);
+  // the Switchboard stays open by hand (kept on this device), otherwise it folds while a Pane is open
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(FOLD_KEY) === '1'; } catch { return false; } });
+  const setFolded = (folded: boolean) => { setOpen(!folded); try { localStorage.setItem(FOLD_KEY, folded ? '0' : '1'); } catch { /* storage off */ } };
+  const [drop, setDrop] = useState<{ index: number; x: number } | null>(null);
+  const area = useRef<HTMLDivElement>(null);
+  const narrow = () => !window.matchMedia('(min-width: 721px)').matches;
 
-  // open the most recent conversation of this kind when nothing is selected
+  // Panes whose conversation went away (left, removed) close
+  useEffect(() => { if (ready) prunePanes((id) => !!conversations.get(id)?.joined); }, [ready, conversations]);
+  // on a PC, open the latest conversation when nothing is open; on phones the Switchboard is the starting screen
   useEffect(() => {
-    const cur = openId ? conversations.get(openId) : undefined;
-    if (cur && cur.kind === kind && cur.joined) return;
-    // on phones the Switchboard is the starting screen
-    if (!window.matchMedia('(min-width: 721px)').matches) { if (openId) setOpenId(null); return; }
-    const first = [...conversations.values()].filter((c) => c.kind === kind && c.joined)
+    if (!ready || panes.ids.length || narrow()) return;
+    const first = [...conversations.values()].filter((c) => c.joined && (chip === 'people' ? c.kind === 'direct' : chip === 'all' ? true : c.kind === 'space'))
       .sort((a, b) => (b.lastMessage?.createdAt ?? b.createdAt) - (a.lastMessage?.createdAt ?? a.createdAt))[0];
-    setOpenId(first?.id ?? null);
-  }, [kind, conversations, openId, setOpenId]);
+    if (first) openInPane(first.id);
+  }, [ready, conversations, chip, panes.ids.length]);
+
+  const p2p = !!state.p2p?.active;
+  const where = (e: React.DragEvent): { index: number; x: number } => {
+    const box = area.current!.getBoundingClientRect();
+    const slots = [...area.current!.querySelectorAll<HTMLElement>(':scope > .pane-wrap')].map((el) => el.getBoundingClientRect());
+    let index = slots.findIndex((r) => e.clientX < r.left + r.width / 2);
+    if (index < 0) index = slots.length;
+    const x = index === 0 ? 0 : index >= slots.length ? box.width : slots[index].left - box.left;
+    return { index, x };
+  };
+  const folded = panes.ids.length > 0 && !open;
 
   return (
-    <div className="chat-view">
-      <Switchboard kind={kind} users={users} meId={meId} online={online} activeId={openId} onOpen={setOpenId}
-        onNew={session.me.role === 'guest' && kind === 'space' ? undefined : () => setDialog('new')}
-        onBrowse={kind === 'space' && session.me.role !== 'guest' ? () => setDialog('browse') : undefined} />
-      {openId && conversations.get(openId)?.kind === kind
-        ? <Pane key={openId} convId={openId} users={users} meId={meId} isAdmin={isAdmin} online={online} live={state.phase === 'ready' || (kind === 'direct' && !!state.p2p?.active)} direct={state.phase !== 'ready' && !!state.p2p?.active} reachable={state.p2p?.reachable ?? []} onBack={() => setOpenId(null)} session={session} />
-        : (
+    <div className={`chat-view${folded ? ' sb-folded' : ''}${panes.ids.length ? ' has-pane' : ''}`}>
+      <Switchboard chip={chip} setChip={setChip} users={users} meId={meId} folded={folded}
+        setFolded={panes.ids.length ? setFolded : null}
+        onNew={guest && chip === 'spaces' ? undefined : () => setDialog('new')}
+        onBrowse={!guest ? () => setDialog('browse') : undefined} />
+      <div ref={area} className={`panes n${panes.ids.length}`}
+        onDragOver={(e) => { if (!e.dataTransfer.types.includes(CONV_DRAG) || narrow()) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDrop(where(e)); }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDrop(null); }}
+        onDrop={(e) => { const id = e.dataTransfer.getData(CONV_DRAG); if (!id) return; e.preventDefault(); const at = where(e).index; setDrop(null); openBeside(id, at); }}>
+        {panes.ids.map((id, i) => {
+          const c = conversations.get(id);
+          const isDirect = c?.kind === 'direct';
+          return (
+            <Pane key={id} convId={id} users={users} meId={meId} isAdmin={isAdmin} online={online}
+              live={state.phase === 'ready' || (isDirect && p2p)} direct={state.phase !== 'ready' && p2p && isDirect} reachable={state.p2p?.reachable ?? []}
+              onBack={() => closePane(i)} session={session}
+              focused={panes.ids.length < 2 || i === panes.focus} onFocus={() => focusPane(i)}
+              onClose={panes.ids.length > 1 ? () => closePane(i) : undefined}
+              sheetNo={{ n: i + 1, of: panes.ids.length }} />
+          );
+        })}
+        {panes.ids.length === 0 && (
           <div className="pane empty">
             <div className="empty">
-              <Icon name={kind === 'space' ? 'grid' : 'chat'} size={36} />
-              <span>{kind === 'space' ? 'Spaces are where teams and projects talk.' : 'Start a conversation with anyone in the office.'}</span>
-              <button className="btn primary" onClick={() => setDialog('new')}><Icon name="plus" size={15} />{kind === 'space' ? 'Create a Space' : 'New Direct conversation'}</button>
+              <Icon name={chip === 'people' ? 'direct' : 'grid'} size={36} />
+              <span>{chip === 'people' ? 'Write to anyone in the office.' : 'Spaces are where teams and projects talk.'}</span>
+              <span className="faint" style={{ fontSize: 12.5 }}>Ctrl+click or drag conversations from the Switchboard to lay up to three side by side.</span>
+              {!(guest && chip !== 'people') && <button className="btn primary" onClick={() => setDialog('new')}><Icon name="plus" size={15} />{chip === 'people' ? 'New Direct conversation' : 'Create a Space'}</button>}
             </div>
           </div>
         )}
-      {dialog === 'new' && <NewConversation kind={kind} users={session.users.filter((u) => u.id !== meId && u.role !== 'bot')} online={online}
-        onClose={() => setDialog(null)} onCreated={(c) => { addConversation(c); setOpenId(c.id); setDialog(null); }} />}
-      {dialog === 'browse' && <BrowseSpaces onClose={() => setDialog(null)} onJoined={(c) => { addConversation(c); setOpenId(c.id); setDialog(null); }} />}
+        {drop && <div className="pane-drop" style={{ left: drop.x }}><span className="mono">Lay beside</span></div>}
+      </div>
+      {dialog === 'new' && <NewConversation kind={chip === 'people' || guest ? 'direct' : 'space'} users={session.users.filter((u) => u.id !== meId && u.role !== 'bot')} online={online}
+        onClose={() => setDialog(null)} onCreated={(c) => { addConversation(c); openInPane(c.id); setDialog(null); }} />}
+      {dialog === 'browse' && <BrowseSpaces onClose={() => setDialog(null)} onJoined={(c) => { addConversation(c); openInPane(c.id); setDialog(null); }} />}
     </div>
   );
 }
@@ -77,7 +118,7 @@ function NewConversation({ kind, users, online, onClose, onCreated }: {
   return (
     <Dialog title={mode === 'direct' ? 'New Direct conversation' : 'New Space'} onClose={onClose}>
       <Segmented<'direct' | 'space'> label="Kind" value={mode} onChange={(m) => { setMode(m); setStep('details'); }} options={[
-        { value: 'direct', label: 'Direct', icon: 'chat' },
+        { value: 'direct', label: 'Direct', icon: 'direct' },
         { value: 'space', label: 'Space', icon: 'grid' },
       ]} />
       {mode === 'direct' && (

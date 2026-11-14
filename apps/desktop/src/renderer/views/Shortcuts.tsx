@@ -3,11 +3,12 @@ import { Dialog } from '../ui.tsx';
 
 const GROUPS: Array<{ title: string; keys: Array<[string[], string]> }> = [
   { title: 'Getting around', keys: [
-    [['Ctrl', 'K'], 'Find people, conversations and commands'],
+    [['Ctrl', 'G'], 'Go to a person, conversation or command'],
     [['Ctrl', 'Shift', 'F'], 'Search messages and files, with filters'],
     [['Ctrl', '1…6'], 'Pulse, Direct, Spaces, Desk, Calendar, Directory'],
-    [['Alt', '↑'], 'Previous conversation in the list'],
-    [['Alt', '↓'], 'Next conversation in the list'],
+    [['Alt', '↑'], 'Previous conversation in the Switchboard'],
+    [['Alt', '↓'], 'Next conversation in the Switchboard'],
+    [['Ctrl', 'Click'], 'Lay a conversation beside the open ones (up to three)'],
     [['Ctrl', ','], 'Preferences'],
     [['Ctrl', 'Alt', 'D'], 'Show Dexterity Connect from any app'],
     [['Ctrl', '/'], 'This list'],
@@ -16,23 +17,23 @@ const GROUPS: Array<{ title: string; keys: Array<[string[], string]> }> = [
   { title: 'Writing', keys: [
     [['Enter'], 'Send'],
     [['Shift', 'Enter'], 'New line'],
-    [['↑'], 'Edit your last message (when the box is empty)'],
+    [['Ctrl', 'Shift', 'Enter'], 'Send later'],
+    [['Ctrl', '↑'], 'Edit your last message'],
     [['Ctrl', 'B'], 'Bold'],
     [['Ctrl', 'I'], 'Italic'],
-    [['Ctrl', 'U'], 'Underline'],
-    [['Ctrl', 'Shift', 'X'], 'Strikethrough'],
-    [['Ctrl', 'L'], 'Add a link'],
-    [['Ctrl', 'E'], 'Emoji'],
-    [['Ctrl', 'Shift', 'S'], 'Schedule the message'],
-    [['/'], 'Commands: /remind, /poll, /away and more'],
-    [['@'], 'Mention someone'],
+    [['Ctrl', 'U'], 'Underline (++text++)'],
+    [['Ctrl', '5'], 'Strikethrough'],
+    [['Ctrl', 'K'], 'Add a link'],
+    [['Ctrl', '.'], 'Emoji'],
+    [['/'], 'Commands: /remind, /poll, /headsdown, /startday and more'],
+    [['@'], 'Call out someone'],
     [['Tab'], 'Accept a suggestion'],
   ] },
   { title: 'View', keys: [
     [['Ctrl', '='], 'Larger text'],
     [['Ctrl', '-'], 'Smaller text'],
     [['Ctrl', '0'], 'Default text size'],
-    [['Ctrl', 'Shift', 'M'], 'Notification sounds off or on'],
+    [['Ctrl', 'Shift', 'Q'], 'Sounds quiet, or back on'],
   ] },
 ];
 

@@ -80,6 +80,23 @@ const PATHS = {
   schedule: 'M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm0-12v4.5l3 2M3.5 20.5l3-3',
   pause: 'M8.5 5.5v13M15.5 5.5v13',
   repeat: 'M5 10a6 6 0 0 1 10.5-4L18 8.5M18 4.5v4h-4M19 14a6 6 0 0 1-10.5 4L6 15.5M6 19.5v-4h4',
+  /** Direct: two linked tiles. */
+  direct: 'M5.5 5.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2zM15.5 11.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2zM10.5 9H17v2.5',
+  /** Directory: an index card with a tab. */
+  card: 'M3.5 7h17v12.5h-17zM5.5 7V4.5h5V7M6.5 10.5h4v4h-4zM13 11h5M13 14h4M6.5 17h11',
+  /** Keep on my Desk: a desk drawer. */
+  drawer: 'M4 4.5h16v15H4zM4 12h16M10 8.25h4M10 15.75h4',
+  /** Send: a dimension arrow ending in an extension tick. */
+  dimsend: 'M3.5 12H19M14.5 7.5 19 12l-4.5 4.5M20.5 5.5v13',
+  chevron: 'M7 10l5 5 5-5',
+  /** A rubber stamp (reactions). */
+  stamp: 'M9.5 4h5v5l3 3.5h-11l3-3.5zM5 14.5h14v3H5zM6 20.5h12',
+  /** A side-track: a branch off the spine. */
+  branch: 'M7 3.5v9a4.5 4.5 0 0 0 4.5 4.5H20M16.5 13.5 20 17l-3.5 3.5',
+  /** Close a Pane: a sheet folding away. */
+  'pane-close': 'M4.5 4.5h15v15h-15zM9.5 9.5l5 5M14.5 9.5l-5 5',
+  /** Lay a Pane beside the others. */
+  beside: 'M3.5 5h7.5v14H3.5zM13 5h7.5v14H13zM16.75 9.5v5M14.5 12h4.5',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -142,7 +159,7 @@ export function Avatar({ user, online, presence, size }: {
   );
 }
 
-export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb', busy: 'busy', meeting: 'in a meeting' };
+export const PRESENCE_LABEL: Record<Presence, string> = { on: 'at their desk', off: 'offline', away: 'away', room: 'in a Room', dnd: 'no interruptions', busy: 'heads-down', meeting: 'in a meeting' };
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;
@@ -220,7 +237,9 @@ export function Dialog({ title, children, onClose, narrow }: { title: string; ch
  * scrolling or clipped container never cuts it off. Flips above the anchor near the bottom.
  */
 export function Popover({ anchor, onClose, className, children, align = 'end' }: {
-  anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode; align?: 'start' | 'end';
+  anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode;
+  /** 'right': beside the anchor, for menus that open from a vertical tool column. */
+  align?: 'start' | 'end' | 'right';
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -230,10 +249,10 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
     const a = anchor.getBoundingClientRect();
     const w = el.offsetWidth;
     const h = el.offsetHeight;
-    let left = align === 'end' ? a.right - w : a.left;
+    let left = align === 'end' ? a.right - w : align === 'right' ? a.right + 6 : a.left;
     left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-    let top = a.bottom + 6;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, a.top - h - 6);
+    let top = align === 'right' ? a.top - 6 : a.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, align === 'right' ? window.innerHeight - h - 8 : a.top - h - 6);
     setPos({ left, top });
   }, [anchor, align]);
   useEffect(() => {

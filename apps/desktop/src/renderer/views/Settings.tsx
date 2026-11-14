@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { EmojiPicker } from '../chat/EmojiPicker.tsx';
-import { QUICK_DEFAULT, quickReactions, setQuickReactions } from '../chat/quick.ts';
+import { MAX_STAMPS, STAMPS_DEFAULT, setStampsOnHand, stampsOnHand } from '../chat/quick.ts';
 import type { Session } from '@dex/core';
 import type { AppState, MessageSound, Settings, Theme } from '../../shared/bridge.ts';
 import { playSound } from '../sounds.ts';
@@ -134,26 +134,26 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
         <section>
           <h3>Privacy</h3>
           <div className="setting">
-            <Icon name="check" className="lead" />
-            <div className="txt"><div>Read receipts</div><div className="faint">Colleagues see when you have read their messages. Turn off and you will not see theirs either.</div></div>
-            <Toggle label="Read receipts" checked={session.me.readReceipts !== false} onChange={(v) => void window.dex.request('me.update', { readReceipts: v }).catch((e: Error) => toast(e.message, true))} />
+            <Icon name="eye" className="lead" />
+            <div className="txt"><div>Show when I've seen messages</div><div className="faint">Colleagues' notches fill in as you see their messages. Turn off and you will not see when they have seen yours either.</div></div>
+            <Toggle label="Show when I've seen messages" checked={session.me.readReceipts !== false} onChange={(v) => void window.dex.request('me.update', { readReceipts: v }).catch((e: Error) => toast(e.message, true))} />
           </div>
         </section>
 
         <section>
-          <h3>Quick reactions</h3>
-          <QuickReactions />
+          <h3>Stamps on hand</h3>
+          <StampsOnHand />
         </section>
 
         <section>
           <h3>Notifications</h3>
           <div className="setting">
             <Icon name="bell" className="lead" />
-            <div className="txt"><div>Notify me about</div><div className="faint">Reminders and meetings always notify.</div></div>
-            <Segmented<Settings['notifyFor']> label="Notify me about" value={state.settings.notifyFor} onChange={(notifyFor) => set({ notifyFor })} options={[
-              { value: 'all', label: 'Everything' },
-              { value: 'mentions', label: 'Direct and mentions' },
-              { value: 'none', label: 'Nothing' },
+            <div className="txt"><div>Ping me for</div><div className="faint">Reminders and meetings always ping you.</div></div>
+            <Segmented<Settings['notifyFor']> label="Ping me for" value={state.settings.notifyFor} onChange={(notifyFor) => set({ notifyFor })} options={[
+              { value: 'all', label: 'Every message' },
+              { value: 'mentions', label: "Only what's addressed to me" },
+              { value: 'none', label: 'Only reminders and meetings' },
             ]} />
           </div>
           <div className="setting">
@@ -265,22 +265,33 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
   );
 }
 
-/** The three reactions on the message hover bar. */
-function QuickReactions() {
-  const [list, setList] = useState(quickReactions());
+/** The stamps kept on hand in the Stamp flyout of the spine tool column: up to four. */
+function StampsOnHand() {
+  const [list, setList] = useState(stampsOnHand());
   const [editing, setEditing] = useState<number | null>(null);
-  const refs = [useRef<HTMLButtonElement>(null), useRef<HTMLButtonElement>(null), useRef<HTMLButtonElement>(null)];
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const save = (next: string[]) => { setStampsOnHand(next); setList(stampsOnHand()); setEditing(null); };
   return (
     <div className="setting">
-      <Icon name="smile" className="lead" />
-      <div className="txt"><div>On the message bar</div><div className="faint">One click to react. Choose your own three.</div></div>
-      <div className="quick-pick">
-        {list.map((e, i) => <button key={i} ref={refs[i]} className="btn" aria-label={`Quick reaction ${i + 1}: ${e}`} onClick={() => setEditing(i)}>{e}</button>)}
-        <button className="link" onClick={() => { setQuickReactions(QUICK_DEFAULT); setList(QUICK_DEFAULT); }}>Reset</button>
+      <Icon name="stamp" className="lead" />
+      <div className="txt"><div>In the Stamp flyout</div><div className="faint">One click to stamp a message. Keep up to four.</div></div>
+      <div className="stamp-pick" role="group" aria-label="Stamps on hand">
+        {Array.from({ length: MAX_STAMPS }, (_, i) => (
+          <button key={i} ref={(el) => { refs.current[i] = el; }} className={`stamp${list[i] ? '' : ' empty'}`} aria-label={list[i] ? `Stamp ${i + 1}: ${list[i]}` : `Stamp ${i + 1}: empty`} onClick={() => setEditing(i)}>
+            {list[i] ?? <Icon name="plus" size={14} />}
+          </button>
+        ))}
+        <button className="link" onClick={() => save(STAMPS_DEFAULT)}>Reset</button>
       </div>
       {editing !== null && (
-        <Popover anchor={refs[editing].current} onClose={() => setEditing(null)} className="emoji-pop-wrap">
-          <EmojiPicker onClose={() => setEditing(null)} onPick={(e) => { if (e.startsWith(':')) return; const next = list.map((x, j) => (j === editing ? e : x)); setQuickReactions(next); setList(next); setEditing(null); }} />
+        <Popover anchor={refs.current[editing] ?? null} onClose={() => setEditing(null)} className="emoji-pop-wrap">
+          {list[editing] && list.length > 1 && <div className="stamp-clear"><button className="link" onClick={() => save(list.filter((_, j) => j !== editing))}>Leave this slot empty</button></div>}
+          <EmojiPicker onClose={() => setEditing(null)} onPick={(e) => {
+            if (e.startsWith(':')) return;
+            const next = list.slice();
+            if (editing < next.length) next[editing] = e; else next.push(e);
+            save(next);
+          }} />
         </Popover>
       )}
     </div>

@@ -1,26 +1,28 @@
-// A conversation pane: header, the spine timeline, typing line and the Dock composer, with an
-// optional side panel (side-track, pins or members) on the right.
+// A conversation Pane: a title-block header, the spine timeline, the writing line and the Dock
+// composer. Notes, Whiteboards, Files, Pinned and People open as sheets from the tabs on the
+// Pane's right edge; a side-track opens the same way, tied to its message by a hairline.
 import { Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
 import { Avatar, Icon, Popover, colorFor, relativeTime, useToast, presenceFor } from '../ui.tsx';
+import type { IconName, Presence } from '../ui.tsx';
 import { isEmojiOnly, renderBody } from './format.tsx';
 import {
   addConversation, chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
-  setActiveConversation, setDraft, tlKey, useChat,
+  setDraft, showConversation, tlKey, useChat,
 } from './store.ts';
 import type { AnyMessage, PendingMessage } from './store.ts';
-import { ConvTile, convTitle } from './Switchboard.tsx';
-import { CallButtons } from '../rooms/RoomUi.tsx';
+import { ConvTile, HushItems, convTitle } from './Switchboard.tsx';
+import { joinRoom, setMinimized, startCall, useCall } from '../rooms/engine.ts';
 import { FormBuilder, FormCard } from './forms.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
 import { Viewer } from './Viewer.tsx';
 import { EmojiPicker } from './EmojiPicker.tsx';
-import { quickReactions } from './quick.ts';
+import { stampsOnHand } from './quick.ts';
 import { EmojiGlyph, EmojiImg, useCustomEmoji } from '../emoji.tsx';
 import { ClipRecorder, clipsSupported, screenClipsSupported } from './clips.tsx';
 import type { Board } from '@dex/core';
@@ -32,30 +34,41 @@ import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
 import { timeOpts } from '../time.ts';
+import './chat.css';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
 
 const WhiteboardStage = lazy(() => import('./Whiteboard.tsx').then((m) => ({ default: m.WhiteboardStage })));
 
-const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
-const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
 const RUN_GAP = 5 * 60 * 1000;
+/** A time tick on the spine every ten minutes of activity. */
+const TICK = 10 * 60 * 1000;
 
+type SheetKind = 'notes' | 'boards' | 'files' | 'pins' | 'members';
 type Side = { kind: 'track'; parentId: string } | { kind: 'pins' } | { kind: 'members' } | { kind: 'files' } | { kind: 'notes'; noteId: string | null | 'new' } | { kind: 'boards' } | null;
+
+const SHEETS: Array<{ kind: SheetKind; label: string; icon: IconName }> = [
+  { kind: 'notes', label: 'Notes', icon: 'doc' },
+  { kind: 'boards', label: 'Whiteboards', icon: 'drawing' },
+  { kind: 'files', label: 'Files', icon: 'paperclip' },
+  { kind: 'pins', label: 'Pinned', icon: 'pin' },
+  { kind: 'members', label: 'People', icon: 'people' },
+];
+const openSheet = (kind: SheetKind): Side => (kind === 'notes' ? { kind: 'notes', noteId: null } : { kind });
 
 interface Ctx {
   users: Map<string, PublicUser>; meId: string; isAdmin: boolean; conv: Conversation; online: Set<string>;
   view: (f: FileInfo, all: FileInfo[]) => void;
-  /** Multi-select: the chosen message ids (null when not selecting). */
+  /** Multi-select: the chosen message ids (null when not picking). */
   selected: Set<string> | null;
   select: (id: string | null) => void;
 }
 
-/** The quick reactions chosen in Preferences, kept live. */
-function useQuick(): string[] {
-  const [q, setQ] = useState(quickReactions);
-  useEffect(() => { const on = () => setQ(quickReactions()); window.addEventListener('dex-quick', on); return () => window.removeEventListener('dex-quick', on); }, []);
+/** The stamps on hand (Preferences), kept live. */
+function useStamps(): string[] {
+  const [q, setQ] = useState(stampsOnHand);
+  useEffect(() => { const on = () => setQ(stampsOnHand()); window.addEventListener('dex-stamps', on); return () => window.removeEventListener('dex-stamps', on); }, []);
   return q;
 }
 
@@ -76,27 +89,56 @@ const quoteOf = (m: AnyMessage, users: Map<string, PublicUser>) =>
 function dayLabel(ts: number): string {
   const d = new Date(ts);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return 'Today';
+  const date = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  if (d.toDateString() === now.toDateString()) return `Today · ${date}`;
   const y = new Date(now); y.setDate(now.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  if (d.toDateString() === y.toDateString()) return `Yesterday · ${date}`;
+  return `${d.toLocaleDateString([], { weekday: 'short' })} · ${date}`;
 }
 
 const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' });
+const fullDate = (ts: number) => new Date(ts).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** How someone else shows in the title block. */
+const STATUS_WORD: Record<Presence, string> = { on: 'At desk', off: 'Offline', away: 'Away', room: 'In a Room', dnd: 'No interruptions', busy: 'Heads-down', meeting: 'In a meeting' };
+
+/** "Last on" for someone: now, a time today, or a date. */
+function lastOn(u: PublicUser | undefined, online: boolean): string {
+  if (online) return 'Now';
+  if (!u?.lastSeen) return '—';
+  return new Date(u.lastSeen).toDateString() === new Date().toDateString() ? clock(u.lastSeen) : new Date(u.lastSeen).toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+/** A Pane's hold on the window size: narrow windows show one sheet at a time. */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)');
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
+}
 
 // ------------------------------------------------------------------ pane
-export function Pane({ convId, users, meId, isAdmin, online, live, onBack, session, direct = false, reachable = [] }: {
+export function Pane({ convId, users, meId, isAdmin, online, live, onBack, session, direct = false, reachable = [], focused = true, onFocus, onClose, sheetNo }: {
   convId: string; users: Map<string, PublicUser>; meId: string; isAdmin: boolean; online: Set<string>; live: boolean; onBack?: () => void; session?: Session;
   /** Hub off: messages go straight to the other PCs (text only). */
   direct?: boolean; reachable?: string[];
+  /** Side by side: whether this Pane has focus, how to give it focus, and how to close it. */
+  focused?: boolean; onFocus?: () => void; onClose?: () => void;
+  /** "Sheet 2 of 3" when Panes lie side by side. */
+  sheetNo?: { n: number; of: number };
 }) {
   const conv = useChat((s) => s.conversations.get(convId));
   const [side, setSide] = useState<Side>(null);
   const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [datePick, setDatePick] = useState(false);
-  const dateBtn = useRef<HTMLButtonElement>(null);
   const [fwdMany, setFwdMany] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const narrow = useNarrow();
   useEffect(() => { setSelected(null); }, [convId]);
   useEffect(() => {
     if (!selected) return;
@@ -144,7 +186,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       if (d.parentId) { setSide({ kind: 'track', parentId: d.parentId }); return; }
       // far back (jump to a date, an old link) means loading older pages until it is there
       for (let i = 0; i < 80; i++) {
-        const el = document.querySelector(`[data-mid="${d.messageId}"]`);
+        const el = wrap.current?.querySelector(`.timeline [data-mid="${d.messageId}"]`);
         if (el) {
           el.scrollIntoView({ block: 'center', behavior: 'smooth' });
           el.classList.add('flash');
@@ -161,13 +203,13 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
     return () => window.removeEventListener('dex-jump', onJump);
   }, [convId]);
   useEffect(() => {
-    setActiveConversation(convId);
+    const hide = showConversation(convId);
     const tl = chatState().timelines.get(convId);
     if (!tl?.loaded) void loadLatest(convId);
-    return () => setActiveConversation(null);
+    return hide;
   }, [convId]);
 
-  if (!conv) return <div className="pane empty"><div className="empty"><Icon name="chat" size={36} /><span>This conversation is no longer available.</span></div></div>;
+  if (!conv) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
   const ctx: Ctx = {
     users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }), selected,
     select: (id) => setSelected((cur) => {
@@ -180,34 +222,44 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const picked = (): AnyMessage[] => (chatState().timelines.get(convId)?.messages ?? []).filter((m) => selected?.has(m.id) && !('pending' in m));
   const canAttach = filesSupported() && live && !direct;
   const onDrop = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
     e.preventDefault();
+    e.stopPropagation();
     setDragging(false);
     const files = [...e.dataTransfer.files];
     if (files.length && canAttach) window.dispatchEvent(new CustomEvent('dex-attach', { detail: { key: tlKey(convId), files } }));
   };
   const title = convTitle(conv, users, meId);
   const others = conv.members.filter((m) => m !== meId);
+  const one = conv.kind === 'direct' && others.length === 1 ? users.get(others[0]) : undefined;
   const subtitle = conv.kind === 'space'
-    ? (conv.topic ?? `${conv.members.length} ${conv.members.length === 1 ? 'member' : 'members'}`)
-    : others.length === 1
+    ? (conv.topic ?? (conv.private ? 'Private Space' : 'Open Space'))
+    : one
       ? (() => {
-        const u = users.get(others[0]);
-        const status = u?.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : null;
-        if (online.has(others[0])) return presenceFor(others[0]) === 'meeting' ? `In a meeting${status ? ` · ${status}` : ''}` : status ?? u?.title ?? 'Available';
-        return [status, u?.lastSeen ? `Last seen ${relativeTime(u.lastSeen)}` : 'Offline'].filter(Boolean).join(' · ');
+        const status = one.statusText ? `${one.statusEmoji ? `${one.statusEmoji} ` : ''}${one.statusText}` : null;
+        return [status, one.title].filter(Boolean).join(' · ') || one.account;
       })()
-      : `${conv.members.length} people`;
+      : `${others.length + 1} people`;
+  // the title block on the right: two ruled rows of mono facts
+  const facts: Array<[string, string]> = conv.kind === 'space'
+    ? [['People', String(conv.members.length)], ['Opened', fullDate(conv.createdAt)]]
+    : one
+      ? [['Status', STATUS_WORD[presenceFor(others[0])]], ['Last on', lastOn(one, online.has(others[0]))]]
+      : [['People', String(conv.members.length)], ['On now', String(others.filter((id) => online.has(id)).length)]];
+  const placeholder = conv.kind === 'space' ? `Write in ${title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
+  const toggleSheet = (kind: SheetKind) => setSide(side?.kind === kind ? null : openSheet(kind));
+  const canPlan = live && !!session && session.me.role !== 'guest';
 
   return (
-    <div className={`pane-wrap${side ? ' with-side' : ''}`}>
+    <div ref={wrap} className={`pane-wrap${side ? ' with-side' : ''}${focused ? ' focused' : ''}`} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       <section className="pane" aria-label={title}
         onDragOver={(e) => { if (canAttach && e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
         onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
         onDrop={onDrop}>
         {dragging && <div className="drop-zone" onDragLeave={() => setDragging(false)}><Icon name="paperclip" size={28} /><span>Drop to share in {title}</span></div>}
         <header className="pane-head">
-          {onBack && <button className="icon-btn only-narrow" onClick={onBack} aria-label="Back to the list"><Icon name="back" size={18} /></button>}
-          <ConvTile c={conv} users={users} meId={meId} online={online} />
+          {onBack && <button className="icon-btn only-narrow" onClick={onBack} aria-label="Back to the Switchboard"><Icon name="back" size={18} /></button>}
+          <ConvTile c={conv} users={users} meId={meId} />
           <div className="pane-title">
             <h2>{title}{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
             <p className="faint">
@@ -216,57 +268,47 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
                   <Icon name="lock" size={11} />{e2e.encrypted ? 'Encrypted' : 'Not encrypted'}
                 </button>
               )}
-              {subtitle}
+              {sheetNo && sheetNo.of > 1 && <span className="sheet-no mono">Sheet {sheetNo.n}/{sheetNo.of}</span>}
+              {conv.muted && <span className="sheet-no mono hushed">Hushed</span>}
+              <span className="pane-sub">{subtitle}</span>
             </p>
           </div>
-          <div className="row-actions">
-            {conv.members.length > 1 && <CallButtons convId={convId} live={live} />}
-            <span className="head-sep" />
-            <span className="head-tools">
-            {live && session && session.me.role !== 'guest' && <button className="icon-btn" title="Plan a meeting with these people" onClick={() => setPlanning(true)}><Icon name="calendar" size={17} /></button>}
-            <button className={`icon-btn${side?.kind === 'notes' ? ' on' : ''}`} title="Notes" onClick={() => setSide(side?.kind === 'notes' ? null : { kind: 'notes', noteId: null })}><Icon name="doc" size={17} /></button>
-            <button className={`icon-btn${side?.kind === 'boards' ? ' on' : ''}`} title="Whiteboards" onClick={() => setSide(side?.kind === 'boards' ? null : { kind: 'boards' })}><Icon name="drawing" size={17} /></button>
-            <button className="icon-btn" title="Search this conversation" onClick={() => window.dispatchEvent(new CustomEvent('dex-search', { detail: conv.id }))}><Icon name="search" size={17} /></button>
-            {window.dex.popOut && !location.hash.startsWith('#popout=') && <button className="icon-btn wide-only" title="Open in a new window" onClick={() => void window.dex.popOut!(conv.id, title)}><Icon name="open" size={17} /></button>}
-            <button ref={dateBtn} className="icon-btn" title="Jump to a date" onClick={() => setDatePick(!datePick)}><Icon name="history" size={17} /></button>
-            {datePick && (
-              <Popover anchor={dateBtn.current} onClose={() => setDatePick(false)} className="menu jump-date">
-                <div className="menu-label">Jump to a date</div>
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  const v = (e.currentTarget.elements.namedItem('d') as HTMLInputElement).value;
-                  if (!v) return;
-                  setDatePick(false);
-                  void window.dex.request('msg.at', { convId: conv.id, at: new Date(`${v}T00:00:00`).getTime() }).then((r) => {
-                    if (r.messageId) window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId: conv.id, messageId: r.messageId, parentId: null } }));
-                  }).catch(() => {});
-                }}>
-                  <input name="d" type="date" className="input" autoFocus max={new Date().toISOString().slice(0, 10)} aria-label="Date" />
-                  <button className="btn primary sm">Go</button>
-                </form>
-              </Popover>
-            )}
-            <button className={`icon-btn${side?.kind === 'files' ? ' on' : ''}`} title="Files" onClick={() => setSide(side?.kind === 'files' ? null : { kind: 'files' })}><Icon name="paperclip" size={17} /></button>
-            <button className={`icon-btn${side?.kind === 'pins' ? ' on' : ''}`} title="Pinned" onClick={() => setSide(side?.kind === 'pins' ? null : { kind: 'pins' })}><Icon name="pin" size={17} /></button>
-            <button className={`icon-btn${side?.kind === 'members' ? ' on' : ''}`} title="People" onClick={() => setSide(side?.kind === 'members' ? null : { kind: 'members' })}><Icon name="people" size={17} /></button>
-            <button className={`icon-btn${conv.muted ? ' on' : ''}`} title={conv.muted ? 'Unmute' : 'Mute'}
-              onClick={() => void window.dex.request('conv.mute', { convId, muted: !conv.muted }).then(() => toast(conv.muted ? 'Notifications on' : 'Muted. You will still hear about mentions.')).catch((e: Error) => toast(e.message, true))}>
-              <Icon name={conv.muted ? 'mute' : 'bell'} size={17} />
-            </button>
-            </span>
-            <button ref={moreBtn} className="icon-btn head-more" title="More" aria-haspopup="menu" aria-expanded={headMenu} onClick={() => setHeadMenu(!headMenu)}><Icon name="more" size={18} /></button>
-            {headMenu && (
-              <Popover anchor={moreBtn.current} onClose={() => setHeadMenu(false)} className="menu head-menu">
-                {live && session && session.me.role !== 'guest' && <button role="menuitem" onClick={() => { setHeadMenu(false); setPlanning(true); }}><Icon name="calendar" size={16} />Plan a meeting</button>}
-                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'notes', noteId: null }); }}><Icon name="doc" size={16} />Notes</button>
-                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'boards' }); }}><Icon name="drawing" size={16} />Whiteboards</button>
-                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'files' }); }}><Icon name="paperclip" size={16} />Files</button>
-                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'pins' }); }}><Icon name="pin" size={16} />Pinned</button>
-                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'members' }); }}><Icon name="people" size={16} />People</button>
-                <button role="menuitem" onClick={() => { setHeadMenu(false); void window.dex.request('conv.mute', { convId, muted: !conv.muted }).then(() => toast(conv.muted ? 'Notifications on' : 'Muted. You will still hear about mentions.')).catch((e: Error) => toast(e.message, true)); }}><Icon name={conv.muted ? 'bell' : 'mute'} size={16} />{conv.muted ? 'Unmute' : 'Mute'}</button>
-              </Popover>
-            )}
-          </div>
+          <dl className="title-block" aria-label="About this conversation">
+            {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+          </dl>
+          {conv.members.length > 1 && <RoomButton convId={convId} live={live} />}
+          <button ref={moreBtn} className="icon-btn head-more" title="More for this conversation" aria-label="More for this conversation" aria-haspopup="menu" aria-expanded={headMenu} onClick={() => setHeadMenu(!headMenu)}><Icon name="more" size={18} /></button>
+          {onClose && <button className="icon-btn pane-x" title="Close this Pane" aria-label="Close this Pane" onClick={onClose}><Icon name="x" size={16} /></button>}
+          {headMenu && (
+            <Popover anchor={moreBtn.current} onClose={() => setHeadMenu(false)} className="menu head-menu">
+              {canPlan && <button role="menuitem" onClick={() => { setHeadMenu(false); setPlanning(true); }}><Icon name="calendar" size={16} />Plan a meeting</button>}
+              <button role="menuitem" onClick={() => { setHeadMenu(false); window.dispatchEvent(new CustomEvent('dex-search', { detail: conv.id })); }}><Icon name="search" size={16} />Search this conversation</button>
+              <button role="menuitem" onClick={() => { setHeadMenu(false); setDatePick(true); }}><Icon name="history" size={16} />Jump to a date…</button>
+              {window.dex.popOut && !location.hash.startsWith('#popout=') && <button role="menuitem" className="wide-only" onClick={() => { setHeadMenu(false); void window.dex.popOut!(conv.id, title); }}><Icon name="open" size={16} />Open in a new window</button>}
+              {narrow && <>
+                <div className="menu-label label">Sheets</div>
+                {SHEETS.map((s) => <button key={s.kind} role="menuitem" onClick={() => { setHeadMenu(false); setSide(openSheet(s.kind)); }}><Icon name={s.icon} size={16} />{s.label}</button>)}
+              </>}
+              <HushItems c={conv} onDone={() => setHeadMenu(false)} />
+            </Popover>
+          )}
+          {datePick && (
+            <Popover anchor={moreBtn.current} onClose={() => setDatePick(false)} className="menu jump-date">
+              <div className="menu-label label">Jump to a date</div>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const v = (e.currentTarget.elements.namedItem('d') as HTMLInputElement).value;
+                if (!v) return;
+                setDatePick(false);
+                void window.dex.request('msg.at', { convId: conv.id, at: new Date(`${v}T00:00:00`).getTime() }).then((r) => {
+                  if (r.messageId) window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId: conv.id, messageId: r.messageId, parentId: null } }));
+                }).catch(() => {});
+              }}>
+                <input name="d" type="date" className="input" autoFocus max={new Date().toISOString().slice(0, 10)} aria-label="Date" />
+                <button className="btn primary sm">Go</button>
+              </form>
+            </Popover>
+          )}
         </header>
         {direct && (
           <div className="direct-banner" role="status">
@@ -283,16 +325,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
         {conv.kind === 'direct' && others.map((id) => users.get(id)).filter((u) => u?.ooo).map((u) => (
           <div key={u!.id} className="direct-banner ooo-banner" role="status">
             <Icon name="calendar" size={15} />
-            <span><b>{u!.displayName.split(' ')[0]}</b> is out of office until {new Date(u!.ooo!.until).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}.{u!.ooo!.message ? ` “${u!.ooo!.message}”` : ''}{u!.ooo!.delegateId ? ` For anything urgent, contact ${users.get(u!.ooo!.delegateId)?.displayName ?? 'a colleague'}.` : ''}</span>
+            <span><b>{u!.displayName.split(' ')[0]}</b> is away from the office until {new Date(u!.ooo!.until).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}.{u!.ooo!.message ? ` “${u!.ooo!.message}”` : ''}{u!.ooo!.delegateId ? ` For anything urgent, contact ${users.get(u!.ooo!.delegateId)?.displayName ?? 'a colleague'}.` : ''}</span>
           </div>
         ))}
         <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
         {selected && (
-          <div className="select-bar" role="toolbar" aria-label="Selected messages">
-            <b>{selected.size} selected</b>
+          <div className="select-bar" role="toolbar" aria-label="Picked messages">
+            <b className="mono">{selected.size} picked</b>
             <button className="btn sm" disabled={!selected.size} onClick={() => setFwdMany(true)}><Icon name="forward" size={14} />Forward</button>
             <button className="btn sm" disabled={!selected.size} onClick={() => { void navigator.clipboard.writeText(picked().map((m) => `${users.get(m.authorId)?.displayName ?? ''} (${new Date(m.createdAt).toLocaleString()}):\n${m.body}`).join('\n\n')); toast('Copied'); }}><Icon name="copy" size={14} />Copy</button>
-            <button className="btn sm" disabled={!selected.size} onClick={() => void Promise.all(picked().filter((m) => !deskState().saved.has(m.id)).map((m) => toggleSaved(m as never).catch(() => null))).then(() => toast('Saved to your Desk'))}><Icon name="star" size={14} />Save</button>
+            <button className="btn sm" disabled={!selected.size} onClick={() => void Promise.all(picked().filter((m) => !deskState().saved.has(m.id)).map((m) => toggleSaved(m as never).catch(() => null))).then(() => toast('Kept on your Desk'))}><Icon name="drawer" size={14} />Keep</button>
             {picked().length > 0 && picked().every((m) => m.authorId === meId || (isAdmin && conv.kind === 'space')) && (
               <button className="btn sm danger" onClick={() => { if (confirm(`Delete ${selected.size} messages for everyone?`)) void Promise.all(picked().map((m) => window.dex.request('msg.delete', { messageId: m.id }).catch(() => null))).then(() => { toast('Deleted'); setSelected(null); }); }}><Icon name="trash" size={14} />Delete</button>
             )}
@@ -301,12 +343,13 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           </div>
         )}
         {fwdMany && picked().length > 0 && <ForwardDialog message={picked()[0] as never} more={picked().slice(1) as never} users={users} meId={meId} online={online} onClose={() => { setFwdMany(false); setSelected(null); }} />}
-        <TypingLine k={tlKey(convId)} users={users} />
+        <WritingLine k={tlKey(convId)} users={users} />
         {conv.archived ? null : conv.postPolicy === 'moderators' && !(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) ? (
-          <div className="dock-locked faint"><Icon name="lock" size={14} />Only moderators post here. You can reply to a message in its side-track.</div>
-        ) : <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={`Message ${conv.kind === 'space' ? title : others.length === 1 ? title.split(' ')[0] : 'the group'}`} />}
+          <div className="dock-locked faint"><Icon name="lock" size={14} />Only moderators post here. You can answer a message in its side-track.</div>
+        ) : <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={placeholder} />}
       </section>
       {side?.kind === 'track' && <SideTrack ctx={ctx} parentId={side.parentId} live={live} onClose={() => setSide(null)} />}
+      {side?.kind === 'track' && !narrow && <TrackLeader wrap={wrap} parentId={side.parentId} />}
       {side?.kind === 'pins' && <PinsPanel ctx={ctx} onClose={() => setSide(null)} onJump={(id) => setSide({ kind: 'track', parentId: id })} />}
       {side?.kind === 'members' && <MembersPanel ctx={ctx} onClose={() => setSide(null)} />}
       {side?.kind === 'notes' && (
@@ -325,8 +368,18 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           <div className="side-body"><BoardsList convId={convId} onOpen={setBoard} /></div>
         </aside>
       )}
-      {board && <Suspense fallback={null}><WhiteboardStage board={board} convId={convId} onClose={() => setBoard(null)} /></Suspense>}
       {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
+      <nav className="sheet-tabs" aria-label="Sheets">
+        {side?.kind === 'track' && (
+          <button className="sheet-tab on track" title="Side-track" aria-pressed="true" onClick={() => setSide(null)}><span>Side-track</span></button>
+        )}
+        {SHEETS.map((s) => (
+          <button key={s.kind} className={`sheet-tab${side?.kind === s.kind ? ' on' : ''}`} title={s.label} aria-pressed={side?.kind === s.kind} onClick={() => toggleSheet(s.kind)}>
+            <span>{s.label}{s.kind === 'members' ? <b> · {conv.members.length}</b> : null}</span>
+          </button>
+        ))}
+      </nav>
+      {board && <Suspense fallback={null}><WhiteboardStage board={board} convId={convId} onClose={() => setBoard(null)} /></Suspense>}
       {viewer && <Viewer file={viewer.file} all={viewer.all} convId={convId} onClose={() => setViewer(null)} />}
       {verify && e2e && (
         <Dialog title={e2e.encrypted ? 'End-to-end encrypted' : 'Not encrypted yet'} onClose={() => setVerify(false)} narrow>
@@ -346,6 +399,90 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       )}
       {planning && session && <EventDialog session={session} conv={conv} onClose={() => setPlanning(false)} />}
     </div>
+  );
+}
+
+/** One amber-outlined Room button: voice by default, video from its menu; Join or Back while a Room runs. */
+function RoomButton({ convId, live }: { convId: string; live: boolean }) {
+  const toast = useToast();
+  const active = useCall((s) => s.active.get(convId));
+  const inCall = useCall((s) => s.room);
+  const [menu, setMenu] = useState(false);
+  const caret = useRef<HTMLButtonElement>(null);
+  if (inCall?.convId === convId) return <button className="room-btn live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
+  if (active && active.participants.length) {
+    return (
+      <button className="room-btn live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>
+        <Icon name="phone" size={14} />Join the Room <span className="mono">· {active.participants.length}</span>
+      </button>
+    );
+  }
+  const open = (video: boolean) => { setMenu(false); void startCall(convId, video).catch((e: Error) => toast(e.message, true)); };
+  return (
+    <span className="room-split">
+      <button className="room-btn" disabled={!live || !!inCall} onClick={() => open(false)} title="Open a Room with voice">Open a Room</button>
+      <button ref={caret} className="room-btn caret" disabled={!live || !!inCall} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
+      {menu && (
+        <Popover anchor={caret.current} onClose={() => setMenu(false)} className="menu room-menu">
+          <div className="menu-label label">Open a Room</div>
+          <button role="menuitem" onClick={() => open(false)}><Icon name="mic" size={16} />With voice</button>
+          <button role="menuitem" onClick={() => open(true)}><Icon name="video" size={16} />With video</button>
+        </Popover>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The side-track's hairline: from the parent message's point on the spine, along the top edge of
+ * the message, to the edge of the side-track sheet. Redrawn as the timeline scrolls or resizes.
+ */
+function TrackLeader({ wrap, parentId }: { wrap: RefObject<HTMLDivElement | null>; parentId: string }) {
+  const [d, setD] = useState<{ path: string; x: number; y: number; ex: number; ey: number; off: boolean } | null>(null);
+  useEffect(() => {
+    const root = wrap.current;
+    if (!root) return;
+    let frame = 0;
+    const draw = () => {
+      frame = 0;
+      const tl = root.querySelector<HTMLElement>('.timeline');
+      const panel = root.querySelector<HTMLElement>('.side-track');
+      const msg = tl?.querySelector<HTMLElement>(`[data-mid="${parentId}"]`);
+      if (!tl || !panel) { setD(null); return; }
+      const w = root.getBoundingClientRect();
+      const t = tl.getBoundingClientRect();
+      const p = panel.getBoundingClientRect();
+      const spine = parseFloat(getComputedStyle(tl).getPropertyValue('--spine-x')) || 52;
+      const x = t.left - w.left + spine;
+      const head = panel.querySelector<HTMLElement>('.track-parent')?.getBoundingClientRect();
+      const ex = (head ? head.left : p.left + 16) - w.left;
+      const ey = (head ? head.top + 18 : p.top + 60) - w.top;
+      let top = msg ? msg.getBoundingClientRect().top - w.top : t.top - w.top;
+      const min = t.top - w.top + 2;
+      const max = t.bottom - w.top - 2;
+      const off = !msg || top < min || top > max;
+      top = Math.max(min, Math.min(max, top));
+      const mx = p.left - w.left - 10;
+      setD({ path: `M${x} ${top + 11}V${top}H${mx}V${ey}H${ex}`, x, y: top + 11, ex, ey, off });
+    };
+    const soon = () => { if (!frame) frame = requestAnimationFrame(draw); };
+    soon();
+    root.addEventListener('scroll', soon, true);
+    // the sheet slides in: measure again once it has settled
+    root.addEventListener('animationend', soon, true);
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(soon);
+    ro?.observe(root);
+    const spine = root.querySelector('.timeline .spine');
+    if (spine) ro?.observe(spine);
+    return () => { root.removeEventListener('scroll', soon, true); root.removeEventListener('animationend', soon, true); ro?.disconnect(); if (frame) cancelAnimationFrame(frame); };
+  }, [wrap, parentId]);
+  if (!d) return null;
+  return (
+    <svg className={`track-leader${d.off ? ' off' : ''}`} aria-hidden="true">
+      <path d={d.path} />
+      <circle cx={d.x} cy={d.y} r={3.5} />
+      <rect x={d.ex - 3} y={d.ey - 3} width={6} height={6} />
+    </svg>
   );
 }
 
@@ -398,29 +535,28 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
     if (stick.current) markRead(convId);
     if (el.scrollTop < 200 && tl?.hasMore && !tl.loading) { prevHeight.current = el.scrollHeight; void loadOlder(convId); }
   };
-
-  // runs: consecutive messages by one person within 5 minutes; day labels between days
+  // runs: consecutive messages by one person within 5 minutes; a title-block label at each new day;
+  // a time tick on the spine whenever ten minutes have gone by
   const blocks = useMemo(() => {
-    const out: Array<{ kind: 'day'; label: string; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string }> = [];
+    type Block = { kind: 'day'; label: string; key: string } | { kind: 'tick'; label: string; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string };
+    const out: Block[] = [];
     let lastDay = '';
+    let lastTick = 0;
     for (const m of messages) {
       const day = new Date(m.createdAt).toDateString();
-      if (day !== lastDay) { out.push({ kind: 'day', label: dayLabel(m.createdAt), key: `d${day}` }); lastDay = day; }
+      if (day !== lastDay) { out.push({ kind: 'day', label: dayLabel(m.createdAt), key: `d${day}` }); lastDay = day; lastTick = m.createdAt; }
       if ('system' in m && m.system) { out.push({ kind: 'notice', m, key: `n${m.id}` }); continue; }
       const prev = out[out.length - 1];
-      if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP) prev.msgs.push(m);
-      else out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
+      if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP) { prev.msgs.push(m); continue; }
+      if (m.createdAt - lastTick >= TICK) {
+        const at = Math.floor(m.createdAt / TICK) * TICK;
+        out.push({ kind: 'tick', label: clock(at), key: `t${at}-${m.id}` });
+        lastTick = m.createdAt;
+      }
+      out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
     }
     return out;
   }, [messages, ctx.meId]);
-
-  // "Seen by" under the newest of my messages
-  const seen = useMemo(() => {
-    const mine = [...messages].reverse().find((m) => m.authorId === ctx.meId && !('pending' in m) && !('system' in m && m.system));
-    if (!mine) return null;
-    const readers = Object.entries(ctx.conv.reads).filter(([u, r]) => u !== ctx.meId && r && r >= mine.id).map(([u]) => u);
-    return { id: mine.id, readers };
-  }, [messages, ctx.conv.reads, ctx.meId]);
 
   return (
     <div className="timeline" ref={scroller} onScroll={onScroll}>
@@ -430,28 +566,33 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
         {!tl?.loaded && <div className="tl-more"><span className="spinner" /></div>}
         {blocks.map((b) => b.kind === 'day'
           ? <div key={b.key} className="day-mark"><span className="label">{b.label}</span></div>
+          : b.kind === 'tick' ? <div key={b.key} className="spine-tick" aria-hidden="true"><span className="mono">{b.label}</span></div>
           : b.kind === 'notice' ? <Notice key={b.key} m={b.m as Message} users={ctx.users} meId={ctx.meId} />
-          : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} seen={seen} />)}
+          : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} />)}
       </div>
     </div>
   );
 }
 
+/** The head of the conversation: a title block, "SHEET 1 · started 12 Mar 2025 by Vikram". */
 function Beginning({ ctx }: { ctx: Ctx }) {
   const c = ctx.conv;
+  const by = c.createdBy === ctx.meId ? 'you' : ctx.users.get(c.createdBy)?.displayName ?? 'a former member';
   return (
     <div className="tl-start">
-      <ConvTile c={c} users={ctx.users} meId={ctx.meId} online={ctx.online} size="lg" />
-      <h3>{c.kind === 'space' ? `Welcome to ${c.name}` : `This is the start of your conversation with ${convTitle(c, ctx.users, ctx.meId)}`}</h3>
-      {c.topic && <p className="muted">{c.topic}</p>}
-      <p className="faint" style={{ fontSize: 13 }}>{c.kind === 'space' ? (c.private ? 'A private Space: only people who were added can see it.' : 'An open Space: anyone in the office can find and join it.') : 'Only the people here can see these messages.'}</p>
+      <ConvTile c={c} users={ctx.users} meId={ctx.meId} size="lg" />
+      <div className="tl-start-text">
+        <h3>{convTitle(c, ctx.users, ctx.meId)}</h3>
+        <div className="tl-start-line mono">Sheet 1 · started {fullDate(c.createdAt)} by {by}</div>
+        {c.topic && <p className="muted">{c.topic}</p>}
+        <p className="faint" style={{ fontSize: 12.5 }}>{c.kind === 'space' ? (c.private ? 'A private Space: only people who were added can see it.' : 'An open Space: anyone in the office can find and join it.') : 'Only the people here can see these messages.'}</p>
+      </div>
     </div>
   );
 }
 
-const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, seen }: {
+const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }: {
   ctx: Ctx; author: string; mine: boolean; msgs: AnyMessage[]; onTrack: (id: string) => void; activeTrack: string | null;
-  seen: { id: string; readers: string[] } | null;
 }) {
   const u = ctx.users.get(author);
   return (
@@ -463,40 +604,37 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
           {u?.role === 'bot' && <span className="chip accent bot-chip">Integration</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
-        {msgs.map((m) => (
-          <MessageItem key={m.clientId ?? m.id} ctx={ctx} m={m} onTrack={onTrack} activeTrack={activeTrack}
-            seenBy={seen && seen.id === m.id ? seen.readers : null} />
-        ))}
+        {msgs.map((m) => <MessageItem key={m.clientId ?? m.id} ctx={ctx} m={m} onTrack={onTrack} activeTrack={activeTrack} />)}
       </div>
     </div>
   );
 });
 
 // ------------------------------------------------------------------ one message
-function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
-  ctx: Ctx; m: AnyMessage; onTrack?: (id: string) => void; activeTrack?: string | null; seenBy: string[] | null; inTrack?: boolean;
+function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
+  ctx: Ctx; m: AnyMessage; onTrack?: (id: string) => void; activeTrack?: string | null; inTrack?: boolean;
 }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
-  const [picker, setPicker] = useState(false);
+  const [stamp, setStamp] = useState<'chips' | 'picker' | null>(null);
   const [more, setMore] = useState(false);
   const moreBtn = useRef<HTMLButtonElement>(null);
-  const pickBtn = useRef<HTMLButtonElement>(null);
+  const stampBtn = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | null>(null);
   const saved = useDesk((s) => s.saved.has(m.id));
   const pending = 'pending' in m;
   const failed = pending ? (m as PendingMessage).failed : undefined;
   const mine = m.authorId === ctx.meId;
   const receiptsOn = ctx.users.get(ctx.meId)?.readReceipts !== false;
-  const quick = useQuick();
+  const stamps = useStamps();
   const policy = usePolicy();
   const inWindow = withinEditWindow(m.createdAt, policy);
   const moderator = ctx.conv.kind === 'space' && (ctx.isAdmin || ctx.conv.moderators?.includes(ctx.meId) || ctx.conv.createdBy === ctx.meId);
-  const canEdit = mine && inWindow;
+  const canEdit = mine && inWindow && !!m.body && !m.poll && !m.form;
   const canDelete = (mine && inWindow) || moderator;
   const mentioned = m.mentions.includes(ctx.meId) || (m.mentions.includes('all') && !mine);
 
-  // ArrowUp in an empty Dock edits your last message
+  // Ctrl+Up in the Dock edits your last message
   useEffect(() => {
     const onEdit = (e: Event) => { if ((e as CustomEvent).detail === m.id) setEditing(true); };
     window.addEventListener('dex-edit', onEdit);
@@ -504,12 +642,12 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   }, [m.id]);
 
   const act = (p: Promise<unknown>, ok?: string) => p.then(() => ok && toast(ok)).catch((e: Error) => toast(e.message, true));
-  const custom = useCustomEmoji();
   const react = (emoji: string) => {
     const on = !(m.reactions[emoji] ?? []).includes(ctx.meId);
-    setPicker(false);
+    setStamp(null);
     void act(window.dex.request('msg.react', { messageId: m.id, emoji, on }));
   };
+  const close = (then?: () => void) => { setMore(false); then?.(); };
 
   if (m.deleted) return (
     <div className="msg deleted"><span className="faint">{m.removed
@@ -517,13 +655,26 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
       : 'Message deleted'}</span></div>
   );
 
+  // the amber notch on my own messages: hollow when sent, half when some have seen it, solid when all have
+  const seen = (() => {
+    if (!mine || pending || inTrack) return null;
+    if (!receiptsOn) return { state: 'plain', tag: '' };
+    const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
+    const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id).length;
+    const state = !others.length || read === 0 ? 'sent' : read === others.length ? 'all' : 'some';
+    const tag = others.length === 1 ? (read ? 'Seen' : 'Sent') : `Seen ${read}/${others.length}`;
+    return { state, tag };
+  })();
+
   return (
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
-      className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
+      className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
+      {seen && <span className={`notch ${seen.state}`} role={seen.tag ? 'img' : undefined} aria-label={seen.tag || undefined} />}
+      {seen?.tag && <span className="seen-tag mono" aria-hidden="true">{seen.tag}</span>}
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
       {m.inReplyTo && !inTrack && (
         <button className="in-reply" onClick={() => onTrack?.(m.inReplyTo!.messageId)} title="Open the side-track">
-          <Icon name="reply" size={13} />Replied in a side-track to {m.inReplyTo.authorId === ctx.meId ? 'you' : ctx.users.get(m.inReplyTo.authorId)?.displayName ?? 'someone'}
+          <Icon name="branch" size={13} />Replied in a side-track to {m.inReplyTo.authorId === ctx.meId ? 'you' : ctx.users.get(m.inReplyTo.authorId)?.displayName ?? 'someone'}
         </button>
       )}
       {m.e2e === 'locked' ? (
@@ -554,9 +705,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
       )}
 
       {!inTrack && m.replyCount > 0 && onTrack && (
-        <button className="track-link" onClick={() => onTrack(m.id)}>
-          <Icon name="reply" size={14} />{m.replyCount} {m.replyCount === 1 ? 'reply' : 'replies'}
-          {m.lastReplyAt && <span className="faint"> · last {clock(m.lastReplyAt)}</span>}
+        <button className="branch-tag" onClick={() => onTrack(m.id)} aria-label={`Open the side-track: ${m.replyCount} ${m.replyCount === 1 ? 'reply' : 'replies'}`}>
+          <span className="mono">↳ Side-track · {m.replyCount}{m.lastReplyAt ? ` · ${clock(m.lastReplyAt)}` : ''}</span>
         </button>
       )}
 
@@ -567,67 +717,68 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           <button className="link" onClick={() => discardFailed(m as PendingMessage)}>Discard</button>
         </div>
       )}
-      {mine && !pending && !m.deleted && receiptsOn && (() => {
-        const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
-        const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id);
-        const all = others.length > 0 && read.length === others.length;
-        return <span className={`tick${all ? ' read' : read.length ? ' some' : ''}`} title={all ? 'Read' : read.length ? `Read by ${read.length} of ${others.length}` : 'Delivered'} aria-label={all ? 'Read' : 'Delivered'}>{read.length ? '✓✓' : '✓'}</span>;
-      })()}
-      {seenBy && seenBy.length > 0 && (
-        <div className="seen" title={seenBy.map((id) => ctx.users.get(id)?.displayName).join(', ')}>
-          <Icon name="check" size={12} />Seen{ctx.conv.members.length > 2 ? ` by ${seenBy.length}` : ''}
-        </div>
-      )}
 
       {!pending && !editing && (
-        <div className="msg-tools" role="toolbar" aria-label="Message actions">
-          {quick.map((e) => <button key={e} onClick={() => react(e)} title={`React ${e}`}>{e}</button>)}
-          <button ref={pickBtn} onClick={() => setPicker(!picker)} title="More reactions"><Icon name="smile" size={16} /></button>
-          {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Reply in a side-track"><Icon name="reply" size={16} /></button>}
-          <button className={saved ? 'on' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Saved to your Desk' : 'Removed from your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Remove from saved' : 'Save for later'} aria-pressed={saved}><Icon name="star" size={16} /></button>
-          <button onClick={() => setDialog('remind')} title="Remind me about this"><Icon name="alarm" size={16} /></button>
-          {canEdit && m.body && !m.poll && !m.form && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
-          <button ref={moreBtn} onClick={() => setMore(!more)} title="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={16} /></button>
+        <div className={`spine-tools${stamp || more ? ' open' : ''}`} role="toolbar" aria-label="Tools for this message" aria-orientation="vertical">
+          {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Side-track" aria-label="Side-track"><Icon name="branch" size={15} /></button>}
+          <button ref={stampBtn} className={stamp ? 'on' : undefined} onClick={() => setStamp(stamp ? null : 'chips')} title="Stamp" aria-label="Stamp" aria-haspopup="dialog" aria-expanded={!!stamp}><Icon name="stamp" size={15} /></button>
+          <button className={saved ? 'on kept' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Kept on your Desk' : 'Taken off your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Take off my Desk' : 'Keep on my Desk'} aria-label={saved ? 'Take off my Desk' : 'Keep on my Desk'} aria-pressed={saved}><Icon name="drawer" size={15} /></button>
+          <button onClick={() => setDialog('remind')} title="Remind me" aria-label="Remind me"><Icon name="alarm" size={15} /></button>
+          <button ref={moreBtn} onClick={() => setMore(!more)} title="More" aria-label="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={15} /></button>
+          {stamp && (
+            <Popover anchor={stampBtn.current} onClose={() => setStamp(null)} className={stamp === 'picker' ? 'emoji-pop-wrap' : 'menu stamp-fly'} align="right">
+              {stamp === 'picker' ? <EmojiPicker onPick={(e) => react(e)} onClose={() => setStamp(null)} /> : (
+                <>
+                  <div className="menu-label label">Stamps</div>
+                  <div className="stamp-row">
+                    {stamps.map((e) => (
+                      <button key={e} className={`stamp${(m.reactions[e] ?? []).includes(ctx.meId) ? ' on' : ''}`} title={`Stamp ${e}`} aria-label={`Stamp ${e}`} onClick={() => react(e)}>
+                        <EmojiGlyph emoji={e} size={18} />
+                      </button>
+                    ))}
+                    <button className="stamp any" title="More stamps" aria-label="More stamps" onClick={() => setStamp('picker')}><Icon name="plus" size={15} /></button>
+                  </div>
+                </>
+              )}
+            </Popover>
+          )}
           {more && (
-            <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu">
-              <button role="menuitem" onClick={() => { setMore(false); setDialog('forward'); }}><Icon name="forward" size={16} />Forward</button>
-              {m.body && <button role="menuitem" onClick={() => { setMore(false); window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(m.convId, inTrack ? m.parentId : null), text: quoteOf(m, ctx.users) } })); }}><Icon name="reply" size={16} />Quote</button>}
+            <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu" align="right">
+              <div className="menu-label label">Send on</div>
+              <button role="menuitem" onClick={() => close(() => setDialog('forward'))}><Icon name="forward" size={16} />Forward</button>
+              {m.body && <button role="menuitem" onClick={() => close(() => window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(m.convId, inTrack ? m.parentId : null), text: quoteOf(m, ctx.users) } })))}><Icon name="reply" size={16} />Quote</button>}
               {ctx.conv.kind === 'space' && !mine && ctx.users.get(m.authorId)?.role !== 'bot' && (
-                <button role="menuitem" onClick={() => {
-                  setMore(false);
+                <button role="menuitem" onClick={() => close(() => {
                   void window.dex.request('conv.create', { kind: 'direct', members: [m.authorId] }).then((c) => {
                     addConversation(c);
                     window.dispatchEvent(new CustomEvent('dex-open', { detail: c.id }));
                     setTimeout(() => window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(c.id), text: quoteOf(m, ctx.users) } })), 250);
                   }).catch((e: Error) => toast(e.message, true));
-                }}><Icon name="chat" size={16} />Reply privately</button>
+                })}><Icon name="direct" size={16} />Take to Direct</button>
               )}
-              {mine && receiptsOn && ctx.conv.members.length > 1 && <button role="menuitem" onClick={() => { setMore(false); setDialog('readers'); }}><Icon name="eye" size={16} />Read by…</button>}
-              <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(`dexconnect://message/${m.convId}/${m.id}`); toast('Link copied: paste it anywhere in Dexterity Connect'); }}><Icon name="open" size={16} />Copy link</button>
-              {!inTrack && <button role="menuitem" onClick={() => { setMore(false); ctx.select(m.id); }}><Icon name="check" size={16} />Select</button>}
-              <button role="menuitem" onClick={() => { setMore(false); void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned for everyone here'); }}><Icon name="pin" size={16} />{m.pinned ? 'Unpin' : 'Pin'}</button>
-              {!inTrack && !m.parentId && <button role="menuitem" onClick={() => { setMore(false); void act(markUnreadFrom(m), 'Marked as unread from here'); }}><Icon name="unread" size={16} />Mark unread from here</button>}
-              {m.body && <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(m.body); toast('Copied'); }}><Icon name="copy" size={16} />Copy text</button>}
-              {!mine && ctx.users.get(m.authorId)?.role !== 'bot' && <button role="menuitem" onClick={() => { setMore(false); setDialog('report'); }}><Icon name="warning" size={16} />Report to administrators…</button>}
-              {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => {
-                setMore(false);
+              <div className="menu-label label">Keep</div>
+              <button role="menuitem" onClick={() => close(() => void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned for everyone' : 'Pinned for everyone here'))}><Icon name="pin" size={16} />{m.pinned ? 'Unpin for everyone' : 'Pin for everyone'}</button>
+              <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(`dexconnect://message/${m.convId}/${m.id}`); toast('Reference copied: paste it anywhere in Dexterity Connect'); })}><Icon name="open" size={16} />Copy reference</button>
+              {m.body && <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(m.body); toast('Copied'); })}><Icon name="copy" size={16} />Copy text</button>}
+              {!inTrack && !m.parentId && <>
+                <div className="menu-label label">Later</div>
+                <button role="menuitem" onClick={() => close(() => void act(markUnreadFrom(m), 'Left unread from here'))}><Icon name="unread" size={16} />Come back to this</button>
+              </>}
+              <div className="menu-label label">This message</div>
+              {canEdit && <button role="menuitem" onClick={() => close(() => setEditing(true))}><Icon name="edit" size={16} />Edit<span className="kbd">Ctrl ↑</span></button>}
+              {mine && receiptsOn && ctx.conv.members.length > 1 && <button role="menuitem" onClick={() => close(() => setDialog('readers'))}><Icon name="eye" size={16} />Who has seen it</button>}
+              {!inTrack && <button role="menuitem" onClick={() => close(() => ctx.select(m.id))}><Icon name="check" size={16} />Pick several</button>}
+              {!mine && ctx.users.get(m.authorId)?.role !== 'bot' && <button role="menuitem" onClick={() => close(() => setDialog('report'))}><Icon name="warning" size={16} />Report to administrators…</button>}
+              {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => close(() => {
                 if (!mine) { setDialog('remove'); return; }
                 if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id }));
-              }}><Icon name="trash" size={16} />{mine ? 'Delete' : 'Remove…'}</button></>}
-            </Popover>
-          )}
-          {picker && (
-            <Popover anchor={pickBtn.current} onClose={() => setPicker(false)} className="emoji-pop-wrap">
-              <EmojiPicker onPick={(e) => react(e)} onClose={() => setPicker(false)} />
+              })}><Icon name="trash" size={16} />{mine ? 'Delete' : 'Remove…'}</button></>}
             </Popover>
           )}
         </div>
       )}
-      {(m.pinned || saved) && (
-        <span className="pin-flag" title={[m.pinned && 'Pinned', saved && 'Saved'].filter(Boolean).join(' · ')}>
-          {m.pinned && <Icon name="pin" size={12} />}{saved && <Icon name="star" size={12} />}
-        </span>
-      )}
+      {saved && <span className="kept-corner" title="Kept on your Desk" />}
+      {m.pinned && <span className="pin-flag" title="Pinned for everyone"><Icon name="pin" size={12} /></span>}
       {dialog === 'remind' && <RemindDialog message={m} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
       {dialog === 'readers' && <ReadersDialog m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
       {(dialog === 'report' || dialog === 'remove') && <ReasonDialog kind={dialog} m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
@@ -656,13 +807,14 @@ function EditBox({ m, ctx, onDone }: { m: AnyMessage; ctx: Ctx; onDone: () => vo
   );
 }
 
-// ------------------------------------------------------------------ typing
-function TypingLine({ k, users }: { k: string; users: Map<string, PublicUser> }) {
+// ------------------------------------------------------------------ writing
+/** "Priya is writing", with a pen stroke drawing along the spine. */
+function WritingLine({ k, users }: { k: string; users: Map<string, PublicUser> }) {
   const typing = useChat((s) => s.typing.get(k));
   const names = typing ? [...typing.keys()].map((id) => users.get(id)?.displayName.split(' ')[0] ?? 'Someone') : [];
   return (
-    <div className="typing-line" aria-live="polite">
-      {names.length > 0 && <><span className="dots"><i /><i /><i /></span>{names.length === 1 ? `${names[0]} is typing` : names.length === 2 ? `${names[0]} and ${names[1]} are typing` : 'Several people are typing'}</>}
+    <div className="writing-line" aria-live="polite">
+      {names.length > 0 && <><span className="pen" aria-hidden="true"><i /></span>{names.length === 1 ? `${names[0]} is writing` : names.length === 2 ? `${names[0]} and ${names[1]} are writing` : 'Several people are writing'}</>}
     </div>
   );
 }
@@ -686,21 +838,29 @@ function toWire(text: string, users: Map<string, PublicUser>, conv: Conversation
   return out.trim();
 }
 
+const FORMATS: Array<[string, React.ReactNode, string]> = [
+  ['**bold**', <b key="b">bold</b>, 'Ctrl+B'], ['*italic*', <i key="i">italic</i>, 'Ctrl+I'], ['++underline++', <u key="u">underline</u>, 'Ctrl+U'],
+  ['~~strike~~', <s key="s">strike</s>, 'Ctrl+5'], ['`code`', <code key="c" className="md-code">code</code>, ''], ['[text](url)', <span key="l" className="md-link">text</span>, 'Ctrl+K'],
+  ['# Heading', <b key="h">Heading</b>, ''], ['> quote', <span key="q" style={{ borderLeft: '3px solid var(--stroke-strong)', paddingLeft: 6 }}>quote</span>, ''],
+  ['- item  1. item', <span key="li">• item</span>, ''], ['  - nested', <span key="n" style={{ paddingLeft: 12 }}>◦ nested</span>, ''], ['- [ ] task', <span key="t">☐ task</span>, ''],
+  ['```js … ```', <code key="cb" className="md-code">code block</code>, ''], ['---', <span key="r" style={{ display: 'inline-block', width: 60, borderTop: '1px solid var(--stroke-strong)' }} />, ''],
+];
+
 function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { convId: string; parentId: string | null; ctx: Ctx; live: boolean; placeholder: string; direct?: boolean }) {
   const key = tlKey(convId, parentId);
   const [text, setText] = useState(() => chatState().drafts.get(key) ?? '');
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null);
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
-  const emojiBtn = useRef<HTMLButtonElement>(null);
-  /** In a side-track: also post the reply in the conversation. */
+  /** In a side-track: echo the reply in the conversation too. */
   const [alsoToConv, setAlsoToConv] = useState(false);
   const [mdHelp, setMdHelp] = useState(false);
   const mdBtn = useRef<HTMLButtonElement>(null);
-  const custom = useCustomEmoji();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | null>(null);
   const [addMenu, setAddMenu] = useState(false);
+  const [sendMenu, setSendMenu] = useState(false);
+  const sendMore = useRef<HTMLButtonElement>(null);
   const [clipMode, setClipMode] = useState<'camera' | 'screen' | null>(null);
   const [recording, setRecording] = useState(false);
   const addBtn = useRef<HTMLButtonElement>(null);
@@ -821,12 +981,13 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     setDraft(key, '');
     setMention(null);
   };
+  const canLater = (!!text.trim() || ready.length > 0) && live && !direct && !uploading;
 
   const schedule = async (at: number) => {
     const body = toWire(text, ctx.users, ctx.conv);
     try {
       await window.dex.request('sched.create', { convId, body, parentId: parentId ?? undefined, files: ready.map((a) => a.info!.id), sendAt: at });
-      toast(`Scheduled for ${describeWhen(at)}`);
+      toast(`Goes out ${describeWhen(at)}`);
       for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
       setAttachments([]);
       setText('');
@@ -838,8 +999,8 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const onKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (slashList.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % slashList.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + slashList.length) % slashList.length); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && slashList[slashIndex] && slashList[slashIndex].command !== slashQuery)) {
+      if (e.key === 'ArrowUp' && !e.ctrlKey) { e.preventDefault(); setSlashIndex((i) => (i - 1 + slashList.length) % slashList.length); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.ctrlKey && slashList[slashIndex] && slashList[slashIndex].command !== slashQuery)) {
         e.preventDefault();
         const v = `/${slashList[Math.min(slashIndex, slashList.length - 1)].command} `;
         setText(v); setDraft(key, v); setSlashIndex(0);
@@ -849,27 +1010,45 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     }
     if (mention && candidates.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMIndex((i) => (i + 1) % candidates.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setMIndex((i) => (i - 1 + candidates.length) % candidates.length); return; }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(candidates[mIndex]); return; }
+      if (e.key === 'ArrowUp' && !e.ctrlKey) { e.preventDefault(); setMIndex((i) => (i - 1 + candidates.length) % candidates.length); return; }
+      if ((e.key === 'Enter' && !e.ctrlKey) || e.key === 'Tab') { e.preventDefault(); pick(candidates[mIndex]); return; }
       if (e.key === 'Escape') { e.preventDefault(); setMention(null); return; }
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); return; }
-    if (e.key === 'ArrowUp' && !text) {
+    const k = e.key.toLowerCase();
+    // the Dock's own shortcuts win over the app's (Ctrl+5 strikes through here, it does not change lens)
+    const own = () => { e.preventDefault(); e.stopPropagation(); };
+    if (e.ctrlKey && e.shiftKey && e.key === 'Enter') { own(); if (canLater) setDockDialog('schedule'); return; }
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); return; }
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'ArrowUp') {
       const tl = chatState().timelines.get(key);
-      const last = [...(tl?.messages ?? [])].reverse().find((m) => m.authorId === ctx.meId && !m.deleted && !('pending' in m) && withinEditWindow(m.createdAt));
-      if (last) { e.preventDefault(); window.dispatchEvent(new CustomEvent('dex-edit', { detail: last.id })); }
+      const last = [...(tl?.messages ?? [])].reverse().find((m) => m.authorId === ctx.meId && !m.deleted && !('pending' in m) && !!m.body && !m.poll && !m.form && withinEditWindow(m.createdAt));
+      if (last) { own(); window.dispatchEvent(new CustomEvent('dex-edit', { detail: last.id })); }
+      return;
     }
-    if (e.ctrlKey && !e.shiftKey && (e.key === 'b' || e.key === 'i' || e.key === 'u')) { e.preventDefault(); wrap(e.key === 'b' ? '**' : e.key === 'i' ? '*' : '__'); }
-    if (e.ctrlKey && !e.shiftKey && e.key === 'l') { e.preventDefault(); link(); }
-    if (e.ctrlKey && !e.shiftKey && e.key === 'e') { e.preventDefault(); setEmoji(true); }
-    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); if ((text.trim() || ready.length) && live && !direct && !uploading) setDockDialog('schedule'); }
-    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'x') { e.preventDefault(); wrap('~~'); }
+    if (!e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (k === 'b' || k === 'i' || k === 'u') { own(); wrap(k === 'b' ? '**' : k === 'i' ? '*' : '++'); }
+    else if (e.key === '5') { own(); wrap('~~'); }
+    else if (k === 'k') { own(); link(); }
+    else if (e.key === '.') { own(); setEmoji(true); }
   };
+
+  const insertEmoji = (e: string) => {
+    const el = ref.current!;
+    const pos = el.selectionStart;
+    const ins = e.startsWith(':') ? `${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}${e} ` : e;
+    setEmoji(false);
+    el.focus();
+    el.setSelectionRange(pos, el.selectionEnd);
+    insertAtCursor(el, ins);
+  };
+  const guest = ctx.users.get(ctx.meId)?.role === 'guest';
+  const sideEvent = (side: 'notes-new' | 'boards') => window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side } }));
 
   return (
     <div className="dock-wrap">
       {slashList.length > 0 && (
         <ul className="mention-pop slash-pop" role="listbox" aria-label="Commands">
+          <li className="slash-head label" role="presentation">Commands</li>
           {slashList.map((c, i) => (
             <li key={c.command} role="option" aria-selected={i === Math.min(slashIndex, slashList.length - 1)} onMouseEnter={() => setSlashIndex(i)}
               onMouseDown={(e) => { e.preventDefault(); const v = `/${c.command} `; setText(v); setDraft(key, v); ref.current?.focus(); }}>
@@ -892,43 +1071,37 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         </ul>
       )}
       <AttachmentTray items={attachments} onRemove={(k) => setAttachments((l) => l.filter((a) => a.key !== k))} />
-      <div className={`dock${text.trim() || (ready.length && !uploading) ? ' has-text' : ''}`}>
+      <div className={`dock${text.trim() || (ready.length && !uploading) ? ' has-text' : ''}${recording ? ' recording' : ''}`}>
         <div className="dock-tools">
           {canAttach && (
             <>
-              <button className="icon-btn" title="Attach files (or drop them here)" onClick={() => picker.current?.click()}><Icon name="paperclip" size={18} /></button>
+              <button className="icon-btn" title="Attach files (or drop them here)" aria-label="Attach" onClick={() => picker.current?.click()}><Icon name="paperclip" size={18} /></button>
               <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
             </>
           )}
-          <button ref={emojiBtn} className="icon-btn wide-only" title="Emoji (Ctrl+E)" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
-          <button ref={addBtn} className="icon-btn" title="Add a video, poll, form, note or whiteboard" disabled={!live || direct} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
+          {live && !direct && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
+          {!recording && <button ref={addBtn} className="icon-btn" title="Insert" aria-label="Insert" disabled={!live} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>}
           {addMenu && (
             <Popover anchor={addBtn.current} onClose={() => setAddMenu(false)} className="menu add-menu" align="start">
-              {clipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('camera'); }}><Icon name="video" size={16} />Video message</button>}
-              {screenClipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('screen'); }}><Icon name="screen" size={16} />Screen recording</button>}
-              <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('poll'); }}><Icon name="poll" size={16} />Poll</button>
-              {ctx.users.get(ctx.meId)?.role !== 'guest' && <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('form'); }}><Icon name="list" size={16} />Form</button>}
-              <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side: 'notes-new' } })); }}><Icon name="doc" size={16} />Note</button>
-              <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side: 'boards' } })); }}><Icon name="drawing" size={16} />Whiteboard</button>
-              {ctx.users.get(ctx.meId)?.role !== 'guest' && <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); }}><Icon name="calendar" size={16} />Meeting</button>}
+              <div className="menu-label label">Insert</div>
+              <button role="menuitem" onClick={() => { setAddMenu(false); setEmoji(true); }}><Icon name="smile" size={16} />Emoji<span className="kbd">Ctrl .</span></button>
+              {!direct && <>
+                {clipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('camera'); }}><Icon name="video" size={16} />Video message</button>}
+                {screenClipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('screen'); }}><Icon name="screen" size={16} />Screen recording</button>}
+                <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('poll'); }}><Icon name="poll" size={16} />Poll</button>
+                {!guest && <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('form'); }}><Icon name="list" size={16} />Form</button>}
+                <button role="menuitem" onClick={() => { setAddMenu(false); sideEvent('notes-new'); }}><Icon name="doc" size={16} />Note</button>
+                <button role="menuitem" onClick={() => { setAddMenu(false); sideEvent('boards'); }}><Icon name="drawing" size={16} />Whiteboard</button>
+                {!guest && <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); }}><Icon name="calendar" size={16} />Meeting</button>}
+              </>}
             </Popover>
           )}
-          <button className="icon-btn wide-only" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
-            <Popover anchor={emojiBtn.current} onClose={() => setEmoji(false)} className="emoji-pop-wrap" align="start">
-              <EmojiPicker onClose={() => { setEmoji(false); ref.current?.focus(); }} onPick={(e) => {
-                const el = ref.current!;
-                const pos = el.selectionStart;
-                const ins = e.startsWith(':') ? `${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}${e} ` : e;
-                setEmoji(false);
-                el.focus();
-                el.setSelectionRange(pos, el.selectionEnd);
-                insertAtCursor(el, ins);
-              }} />
+            <Popover anchor={addBtn.current ?? ref.current} onClose={() => setEmoji(false)} className="emoji-pop-wrap" align="start">
+              <EmojiPicker onClose={() => { setEmoji(false); ref.current?.focus(); }} onPick={insertEmoji} />
             </Popover>
           )}
         </div>
-        {live && !direct && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
         {clipMode && <ClipRecorder mode={clipMode} convId={convId} parentId={parentId} onClose={() => setClipMode(null)} />}
         <textarea
           ref={ref}
@@ -942,11 +1115,21 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
           onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length && canAttach) { e.preventDefault(); addFiles(files); } }}
           aria-label={placeholder}
         />
-        {!recording && <><button className="icon-btn dock-later" onClick={() => setDockDialog('schedule')} disabled={(!text.trim() && !ready.length) || !live || direct || uploading}
-          title="Send later" aria-label="Schedule message"><Icon name="schedule" size={17} /></button>
-        <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
-          <Icon name="send" size={18} />
-        </button></>}
+        {!recording && (
+          <span className="send-split">
+            <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
+              <Icon name="dimsend" size={19} />
+            </button>
+            <button ref={sendMore} className="send-more" onClick={() => setSendMenu(!sendMenu)} disabled={!canLater} aria-label="More ways to send" title="Send later" aria-haspopup="menu" aria-expanded={sendMenu}>
+              <Icon name="chevron" size={13} />
+            </button>
+          </span>
+        )}
+        {sendMenu && (
+          <Popover anchor={sendMore.current} onClose={() => setSendMenu(false)} className="menu send-menu">
+            <button role="menuitem" onClick={() => { setSendMenu(false); setDockDialog('schedule'); }}><Icon name="schedule" size={16} />Send later…<span className="kbd">Ctrl ⇧ Enter</span></button>
+          </Popover>
+        )}
       </div>
       {dockDialog === 'form' && <FormBuilder conv={ctx.conv} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'poll' && <PollDialog conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
@@ -965,23 +1148,17 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       {parentId && (
         <label className="also-conv">
           <input type="checkbox" checked={alsoToConv} onChange={(e) => setAlsoToConv(e.target.checked)} />
-          Also send to {ctx.conv.kind === 'space' ? 'the Space' : 'the conversation'}
+          Echo in {ctx.conv.kind === 'space' ? 'the Space' : 'the conversation'}
         </label>
       )}
       <div className="dock-hint faint">
-        {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 message scheduled · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} messages scheduled`} · see Desk</span>}
-        <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
+        {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 waiting to go out · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} waiting to go out`} · see Desk</span>}
+        <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>Ctrl+↑</b> edit last · <button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
         {mdHelp && (
           <Popover anchor={mdBtn.current} onClose={() => setMdHelp(false)} className="menu md-help" align="end">
-            <div className="menu-label">Formatting</div>
-            {[
-              ['**bold**', <b key="b">bold</b>, 'Ctrl+B'], ['*italic*', <i key="i">italic</i>, 'Ctrl+I'], ['__underline__', <u key="u">underline</u>, 'Ctrl+U'],
-              ['~~strike~~', <s key="s">strike</s>, 'Ctrl+Shift+X'], ['`code`', <code key="c" className="md-code">code</code>, ''], ['[text](url)', <span key="l" className="md-link">text</span>, 'Ctrl+L'],
-              ['# Heading', <b key="h">Heading</b>, ''], ['> quote', <span key="q" style={{ borderLeft: '3px solid var(--stroke-strong)', paddingLeft: 6 }}>quote</span>, ''],
-              ['- item  1. item', <span key="li">• item</span>, ''], ['  - nested', <span key="n" style={{ paddingLeft: 12 }}>◦ nested</span>, ''], ['- [ ] task', <span key="t">☐ task</span>, ''],
-              ['```js … ```', <code key="cb" className="md-code">code block</code>, ''], ['---', <span key="r" style={{ display: 'inline-block', width: 60, borderTop: '1px solid var(--stroke-strong)' }} />, ''],
-            ].map(([src, out, key]) => (
-              <div key={String(src)} className="md-help-row"><code>{src}</code><span>{out}</span>{key ? <span className="kbd">{key}</span> : <span />}</div>
+            <div className="menu-label label">Formatting</div>
+            {FORMATS.map(([src, out, k]) => (
+              <div key={src} className="md-help-row"><code>{src}</code><span>{out}</span>{k ? <span className="kbd">{k}</span> : <span />}</div>
             ))}
           </Popover>
         )}
@@ -990,7 +1167,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   );
 }
 
-// ------------------------------------------------------------------ side panels
+// ------------------------------------------------------------------ sheets
 function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: string; live: boolean; onClose: () => void }) {
   const convId = ctx.conv.id;
   const parent = useChat((s) => s.timelines.get(convId)?.messages.find((m) => m.id === parentId));
@@ -999,10 +1176,11 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
   useEffect(() => { void loadLatest(convId, parentId); }, [convId, parentId]);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [tl?.messages.length]);
   const author = parent ? ctx.users.get(parent.authorId) : undefined;
+  const n = tl?.messages.length ?? 0;
   return (
     <aside className="side-panel side-track" aria-label="Side-track">
       <header className="side-head">
-        <span className="label">Side-track</span>
+        <span className="label">Side-track <span className="mono">· {n} {n === 1 ? 'reply' : 'replies'}</span></span>
         <button className="icon-btn" onClick={onClose} aria-label="Close side-track"><Icon name="x" size={16} /></button>
       </header>
       <div className="side-body">
@@ -1026,15 +1204,15 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
                   <span className="run-name">{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
                   <span className="run-time">{clock(m.createdAt)}</span>
                 </div>
-                <MessageItem ctx={ctx} m={m} seenBy={null} inTrack />
+                <MessageItem ctx={ctx} m={m} inTrack />
               </div>
             );
           })}
           <div ref={end} />
         </div>
       </div>
-      <TypingLine k={tlKey(convId, parentId)} users={ctx.users} />
-      <Dock convId={convId} parentId={parentId} ctx={ctx} live={live} placeholder="Reply in this side-track" />
+      <WritingLine k={tlKey(convId, parentId)} users={ctx.users} />
+      <Dock convId={convId} parentId={parentId} ctx={ctx} live={live} placeholder="Write in this side-track" />
     </aside>
   );
 }
@@ -1045,13 +1223,13 @@ function PinsPanel({ ctx, onClose, onJump }: { ctx: Ctx; onClose: () => void; on
   useEffect(() => { void window.dex.request('msg.pins', { convId: ctx.conv.id }).then(setPins).catch(() => setPins([])); }, [ctx.conv.id, version]);
   return (
     <aside className="side-panel" aria-label="Pinned messages">
-      <header className="side-head"><span className="label">Pinned · {pins?.length ?? 0}</span><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button></header>
+      <header className="side-head"><span className="label">Pinned <span className="mono">· {pins?.length ?? 0}</span></span><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button></header>
       <div className="side-body">
         {pins === null && <div className="tl-more"><span className="spinner" /></div>}
-        {pins?.length === 0 && <div className="empty"><Icon name="pin" size={28} /><span>Pin important messages so they are easy to find.</span></div>}
+        {pins?.length === 0 && <div className="empty"><Icon name="pin" size={28} /><span>Pin what everyone here needs to find again.</span></div>}
         {pins?.map((m) => (
           <button key={m.id} className="pin-card" onClick={() => onJump(m.id)}>
-            <div className="run-head"><span className="run-name">{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} {clock(m.createdAt)}</span></div>
+            <div className="run-head"><span className="run-name">{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}</span></div>
             <div className="msg-text">{renderBody(m.body, ctx.users, ctx.meId)}</div>
           </button>
         ))}
@@ -1083,7 +1261,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         {members.sort((a, b) => Number(ctx.online.has(b.id)) - Number(ctx.online.has(a.id))).map((u) => (
           <div key={u.id} className="member-row">
             <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
-            <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last seen ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
+            <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last on ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
             {canModerate && c.kind === 'space' && !c.everyone && u.id !== ctx.meId && (
               <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => { if (confirm(`Remove ${u.displayName} from ${c.name}?`)) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); }}><Icon name="x" size={14} /></button>
             )}
@@ -1174,7 +1352,7 @@ function Notice({ m, users, meId }: { m: Message; users: Map<string, PublicUser>
     const deputy = s.users[1] ? users.get(s.users[1])?.displayName : null;
     return (
       <div className="notice-line away" data-mid={m.id}>
-        <span><b>{who}</b> is out of office{s.until ? ` until ${new Date(s.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : ''}{s.name ? `: “${s.name}”` : ''}{s.users[1] === meId ? '. You are standing in meanwhile.' : deputy ? `. Ask ${deputy} meanwhile.` : '.'}</span>
+        <span><b>{who}</b> is away from the office{s.until ? ` until ${new Date(s.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : ''}{s.name ? `: “${s.name}”` : ''}{s.users[1] === meId ? '. You are standing in meanwhile.' : deputy ? `. Ask ${deputy} meanwhile.` : '.'}</span>
         <span className="mono faint">{clock(m.createdAt)}</span>
       </div>
     );
@@ -1185,7 +1363,7 @@ function Notice({ m, users, meId }: { m: Message; users: Map<string, PublicUser>
   return <div className="notice-line" data-mid={m.id}><span>{text}</span><span className="mono faint">{clock(m.createdAt)}</span></div>;
 }
 
-/** Who has read one of my messages, and who has not yet. */
+/** Who has seen one of my messages, and who has not yet. */
 function ReadersDialog({ m, ctx, onClose }: { m: Message; ctx: Ctx; onClose: () => void }) {
   const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
   const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id);
@@ -1193,11 +1371,11 @@ function ReadersDialog({ m, ctx, onClose }: { m: Message; ctx: Ctx; onClose: () 
   const unread = others.filter((u) => !read.includes(u) && !hidden.includes(u));
   const row = (id: string) => { const u = ctx.users.get(id); return <div key={id} className="member-row"><Avatar user={{ id, displayName: u?.displayName ?? '?' }} presence={presenceFor(id)} size="sm" /><span className="sb-main"><span className="sb-name">{u?.displayName ?? 'Someone'}</span></span></div>; };
   return (
-    <Dialog title="Read by" onClose={onClose}>
+    <Dialog title="Who has seen it" onClose={onClose}>
       <div className="readers">
-        <div className="label">Read · {read.length}</div>{read.map(row)}
+        <div className="label">Seen · {read.length}</div>{read.map(row)}
         {unread.length > 0 && <><div className="label">Not yet · {unread.length}</div>{unread.map(row)}</>}
-        {hidden.length > 0 && <p className="faint" style={{ fontSize: 12 }}>{hidden.length === 1 ? 'One person does' : `${hidden.length} people do`} not share read receipts.</p>}
+        {hidden.length > 0 && <p className="faint" style={{ fontSize: 12 }}>{hidden.length === 1 ? 'One person does' : `${hidden.length} people do`} not show when they have seen messages.</p>}
       </div>
     </Dialog>
   );

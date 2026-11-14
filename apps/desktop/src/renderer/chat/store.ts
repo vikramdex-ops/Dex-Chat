@@ -36,14 +36,19 @@ const state: ChatState = {
   ready: false, meId: '', conversations: new Map(), timelines: new Map(), typing: new Map(), drafts: new Map(), version: 0,
 };
 const listeners = new Set<() => void>();
-/** The conversation currently on screen (no notification for it while the window is focused). */
-let activeConv: string | null = null;
+/** Conversations on screen in a Pane, counted (no notification for them while the window is focused). */
+const onScreen = new Map<string, number>();
 let directory: () => PublicUser[] = () => [];
 /** Conversations the reader marked unread: not marked read again until they leave and come back. */
 const held = new Set<string>();
-export function setActiveConversation(id: string | null): void {
-  if (activeConv && activeConv !== id) held.delete(activeConv);
-  activeConv = id;
+/** A Pane shows a conversation; call the returned function when it stops showing it. */
+export function showConversation(id: string): () => void {
+  onScreen.set(id, (onScreen.get(id) ?? 0) + 1);
+  return () => {
+    const n = (onScreen.get(id) ?? 1) - 1;
+    if (n > 0) onScreen.set(id, n);
+    else { onScreen.delete(id); held.delete(id); }
+  };
 }
 export function holdUnread(convId: string): void { held.add(convId); }
 let snapshot = { ...state };
@@ -302,12 +307,15 @@ function notifyIncoming(m: Message): void {
   const c = state.conversations.get(m.convId);
   const mentioned = m.mentions.includes(state.meId) || m.mentions.includes('all');
   if (c?.muted && !mentioned) return;
-  if (activeConv === m.convId && document.hasFocus()) return;
-  if (directory().find((u) => u.id === state.meId)?.availability === 'dnd') return; // do not disturb
+  if (onScreen.has(m.convId) && document.hasFocus()) return;
+  if (directory().find((u) => u.id === state.meId)?.availability === 'dnd') return; // no interruptions
   const users = new Map(directory().map((u) => [u.id, u] as const));
   const who = users.get(m.authorId)?.displayName ?? 'Someone';
-  const where = c?.kind === 'space' ? ` in ${c.name}` : c && c.members.length > 2 ? ' in a group' : '';
-  const title = mentioned ? `${who} mentioned you${where}` : m.parentId ? `${who} replied${where}` : `${who}${where}`;
+  // "@ you in P-12 Piping · Vikram", "Side-track in P-12 Piping · Vikram", "P-12 Piping · Vikram"
+  const where = c?.kind === 'space' ? c.name ?? 'a Space' : c && c.members.length > 2 ? 'a group' : '';
+  const title = mentioned ? `@ you${where ? ` in ${where}` : ''} · ${who}`
+    : m.parentId ? `Side-track${where ? ` in ${where}` : ''} · ${who}`
+      : where ? `${where} · ${who}` : who;
   const personal = mentioned || c?.kind === 'direct' || (!!m.parentId && state.timelines.get(tlKey(m.convId))?.messages.some((p) => p.id === m.parentId && p.authorId === state.meId));
   alertUser(personal ? 'personal' : 'message', title, plainPreview(m.body, users).slice(0, 200), `dexconnect://conversation/${m.convId}`);
 }

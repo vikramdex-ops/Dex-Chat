@@ -1,6 +1,6 @@
 // App frame in the "Drafting Table" design language (docs/DESIGN-LANGUAGE.md):
-// title bar with brand, lens bar, command button and your own tile; content below;
-// Preferences and the Control room slide in as sheets from the right.
+// title bar with brand, the Lens bar (ending in the GO TO field) and your own tile; content below;
+// Preferences and the Control room slide in as sheets from the right. Phones get a bottom lens strip.
 import { setAlertPrefs } from './alerts.ts';
 import { Pane } from './chat/Pane.tsx';
 import { setTimeFormat } from './time.ts';
@@ -22,6 +22,9 @@ import { SettingsView } from './views/Settings.tsx';
 import { ChatView } from './chat/ChatView.tsx';
 import { addConversation, chatState, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
+import type { Chip } from './chat/Switchboard.tsx';
+import { closePane, openInPane, panesNow } from './chat/panes.ts';
+import { CLOSE, LUNCH, endOfToday, hm, todayAt } from './chat/officeTime.ts';
 import { IncomingCall, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
 import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
@@ -100,21 +103,43 @@ export function App() {
   );
 }
 
+/** How you show to others. The stored values stay available / busy / dnd / invisible. */
 const AVAILABILITY: Array<{ id: Availability; label: string; hint: string }> = [
-  { id: 'available', label: 'Available', hint: 'Notifications on' },
-  { id: 'busy', label: 'Busy', hint: 'Shown as busy; notifications on' },
-  { id: 'dnd', label: 'Do not disturb', hint: 'No notifications or sounds' },
-  { id: 'invisible', label: 'Invisible', hint: 'Appear offline' },
+  { id: 'available', label: 'At my desk', hint: 'Notifications on' },
+  { id: 'busy', label: 'Heads-down', hint: 'Focused; notifications still on' },
+  { id: 'dnd', label: 'No interruptions', hint: 'No notifications or sounds' },
+  { id: 'invisible', label: 'Unlisted', hint: 'You appear offline' },
 ];
+
+/** How long a status lasts: till lunch, till the office closes, the rest of today, or until changed. */
+function statusDurations(now = new Date()): Array<{ label: string; until: number | null }> {
+  const out: Array<{ label: string; until: number | null }> = [];
+  const lunch = todayAt(LUNCH[0], LUNCH[1], now);
+  const close = todayAt(CLOSE[0], CLOSE[1], now);
+  if (now.getTime() < lunch - 10 * 60_000) out.push({ label: `Till lunch · ${hm(lunch)}`, until: lunch });
+  if (now.getTime() < close - 10 * 60_000) out.push({ label: `Till ${hm(close)}`, until: close });
+  out.push({ label: 'Rest of today', until: endOfToday(now) }, { label: 'Until I change it', until: null });
+  return out;
+}
 
 const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'pulse', label: 'Pulse', icon: 'pulse' },
-  { id: 'direct', label: 'Direct', icon: 'chat' },
+  { id: 'direct', label: 'Direct', icon: 'direct' },
   { id: 'spaces', label: 'Spaces', icon: 'grid' },
   { id: 'desk', label: 'Desk', icon: 'desk' },
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
-  { id: 'directory', label: 'Directory', icon: 'people' },
+  { id: 'directory', label: 'Directory', icon: 'card' },
 ];
+
+/** The phone's lens strip: at most five, with Direct and Spaces sharing one Switchboard. */
+const PHONE_LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
+  { id: 'pulse', label: 'Pulse', icon: 'pulse' },
+  { id: 'direct', label: 'Switchboard', icon: 'direct' },
+  { id: 'desk', label: 'Desk', icon: 'desk' },
+  { id: 'calendar', label: 'Calendar', icon: 'calendar' },
+  { id: 'directory', label: 'Directory', icon: 'card' },
+];
+const isTalk = (l: Lens) => l === 'direct' || l === 'spaces';
 
 /** Badges on lenses: amber count of mentions, teal dot for unread. */
 function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
@@ -133,30 +158,75 @@ function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
   return out;
 }
 
-function LensBar({ lens, setLens }: { lens: Lens; setLens: (l: Lens) => void }) {
-  const badges = useLensBadges();
-  const refs = useRef(new Map<Lens, HTMLButtonElement>());
-  const [bar, setBar] = useState({ left: 0, width: 0 });
+/** The teal underline that slides to the current lens. */
+function useInk(current: string): { refs: React.RefObject<Map<string, HTMLButtonElement>>; ink: { left: number; width: number } } {
+  const refs = useRef(new Map<string, HTMLButtonElement>());
+  const [ink, setInk] = useState({ left: 0, width: 0 });
   useLayoutEffect(() => {
-    const el = refs.current.get(lens);
-    if (el) setBar({ left: el.offsetLeft + 10, width: el.offsetWidth - 20 });
-  }, [lens]);
+    const place = () => { const el = refs.current.get(current); if (el) setInk({ left: el.offsetLeft + 10, width: el.offsetWidth - 20 }); };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [current]);
+  return { refs, ink };
+}
+
+function LensBar({ lens, setLens, onGoTo }: { lens: Lens; setLens: (l: Lens) => void; onGoTo: () => void }) {
+  const badges = useLensBadges();
+  const { refs, ink } = useInk(lens);
   return (
     <nav className="lens-bar" aria-label="Sections">
       {LENSES.map((l, i) => (
         <button key={l.id} ref={(el) => { if (el) refs.current.set(l.id, el); }} className="lens"
           aria-current={lens === l.id ? 'page' : undefined} title={`${l.label} (Ctrl+${i + 1})`} onClick={() => setLens(l.id)}>
-          <Icon name={l.icon} size={17} />{l.label}
-          {badges[l.id].mentions > 0 ? <span className="badge">{badges[l.id].mentions}</span> : badges[l.id].unread ? <span className="sb-dot" /> : null}
+          <Icon name={l.icon} size={17} /><span className="lens-label">{l.label}</span>
+          {badges[l.id].mentions > 0 ? <span className="badge">{badges[l.id].mentions}</span> : badges[l.id].unread ? <span className="lens-tick" aria-label="unread" /> : null}
         </button>
       ))}
-      <span className="lens-ink" style={{ transform: `translateX(${bar.left}px)`, width: bar.width }} />
+      <span className="lens-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />
+      <button className="goto" onClick={onGoTo} aria-label="Go to a person, conversation or command (Ctrl+G)" title="Go to a person, conversation or command">
+        <span className="goto-label">Go to</span><span className="goto-caret" aria-hidden="true">▸</span><span className="goto-hint">Ctrl G</span>
+      </button>
+    </nav>
+  );
+}
+
+/** Phones: a bottom strip of at most five lenses with the same sliding teal underline. */
+function LensStrip({ lens, setLens, onTalkAgain }: { lens: Lens; setLens: (l: Lens) => void; onTalkAgain: () => void }) {
+  const badges = useLensBadges();
+  const cur = isTalk(lens) ? 'direct' : lens;
+  const { refs, ink } = useInk(cur);
+  return (
+    <nav className="lens-dock" aria-label="Sections">
+      {PHONE_LENSES.map((l) => {
+        const b = l.id === 'direct' ? { mentions: badges.direct.mentions + badges.spaces.mentions, unread: badges.direct.unread || badges.spaces.unread } : badges[l.id];
+        return (
+          <button key={l.id} ref={(el) => { if (el) refs.current.set(l.id, el); }} className="lens" aria-current={cur === l.id ? 'page' : undefined}
+            onClick={() => { if (l.id === 'direct' && isTalk(lens)) onTalkAgain(); else setLens(l.id); }}>
+            <span className="lens-ico"><Icon name={l.icon} size={20} />{b.mentions > 0 ? <span className="badge">{b.mentions}</span> : b.unread ? <span className="lens-tick" /> : null}</span>
+            {l.label}
+          </button>
+        );
+      })}
+      <span className="lens-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />
     </nav>
   );
 }
 
 function Shell({ state, session }: { state: AppState; session: Session }) {
-  const [lens, setLens] = useState<Lens>('pulse');
+  const [lens, setLensRaw] = useState<Lens>('pulse');
+  // the Switchboard's lens chip follows the Direct and Spaces lenses, and they follow it
+  const [chip, setChipRaw] = useState<Chip>('all');
+  const setLens = (l: Lens) => {
+    setLensRaw(l);
+    if (l === 'direct') setChipRaw('people');
+    else if (l === 'spaces') setChipRaw((c) => (c === 'projects' ? c : 'spaces'));
+  };
+  const setChip = (c: Chip) => {
+    setChipRaw(c);
+    if (c === 'people') setLensRaw('direct');
+    else if (c === 'spaces' || c === 'projects') setLensRaw('spaces');
+  };
   const [sheet, setSheet] = useState<SheetName>(null);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
@@ -166,8 +236,6 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const [query, setQuery] = useState('');
   const [focusUser, setFocusUser] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
-  const [openDirect, setOpenDirect] = useState<string | null>(null);
-  const [openSpace, setOpenSpace] = useState<string | null>(null);
   const [share, setShare] = useState<ShareRequest | null>(null);
   const conversations = useChat((s) => s.conversations);
   const usersRef = useRef(session.users);
@@ -189,7 +257,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   }, [state.phase, session.me.id, session.deviceId]);
 
   const openConversation = (id: string, kind: 'direct' | 'space') => {
-    if (kind === 'space') { setOpenSpace(id); setLens('spaces'); } else { setOpenDirect(id); setLens('direct'); }
+    openInPane(id);
+    // stay on the Switchboard's current chip when it already shows this conversation
+    if (!isTalk(lens) || (chip !== 'all' && (kind === 'space') !== (chip !== 'people'))) setLens(kind === 'space' ? 'spaces' : 'direct');
     setSheet(null);
   };
   /** Open a conversation and scroll to (or open the side-track of) a message. */
@@ -211,7 +281,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     window.addEventListener('dex-search', onSearch);
     return () => window.removeEventListener('dex-search', onSearch);
   }, []);
-  // other parts of the app open a conversation by id (Reply privately, links)
+  // other parts of the app open a conversation by id (Take to Direct, links)
   useEffect(() => {
     const onOpen = (e: Event) => { const c = chatState().conversations.get(String((e as CustomEvent).detail)); if (c) openConversation(c.id, c.kind); };
     window.addEventListener('dex-open', onOpen);
@@ -231,7 +301,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   setPresenceSource(live ? session.online : [], session.away ?? [], session.users, session.inRoom ?? [], session.inMeeting ?? []);
   const toast = useToast();
   const setAvailability = (availability: Availability, until: number | null = null) => {
-    void window.dex.request('me.update', { availability, until }).then(() => toast(`You're now shown as ${AVAILABILITY.find((a) => a.id === availability)!.label.toLowerCase()}${until ? ` until ${new Date(until).toLocaleTimeString([], { ...timeOpts(), weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined, hour: 'numeric', minute: '2-digit' })}` : ''}`)).catch((e: Error) => toast(e.message, true));
+    void window.dex.request('me.update', { availability, until }).then(() => toast(`Shown as ${AVAILABILITY.find((a) => a.id === availability)!.label}${until ? ` till ${new Date(until).toLocaleTimeString([], { ...timeOpts(), weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined, hour: 'numeric', minute: '2-digit' })}` : ''}`)).catch((e: Error) => toast(e.message, true));
   };
   const [ooo, setOoo] = useState(false);
 
@@ -245,9 +315,10 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     return window.dex.onHubEvent((name) => { if (name === 'admin.pending' || name === 'device.updated') void refresh(); });
   }, [isAdmin, live]);
 
-  // keyboard: Ctrl+K command palette, Ctrl+1..n lenses, Ctrl+, preferences, Esc closes
+  // keyboard: Ctrl+G go to, Ctrl+1..n lenses, Ctrl+, preferences, Esc closes
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return; // the Dock and dialogs keep their own keys
       if (e.key === 'Escape') { setMenu(false); if (!palette) setSheet(null); }
       if (e.altKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const rows = [...document.querySelectorAll<HTMLButtonElement>('.sb-row')].filter((r) => r.offsetParent);
@@ -260,7 +331,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       }
       if (!e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      if (k === 'k') { e.preventDefault(); setPalette(true); }
+      if (k === 'g' && !e.shiftKey) { e.preventDefault(); setPalette(true); }
       else if (k === '=' || k === '+' || k === '-' || k === '0') {
         e.preventDefault();
         const sizes = [90, 100, 110, 125] as const;
@@ -270,15 +341,15 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       }
       else if (k === '/') { e.preventDefault(); setShortcuts(true); }
       else if (k === 'f' && e.shiftKey) { e.preventDefault(); openSearch({}); }
-      else if (k === 'm' && e.shiftKey) {
-        // mute or bring back notification sounds
+      else if (k === 'q' && e.shiftKey) {
+        // quiet or bring back notification sounds
         e.preventDefault();
         const cur = state.settings.sound;
         let back: MessageSound = 'chime';
         try { back = (localStorage.getItem('dex-sound-before-mute') as MessageSound | null) ?? 'chime'; } catch { /* storage off */ }
         if (cur !== 'none') { try { localStorage.setItem('dex-sound-before-mute', cur); } catch { /* storage off */ } }
         void window.dex.setSettings({ sound: cur === 'none' ? back : 'none' });
-        toast(cur === 'none' ? 'Notification sounds on' : 'Notification sounds off (Ctrl+Shift+M to turn back on)');
+        toast(cur === 'none' ? 'Sounds back on' : 'Sounds quiet · Ctrl+Shift+Q brings them back');
       }
       else if (k === ',') { e.preventDefault(); setSheet('preferences'); }
       else {
@@ -288,7 +359,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [palette, state.settings.sound]);
+  }, [palette, state.settings.sound, lens, chip]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // dexconnect://people/<id>, dexconnect://admin, dexconnect://settings
   // one of my devices was added with a pairing code: tell me, in case it was not me
@@ -333,30 +404,28 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
   const commands = useMemo(() => [
     ...[...conversations.values()].filter((c) => c.joined).map((c) => ({
-      id: `conv-${c.id}`, label: convTitle(c, users, session.me.id), icon: (c.kind === 'space' ? 'grid' : 'chat') as IconName,
+      id: `conv-${c.id}`, label: convTitle(c, users, session.me.id), icon: (c.kind === 'space' ? 'grid' : 'direct') as IconName,
       hint: c.kind === 'space' ? 'Space' : 'Direct', run: () => openConversation(c.id, c.kind),
     })),
     { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
     { id: 'search', label: 'Search messages and files', icon: 'search' as IconName, hint: 'Ctrl+Shift+F', run: () => openSearch({}) },
     { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'info' as IconName, hint: 'Ctrl+/', run: () => setShortcuts(true) },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
-    { id: 'go-desk', label: 'Go to Desk: reminders, saved, scheduled', icon: 'desk' as IconName, run: () => setLens('desk') },
+    { id: 'go-desk', label: 'Go to Desk: reminders, kept messages, sends waiting', icon: 'desk' as IconName, run: () => setLens('desk') },
     { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
-    { id: 'go-directory', label: 'Go to Directory', icon: 'people' as IconName, run: () => setLens('directory') },
+    { id: 'go-directory', label: 'Go to Directory', icon: 'card' as IconName, run: () => setLens('directory') },
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
     { id: 'updates', label: 'Check for updates', icon: 'refresh' as IconName, run: () => void window.dex.checkForUpdates() },
-  ], [isAdmin, conversations, users, session.me.id]);
+  ], [isAdmin, conversations, users, session.me.id, lens, chip]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="frame">
       <header className="titlebar">
         <div className="brand"><img src={logo} alt="" /><span>Dexterity Connect</span></div>
         <div className="titlebar-mid">
-          <LensBar lens={lens} setLens={(l) => { setLens(l); setSheet(null); }} />
-          <button className="cmd-btn" onClick={() => setPalette(true)} aria-label="Search and commands">
-            <Icon name="search" size={15} /><span>Search or jump to</span><span className="kbd">Ctrl K</span>
-          </button>
+          <LensBar lens={lens} setLens={(l) => { setLens(l); setSheet(null); }} onGoTo={() => setPalette(true)} />
+          <button className="goto goto-phone" onClick={() => setPalette(true)} aria-label="Go to a person, conversation or command"><span className="goto-label">Go to</span><span className="goto-caret" aria-hidden="true">▸</span></button>
         </div>
         <div className="titlebar-right">
           <UpdatePill state={state} />
@@ -366,7 +435,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
             {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
           </span>
           <div className="me-wrap">
-            <button className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You">
+            <button className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You: status, Preferences">
               <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} size="sm" />
               {isAdmin && pendingCount > 0 && <span className="badge me-badge">{pendingCount}</span>}
             </button>
@@ -383,19 +452,17 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 {AVAILABILITY.map((a) => (
                   <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => { setMenu(a.id !== 'available'); setAvailability(a.id); }}>
                     <span className={`avail-ring ${a.id}`} />
-                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Until ${new Date(session.me.availabilityUntil).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}` : a.hint}</span></span>
-                    {session.me.availability === a.id && <Icon name="check" size={15} />}
+                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Till ${new Date(session.me.availabilityUntil).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}` : a.hint}</span></span>
                   </button>
                 ))}
                 {session.me.availability !== 'available' && (
-                  <div className="avail-for">
-                    <span className="faint">For</span>
-                    {([[3600_000, '1 hour'], [2 * 3600_000, '2 hours'], [(() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime() - Date.now(); })(), 'Until tomorrow'], [0, 'Until I change it']] as Array<[number, string]>).map(([ms, label]) => (
-                      <button key={label} className="when-chip" onClick={() => { setMenu(false); setAvailability(session.me.availability, ms ? Date.now() + ms : null); }}>{label}</button>
+                  <div className="avail-for" role="group" aria-label="How long">
+                    {statusDurations().map((d) => (
+                      <button key={d.label} className="when-chip" onClick={() => { setMenu(false); setAvailability(session.me.availability, d.until); }}>{d.label}</button>
                     ))}
                   </div>
                 )}
-                <button role="menuitem" disabled={!live} onClick={() => { setMenu(false); setOoo(true); }}><Icon name="calendar" size={16} />{session.me.ooo ? `Out of office until ${new Date(session.me.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Out of office…'}</button>
+                <button role="menuitem" disabled={!live} onClick={() => { setMenu(false); setOoo(true); }}><Icon name="calendar" size={16} />{session.me.ooo ? `Away from the office until ${new Date(session.me.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Away from the office…'}</button>
                 <div className="menu-sep" />
                 <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences<span className="kbd">Ctrl ,</span></button>
                 <button role="menuitem" onClick={() => { setShortcuts(true); setMenu(false); }}><Icon name="info" size={16} />Keyboard shortcuts<span className="kbd">Ctrl /</span></button>
@@ -411,26 +478,17 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       </header>
 
-      <main className={`stage${lens === 'direct' || lens === 'spaces' ? ' flush' : ''}`}>
+      <main className={`stage${isTalk(lens) ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
         {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} onPerson={(id) => { setLens('directory'); setFocusUser(id); }} />}
-        {lens === 'direct' && <ChatView kind="direct" state={state} session={session} openId={openDirect} setOpenId={setOpenDirect} />}
-        {lens === 'spaces' && <ChatView kind="space" state={state} session={session} openId={openSpace} setOpenId={setOpenSpace} />}
+        {isTalk(lens) && <ChatView chip={chip} setChip={setChip} state={state} session={session} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}
         {lens === 'calendar' && <CalendarView session={session} openConv={(id) => jump(id)} />}
         {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} onMessage={(id) => void messagePerson(id)} />}
       </main>
 
-      <nav className="lens-dock" aria-label="Sections">
-        {LENSES.map((l) => (
-          <button key={l.id} className="lens" aria-current={lens === l.id ? 'page' : undefined} onClick={() => { setLens(l.id); setSheet(null); }}>
-            <Icon name={l.icon} size={20} />{l.label}
-          </button>
-        ))}
-        <button className="lens" aria-current={sheet === 'preferences' ? 'page' : undefined} onClick={() => setSheet('preferences')}>
-          <Icon name="settings" size={20} />Preferences
-        </button>
-      </nav>
+      <LensStrip lens={lens} setLens={(l) => { if (l === 'direct') setLensRaw(chip === 'spaces' || chip === 'projects' ? 'spaces' : 'direct'); else setLens(l); setSheet(null); }}
+        onTalkAgain={() => { setSheet(null); if (panesNow().ids.length) closePane(panesNow().focus); }} />
 
       {sheet && (
         <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
@@ -486,9 +544,9 @@ function OutOfOffice({ session, onClose }: { session: Session; onClose: () => vo
   const [message, setMessage] = useState(cur?.message ?? '');
   const [delegate, setDelegate] = useState(cur?.delegateId ?? '');
   const save = (off = false) => void window.dex.request('me.update', { ooo: off ? null : { until: new Date(`${until}T23:59:00`).getTime(), message: message || null, delegateId: delegate || null } })
-    .then(() => { toast(off ? 'Welcome back' : 'Out of office is on'); onClose(); }).catch((e: Error) => toast(e.message, true));
+    .then(() => { toast(off ? 'Welcome back' : 'Away from the office is on'); onClose(); }).catch((e: Error) => toast(e.message, true));
   return (
-    <Dialog title="Out of office" onClose={onClose} narrow>
+    <Dialog title="Away from the office" onClose={onClose} narrow>
       <p className="muted" style={{ margin: 0 }}>Colleagues see this on your profile and when they message you directly.</p>
       <div className="field"><label htmlFor="ooo-until">Back on</label><input id="ooo-until" className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={until} onChange={(e) => setUntil(e.target.value)} /></div>
       <div className="field"><label htmlFor="ooo-msg">Note</label><input id="ooo-msg" className="input" maxLength={300} placeholder="At the Jamnagar site, checking messages in the evening" value={message} onChange={(e) => setMessage(e.target.value)} /></div>

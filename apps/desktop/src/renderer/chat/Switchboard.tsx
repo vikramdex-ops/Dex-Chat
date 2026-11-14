@@ -1,11 +1,31 @@
-// The Switchboard: one list of conversations for the current lens, newest activity first.
-// Unread = bold name + a teal tick on the left edge; only mentions get an (amber) count.
-import { useEffect, useMemo, useRef, useState } from 'react';
+// The Switchboard: one panel for every conversation, shared by Direct and Spaces and narrowed by
+// lens chips (People · Spaces · Projects). While a Pane is open it folds to a 56 px strip of tiles.
+// Unread = bold name + a teal tick on the left edge; only callouts to you get an (amber) count.
+import { useMemo, useRef, useState } from 'react';
 import type { Conversation, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from '../ui.tsx';
+import type { IconName } from '../ui.tsx';
 import { plainPreview } from './format.tsx';
 import { useChat } from './store.ts';
 import { timeOpts } from '../time.ts';
+import { CONV_DRAG, openBeside, openInPane, usePanes } from './panes.ts';
+import { CLOSE, LUNCH, endOfToday, hm, nextMonday, todayAt } from './officeTime.ts';
+
+export type Chip = 'all' | 'people' | 'spaces' | 'projects';
+export const CHIPS: Array<{ id: Chip; label: string; icon: IconName }> = [
+  { id: 'all', label: 'All', icon: 'rows' },
+  { id: 'people', label: 'People', icon: 'direct' },
+  { id: 'spaces', label: 'Spaces', icon: 'grid' },
+  { id: 'projects', label: 'Projects', icon: 'drawing' },
+];
+
+/** A Space named after a job: a job number such as P-12, P-12513 or J4410 in its name or topic. */
+export function isProject(c: Conversation): boolean {
+  return c.kind === 'space' && /\b[A-Z]{1,3}-?\d{2,6}\b/.test(`${c.name ?? ''} ${c.topic ?? ''}`);
+}
+
+const inChip = (c: Conversation, chip: Chip) =>
+  chip === 'all' || (chip === 'people' ? c.kind === 'direct' : chip === 'spaces' ? c.kind === 'space' : isProject(c));
 
 export function convTitle(c: Conversation, users: Map<string, PublicUser>, meId: string): string {
   if (c.kind === 'space') return c.name ?? 'Space';
@@ -15,7 +35,7 @@ export function convTitle(c: Conversation, users: Map<string, PublicUser>, meId:
   return `${others.slice(0, 2).join(', ')} and ${others.length - 2} others`;
 }
 
-export function ConvTile({ c, users, meId, online, size }: { c: Conversation; users: Map<string, PublicUser>; meId: string; online: Set<string>; size?: 'sm' | 'lg' }) {
+export function ConvTile({ c, users, meId, size }: { c: Conversation; users: Map<string, PublicUser>; meId: string; online?: Set<string>; size?: 'sm' | 'lg' }) {
   if (c.kind === 'space') {
     return (
       <span className={`avatar space-tile${size ? ` ${size}` : ''}`} style={{ background: colorFor(c.id) }} aria-hidden="true">
@@ -28,9 +48,10 @@ export function ConvTile({ c, users, meId, online, size }: { c: Conversation; us
     const u = users.get(others[0]);
     return <Avatar user={{ id: others[0], displayName: u?.displayName ?? '?' }} presence={presenceFor(others[0])} size={size} />;
   }
+  // a small group: a stack of sheets with the head count on the top one
   return (
-    <span className={`group-tile${size ? ` ${size}` : ''}`} aria-hidden="true">
-      {others.slice(0, 2).map((id) => <Avatar key={id} user={{ id, displayName: users.get(id)?.displayName ?? '?' }} size="sm" />)}
+    <span className={`avatar group-tile${size ? ` ${size}` : ''}`} style={{ background: colorFor(others[0] ?? c.id) }} aria-hidden="true">
+      {initials(users.get(others[0])?.displayName ?? '?').slice(0, 1)}<small>{c.members.length}</small>
     </span>
   );
 }
@@ -43,6 +64,24 @@ export function shortTime(ts: number, now = Date.now()): string {
   if (days === 1) return 'Yesterday';
   if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+/** Hush choices: till lunch, till the office closes, until Monday, until unhushed. */
+export function hushChoices(now = new Date()): Array<{ label: string; until: number | null; note: string }> {
+  const out: Array<{ label: string; until: number | null; note: string }> = [];
+  const lunch = todayAt(LUNCH[0], LUNCH[1], now);
+  const close = todayAt(CLOSE[0], CLOSE[1], now);
+  if (now.getTime() < lunch - 10 * 60_000) out.push({ label: 'Till lunch', until: lunch, note: hm(lunch) });
+  out.push(now.getTime() < close - 10 * 60_000 ? { label: 'Till end of day', until: close, note: hm(close) } : { label: 'Till end of day', until: endOfToday(now), note: 'midnight' });
+  out.push({ label: 'Until Monday', until: nextMonday(now), note: new Date(nextMonday(now)).toLocaleDateString([], { day: 'numeric', month: 'short' }) });
+  out.push({ label: 'Until I unmute', until: null, note: '' });
+  return out;
+}
+
+export function hushToast(until: number | null): string {
+  if (until === null) return 'Hushed. Callouts to you still come through.';
+  const d = new Date(until);
+  return d.toDateString() === new Date().toDateString() ? `Hushed till ${hm(until)}` : `Hushed until ${d.toLocaleDateString([], { weekday: 'long' })}`;
 }
 
 /** The conversation list's width: dragged by its edge, kept on this device. */
@@ -70,166 +109,217 @@ function startResize(e: React.PointerEvent<HTMLDivElement>): void {
   el.addEventListener('pointerup', up, { once: true });
 }
 
-export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew, onBrowse }: {
-  kind: 'direct' | 'space';
+type Sort = 'recent' | 'unread' | 'name';
+
+export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onNew, onBrowse }: {
+  chip: Chip;
+  setChip: (c: Chip) => void;
   users: Map<string, PublicUser>;
   meId: string;
-  online: Set<string>;
-  activeId: string | null;
-  onOpen: (id: string) => void;
+  /** Folded to the 56 px tile strip. */
+  folded: boolean;
+  /** Folding by hand (null while nothing is open: the full list shows anyway). */
+  setFolded: ((v: boolean) => void) | null;
   onNew?: () => void;
   onBrowse?: () => void;
 }) {
   const conversations = useChat((s) => s.conversations);
   const ready = useChat((s) => s.ready);
+  const panes = usePanes();
+  const focusId = panes.ids[panes.focus] ?? null;
   const [filter, setFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   // how the list is ordered and narrowed (kept per device)
-  const [sort, setSort] = useState<'recent' | 'unread' | 'name'>(() => { try { return (localStorage.getItem('dex-sb-sort') as 'recent' | 'unread' | 'name' | null) ?? 'recent'; } catch { return 'recent'; } });
+  const [sort, setSort] = useState<Sort>(() => { try { return (localStorage.getItem('dex-sb-sort') as Sort | null) ?? 'recent'; } catch { return 'recent'; } });
   const [only, setOnly] = useState<'all' | 'unread'>('all');
   const [sortMenu, setSortMenu] = useState(false);
   const sortBtn = useRef<HTMLButtonElement>(null);
-  const chooseSort = (v: 'recent' | 'unread' | 'name') => { setSort(v); setSortMenu(false); try { localStorage.setItem('dex-sb-sort', v); } catch { /* storage off */ } };
+  const chooseSort = (v: Sort) => { setSort(v); setSortMenu(false); try { localStorage.setItem('dex-sb-sort', v); } catch { /* storage off */ } };
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
 
   const all = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return [...conversations.values()]
-      .filter((c) => c.kind === kind && c.joined)
+      .filter((c) => c.joined && inChip(c, chip))
       .filter((c) => !q || convTitle(c, users, meId).toLowerCase().includes(q) || (c.topic ?? '').toLowerCase().includes(q))
-      .filter((c) => only === 'all' || c.unread > 0 || c.mentions > 0 || c.id === activeId)
+      .filter((c) => only === 'all' || c.unread > 0 || c.mentions > 0 || c.id === focusId)
       .sort((a, b) => {
         if (a.everyone !== b.everyone) return a.everyone ? -1 : 1; // the Office space stays on top
         if (sort === 'name') return convTitle(a, users, meId).localeCompare(convTitle(b, users, meId));
         if (sort === 'unread') { const d = Number(b.mentions > 0) - Number(a.mentions > 0) || Number(b.unread > 0) - Number(a.unread > 0); if (d) return d; }
         return (b.lastMessage?.createdAt ?? b.createdAt) - (a.lastMessage?.createdAt ?? a.createdAt);
       });
-  }, [conversations, kind, filter, users, meId, sort, only, activeId]);
+  }, [conversations, chip, filter, users, meId, sort, only, focusId]);
   const archived = all.filter((c) => c.archived);
   const live = all.filter((c) => !c.archived);
-  // pinned first, then each person's own sections, then the rest
+  // kept on top first, then each person's own drawers, then projects, Spaces and people
   const groups = useMemo(() => {
-    const pinned = live.filter((c) => c.pinnedAt).sort((a, b) => (a.pinnedAt ?? 0) - (b.pinnedAt ?? 0));
-    const sections = new Map<string, Conversation[]>();
-    for (const c of live) if (!c.pinnedAt && c.section) sections.set(c.section, [...(sections.get(c.section) ?? []), c]);
+    const top = live.filter((c) => c.pinnedAt).sort((a, b) => (a.pinnedAt ?? 0) - (b.pinnedAt ?? 0));
+    const drawers = new Map<string, Conversation[]>();
+    for (const c of live) if (!c.pinnedAt && c.section) drawers.set(c.section, [...(drawers.get(c.section) ?? []), c]);
     const rest = live.filter((c) => !c.pinnedAt && !c.section);
-    const out: Array<{ title: string | null; items: Conversation[] }> = [];
-    if (pinned.length) out.push({ title: 'Pinned', items: pinned });
-    for (const [title, items] of [...sections].sort((a, b) => a[0].localeCompare(b[0]))) out.push({ title, items });
-    if (rest.length) out.push({ title: out.length ? (kind === 'space' ? 'Spaces' : 'Conversations') : null, items: rest });
+    const out: Array<{ title: string; items: Conversation[] }> = [];
+    if (top.length) out.push({ title: 'Kept on top', items: top });
+    for (const [title, items] of [...drawers].sort((a, b) => a[0].localeCompare(b[0]))) out.push({ title, items });
+    if (chip === 'all') {
+      const projects = rest.filter(isProject);
+      const spaces = rest.filter((c) => c.kind === 'space' && !isProject(c));
+      const people = rest.filter((c) => c.kind === 'direct');
+      if (projects.length) out.push({ title: 'Projects', items: projects });
+      if (spaces.length) out.push({ title: 'Spaces', items: spaces });
+      if (people.length) out.push({ title: 'People', items: people });
+    } else if (rest.length) out.push({ title: CHIPS.find((x) => x.id === chip)!.label, items: rest });
     return out;
-  }, [live, kind]);
-  const mySections = useMemo(() => [...new Set([...conversations.values()].map((c) => c.section).filter((x): x is string => !!x))].sort(), [conversations]);
+  }, [live, chip]);
+  const myDrawers = useMemo(() => [...new Set([...conversations.values()].map((c) => c.section).filter((x): x is string => !!x))].sort(), [conversations]);
+  const chipAttention = useMemo(() => {
+    const out: Record<Chip, boolean> = { all: false, people: false, spaces: false, projects: false };
+    for (const c of conversations.values()) {
+      if (!c.joined || c.muted && !c.mentions) continue;
+      const needs = c.mentions > 0 || (c.kind === 'direct' && c.unread > 0);
+      if (!needs) continue;
+      for (const k of ['people', 'spaces', 'projects'] as Chip[]) if (inChip(c, k)) out[k] = true;
+    }
+    return out;
+  }, [conversations]);
 
   const row = (c: Conversation) => {
     const title = convTitle(c, users, meId);
     const last = c.lastMessage;
     const who = last ? (last.authorId === meId ? 'You' : users.get(last.authorId)?.displayName.split(' ')[0] ?? '') : '';
     const preview = last ? `${c.kind === 'space' || c.members.length > 2 || last.authorId === meId ? `${who}: ` : ''}${last.body ? plainPreview(last.body, users) : 'Message deleted'}` : (c.topic ?? 'No messages yet');
+    const at = panes.ids.indexOf(c.id);
+    const state = c.id === focusId ? ' active' : at >= 0 ? ' open' : '';
     return (
       <div key={c.id} className="sb-row-wrap">
-        <button role="listitem" className={`sb-row${c.id === activeId ? ' active' : ''}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
-          onClick={() => onOpen(c.id)} aria-current={c.id === activeId ? 'true' : undefined}
+        <button role="listitem" className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
+          draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
+          onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
+          aria-current={c.id === focusId ? 'true' : undefined}
+          title={folded ? `${title}${c.mentions ? ` · ${c.mentions} for you` : c.unread ? ' · unread' : ''}\nCtrl+click or drag to lay it beside` : 'Ctrl+click or drag to lay it beside'}
           onContextMenu={(e) => { e.preventDefault(); setMenu({ id: c.id, anchor: e.currentTarget }); }}>
-          <ConvTile c={c} users={users} meId={meId} online={online} />
+          <ConvTile c={c} users={users} meId={meId} />
           <span className="sb-main">
             <span className="sb-title">
               <span className="sb-name">{title}</span>
               {c.private && c.kind === 'space' && <Icon name="lock" size={12} />}
               {c.muted && <Icon name="mute" size={12} />}
             </span>
-            <span className="sb-preview">{preview}</span>
+            <span className="sb-preview">{last && <span className="sb-time">{shortTime(last.createdAt)}</span>}{preview}</span>
           </span>
-          <span className="sb-meta">
-            <span className="sb-time">{last ? shortTime(last.createdAt) : ''}</span>
-            {c.mentions > 0 ? <span className="badge">{c.mentions}</span> : c.unread > 0 && !c.muted ? <span className="sb-dot" aria-label={`${c.unread} unread`} /> : c.pinnedAt ? <Icon name="pin" size={11} className="sb-pin" /> : null}
-          </span>
+          {c.mentions > 0 ? <span className="badge" aria-label={`${c.mentions} for you`}>{c.mentions}</span> : c.pinnedAt && !folded ? <Icon name="pin" size={11} className="sb-pin" /> : null}
         </button>
-        <button className="icon-btn sb-more" aria-label={`Options for ${title}`} onClick={(e) => setMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="more" size={15} /></button>
+        {!folded && <button className="sb-more" aria-label={`Options for ${title}`} title="Options" onClick={(e) => setMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="chevron" size={14} /></button>}
       </div>
     );
   };
 
+  const label = CHIPS.find((x) => x.id === chip)!.label;
   return (
-    <aside className="switchboard" aria-label={kind === 'space' ? 'Spaces' : 'Direct conversations'}>
-      <div className="sb-resize" role="separator" aria-orientation="vertical" aria-label="Resize the list" title="Drag to resize" onPointerDown={startResize} />
+    <aside className={`switchboard${folded ? ' folded' : ''}`} aria-label="Switchboard">
+      {!folded && <div className="sb-resize" role="separator" aria-orientation="vertical" aria-label="Resize the Switchboard" title="Drag to resize" onPointerDown={startResize} />}
       <div className="sb-head">
-        <span className="label">{kind === 'space' ? 'Spaces' : 'Direct'} · {live.length}</span>
-        <div className="row-actions">
-          {onBrowse && <button className="icon-btn" title="Find Spaces to join" onClick={onBrowse}><Icon name="search" size={16} /></button>}
-          {onNew && <button className="icon-btn accent" title={kind === 'space' ? 'New Space' : 'New Direct conversation'} onClick={onNew}><Icon name="plus" size={16} /></button>}
-        </div>
-      </div>
-      <div className="sb-filter">
-        <input className="input" placeholder={kind === 'space' ? 'Filter Spaces' : 'Filter people'} value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter conversations" />
-        <button className={`icon-btn sb-only${only === 'unread' ? ' on' : ''}`} title={only === 'unread' ? 'Show all' : 'Show unread only'} aria-pressed={only === 'unread'} onClick={() => setOnly(only === 'unread' ? 'all' : 'unread')}><Icon name="bell" size={15} /></button>
-        <button ref={sortBtn} className="icon-btn" title="Sort" aria-haspopup="menu" onClick={() => setSortMenu(!sortMenu)}><Icon name="rows" size={15} /></button>
-        {sortMenu && (
-          <Popover anchor={sortBtn.current} onClose={() => setSortMenu(false)} className="menu">
-            <div className="menu-label">Sort by</div>
-            {([['recent', 'Latest message'], ['unread', 'Unread first'], ['name', 'Name']] as const).map(([v, l]) => (
-              <button key={v} role="menuitemradio" aria-checked={sort === v} onClick={() => chooseSort(v)}>{sort === v ? <Icon name="check" size={15} /> : <span style={{ width: 15 }} />}{l}</button>
-            ))}
-          </Popover>
+        {setFolded && (
+          <button className="icon-btn sb-fold" title={folded ? 'Open the Switchboard' : 'Fold the Switchboard to tiles'} aria-expanded={!folded} onClick={() => setFolded(!folded)}>
+            <Icon name="back" size={16} />
+          </button>
         )}
+        {!folded && <span className="label">Switchboard <span className="mono">· {live.length}</span></span>}
+        <span className="sb-head-tools">
+          {!folded && onBrowse && <button className="icon-btn" title="Find Spaces to join" onClick={onBrowse}><Icon name="search" size={16} /></button>}
+          {onNew && <button className="icon-btn accent" title={chip === 'people' ? 'New Direct conversation' : chip === 'all' ? 'New conversation or Space' : 'New Space'} onClick={onNew}><Icon name="plus" size={16} /></button>}
+        </span>
       </div>
+      {!folded && (
+        <>
+          <div className="sb-lenses" role="group" aria-label="Show">
+            {CHIPS.map((x) => (
+              <button key={x.id} aria-pressed={chip === x.id} onClick={() => setChip(x.id)}>
+                {x.label}{chipAttention[x.id] && chip !== x.id && <i className="sb-lens-dot" aria-label="needs you" />}
+              </button>
+            ))}
+          </div>
+          <div className="sb-filter">
+            <input className="input" placeholder={`Filter ${label === 'All' ? 'everything' : label.toLowerCase()}`} value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter conversations" />
+            <button className={`icon-btn sb-only${only === 'unread' ? ' on' : ''}`} title={only === 'unread' ? 'Show all' : 'Show unread only'} aria-pressed={only === 'unread'} onClick={() => setOnly(only === 'unread' ? 'all' : 'unread')}><Icon name="unread" size={15} /></button>
+            <button ref={sortBtn} className="icon-btn" title="Sort" aria-haspopup="menu" onClick={() => setSortMenu(!sortMenu)}><Icon name="rows" size={15} /></button>
+            {sortMenu && (
+              <Popover anchor={sortBtn.current} onClose={() => setSortMenu(false)} className="menu">
+                <div className="menu-label label">Sort by</div>
+                {([['recent', 'Latest message'], ['unread', 'Unread first'], ['name', 'Name']] as const).map(([v, l]) => (
+                  <button key={v} role="menuitemradio" aria-checked={sort === v} onClick={() => chooseSort(v)}>{sort === v ? <Icon name="check" size={15} /> : <span style={{ width: 15 }} />}{l}</button>
+                ))}
+              </Popover>
+            )}
+          </div>
+        </>
+      )}
       <div className="sb-list" role="list">
         {!ready && <div className="sb-empty"><span className="spinner" /></div>}
-        {ready && live.length === 0 && (
+        {ready && live.length === 0 && !folded && (
           <div className="sb-empty">
-            <span>{filter ? 'Nothing matches.' : only === 'unread' ? 'Nothing unread.' : kind === 'space' ? 'No Spaces yet.' : 'No Direct conversations yet.'}</span>
-            {!filter && onNew && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{kind === 'space' ? 'Create a Space' : 'Message someone'}</button>}
+            <span>{filter ? 'Nothing matches.' : only === 'unread' ? 'Nothing unread.' : chip === 'spaces' ? 'No Spaces yet.' : chip === 'projects' ? 'No project Spaces yet. Name a Space after its job number, such as P-12513.' : chip === 'people' ? 'No Direct conversations yet.' : 'Nothing here yet.'}</span>
+            {!filter && onNew && chip !== 'projects' && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{chip === 'spaces' ? 'Create a Space' : 'Write to someone'}</button>}
           </div>
         )}
         {groups.map((g) => (
-          <div key={g.title ?? 'all'} className="sb-group">
-            {g.title && <div className="sb-group-title label">{g.title}</div>}
+          <div key={g.title} className="sb-group">
+            <div className="sb-group-title label">{g.title}</div>
             {g.items.map(row)}
           </div>
         ))}
-        {archived.length > 0 && (
+        {archived.length > 0 && !folded && (
           <div className="sb-group">
             <button className="sb-group-title label link" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Hide' : 'Show'} archived · {archived.length}</button>
             {showArchived && archived.map(row)}
           </div>
         )}
       </div>
-      {menu && conversations.get(menu.id) && <ConvMenu c={conversations.get(menu.id)!} anchor={menu.anchor} sections={mySections} onClose={() => setMenu(null)} />}
+      {menu && conversations.get(menu.id) && <ConvMenu c={conversations.get(menu.id)!} anchor={menu.anchor} drawers={myDrawers} onClose={() => setMenu(null)} />}
     </aside>
   );
 }
 
-function ConvMenu({ c, anchor, sections, onClose }: { c: Conversation; anchor: HTMLElement; sections: string[]; onClose: () => void }) {
+function ConvMenu({ c, anchor, drawers, onClose }: { c: Conversation; anchor: HTMLElement; drawers: string[]; onClose: () => void }) {
   const toast = useToast();
   const [naming, setNaming] = useState<string | null>(null);
   const run = (p: Promise<unknown>, ok?: string) => { onClose(); void p.then(() => ok && toast(ok)).catch((e: Error) => toast(e.message, true)); };
   const organise = (patch: { pinned?: boolean; section?: string | null }, ok: string) => run(window.dex.request('conv.organise', { convId: c.id, ...patch }), ok);
-  const mute = (ms: number | null, label: string) => run(window.dex.request('conv.mute', { convId: c.id, muted: true, until: ms === null ? null : Date.now() + ms }), label);
-  const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime() - Date.now(); };
   return (
     <Popover anchor={anchor} onClose={onClose} className="menu conv-menu">
-      <button role="menuitem" onClick={() => organise({ pinned: !c.pinnedAt }, c.pinnedAt ? 'Unpinned' : 'Pinned to the top')}><Icon name="pin" size={16} />{c.pinnedAt ? 'Unpin' : 'Pin to the top'}</button>
-      <div className="menu-label label">Section</div>
-      {sections.filter((x) => x !== c.section).map((x) => <button key={x} role="menuitem" onClick={() => organise({ section: x }, `Moved to ${x}`)}><Icon name="list" size={16} />{x}</button>)}
+      <button role="menuitem" onClick={() => { onClose(); openBeside(c.id); }}><Icon name="beside" size={16} />Lay it beside<span className="kbd">Ctrl click</span></button>
+      <button role="menuitem" onClick={() => organise({ pinned: !c.pinnedAt }, c.pinnedAt ? 'Taken off the top' : 'Kept on top')}><Icon name="pin" size={16} />{c.pinnedAt ? 'Take off the top' : 'Keep on top'}</button>
+      <div className="menu-label label">Drawer</div>
+      {drawers.filter((x) => x !== c.section).map((x) => <button key={x} role="menuitem" onClick={() => organise({ section: x }, `Put in ${x}`)}><Icon name="drawer" size={16} />{x}</button>)}
       {naming === null
-        ? <button role="menuitem" onClick={() => setNaming('')}><Icon name="plus" size={16} />New section…</button>
+        ? <button role="menuitem" onClick={() => setNaming('')}><Icon name="plus" size={16} />New drawer…</button>
         : (
-          <form className="menu-input" onSubmit={(e) => { e.preventDefault(); if (naming.trim()) organise({ section: naming.trim() }, `Moved to ${naming.trim()}`); }}>
-            <input className="input" autoFocus maxLength={40} placeholder="Projects, Clients…" aria-label="Section name" value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setNaming(null); } }} />
+          <form className="menu-input" onSubmit={(e) => { e.preventDefault(); if (naming.trim()) organise({ section: naming.trim() }, `Put in ${naming.trim()}`); }}>
+            <input className="input" autoFocus maxLength={40} placeholder="Clients, Bids…" aria-label="Drawer name" value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setNaming(null); } }} />
             <button className="btn primary sm" disabled={!naming.trim()}>Add</button>
           </form>
         )}
-      {c.section && <button role="menuitem" onClick={() => organise({ section: null }, 'Removed from the section')}><Icon name="x" size={16} />Remove from {c.section}</button>}
-      <div className="menu-sep" />
-      {c.muted
-        ? <button role="menuitem" onClick={() => run(window.dex.request('conv.mute', { convId: c.id, muted: false }), 'Notifications on')}><Icon name="bell" size={16} />Unmute{c.mutedUntil ? ` (muted until ${new Date(c.mutedUntil).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })})` : ''}</button>
-        : <>
-            <div className="menu-label label">Mute</div>
-            <button role="menuitem" onClick={() => mute(3600_000, 'Muted for an hour')}><Icon name="mute" size={16} />For 1 hour</button>
-            <button role="menuitem" onClick={() => mute(8 * 3600_000, 'Muted for 8 hours')}><Icon name="mute" size={16} />For 8 hours</button>
-            <button role="menuitem" onClick={() => mute(tomorrow(), 'Muted until tomorrow morning')}><Icon name="mute" size={16} />Until tomorrow</button>
-            <button role="menuitem" onClick={() => mute(null, 'Muted. You will still hear about mentions.')}><Icon name="mute" size={16} />Until I unmute</button>
-          </>}
+      {c.section && <button role="menuitem" onClick={() => organise({ section: null }, `Taken out of ${c.section}`)}><Icon name="x" size={16} />Take out of {c.section}</button>}
+      <HushItems c={c} onDone={onClose} />
     </Popover>
+  );
+}
+
+/** The Hush part of a menu: quiet a conversation for a while, or bring it back. */
+export function HushItems({ c, onDone }: { c: Conversation; onDone: () => void }) {
+  const toast = useToast();
+  const mute = (muted: boolean, until: number | null, ok: string) => {
+    onDone();
+    void window.dex.request('conv.mute', { convId: c.id, muted, until: muted ? until : null }).then(() => toast(ok)).catch((e: Error) => toast(e.message, true));
+  };
+  return (
+    <>
+      <div className="menu-label label">Hush</div>
+      {c.muted
+        ? <button role="menuitem" onClick={() => mute(false, null, 'Unhushed')}><Icon name="bell" size={16} />Unhush{c.mutedUntil ? <span className="menu-note mono">till {hm(c.mutedUntil)}</span> : null}</button>
+        : hushChoices().map((h) => (
+          <button key={h.label} role="menuitem" onClick={() => mute(true, h.until, hushToast(h.until))}><Icon name="mute" size={16} />{h.label}{h.note && <span className="menu-note mono">{h.note}</span>}</button>
+        ))}
+    </>
   );
 }
