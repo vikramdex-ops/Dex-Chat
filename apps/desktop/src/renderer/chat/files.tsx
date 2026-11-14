@@ -96,7 +96,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
         return (
           <div key={f.id} className="file-card">
             <span className="file-ico" data-kind={k.icon}><Icon name={k.icon} size={18} /><span>{k.label}</span></span>
-            <span className="sb-main"><span className="sb-name" title={f.name}>{f.name}</span><span className="sb-preview">{formatSize(f.size)}</span></span>
+            <span className="sb-main"><span className="sb-name" title={f.name} translate="no">{f.name}</span><span className="sb-preview">{formatSize(f.size)}</span></span>
             <FileActions f={f} />
           </div>
         );
@@ -120,7 +120,7 @@ export function Lightbox({ file, all, onClose }: { file: FileInfo; all: FileInfo
   return createPortal(
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={f.name} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <header>
-        <span className="sb-name">{f.name}</span><span className="faint">{formatSize(f.size)}{all.length > 1 ? ` · ${i + 1} of ${all.length}` : ''}</span>
+        <span className="sb-name" translate="no">{f.name}</span><span className="faint">{formatSize(f.size)}{all.length > 1 ? ` · ${i + 1} of ${all.length}` : ''}</span>
         <span style={{ flex: 1 }} />
         <FileActions f={f} />
         <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
@@ -190,7 +190,7 @@ export function AttachmentTray({ items, onRemove }: { items: Attachment[]; onRem
           <div key={a.key} className={`attach-chip${a.error ? ' failed' : a.info ? ' done' : ''}`} title={a.error ?? a.name}>
             {a.preview ? <img src={a.preview} alt="" /> : <span className="file-ico small"><Icon name={kind(a).icon} size={14} /></span>}
             <span className="sb-main">
-              <span className="sb-name">{a.name}</span>
+              <span className="sb-name" translate="no">{a.name}</span>
               <span className="sb-preview">{a.error ? a.error : a.info ? formatSize(a.size) : `${pct}% of ${formatSize(a.size)}`}</span>
             </span>
             {!a.info && !a.error && <span className="chip-bar"><span style={{ width: `${pct}%` }} /></span>}
@@ -218,7 +218,7 @@ export function FilesPanel({ convId, onView, onClose }: { convId: string; onView
         {(list ?? []).filter((f) => !isImage(f) || !filesSupported()).map((f) => (
           <div key={`${f.messageId}-${f.id}`} className="file-card compact">
             <span className="file-ico"><Icon name={kind(f).icon} size={16} /></span>
-            <span className="sb-main"><span className="sb-name" title={f.name}>{f.name}</span><span className="sb-preview">{formatSize(f.size)} · {new Date(f.createdAt).toLocaleDateString()}</span></span>
+            <span className="sb-main"><span className="sb-name" title={f.name} translate="no">{f.name}</span><span className="sb-preview">{formatSize(f.size)} · {new Date(f.createdAt).toLocaleDateString()}</span></span>
             <FileActions f={f} />
           </div>
         ))}

@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 // A small syntax highlighter for code blocks: comments, strings, numbers and keywords for the
 // languages an engineering office pastes most (JS/TS, Python, SQL, C#/Java/C, PowerShell/shell,
 // JSON, XML). Kept tiny and offline; unknown languages are shown plain.

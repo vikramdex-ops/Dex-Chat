@@ -9,11 +9,15 @@ import { YourDevices } from './Pairing.tsx';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
+import { setMsgLayout, useMsgLayout } from '../chat/prefs.ts';
+import type { MsgLayout } from '../chat/prefs.ts';
+import { LANGUAGES, language, setLanguage } from '../i18n/index.ts';
 import type { UpdateChannel } from '../../shared/bridge.ts';
 
 export function SettingsView({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
   const live = state.phase === 'ready';
+  const msgLayout = useMsgLayout();
   const [name, setName] = useState(session.me.displayName);
   const [title, setTitle] = useState(session.me.title ?? '');
   const [status, setStatus] = useState(session.me.statusText ?? '');
@@ -111,6 +115,24 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               { value: 'comfortable', label: 'Comfortable' },
               { value: 'compact', label: 'Compact' },
             ]} />
+          </div>
+          <div className="setting">
+            <Icon name="chat" className="lead" />
+            <div className="txt"><div>Messages drawn as</div><div className="faint">Spine: messages hang off a timeline rule. Cards: a compact card each, yours on the right. This PC only.</div></div>
+            <Segmented<MsgLayout> label="Messages drawn as" value={msgLayout} onChange={setMsgLayout} options={[
+              { value: 'spine', label: 'Spine' }, { value: 'cards', label: 'Cards' },
+            ]} />
+          </div>
+          <div className="setting">
+            <Icon name="globe" className="lead" />
+            <div className="txt"><div>Language</div><div className="faint">The app's own words. What people write and their names are never translated.</div></div>
+            <select className="input lang-pick" aria-label="Language" value={language()} onChange={(e) => {
+              setLanguage(e.target.value);
+              // every screen is drawn again in the new language (the desktop window does not navigate, so no page reload)
+              window.dispatchEvent(new Event('dex-redraw'));
+            }}>
+              {LANGUAGES.map((l) => <option key={l.code} value={l.code} translate="no">{l.native}{l.native !== l.name ? ` · ${l.name}` : ''}</option>)}
+            </select>
           </div>
           <div className="setting">
             <Icon name="clock" className="lead" />

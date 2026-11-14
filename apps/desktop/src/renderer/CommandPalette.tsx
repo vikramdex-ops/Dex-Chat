@@ -11,7 +11,7 @@ type Hit = { message: Message; snippet: string };
 /** "a [[match]] here" → text with <mark>s */
 function Snippet({ text }: { text: string }) {
   const parts = text.replace(/<@[0-9A-Z]{26}>/g, '@…').split(/\[\[|\]\]/);
-  return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}</>;
+  return <>{parts.map((p, i) => (i % 2 ? <mark key={i} translate="no">{p}</mark> : <span key={i} translate="no">{p}</span>))}</>;
 }
 
 export function CommandPalette({ users, online, commands, onClose, onPerson, convName, onMessage, onSearch }: {
@@ -102,13 +102,13 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
               ) : r.kind === 'person' ? (
                 <>
                   <Avatar user={r.user} presence={presenceFor(r.id)} size="sm" />
-                  <span className="pal-main">{r.user.displayName}</span>
+                  <span className="pal-main" translate="no">{r.user.displayName}</span>
                   <span className="pal-meta mono">{r.user.account}</span>
                 </>
               ) : (
                 <>
                   <span className="pal-icon"><Icon name={r.command.icon} size={16} /></span>
-                  <span className="pal-main">{r.command.label}</span>
+                  <span className="pal-main" translate={r.command.id.startsWith('conv-') ? 'no' : undefined}>{r.command.label}</span>
                   <span className="pal-meta">{r.command.hint ?? 'Command'}</span>
                 </>
               )}

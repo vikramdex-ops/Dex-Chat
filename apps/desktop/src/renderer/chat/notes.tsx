@@ -31,7 +31,7 @@ export function NotesList({ convId, users, onOpen, onNew }: { convId: string | n
       {list?.length === 0 && <div className="empty"><Icon name="doc" size={28} /><span>{convId ? 'Shared notes for everyone here: checklists, minutes, decisions.' : 'Personal notes only you can see.'}</span></div>}
       {list?.map((n) => (
         <button key={n.id} className="note-row" onClick={() => onOpen(n.id)}>
-          <b>{n.title}</b>
+          <b translate="no">{n.title}</b>
           <span className="faint">{n.preview || 'Empty'}</span>
           <span className="note-meta">{users.get(n.updatedBy)?.displayName.split(' ')[0] ?? 'Someone'} · {relativeTime(n.updatedAt)}</span>
         </button>
