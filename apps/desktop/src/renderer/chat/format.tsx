@@ -32,7 +32,7 @@ function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
   const who = m ? ctx.users.get(m.authorId)?.displayName ?? 'Someone' : '…';
   const text = m ? (m.body || (m.files.length ? `📎 ${m.files[0].name}` : '')).replace(/<@([0-9A-Z]{26}|all)>/g, (_x, u: string) => `@${u === 'all' ? 'everyone' : ctx.users.get(u)?.displayName ?? 'someone'}`) : '';
   return (
-    <button className="msg-link-card" title="Open the message" onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
+    <button className="msg-link-card" title="Open the message" aria-label={`Open the message from ${who}: ${text.slice(0, 120)}`} onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
       <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span> : null}</span>
       <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
     </button>
