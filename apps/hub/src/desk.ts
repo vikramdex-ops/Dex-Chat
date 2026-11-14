@@ -3,6 +3,7 @@
 // sends scheduled messages, so they work even when the author's PC is switched off.
 import type { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
+import { isSealed } from '@dex/core/e2e';
 import type { Ops, PublicUser, Reminder, RepeatRule, SavedMessage, ScheduledMessage } from '@dex/core';
 import type { FileStore } from './files.ts';
 import { MsgError } from './messaging.ts';
@@ -258,7 +259,7 @@ export class Desk {
         if (files.length > 20) throw new MsgError('Attach up to 20 files at a time.');
         for (const f of files) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
         if (!body && !files.length) throw new MsgError('Write something first.');
-        if (body.length > 8000) throw new MsgError('Messages can be up to 8000 characters.');
+        if (body.length > (isSealed(body) ? 96_000 : 8000)) throw new MsgError('Messages can be up to 8000 characters.');
         const open = (this.db.prepare('SELECT COUNT(*) AS n FROM scheduled WHERE user_id = ?').get(me.id) as { n: number }).n;
         if (open >= MAX_SCHEDULED) throw new MsgError('You have too many scheduled messages.');
         let parentId: string | null = null;
@@ -285,7 +286,7 @@ export class Desk {
         if (!s) throw new MsgError('That scheduled message was already sent or cancelled.');
         const body = d.body !== undefined ? (typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '') : s.body;
         if (!body && s.files === '[]') throw new MsgError('Write something first.');
-        if (body.length > 8000) throw new MsgError('Messages can be up to 8000 characters.');
+        if (body.length > (isSealed(body) ? 96_000 : 8000)) throw new MsgError('Messages can be up to 8000 characters.');
         const sendAt = d.sendAt !== undefined ? time(d.sendAt, 'send') : s.send_at;
         if (d.sendAt !== undefined && sendAt < Date.now() + 30_000) throw new MsgError('Choose a time at least a minute from now, or send it now.');
         this.db.prepare(`UPDATE scheduled SET body = ?, send_at = ?, status = 'pending', error = NULL WHERE id = ?`).run(body, sendAt, s.id);

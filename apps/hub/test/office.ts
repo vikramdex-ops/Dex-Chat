@@ -10,7 +10,7 @@ import { HubClient } from '@dex/core/client';
 import type { ClientState } from '@dex/core/client';
 import { Hub } from '../src/hub.ts';
 
-const cleanups: Array<() => unknown> = [];
+export const cleanups: Array<() => unknown> = [];
 after(async () => { for (const c of cleanups.reverse()) await c(); });
 
 export async function office() {

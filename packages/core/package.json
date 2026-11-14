@@ -11,9 +11,13 @@
     "./session": "./src/session.ts",
     "./emitter": "./src/emitter.ts",
     "./feed": "./src/feed.ts",
-    "./protocol": "./src/protocol.ts"
+    "./protocol": "./src/protocol.ts",
+    "./e2e": "./src/e2e.ts",
+    "./e2e-client": "./src/e2e-client.ts"
   },
   "dependencies": {
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0"
   }
 }

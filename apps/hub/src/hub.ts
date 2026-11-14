@@ -24,6 +24,7 @@ import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
+import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import type { MirrorOptions } from './update-mirror.ts';
@@ -658,6 +659,32 @@ export class Hub {
       case 'admin.bots':
         this.requireAdmin(conn);
         return this.store.bots();
+
+      case 'e2e.publish': {
+        const encKey = typeof d.encKey === 'string' ? d.encKey : '';
+        const sig = typeof d.sig === 'string' ? d.sig : '';
+        const dev = this.store.device(conn.deviceId!);
+        if (!dev || !/^[A-Za-z0-9+/]{43}=$/.test(encKey) || !verifySignature(dev.publicKey, encKeyStatement(dev.id, encKey), sig)) throw new OpError('That encryption key is not valid.');
+        const cur = this.store.db.prepare('SELECT enc_key FROM devices WHERE id = ?').get(dev.id) as { enc_key: string | null };
+        if (cur.enc_key !== encKey) {
+          this.store.db.prepare('UPDATE devices SET enc_key = ?, enc_sig = ? WHERE id = ?').run(encKey, sig, dev.id);
+          this.emit('e2e.keysChanged', { userId: dev.userId, deviceId: dev.id });
+        }
+        return { ok: true } satisfies Ops['e2e.publish']['res'];
+      }
+
+      case 'e2e.keys': {
+        const ids = Array.isArray(d.userIds) ? d.userIds.filter((x): x is string => typeof x === 'string').slice(0, 200) : [];
+        if (!ids.length) return [];
+        const rows = this.store.db.prepare(`SELECT id, user_id, public_key, enc_key, enc_sig FROM devices WHERE status = 'approved' AND enc_key IS NOT NULL AND user_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as Array<{ id: string; user_id: string; public_key: string; enc_key: string; enc_sig: string }>;
+        return rows.map((r) => ({ userId: r.user_id, deviceId: r.id, signKey: r.public_key, encKey: r.enc_key, sig: r.enc_sig })) satisfies Ops['e2e.keys']['res'];
+      }
+
+      case 'e2e.addKeys': {
+        const me = this.store.userById(conn.userId!)!;
+        const owner = (deviceId: string) => this.store.device(deviceId)?.userId ?? null;
+        return { updated: this.messaging.addKeys(me, d.items, owner) } satisfies Ops['e2e.addKeys']['res'];
+      }
 
       case 'admin.bots.create': {
         const me = this.requireAdmin(conn);

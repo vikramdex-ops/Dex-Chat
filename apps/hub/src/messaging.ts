@@ -2,6 +2,7 @@
 // typing, stored on the hub (SQLite). Every operation is authorised by membership.
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, ulid } from '@dex/core';
+import { addWraps, isSealed } from '@dex/core/e2e';
 import type { Conversation, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser } from '@dex/core';
 import type { FileStore } from './files.ts';
 
@@ -103,6 +104,8 @@ interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; t
 export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null }
 
 const MAX_BODY = 8000;
+/** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
+const MAX_SEALED = 96_000;
 const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Component}‍️]{1,16}$/u;
 
 export class Messaging {
@@ -133,7 +136,8 @@ export class Messaging {
   /** Searchable text: mentions become names so "@priya" and "priya" both find the message. */
   private index(messageId: string, convId: string, body: string): void {
     this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(messageId);
-    if (!body) return;
+    // end-to-end encrypted text cannot be (and must not be) searched on the hub
+    if (!body || isSealed(body)) return;
     const names = new Map(this.users().map((u) => [u.id, u.displayName] as const));
     const text = body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${names.get(id) ?? ''}`);
     this.db.prepare('INSERT INTO messages_fts (body, message_id, conv_id) VALUES (?, ?, ?)').run(text, messageId, convId);
@@ -166,7 +170,7 @@ export class Messaging {
     const r = this.db.prepare('SELECT id, author_id, body, created_at, deleted FROM messages WHERE conv_id = ? AND parent_id IS NULL ORDER BY id DESC LIMIT 1')
       .get(convId) as { id: string; author_id: string; body: string; created_at: number; deleted: number } | undefined;
     if (!r) return null;
-    let body = r.deleted ? '' : r.body.slice(0, 280);
+    let body = r.deleted ? '' : isSealed(r.body) ? '🔒 Encrypted message' : r.body.slice(0, 280);
     if (!r.deleted && this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(r.id)) body = `📊 ${body}`;
     if (!r.deleted && !body) {
       const names = this.files.forMessage(r.id).map((f) => f.name);
@@ -460,6 +464,9 @@ export class Messaging {
         if (!targets.length) throw new MsgError('Choose where to forward it.');
         if (targets.length > 10) throw new MsgError('Forward to up to 10 conversations at a time.');
         const convs = targets.map((id) => this.requireMember(id, me.id));
+        const bodies = d.bodies && typeof d.bodies === 'object' ? d.bodies as Record<string, unknown> : {};
+        // a sealed message cannot be copied as it is: the app must re-seal it (or give the text) for each target
+        if (isSealed(src.body) && targets.some((t) => typeof bodies[t] !== 'string')) throw new MsgError('This encrypted message can only be forwarded from the app.');
         const note = cleanBody(d.note);
         const files = this.files.forMessage(src.id).map((f) => f.id);
         const forwarded = JSON.stringify({ authorId: src.forwarded ? (parseForward(src.forwarded)?.authorId ?? src.author_id) : src.author_id, convId: src.conv_id, messageId: src.id, createdAt: src.created_at });
@@ -468,7 +475,8 @@ export class Messaging {
         for (const c of convs) {
           if (note) this.sendAs(me, c, note, undefined, [], `fwdnote-${stamp}-${c.id}`, {});
           const poll = this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(src.id);
-          out.push(this.sendAs(me, c, poll ? `📊 ${src.body}` : src.body, undefined, files, `fwd-${stamp}-${c.id}`, { forwarded, skipFileCheck: true }));
+          const text = typeof bodies[c.id] === 'string' ? cleanBody(bodies[c.id]) : poll ? `📊 ${src.body}` : src.body;
+          out.push(this.sendAs(me, c, text, undefined, files, `fwd-${stamp}-${c.id}`, { forwarded, skipFileCheck: true }));
         }
         return out satisfies Ops['msg.forward']['res'];
       }
@@ -597,7 +605,7 @@ export class Messaging {
         if (msg.author_id !== me.id) throw new MsgError('You can only edit your own messages.');
         const body = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
         if (!body) throw new MsgError('A message cannot be empty. Delete it instead.');
-        if (body.length > MAX_BODY) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+        if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
         this.beforeChange?.(msg, 'edit', me.id);
         this.db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, Date.now(), msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
@@ -696,7 +704,7 @@ export class Messaging {
     if (fileIds.length > 20) throw new MsgError('Attach up to 20 files at a time.');
     if (!extra.skipFileCheck) for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
     if (!body && !fileIds.length) throw new MsgError('Write something first.');
-    if (body.length > MAX_BODY) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+    if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
     if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
     const clientId = typeof rawClientId === 'string' ? rawClientId.slice(0, 96) : null;
     if (clientId) {
@@ -725,6 +733,23 @@ export class Messaging {
     this.pushMessage('msg.new', row);
     if (!parentId) this.pushConv(c.id);
     return this.messageView(row, me.id);
+  }
+
+  /** Add wrapped keys to sealed messages the caller can read (history for their new devices). */
+  addKeys(me: PublicUser, items: unknown, deviceOwner: (deviceId: string) => string | null): number {
+    const list = Array.isArray(items) ? items.slice(0, 500) as Array<{ messageId?: unknown; wraps?: unknown }> : [];
+    let n = 0;
+    for (const it of list) {
+      const msg = typeof it.messageId === 'string' ? this.message(it.messageId) : undefined;
+      if (!msg || msg.deleted || !isSealed(msg.body) || !this.isMember(msg.conv_id, me.id) || !it.wraps || typeof it.wraps !== 'object') continue;
+      const members = new Set(this.members(msg.conv_id));
+      // only for devices of people in the conversation
+      const wraps = Object.fromEntries(Object.entries(it.wraps as Record<string, unknown>).filter(([dev, w]) => typeof w === 'string' && members.has(deviceOwner(dev) ?? '')).map(([dev, w]) => [dev, w as string]));
+      if (!Object.keys(wraps).length) continue;
+      const next = addWraps(msg.body, wraps);
+      if (next && next !== msg.body) { this.db.prepare('UPDATE messages SET body = ? WHERE id = ?').run(next, msg.id); n++; }
+    }
+    return n;
   }
 
   /** Remove a message and its side-track for good (retention). Returns how many messages went. */

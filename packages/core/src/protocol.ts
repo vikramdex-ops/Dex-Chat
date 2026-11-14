@@ -237,6 +237,10 @@ export interface Message {
   forwardedFrom: { authorId: string; convId: string; messageId: string; createdAt: number } | null;
   poll: PollView | null;
   form: FormView | null;
+  /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
+  e2e?: 'ok' | 'unverified' | 'locked';
+  /** Passed straight between PCs while the hub was off (posted to the hub once it is back). */
+  via?: 'direct';
 }
 
 export interface PollView {
@@ -539,6 +543,12 @@ export interface Ops {
   'cmd.list': { req: void; res: SlashCommand[] };
   /** Run an integration's command; its reply is posted (or, if it asks, shown only to you). */
   'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean } };
+  /** Publish this device's encryption key (signed by its identity). */
+  'e2e.publish': { req: { encKey: string; sig: string }; res: { ok: true } };
+  /** Encryption keys of everyone's approved devices. */
+  'e2e.keys': { req: { userIds: string[] }; res: Array<{ userId: string; deviceId: string; signKey: string; encKey: string; sig: string }> };
+  /** Give more devices access to sealed messages (history for a new device of your own). */
+  'e2e.addKeys': { req: { items: Array<{ messageId: string; wraps: Record<string, string> }> }; res: { updated: number } };
   'admin.guests.invites': { req: void; res: GuestInvite[] };
   'admin.guests.invite': { req: { spaceIds: string[]; accessDays: number; validDays: number; uses: number; note?: string }; res: GuestInvite & { code: string } };
   'admin.guests.revokeInvite': { req: { id: string }; res: { ok: true } };
@@ -598,7 +608,7 @@ export interface Ops {
   'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
   'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
-  'msg.forward': { req: { messageId: string; convIds: string[]; note?: string }; res: Message[] };
+  'msg.forward': { req: { messageId: string; convIds: string[]; note?: string; /** per target: the text to post (re-sealed by the app for encrypted Directs) */ bodies?: Record<string, string> }; res: Message[] };
   'msg.star': { req: { messageId: string; on: boolean }; res: { ok: true } };
   'poll.create': {
     req: { convId: string; question: string; options: string[]; multi?: boolean; anonymous?: boolean; closesAt?: number | null; parentId?: string; clientId: string };
@@ -681,6 +691,8 @@ export interface Events {
   'room.busy': { userId: string; inRoom: boolean };
   'star.updated': { messageId: string; on: boolean };
   'work.updated': WorkState;
+  /** Someone's devices or encryption keys changed. */
+  'e2e.keysChanged': { userId: string; deviceId: string };
   'note.updated': Note;
   'note.removed': { id: string };
   'board.op': { boardId: string; seq: number; userId: string; op: BoardOp };

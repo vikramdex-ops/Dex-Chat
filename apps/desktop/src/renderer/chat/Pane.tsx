@@ -26,6 +26,9 @@ import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
 
+/** The kind of a conversation, read from the chat store without subscribing. */
+const convKind = (id: string) => chatState().conversations.get(id)?.kind;
+
 const WhiteboardStage = lazy(() => import('./Whiteboard.tsx').then((m) => ({ default: m.WhiteboardStage })));
 
 const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
@@ -51,8 +54,10 @@ function dayLabel(ts: number): string {
 const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 // ------------------------------------------------------------------ pane
-export function Pane({ convId, users, meId, isAdmin, online, live, onBack, session }: {
+export function Pane({ convId, users, meId, isAdmin, online, live, onBack, session, direct = false, reachable = [] }: {
   convId: string; users: Map<string, PublicUser>; meId: string; isAdmin: boolean; online: Set<string>; live: boolean; onBack?: () => void; session?: Session;
+  /** Hub off: messages go straight to the other PCs (text only). */
+  direct?: boolean; reachable?: string[];
 }) {
   const conv = useChat((s) => s.conversations.get(convId));
   const [side, setSide] = useState<Side>(null);
@@ -60,6 +65,15 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const [dragging, setDragging] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [board, setBoard] = useState<Board | null>(null);
+  const [e2e, setE2e] = useState<{ encrypted: boolean; code: string | null; missing: string[] } | null>(null);
+  const [verify, setVerify] = useState(false);
+  useEffect(() => {
+    setE2e(null);
+    if (!window.dex.e2eStatus || convKind(convId) !== 'direct') return;
+    const load = () => void window.dex.e2eStatus!(convId).then(setE2e).catch(() => setE2e(null));
+    load();
+    return window.dex.onHubEvent((name) => { if (name === 'e2e.keysChanged') load(); });
+  }, [convId, live]);
   useEffect(() => {
     const onSide = (e: Event) => {
       const d = (e as CustomEvent).detail as { convId: string; side: 'notes-new' | 'boards' };
@@ -110,7 +124,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
 
   if (!conv) return <div className="pane empty"><div className="empty"><Icon name="chat" size={36} /><span>This conversation is no longer available.</span></div></div>;
   const ctx: Ctx = { users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }) };
-  const canAttach = filesSupported() && live;
+  const canAttach = filesSupported() && live && !direct;
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
@@ -137,7 +151,14 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           <ConvTile c={conv} users={users} meId={meId} online={online} />
           <div className="pane-title">
             <h2>{title}{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
-            <p className="faint">{subtitle}</p>
+            <p className="faint">
+              {e2e && conv.kind === 'direct' && (
+                <button className={`e2e-chip${e2e.encrypted ? '' : ' off'}`} onClick={() => setVerify(true)} title={e2e.encrypted ? 'Messages here are end-to-end encrypted' : 'Not end-to-end encrypted yet'}>
+                  <Icon name="lock" size={11} />{e2e.encrypted ? 'Encrypted' : 'Not encrypted'}
+                </button>
+              )}
+              {subtitle}
+            </p>
           </div>
           <div className="row-actions">
             {conv.members.length > 1 && <CallButtons convId={convId} live={live} />}
@@ -154,9 +175,15 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             </button>
           </div>
         </header>
+        {direct && (
+          <div className="direct-banner" role="status">
+            <Icon name="wifi" size={15} />
+            <span>The office hub is off. Messages go straight to {others.every((o) => reachable.includes(o)) ? (others.length === 1 ? title.split(' ')[0] : 'everyone here') : 'colleagues whose PCs are on'} over the office network, encrypted, and are added to the history when the hub is back.</span>
+          </div>
+        )}
         <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
         <TypingLine k={tlKey(convId)} users={users} />
-        <Dock convId={convId} parentId={null} ctx={ctx} live={live} placeholder={`Message ${conv.kind === 'space' ? title : others.length === 1 ? title.split(' ')[0] : 'the group'}`} />
+        <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={`Message ${conv.kind === 'space' ? title : others.length === 1 ? title.split(' ')[0] : 'the group'}`} />
       </section>
       {side?.kind === 'track' && <SideTrack ctx={ctx} parentId={side.parentId} live={live} onClose={() => setSide(null)} />}
       {side?.kind === 'pins' && <PinsPanel ctx={ctx} onClose={() => setSide(null)} onJump={(id) => setSide({ kind: 'track', parentId: id })} />}
@@ -180,6 +207,22 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       {board && <Suspense fallback={null}><WhiteboardStage board={board} convId={convId} onClose={() => setBoard(null)} /></Suspense>}
       {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
       {viewer && <Lightbox file={viewer.file} all={viewer.all} onClose={() => setViewer(null)} />}
+      {verify && e2e && (
+        <Dialog title={e2e.encrypted ? 'End-to-end encrypted' : 'Not encrypted yet'} onClose={() => setVerify(false)} narrow>
+          {e2e.encrypted ? (
+            <>
+              <p className="muted" style={{ margin: 0 }}>Messages you write here are locked on your device and can only be read on the devices of the people in this conversation. The office hub stores and passes them on but cannot read them. Files are protected in transit and on the hub, but are not end-to-end encrypted.</p>
+              <div className="label">Safety code</div>
+              <div className="code big safety selectable">{e2e.code?.split(' ').map((g, i) => <span key={i}>{g}</span>)}</div>
+              <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>To be sure nobody is listening in, compare this code with {others.length === 1 ? users.get(others[0])?.displayName.split(' ')[0] : 'the others'} in person. It is the same on both screens. It changes when anyone here adds or replaces a device.</p>
+            </>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>{e2e.missing.length
+              ? `${e2e.missing.map((id) => users.get(id)?.displayName ?? 'Someone').join(', ')} ${e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect. Messages here stay readable to them and are protected on the office network, and will be end-to-end encrypted once they update.`
+              : 'Conversations that include an integration are not end-to-end encrypted.'}</p>
+          )}
+        </Dialog>
+      )}
       {planning && session && <EventDialog session={session} conv={conv} onClose={() => setPlanning(false)} />}
     </div>
   );
@@ -343,13 +386,17 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   return (
     <div data-mid={m.id} className={`msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
-      {m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
+      {m.e2e === 'locked' ? (
+        <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
+      ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
       ) : (
         m.body ? (
           <div className={`msg-text selectable${isEmojiOnly(m.body) ? ' big' : ''}`}>
             {renderBody(m.body, ctx.users, ctx.meId)}
             {m.editedAt && <span className="edited"> (edited)</span>}
+            {m.via === 'direct' && <span className="via-direct" title="Passed straight between PCs while the hub was off">sent directly</span>}
+            {m.e2e === 'unverified' && <span className="unverified" title="Encrypted, but this device could not confirm which device sent it"><Icon name="warning" size={12} /></span>}
           </div>
         ) : null
       )}
@@ -472,7 +519,7 @@ function toWire(text: string, users: Map<string, PublicUser>, conv: Conversation
   return out.trim();
 }
 
-function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; parentId: string | null; ctx: Ctx; live: boolean; placeholder: string }) {
+function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { convId: string; parentId: string | null; ctx: Ctx; live: boolean; placeholder: string; direct?: boolean }) {
   const key = tlKey(convId, parentId);
   const [text, setText] = useState(() => chatState().drafts.get(key) ?? '');
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null);
@@ -493,7 +540,7 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
   const toast = useToast();
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
-  const canAttach = filesSupported() && live;
+  const canAttach = filesSupported() && live && !direct;
 
   const addFiles = (files: File[]) => {
     if (!files.length || !canAttach) return;
@@ -655,7 +702,7 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
             </>
           )}
           <button className="icon-btn" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
-          <button ref={addBtn} className="icon-btn" title="Add a poll, form, note or whiteboard" disabled={!live} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
+          <button ref={addBtn} className="icon-btn" title="Add a poll, form, note or whiteboard" disabled={!live || direct} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
           {addMenu && (
             <Popover anchor={addBtn.current} onClose={() => setAddMenu(false)} className="menu add-menu" align="start">
               <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('poll'); }}><Icon name="poll" size={16} />Poll</button>
@@ -672,7 +719,7 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
             </div>
           )}
         </div>
-        {live && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
+        {live && !direct && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
         <textarea
           ref={ref}
           hidden={recording}
@@ -685,7 +732,7 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
           onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length && canAttach) { e.preventDefault(); addFiles(files); } }}
           aria-label={placeholder}
         />
-        {!recording && <><button className="icon-btn dock-later" onClick={() => setDockDialog('schedule')} disabled={(!text.trim() && !ready.length) || !live || uploading}
+        {!recording && <><button className="icon-btn dock-later" onClick={() => setDockDialog('schedule')} disabled={(!text.trim() && !ready.length) || !live || direct || uploading}
           title="Send later" aria-label="Schedule message"><Icon name="schedule" size={17} /></button>
         <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
           <Icon name="send" size={18} />

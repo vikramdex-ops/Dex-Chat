@@ -120,6 +120,7 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
     this.db.exec(SCHEMA);
     try { this.db.exec(`ALTER TABLE users ADD COLUMN availability TEXT NOT NULL DEFAULT 'available'`); } catch { /* already there */ }
+    for (const col of ['enc_key TEXT', 'enc_sig TEXT']) { try { this.db.exec(`ALTER TABLE devices ADD COLUMN ${col}`); } catch { /* already there */ } }
   }
 
   close(): void { this.db.close(); }

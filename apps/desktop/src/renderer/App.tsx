@@ -372,7 +372,9 @@ export function OfflineBanner({ state }: { state: AppState }) {
   return (
     <div className="offline-banner" role="status">
       <Icon name="wifi" />
-      <span>The office hub is unreachable. You can keep reading; changes will be possible again once it reconnects.</span>
+      <span>{state.p2p?.active
+        ? `The office hub is unreachable. Direct messages still reach colleagues on this network${state.p2p.queued ? ` (${state.p2p.queued} waiting to be added to the history)` : ''}; everything else works again once it reconnects.`
+        : 'The office hub is unreachable. You can keep reading; changes will be possible again once it reconnects.'}</span>
     </div>
   );
 }

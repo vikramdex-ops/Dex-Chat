@@ -5,6 +5,9 @@
 import { registerPlugin } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
+import { createEncKeys } from '@dex/core/e2e';
+import type { EncKeyPair } from '@dex/core/e2e';
+import { E2EClient } from '@dex/core/e2e-client';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION } from '@dex/core/protocol';
@@ -53,6 +56,17 @@ async function loadIdentity(): Promise<MobileIdentity> {
   return id;
 }
 
+/** End-to-end encryption keys for Direct messages (kept with the device key). */
+async function loadEncKeys(): Promise<EncKeyPair> {
+  const { value } = await Preferences.get({ key: 'device-enc' });
+  if (value) {
+    try { const k = JSON.parse(value) as EncKeyPair; if (k.secret && k.public) return k; } catch { /* regenerate */ }
+  }
+  const k = createEncKeys();
+  await Preferences.set({ key: 'device-enc', value: JSON.stringify(k) });
+  return k;
+}
+
 interface MobileConfig {
   hub: HubTarget | null;
   displayName: string | null;
@@ -88,6 +102,8 @@ class MobileApp {
   private session!: HubSession;
   private config!: MobileConfig;
   private identity!: MobileIdentity;
+  private e2e!: E2EClient;
+  private events: Promise<void> = Promise.resolve();
   private account!: WindowsAccount;
   private version = '0.0.0';
   private readonly hubs = new Map<string, DiscoveredHub>();
@@ -98,6 +114,13 @@ class MobileApp {
 
   async init(): Promise<void> {
     this.identity = await loadIdentity();
+    const encKeys = await loadEncKeys();
+    const signSecret = unb64(this.identity.secret);
+    this.e2e = new E2EClient({
+      deviceId: this.identity.deviceId, encSecret: encKeys.secret, encPublic: encKeys.public,
+      sign: (p) => b64(ed25519.sign(p, signSecret)),
+      request: (op, data) => this.session.request(op as OpName, data as never),
+    });
     this.config = await loadConfig();
     const info = await Native.deviceInfo().catch(() => ({ model: 'Phone', manufacturer: '', androidVersion: '', appVersion: '0.0.0' }));
     this.version = info.appVersion;
@@ -168,12 +191,22 @@ class MobileApp {
     });
     s.on('state', (st: ClientState) => {
       if (st.kind === 'ready' || st.kind === 'pending') { this.config.hub = { ...st.target }; void this.save(); }
-      if (st.kind === 'ready') void this.checkForUpdates(false, true);
+      if (st.kind === 'ready') {
+        void this.checkForUpdates(false, true);
+        void this.e2e.ready(st.session.me.id, st.session.users.filter((u) => u.role === 'bot').map((u) => u.id)).catch(() => {});
+      }
+      if (st.kind === 'offline') this.e2e.reset();
       this.push();
     });
     s.on('pinned', (t: HubTarget) => { this.config.hub = { ...t }; void this.save(); });
     s.on('session', () => this.push());
-    s.on('event', (name: string, data: unknown) => { for (const fn of this.listeners.event) fn(name, data); });
+    s.on('event', (name: string, data: unknown) => {
+      this.events = this.events.then(async () => {
+        await this.e2e.onEvent(name, data).catch(() => {});
+        const opened = await this.e2e.incoming(data).catch(() => data);
+        for (const fn of this.listeners.event) fn(name, opened);
+      });
+    });
     return s;
   }
 
@@ -345,7 +378,11 @@ class MobileApp {
         this.push();
       },
       rescan: async () => { /* the discovery loop runs continuously */ },
-      request: <K extends OpName>(op: K, data?: Ops[K]['req']) => this.session.request(op, data),
+      request: async <K extends OpName>(op: K, data?: Ops[K]['req']) => {
+        const out = await this.e2e.outgoing(op, data) as Ops[K]['req'];
+        return this.e2e.incoming(await this.session.request(op, out));
+      },
+      e2eStatus: (convId: string) => this.e2e.status(convId),
       setSettings: async (patch) => {
         Object.assign(this.config.settings, patch);
         await this.save();

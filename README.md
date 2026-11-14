@@ -28,6 +28,8 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Compliance | Retention for Space and Direct messages, legal holds that keep every version of edited or deleted messages, exports to HTML, CSV or JSON (Direct message text is never exported) |
 | Commands | Slash commands in the composer (/remind, /poll, /meet, /call, /status, /checkin, /dnd, /shrug, /help…) and integration commands that call a tool's signed webhook |
 | Notes, forms, whiteboards | Shared notes per conversation and personal notes on the Desk (save as you type, never overwrite a colleague, edit in Slate), forms with answers and CSV export, live whiteboards that can be posted as an image, voice notes |
+| Privacy | Direct messages are end-to-end encrypted (X25519 + AES-256-GCM, signed by each device's Ed25519 key); the hub only stores sealed envelopes; safety codes to compare in person; your other devices hand history to a new one |
+| Hub-off mode | If the hub PC is down, PCs find each other on the network and pass encrypted Direct messages straight across; everything written meanwhile is added to the hub's history when it is back |
 | Files | Drag, drop, paste or attach up to 1 GB; stored once on the hub; inline images with a viewer; Open / Save; Files panel |
 | Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
 | Search | Ctrl+K across people, conversations, commands and message text (FTS5), jump to the message |
@@ -38,7 +40,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
-**Next:** direct PC-to-PC fallback when the hub is off, end-to-end encryption of Direct messages, file viewing on phones, and the Sheets, Slate, Sleuth, Project Opener and Datum integrations.
+**Next:** file viewing on phones, and the Sheets, Slate, Sleuth, Project Opener and Datum integrations.
 
 ## How it fits together
 

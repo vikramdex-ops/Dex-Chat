@@ -6,10 +6,12 @@ import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
-import { loadConfig, loadIdentity, saveConfig } from './persist.ts';
+import { loadConfig, loadEncKeys, loadIdentity, saveConfig } from './persist.ts';
 import { Updater } from './updater.ts';
 import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
+import { PeerNet } from './peer.ts';
+import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
@@ -223,6 +225,7 @@ function wireIpc(c: Controller): void {
   }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
+  ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
   ipcMain.on('slate:available', (e) => { e.returnValue = !!slateExe(); });
   ipcMain.handle('slate:edit', (_e, noteId: string, title: string, body: string) => wrap(() => editInSlate(String(noteId), String(title), String(body), (id, text) => win?.webContents.send('slate:changed', id, text))));
   ipcMain.handle('slate:open', (_e, id: string, name: string) => wrap(async () => {
@@ -320,7 +323,11 @@ void app.whenReady().then(async () => {
     quit: () => { quitting = true; app.quit(); },
   }, justUpdated ?? null);
 
-  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state });
+  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state }, loadEncKeys());
+  // hub-off fallback: Direct messages straight between PCs on the office network
+  const peers = new PeerNet({ e2e: controller.e2e, deviceId: identity.deviceId, sign: (p) => signWith(identity, p), dataDir: app.getPath('userData') });
+  void peers.start().then(() => controller!.usePeers(peers)).catch(() => { /* no network: the hub path still works */ });
+  app.on('before-quit', () => peers.stop());
   updater.on('state', () => controller?.push());
   updater.on('ready', (v: string, mandatory: boolean) => {
     if (!win?.isFocused()) notify(mandatory ? 'Required update ready' : 'Update ready', `Dexterity Connect ${v} is ready. Restart to install it.`);

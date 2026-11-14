@@ -38,7 +38,7 @@ export function ChatView({ kind, state, session, openId, setOpenId }: {
         onNew={session.me.role === 'guest' && kind === 'space' ? undefined : () => setDialog('new')}
         onBrowse={kind === 'space' && session.me.role !== 'guest' ? () => setDialog('browse') : undefined} />
       {openId && conversations.get(openId)?.kind === kind
-        ? <Pane key={openId} convId={openId} users={users} meId={meId} isAdmin={isAdmin} online={online} live={state.phase === 'ready'} onBack={() => setOpenId(null)} session={session} />
+        ? <Pane key={openId} convId={openId} users={users} meId={meId} isAdmin={isAdmin} online={online} live={state.phase === 'ready' || (kind === 'direct' && !!state.p2p?.active)} direct={state.phase !== 'ready' && !!state.p2p?.active} reachable={state.p2p?.reachable ?? []} onBack={() => setOpenId(null)} session={session} />
         : (
           <div className="pane empty">
             <div className="empty">

@@ -59,6 +59,8 @@ export interface AppState {
   update: UpdateState;
   platform: NodeJS.Platform;
   version: string;
+  /** Direct messages between PCs while the hub is off */
+  p2p?: P2PState;
 }
 
 export interface Settings {
@@ -68,6 +70,9 @@ export interface Settings {
   updateChannel: UpdateChannel;
   autoDownloadUpdates: boolean;
 }
+
+/** Hub-off mode: Direct messages pass straight between PCs on the network. */
+export interface P2PState { active: boolean; reachable: string[]; queued: number }
 
 export interface JoinRequest {
   hubId?: string;
@@ -105,6 +110,8 @@ export interface DexBridge {
   /** Open a downloaded file with Slate (text, CSV, logs). */
   openInSlate?(id: string, name: string): Promise<void>;
   hasSlate?: boolean;
+  /** Whether a Direct conversation is end-to-end encrypted, and the code to compare in person. */
+  e2eStatus?(convId: string): Promise<{ encrypted: boolean; code: string | null; missing: string[] }>;
   /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
   listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
   chooseScreen?(id: string): Promise<void>;

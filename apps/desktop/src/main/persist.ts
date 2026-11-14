@@ -4,6 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, safeStorage } from 'electron';
+import { createEncKeys } from '@dex/core/e2e';
+import type { EncKeyPair } from '@dex/core/e2e';
 import { createIdentity, isValidIdentity } from '@dex/core';
 import type { DeviceIdentity } from '@dex/core';
 import type { HubTarget } from '@dex/core/client';
@@ -45,6 +47,26 @@ export function loadConfig(): Config {
 
 export function saveConfig(config: Config): void {
   writeAtomic(file('config.json'), JSON.stringify(config, null, 2));
+}
+
+/** This device's end-to-end encryption key pair, sealed like the identity. */
+export function loadEncKeys(): EncKeyPair {
+  const sealedPath = file('device.enc');
+  const plainPath = file('device.enc.json');
+  const valid = (v: unknown): v is EncKeyPair => !!v && typeof (v as EncKeyPair).secret === 'string' && typeof (v as EncKeyPair).public === 'string';
+  try {
+    if (fs.existsSync(sealedPath) && safeStorage.isEncryptionAvailable()) {
+      const k = JSON.parse(safeStorage.decryptString(fs.readFileSync(sealedPath)));
+      if (valid(k)) return k;
+    } else if (fs.existsSync(plainPath)) {
+      const k = JSON.parse(fs.readFileSync(plainPath, 'utf8'));
+      if (valid(k)) return k;
+    }
+  } catch { /* unreadable: make a new key (older messages stay readable on the user's other devices) */ }
+  const k = createEncKeys();
+  if (safeStorage.isEncryptionAvailable()) writeAtomic(sealedPath, safeStorage.encryptString(JSON.stringify(k)));
+  else writeAtomic(plainPath, JSON.stringify(k));
+  return k;
 }
 
 export function loadIdentity(): DeviceIdentity {

@@ -1,8 +1,12 @@
 // Owns the hub connection for the desktop app: discovery, first-run join, silent sign-in on
 // later launches, following the hub if its IP changes, and the state the UI renders.
 import { EventEmitter } from 'node:events';
+import type { PeerNet } from './peer.ts';
+import { E2EClient } from '@dex/core/e2e-client';
+import { signWith } from '@dex/core';
+import type { EncKeyPair } from '@dex/core/e2e';
 import { DEFAULT_HUB_PORT } from '@dex/core';
-import type { DeviceIdentity, OpName, Ops, WindowsAccount } from '@dex/core';
+import type { DeviceIdentity, Message, OpName, Ops, WindowsAccount } from '@dex/core';
 import { HubClient } from '@dex/core/client';
 import type { ClientState, HubTarget } from '@dex/core/client';
 import { HubFinder } from '@dex/core/discovery';
@@ -34,10 +38,20 @@ export class Controller extends EventEmitter {
   private readonly identity: DeviceIdentity;
   private readonly config: Config;
   private readonly meta: { platform: NodeJS.Platform; version: string; update: () => UpdateState };
+  readonly e2e: E2EClient;
+  private peers: PeerNet | null = null;
+  /** Hub events are opened (decrypted) one at a time so they reach the UI in order. */
+  private events: Promise<void> = Promise.resolve();
 
-  constructor(account: WindowsAccount, identity: DeviceIdentity, config: Config, meta: { platform: NodeJS.Platform; version: string; update: () => UpdateState }) {
+  constructor(account: WindowsAccount, identity: DeviceIdentity, config: Config, meta: { platform: NodeJS.Platform; version: string; update: () => UpdateState }, encKeys: EncKeyPair) {
     super();
     this.identity = identity;
+    this.e2e = new E2EClient({
+      deviceId: identity.deviceId, encSecret: encKeys.secret, encPublic: encKeys.public,
+      sign: (p) => signWith(identity, p),
+      request: (op, data) => { if (!this.client) return Promise.reject(new Error('Not connected to the hub.')); return this.client.request(op as OpName, data as never); },
+      log: (msg, extra) => this.emit('warning', Object.assign(new Error(msg), { extra })),
+    });
     this.config = config;
     this.meta = meta;
     this.account = { ...account, displayName: config.displayName || account.displayName };
@@ -86,6 +100,7 @@ export class Controller extends EventEmitter {
       update: this.meta.update(),
       platform: this.meta.platform,
       version: this.meta.version,
+      p2p: this.peers ? { active: this.peers.isActive, reachable: this.peers.reachableUsers(), queued: this.peers.pending.length } : undefined,
     };
   }
 
@@ -111,6 +126,18 @@ export class Controller extends EventEmitter {
     this.client = client;
     client.on('state', (s: ClientState) => {
       if (s.kind === 'ready') {
+        const session = s.session;
+        void this.e2e.ready(session.me.id, session.users.filter((u) => u.role === 'bot').map((u) => u.id))
+          .then(async () => {
+            this.peers?.setActive(false);
+            // anything written while the hub was off goes to the hub now
+            await this.peers?.flush((item) => client.request('msg.send', { convId: item.convId, body: item.body, clientId: item.clientId, parentId: item.parentId ?? undefined }).then(() => undefined));
+            // keep keys and conversations for the next time the hub is off
+            await this.e2e.cacheKeys(session.users.filter((u) => u.role !== 'bot').map((u) => u.id));
+            this.peers?.saveDirectory();
+            this.push();
+          })
+          .catch((err) => this.emit('warning', err));
         this.emit('hub-ready');
         if (this.idle) void client.request('me.idle', { idle: true }).catch(() => {});
       }
@@ -123,7 +150,16 @@ export class Controller extends EventEmitter {
     });
     client.on('pinned', (t: HubTarget) => { this.config.hub = { ...t }; this.persist(); });
     client.on('session', () => this.push());
-    client.on('event', (name: string, data: unknown) => this.emit('hub-event', name, data));
+    client.on('event', (name: string, data: unknown) => {
+      if (name === 'user.added' && (data as { role?: string }).role === 'bot') this.e2e.setBots([...(client.session?.users ?? []).filter((u) => u.role === 'bot').map((u) => u.id), (data as { id: string }).id]);
+      this.events = this.events.then(async () => {
+        await this.e2e.onEvent(name, data).catch(() => {});
+        this.emit('hub-event', name, await this.e2e.incoming(data).catch(() => data));
+      });
+    });
+    client.on('state', (s: ClientState) => {
+      if (s.kind === 'offline') { this.e2e.reset(); this.peers?.setActive(true); this.push(); }
+    });
     client.on('warning', (err: Error) => this.emit('warning', err));
     client.connect({ ...target });
   }
@@ -184,9 +220,29 @@ export class Controller extends EventEmitter {
     this.push();
   }
 
+  /** Turn on the hub-off fallback (Direct messages straight between PCs). */
+  usePeers(peers: PeerNet): void {
+    this.peers = peers;
+    peers.on('changed', () => this.push());
+    peers.on('message', (m: Message) => {
+      this.events = this.events.then(async () => { this.emit('hub-event', 'msg.new', await this.e2e.incoming(m).catch(() => m)); });
+    });
+    peers.on('dropped', (item: { convId: string }, err: Error) => this.emit('warning', Object.assign(new Error(`A message written while the hub was off could not be posted: ${err.message}`), { convId: item.convId })));
+    if (this.client?.state.kind === 'offline') peers.setActive(true);
+  }
+
   async request<K extends OpName>(op: K, data?: Ops[K]['req']): Promise<Ops[K]['res']> {
+    // hub off: Direct messages go straight to the other PCs and wait in the outbox for the hub
+    if (op === 'msg.send' && this.peers?.isActive && this.client?.state.kind !== 'ready') {
+      const d = data as Ops['msg.send']['req'];
+      if (d.files?.length) throw new Error('Files can be sent once the office hub is back.');
+      const m = await this.peers.send(d.convId, d.body, d.parentId ?? null, d.clientId);
+      this.push();
+      return this.e2e.incoming(m) as Promise<Ops[K]['res']>;
+    }
     if (!this.client) throw new Error('Not connected to the hub.');
-    return this.client.request(op, data);
+    const out = await this.e2e.outgoing(op, data) as Ops[K]['req'];
+    return this.e2e.incoming(await this.client.request(op, out));
   }
 
   updateSettings(patch: Partial<Settings>): Settings {
