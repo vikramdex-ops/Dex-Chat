@@ -19,6 +19,7 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | Outfit (variable font, via Fontsource) | Headings | OFL-1.1 |
 | qrcode-generator | QR codes for setting up phones | MIT |
 | jsQR | Reading pairing QR codes with the camera | Apache-2.0 |
+| mediasoup (hub) and mediasoup-client (apps) | The relay for Rooms of more than 8 people | ISC |
 | MediaPipe Tasks Vision (@mediapipe/tasks-vision) | Background blur in calls, on the PC | Apache-2.0 |
 | MediaPipe selfie segmentation model (`selfie_segmenter.tflite`) | Background blur in calls | Apache-2.0 |
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |

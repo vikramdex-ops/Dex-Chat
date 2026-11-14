@@ -18,8 +18,13 @@ if not errorlevel 1 (
 )
 netsh advfirewall firewall delete rule name="Dexterity Connect Hub (connections)" >nul 2>&1
 netsh advfirewall firewall delete rule name="Dexterity Connect Hub (discovery)" >nul 2>&1
+netsh advfirewall firewall delete rule name="Dexterity Connect Hub (large Rooms)" >nul 2>&1
 netsh advfirewall firewall add rule name="Dexterity Connect Hub (connections)" dir=in action=allow protocol=TCP localport=47900 profile=any program="%~dp0DexterityConnectHub.exe" >nul || goto :fail
 netsh advfirewall firewall add rule name="Dexterity Connect Hub (discovery)" dir=in action=allow protocol=UDP localport=47901 profile=any program="%~dp0DexterityConnectHub.exe" >nul || goto :fail
+if exist "%~dp0mediasoup-worker.exe" (
+  netsh advfirewall firewall add rule name="Dexterity Connect Hub (large Rooms)" dir=in action=allow protocol=UDP localport=47910-47999 profile=any program="%~dp0mediasoup-worker.exe" >nul || goto :fail
+  netsh advfirewall firewall add rule name="Dexterity Connect Hub (large Rooms)" dir=in action=allow protocol=TCP localport=47910-47999 profile=any program="%~dp0mediasoup-worker.exe" >nul || goto :fail
+)
 DexterityConnectHubService.exe restart || DexterityConnectHubService.exe start || goto :fail
 echo.
 echo  Dexterity Connect Hub is installed and running.

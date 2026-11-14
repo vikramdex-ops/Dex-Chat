@@ -2,10 +2,11 @@
 // a LAN for up to ~8 people). Uses the "perfect negotiation" pattern so cameras and screen
 // shares can be switched on and off mid-call without glare. No STUN/TURN: host candidates
 // on the office network are enough, and nothing leaves the building.
+import { RelayClient } from './relay.ts';
 import { blurTrack } from './blur.ts';
 import type { Blurred } from './blur.ts';
 import { useSyncExternalStore } from 'react';
-import type { RoomInfo } from '@dex/core';
+import type { RelayProducer, RoomInfo } from '@dex/core';
 import { timeOpts } from '../time.ts';
 
 export interface RemotePeer {
@@ -44,6 +45,7 @@ function swapVideo(local: MediaStream, from: MediaStreamTrack, to: MediaStreamTr
   local.removeTrack(from);
   local.addTrack(to);
   for (const l of links.values()) for (const sd of l.senders) if (sd.track === from) void sd.replaceTrack(to).catch(() => {});
+  void relay?.replace(from, to).catch(() => {});
 }
 
 /** Blur (or stop blurring) the camera track in this stream. */
@@ -83,6 +85,19 @@ export const callState = () => state;
 
 interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; userId: string; senders: RTCRtpSender[] }
 const links = new Map<string, Link>();
+
+// ------------------------------------------------------------------ large Rooms: the hub's relay
+let relay: RelayClient | null = null;
+function startRelay(room: RoomInfo): void {
+  relay?.close();
+  const r = new RelayClient(room.id, (peers) => { if (relay === r) set({ peers }); });
+  relay = r;
+  r.join(state.local, state.screen).catch((err: Error) => { if (relay === r) set({ error: `The Room's relay could not be reached: ${err.message}` }); });
+}
+/** Join the Room's media the way the Room works: PC to PC, or through the hub. */
+function connectRoom(room: RoomInfo): void {
+  if (room.mode === 'relay') startRelay(room); else connectAll(room);
+}
 let myDevice = '';
 let ring: { stop: () => void } | null = null;
 
@@ -132,6 +147,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (state.room?.id === r.id) {
         // close links to devices that left
         for (const [dev] of links) if (!r.participants.some((p) => p.deviceId === dev)) dropLink(dev);
+        relay?.keepOnly(new Set(r.participants.map((p) => p.deviceId)));
         if (r.participants.length > 1 || r.ringing.length === 0) stopRingIfOutgoing(r);
         set({ room: r, active });
       } else if (state.incoming?.room.id === r.id && !r.ringing.includes(selfUser())) {
@@ -147,6 +163,15 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
         set({ incoming: null, active });
       } else if (state.room?.id === d.roomId) { cleanup(); set({ active }); }
       else set({ active });
+    } else if (name === 'relay.producer') {
+      const d = data as RelayProducer & { roomId: string };
+      if (relay && relay.roomId === d.roomId) void relay.consume(d).catch(() => {});
+    } else if (name === 'relay.producerClosed') {
+      const d = data as { roomId: string; producerId: string };
+      if (relay && relay.roomId === d.roomId) relay.drop(d.producerId);
+    } else if (name === 'relay.reset') {
+      // the hub restarted its relay: connect again
+      if (state.room?.mode === 'relay') startRelay(state.room);
     } else if (name === 'room.signal') {
       const d = data as { roomId: string; fromDevice: string; fromUser: string; data: SignalData };
       if (state.room?.id === d.roomId) void onSignal(d.fromDevice, d.fromUser, d.data);
@@ -213,7 +238,8 @@ export async function startCall(convId: string, video: boolean): Promise<void> {
     if (state.blur) await applyBlur(local, true).catch(() => {});
     const room = await window.dex.request('room.start', { convId, video });
     set({ room, local, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
-    if (room.participants.length > 1) connectAll(room); else startRing(true);
+    if (room.mode === 'relay') { startRelay(room); if (room.participants.length <= 1) startRing(true); }
+    else if (room.participants.length > 1) connectAll(room); else startRing(true);
     void announceMedia();
   } catch (err) { set({ error: (err as Error).message }); throw err; }
 }
@@ -232,7 +258,7 @@ export async function joinRoom(roomId: string, video: boolean): Promise<void> {
     if (state.blur) await applyBlur(local, true).catch(() => {});
     const room = await window.dex.request('room.join', { roomId });
     set({ room, local, incoming: null, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
-    connectAll(room); // the newcomer reaches out to everyone already there
+    connectRoom(room); // the newcomer reaches out to everyone already there
     void announceMedia();
   } catch (err) { set({ incoming: null, error: (err as Error).message }); throw err; }
 }
@@ -253,6 +279,8 @@ export function leave(): void {
 function cleanup(): void {
   stopRing();
   for (const dev of [...links.keys()]) dropLink(dev);
+  relay?.close();
+  relay = null;
   if (state.local) stopCameraTracks(state.local);
   state.local?.getTracks().forEach((t) => t.stop());
   state.screen?.getTracks().forEach((t) => t.stop());
@@ -271,6 +299,7 @@ export async function toggleCamera(): Promise<void> {
   if (!local) return;
   if (state.camera) {
     const live = local.getVideoTracks();
+    for (const t of live) relay?.remove(t);
     stopCameraTracks(local);
     for (const t of live) {
       local.removeTrack(t);
@@ -286,6 +315,7 @@ export async function toggleCamera(): Promise<void> {
       }
       local.addTrack(track);
       for (const l of links.values()) l.senders.push(l.pc.addTrack(track, local));
+      void relay?.add(track, 'camera').catch(() => {});
       set({ camera: true, local: new MediaStream(local.getTracks()) });
     } catch { set({ error: 'The camera could not be started.' }); }
   }
@@ -305,6 +335,7 @@ export async function toggleScreen(sourceId?: string, withSound = false): Promis
     track.onended = () => stopScreen();
     // the computer's sound (Windows) travels with the screen
     for (const l of links.values()) for (const t of screen.getTracks()) l.senders.push(l.pc.addTrack(t, screen));
+    for (const t of screen.getTracks()) void relay?.add(t, t.kind === 'audio' ? 'screen-audio' : 'screen').catch(() => {});
     set({ screen });
     void announceMedia();
   } catch { /* the person cancelled the picker */ }
@@ -314,6 +345,7 @@ function stopScreen(): void {
   const screen = state.screen;
   if (!screen) return;
   for (const t of screen.getTracks()) {
+    relay?.remove(t);
     t.stop();
     for (const l of links.values()) for (const s of l.senders.filter((x) => x.track === t)) { l.pc.removeTrack(s); l.senders = l.senders.filter((x) => x !== s); }
   }
@@ -329,9 +361,11 @@ export async function callQuality(): Promise<{ rttMs: number | null; loss: numbe
   let lost = 0;
   let got = 0;
   let relayed = false;
-  for (const l of links.values()) {
+  const reports: Array<() => Promise<RTCStatsReport>> = [...links.values()].map((l) => () => l.pc.getStats());
+  if (relay) for (const r of await relay.stats()) reports.push(async () => r);
+  for (const get of reports) {
     try {
-      const stats = await l.pc.getStats();
+      const stats = await get();
       const local = new Map<string, string>();
       stats.forEach((r) => { if (r.type === 'local-candidate') local.set(r.id, (r as { candidateType?: string }).candidateType ?? ''); });
       stats.forEach((r) => {

@@ -607,7 +607,14 @@ export interface RoomInfo {
   participants: RoomParticipant[];
   /** People invited who have not answered yet. */
   ringing: string[];
+  /** mesh: PCs send to each other (up to 8); relay: everyone sends once to the hub, which passes it on. */
+  mode?: 'mesh' | 'relay';
+  /** How many people the Room can hold. */
+  capacity?: number;
 }
+
+/** A track someone sends to the hub's relay. */
+export interface RelayProducer { producerId: string; userId: string; deviceId: string; kind: 'audio' | 'video'; source: 'mic' | 'camera' | 'screen' | 'screen-audio' }
 
 export interface Session {
   hub: HubInfo;
@@ -803,6 +810,15 @@ export interface Ops {
   'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
   'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
+  /** The hub's relay for large Rooms (mediasoup); parameters are mediasoup's, passed through. */
+  'relay.caps': { req: { roomId: string }; res: { rtpCapabilities: unknown } };
+  'relay.transport': { req: { roomId: string; direction: 'send' | 'recv' }; res: { id: string; iceParameters: unknown; iceCandidates: unknown[]; dtlsParameters: unknown } };
+  'relay.connect': { req: { transportId: string; dtlsParameters: unknown }; res: { ok: true } };
+  'relay.produce': { req: { transportId: string; kind: 'audio' | 'video'; rtpParameters: unknown; source: RelayProducer['source'] }; res: { id: string } };
+  'relay.producers': { req: { roomId: string }; res: RelayProducer[] };
+  'relay.consume': { req: { transportId: string; producerId: string; rtpCapabilities: unknown }; res: { id: string; producerId: string; kind: 'audio' | 'video'; rtpParameters: unknown } };
+  'relay.resume': { req: { consumerId: string }; res: { ok: true } };
+  'relay.close': { req: { producerId: string }; res: { ok: true } };
   /** Ring more of the conversation's members into a running call. */
   'room.invite': { req: { roomId: string; userIds: string[] }; res: RoomInfo };
   'room.record': { req: { roomId: string; on: boolean }; res: { ok: true } };

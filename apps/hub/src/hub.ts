@@ -25,6 +25,7 @@ import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
 import { Pairing, lanAddresses } from './pairing.ts';
 import { SystemBot } from './systembot.ts';
+import { Relay, RelayError } from './relay.ts';
 import { ipAllowed } from '@dex/core/dlp';
 import { pairCode, pairLink } from '@dex/core/remote';
 import { Emoji, EmojiError } from './emoji.ts';
@@ -46,6 +47,10 @@ export interface HubOptions {
   name?: string;
   port?: number;
   host?: string;
+  /** The relay for large Rooms: off to use only PC-to-PC calls (default on when installed). */
+  relay?: boolean;
+  /** UDP/TCP ports the relay uses for media (default 47910–47999). */
+  relayPorts?: [number, number];
   /** Largest file accepted (default 1 GB). */
   maxFileBytes?: number;
   /** Update mirror settings; `false` turns the mirror off. */
@@ -115,6 +120,7 @@ export class Hub {
   readonly policies: Policies;
   readonly pairing: Pairing;
   readonly system: SystemBot;
+  readonly relay: Relay;
   readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
@@ -178,6 +184,12 @@ export class Hub {
       const u = this.store.userById(uid);
       return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
     });
+    this.relay = new Relay({
+      // the address PCs use to reach this hub: the one it is bound to, or its office address
+      announced: () => (this.opts.host && this.opts.host !== '0.0.0.0' ? this.opts.host : (lanAddresses(this.port)[0] ?? '127.0.0.1:0').split(':')[0]),
+      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+      log: (level, msg, meta) => this.log(level, msg, meta),
+    }, opts.relayPorts);
     this.rooms = new Rooms({
       members: (convId) => this.messaging.members(convId),
       deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
@@ -185,6 +197,9 @@ export class Hub {
       broadcast: (name, data) => this.emit(name, data),
       allowRecording: () => this.policies.get().allowRecording,
       ended: (room, missed, durationMs) => this.policies.logCall(room.id, room.convId, room.startedBy, room.video, missed, durationMs),
+      relayAvailable: () => this.opts.relay !== false && this.relay.available(),
+      deviceLeft: (_roomId, deviceId) => this.relay.leave(deviceId),
+      roomClosed: (roomId) => this.relay.closeRoom(roomId),
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -298,6 +313,7 @@ export class Hub {
     this.mirror?.stop();
     this.announcer?.stop();
     this.gateway.stop();
+    await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
@@ -1038,10 +1054,23 @@ export class Hub {
       }
 
       default: {
+        if (typeof op === 'string' && op.startsWith('relay.')) {
+          const me = this.store.userById(conn.userId!)!;
+          // media through the relay stays on the office network
+          if (conn.remote) throw new OpError('Large Rooms work on the office network. From outside, join Rooms of up to 8 people.');
+          const room = this.rooms.roomOf(conn.deviceId!, d.roomId ?? undefined);
+          try {
+            const result = await this.relay.handle(op, me.id, conn.deviceId!, d, room);
+            if (result !== undefined) return result;
+          } catch (err) {
+            throw new OpError(err instanceof RelayError ? err.message : `The relay could not do that (${(err as Error).message}).`);
+          }
+        }
         if (typeof op === 'string' && op.startsWith('room.')) {
           const me = this.store.userById(conn.userId!)!;
           try {
-            const result = this.rooms.handle(op, me, conn.deviceId!, d);
+            // a device outside the office cannot reach the relay: it gets PC-to-PC Rooms
+            const result = this.rooms.handle(op, me, conn.deviceId!, conn.remote ? { ...d, fromOutside: true } : d);
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);

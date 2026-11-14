@@ -7,6 +7,7 @@ export class RoomError extends Error {}
 
 const RING_TIMEOUT_MS = 45_000;
 const MAX_PARTICIPANTS = 8; // a full mesh: beyond this, quality drops on ordinary PCs
+const RELAY_CAPACITY = 50; // through the hub's relay
 
 interface Room extends RoomInfo { ringTimer: NodeJS.Timeout | null; everJoined: Set<string> }
 
@@ -19,6 +20,11 @@ export interface RoomHost {
   ended?(room: RoomInfo, missed: boolean, durationMs: number): void;
   /** The office policy lets people record calls. */
   allowRecording?(): boolean;
+  /** The hub can relay large Rooms. */
+  relayAvailable?(): boolean;
+  /** A device left a Room, or a Room ended (the relay closes its tracks). */
+  deviceLeft?(roomId: string, deviceId: string): void;
+  roomClosed?(roomId: string): void;
 }
 
 export class Rooms {
@@ -32,7 +38,15 @@ export class Rooms {
   }
 
   private view(r: Room): RoomInfo {
-    return { id: r.id, convId: r.convId, startedBy: r.startedBy, startedAt: r.startedAt, video: r.video, participants: r.participants.map((p) => ({ ...p })), ringing: [...r.ringing] };
+    return { id: r.id, convId: r.convId, startedBy: r.startedBy, startedAt: r.startedAt, video: r.video, participants: r.participants.map((p) => ({ ...p })), ringing: [...r.ringing], mode: r.mode ?? 'mesh', capacity: this.capacity(r) };
+  }
+
+  private capacity(r: RoomInfo): number { return r.mode === 'relay' ? RELAY_CAPACITY : MAX_PARTICIPANTS; }
+
+  /** The Room a device is in (for the relay). */
+  roomOf(deviceId: string, roomId?: unknown): RoomInfo | null {
+    const r = typeof roomId === 'string' ? this.rooms.get(roomId) : [...this.rooms.values()].find((x) => x.participants.some((p) => p.deviceId === deviceId));
+    return r && r.participants.some((p) => p.deviceId === deviceId) ? r : null;
   }
 
   private publish(r: Room): void {
@@ -53,6 +67,7 @@ export class Rooms {
   private end(r: Room): void {
     if (r.ringTimer) clearTimeout(r.ringTimer);
     this.rooms.delete(r.id);
+    this.host.roomClosed?.(r.id);
     const missed = r.everJoined.size <= 1;
     const durationMs = Date.now() - r.startedAt;
     this.host.deliverToUsers(this.host.members(r.convId), 'room.ended', { roomId: r.id, convId: r.convId, missed, startedBy: r.startedBy, durationMs });
@@ -75,6 +90,8 @@ export class Rooms {
         this.leaveAll(deviceId);
         const room: Room = {
           id: ulid(), convId, startedBy: me.id, startedAt: Date.now(), video: d.video === true,
+          // a conversation bigger than a mesh can hold goes through the hub's relay
+          mode: members.length > MAX_PARTICIPANTS && d.fromOutside !== true && this.host.relayAvailable?.() ? 'relay' : 'mesh',
           participants: [{ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: d.video === true, screen: false }],
           ringing: members.filter((m) => m !== me.id), ringTimer: null, everJoined: new Set([me.id]),
         };
@@ -95,7 +112,8 @@ export class Rooms {
       case 'room.join': {
         const r = this.get(d.roomId, me);
         if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r);
-        if (r.participants.length >= MAX_PARTICIPANTS) throw new RoomError(`This Room is full (${MAX_PARTICIPANTS} people).`);
+        if (r.participants.length >= this.capacity(r)) throw new RoomError(`This Room is full (${this.capacity(r)} people).`);
+        if (r.mode === 'relay' && d.fromOutside === true) throw new RoomError('This Room is large, so it runs through the office hub: join it from the office network.');
         this.leaveAll(deviceId);
         r.participants.push({ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: false, screen: false });
         r.ringing = r.ringing.filter((u) => u !== me.id);
@@ -135,9 +153,9 @@ export class Rooms {
         if (!r.participants.some((p) => p.userId === me.id)) throw new RoomError('Join the call first.');
         const members = this.host.members(r.convId);
         const ids = (Array.isArray(d.userIds) ? d.userIds.map(String) : [])
-          .filter((u) => members.includes(u) && !r.participants.some((p) => p.userId === u) && !r.ringing.includes(u)).slice(0, MAX_PARTICIPANTS);
+          .filter((u) => members.includes(u) && !r.participants.some((p) => p.userId === u) && !r.ringing.includes(u)).slice(0, this.capacity(r));
         if (!ids.length) throw new RoomError('Everyone you chose is already in the call or being rung.');
-        if (r.participants.length + ids.length > MAX_PARTICIPANTS) throw new RoomError(`A Room holds up to ${MAX_PARTICIPANTS} people.`);
+        if (r.participants.length + ids.length > this.capacity(r)) throw new RoomError(`A Room holds up to ${this.capacity(r)} people.`);
         r.ringing.push(...ids);
         const stop = setTimeout(() => { r.ringing = r.ringing.filter((u) => !ids.includes(u)); if (this.rooms.has(r.id)) this.publish(r); }, RING_TIMEOUT_MS);
         stop.unref?.();
@@ -170,6 +188,7 @@ export class Rooms {
     const p = r.participants.find((x) => x.deviceId === deviceId);
     if (!p) return;
     r.participants = r.participants.filter((x) => x.deviceId !== deviceId);
+    this.host.deviceLeft?.(r.id, deviceId);
     // a one-to-one call ends when either person hangs up; group Rooms run until the last leaves
     const oneToOne = this.host.members(r.convId).length === 2 && r.everJoined.size > 1;
     if (!r.participants.length || (oneToOne && r.participants.length === 1)) this.end(r);

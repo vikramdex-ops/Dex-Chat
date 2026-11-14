@@ -130,6 +130,8 @@ jobs:
           $out = "hub-package/DexterityConnectHub"
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item apps/hub/dist/DexterityConnectHub.exe $out
+          # the relay for large Rooms (mediasoup's worker, ISC licence) runs beside the hub
+          Copy-Item node_modules/mediasoup/worker/out/Release/mediasoup-worker.exe $out
           Copy-Item apps/hub/packaging/* $out
           Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe" -OutFile "$out/DexterityConnectHubService.exe"
           Compress-Archive -Path $out -DestinationPath "hub-package/DexterityConnectHub-$env:VERSION-win-x64.zip"

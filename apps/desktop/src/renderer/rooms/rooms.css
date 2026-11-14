@@ -302,3 +302,5 @@ body:has(.room-stage:not(.folded)) .toasts { right: 384px; bottom: 28px; }
 @media (prefers-reduced-motion: reduce) {
   .open-seat-line::before, .room-chip-pip, .ring-tag { animation: none; }
 }
+.tb-head > .label { flex: none; }
+.tb-head > .mono { margin-left: auto; padding-left: 12px; }
