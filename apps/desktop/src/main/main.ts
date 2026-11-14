@@ -78,7 +78,7 @@ function popOut(convId: string, title: string): void {
   });
   p.setMenuBarVisibility(false);
   p.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' }; });
-  p.webContents.on('will-navigate', (e, url) => { if (!devUrl || !url.startsWith(devUrl)) e.preventDefault(); });
+  p.webContents.on('will-navigate', (e, url) => { if (url.split('#')[0] === p.webContents.getURL().split('#')[0]) return; if (!devUrl || !url.startsWith(devUrl)) e.preventDefault(); });
   p.webContents.on('did-finish-load', () => p.webContents.setZoomFactor((controller?.settings.textSize ?? 100) / 100));
   if (devUrl) void p.loadURL(`${devUrl}#popout=${convId}`);
   else void p.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'), { hash: `popout=${convId}` });
@@ -125,6 +125,9 @@ function createWindow(startHidden: boolean): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
+    // the app may reload itself (switching offices, a new language); it never goes anywhere else
+    const here = (u: string) => u.split('#')[0];
+    if (here(url) === here(win?.webContents.getURL() ?? '')) return;
     if (!devUrl || !url.startsWith(devUrl)) e.preventDefault();
   });
 
