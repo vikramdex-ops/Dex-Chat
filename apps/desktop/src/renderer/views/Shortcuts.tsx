@@ -9,6 +9,7 @@ const GROUPS: Array<{ title: string; keys: Array<[string[], string]> }> = [
     [['Alt', '↑'], 'Previous conversation in the list'],
     [['Alt', '↓'], 'Next conversation in the list'],
     [['Ctrl', ','], 'Preferences'],
+    [['Ctrl', 'Alt', 'D'], 'Show Dexterity Connect from any app'],
     [['Ctrl', '/'], 'This list'],
     [['Esc'], 'Close a dialog, menu or selection'],
   ] },

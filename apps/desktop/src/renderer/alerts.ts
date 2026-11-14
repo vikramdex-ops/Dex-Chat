@@ -26,7 +26,11 @@ export function inQuietHours(now = new Date()): boolean {
   return a <= b ? t >= a && t < b : t >= a || t < b;
 }
 
+/** True in a popped-out conversation window: the main window notifies. */
+export const isPopout = typeof location !== 'undefined' && location.hash.startsWith('#popout=');
+
 export function alertUser(kind: 'message' | 'personal' | 'reminder', title: string, body: string, link?: string): void {
+  if (isPopout) return;
   if (kind !== 'reminder') {
     if (prefs.notifyFor === 'none' || inQuietHours()) return;
     if (prefs.notifyFor === 'mentions' && kind === 'message') return;

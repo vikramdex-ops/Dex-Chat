@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS bot_tokens (
   created_at INTEGER NOT NULL,
   last_used INTEGER
 );
+CREATE TABLE IF NOT EXISTS hooks (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  bot_id TEXT NOT NULL,
+  conv_id TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used INTEGER
+);
 `;
 
 function parseFields(raw: string | null | undefined): Record<string, string> {
@@ -259,6 +268,11 @@ export class Store {
     const rows = this.db.prepare(`SELECT u.*, MIN(t.created_at) AS t_created, MAX(t.last_used) AS t_used, COUNT(t.token_hash) AS n
       FROM users u LEFT JOIN bot_tokens t ON t.user_id = u.id WHERE u.role = 'bot' GROUP BY u.id ORDER BY u.display_name`).all() as unknown as Array<UserRow & { t_created: number | null; t_used: number | null; n: number }>;
     return rows.map((r) => ({ bot: toPublicUser(r), createdAt: r.t_created ?? r.created_at, lastUsed: r.t_used, active: r.n > 0 }));
+  }
+
+  /** An integration is active while it has a token (revoking stops its webhooks too). */
+  botActive(userId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM bot_tokens WHERE user_id = ? LIMIT 1').get(userId);
   }
 
   revokeBotTokens(userId: string): void {

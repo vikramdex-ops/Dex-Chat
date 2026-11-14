@@ -108,6 +108,9 @@ export interface JoinRequest {
 
 export interface DexBridge {
   getState(): Promise<AppState>;
+  /** Desktop: open a conversation in a window of its own, or bring the main window forward. */
+  popOut?(convId: string, title: string): Promise<void>;
+  showMain?(convId?: string): Promise<void>;
   onState(cb: (s: AppState) => void): () => void;
   onHubEvent(cb: (name: string, data: unknown) => void): () => void;
   onDeepLink(cb: (url: string) => void): () => void;

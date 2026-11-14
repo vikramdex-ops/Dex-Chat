@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Ops } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { Avatar, Icon, relativeTime, useToast } from '../ui.tsx';
+import { useChat } from '../chat/store.ts';
 
 type Bots = Ops['admin.bots']['res'];
 
@@ -135,6 +136,46 @@ Content-Type: application/json
 Trust the hub's certificate by its fingerprint:
 ${state.hub?.fingerprint}`}</pre>
       </details>
+      {bots && bots.some((b) => b.active) && <Webhooks state={state} bots={bots.filter((b) => b.active)} />}
     </div>
+  );
+}
+
+/** Slack-style incoming webhooks: a URL per Space for CI, monitoring and scripts. */
+function Webhooks({ state, bots }: { state: AppState; bots: Bots }) {
+  const toast = useToast();
+  const conversations = useChat((s) => s.conversations);
+  const spaces = [...conversations.values()].filter((c) => c.kind === 'space' && c.joined && !c.archived).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+  const [list, setList] = useState<Ops['admin.hooks.list']['res']>([]);
+  const [botId, setBotId] = useState(bots[0]?.bot.id ?? '');
+  const [convId, setConvId] = useState('');
+  const [made, setMade] = useState<string | null>(null);
+  const load = () => void window.dex.request('admin.hooks.list').then(setList).catch(() => {});
+  useEffect(load, []);
+  const base = state.hub ? `https://${state.hub.host}:${state.hub.port}` : '';
+  const names = new Map(bots.map((b) => [b.bot.id, b.bot.displayName] as const));
+  return (
+    <section className="card">
+      <div className="eyebrow">Webhooks for other tools</div>
+      <p className="muted" style={{ marginTop: 0 }}>For anything that can post to a Slack incoming webhook: CI and build servers, Grafana or other monitoring, scripts. Paste the address where the tool asks for a Slack webhook URL; its messages appear in the Space as the integration. The hub uses its own certificate, so turn on the tool's option to skip certificate checks, or trust the hub's certificate (fingerprint above).</p>
+      <div className="org-admin-add">
+        <select className="input" value={botId} onChange={(e) => setBotId(e.target.value)} aria-label="Integration">{bots.map((b) => <option key={b.bot.id} value={b.bot.id}>{b.bot.displayName}</option>)}</select>
+        <select className="input" value={convId} onChange={(e) => setConvId(e.target.value)} aria-label="Space"><option value="">Space…</option>{spaces.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <button className="btn primary" disabled={!botId || !convId} onClick={() => void window.dex.request('admin.hooks.create', { botId, convId }).then((r) => { setMade(`${base}${r.path}`); load(); }).catch((e: Error) => toast(e.message, true))}><Icon name="plus" size={14} />Create webhook</button>
+      </div>
+      {made && (
+        <div className="issued">
+          <p className="faint" style={{ margin: '8px 0 4px', fontSize: 12.5 }}>Copy it now: it is shown only once.</p>
+          <div className="row-actions"><code className="mono selectable" style={{ wordBreak: 'break-all', flex: 1 }}>{made}</code><button className="btn" onClick={() => { void navigator.clipboard.writeText(made); toast('Copied'); }}><Icon name="copy" size={14} />Copy</button></div>
+        </div>
+      )}
+      {list.map((h) => (
+        <div key={h.id} className="org-admin-row">
+          <Icon name="open" size={15} />
+          <span style={{ flex: 1 }}><b>{names.get(h.botId) ?? 'Integration'}</b> → {h.convName} <span className="faint">· {h.lastUsed ? `last used ${relativeTime(h.lastUsed)}` : 'not used yet'}</span></span>
+          <button className="btn ghost sm" onClick={() => { if (confirm('Stop this webhook? Tools using it will get an error.')) void window.dex.request('admin.hooks.revoke', { id: h.id }).then(load); }}>Stop</button>
+        </div>
+      ))}
+    </section>
   );
 }

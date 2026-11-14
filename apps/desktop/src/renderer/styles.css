@@ -1686,3 +1686,6 @@ body.resizing { user-select: none; cursor: col-resize; }
 .reason-list { display: grid; gap: 6px; width: 100%; }
 .default-spaces { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
 .to-space { display: grid; gap: 6px; margin-top: 16px; }
+.popout { height: 100vh; display: grid; }
+.popout .pane-wrap { height: 100vh; }
+.popout-wait { height: 100vh; display: grid; place-items: center; }

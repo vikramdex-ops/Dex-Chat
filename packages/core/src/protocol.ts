@@ -639,6 +639,10 @@ export interface Ops {
   'admin.bots': { req: void; res: Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> };
   'admin.bots.create': { req: { name: string }; res: { bot: PublicUser; token: string } };
   'admin.bots.revoke': { req: { userId: string }; res: { ok: true } };
+  /** Slack-compatible incoming webhooks: a URL that posts into one Space as an integration. */
+  'admin.hooks.list': { req: void; res: Array<{ id: string; botId: string; convId: string; convName: string; createdAt: number; lastUsed: number | null }> };
+  'admin.hooks.create': { req: { botId: string; convId: string }; res: { id: string; path: string } };
+  'admin.hooks.revoke': { req: { id: string }; res: { ok: true } };
   /** Give an integration slash commands that call its webhook. Returns the signing secret once. */
   'admin.bots.commands': { req: { userId: string; webhookUrl: string; commands: Array<{ command: string; description: string }> }; res: { secret: string } };
   'cmd.list': { req: void; res: SlashCommand[] };

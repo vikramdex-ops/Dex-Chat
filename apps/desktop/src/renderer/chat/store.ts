@@ -1,7 +1,7 @@
 // Client-side messaging state: conversations, message timelines, side-tracks, typing and
 // drafts. Sends are optimistic (shown instantly, confirmed by the hub, retried with the same
 // clientId so they never duplicate). Components subscribe with useChat(selector).
-import { alertUser } from '../alerts.ts';
+import { alertUser, isPopout } from '../alerts.ts';
 import { readImageText } from '../ocr.ts';
 import { useSyncExternalStore } from 'react';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
@@ -54,7 +54,7 @@ function changed(): void {
   snapshot = { ...state };
   for (const l of listeners) l();
   const badge = attentionCount();
-  if (badge !== lastBadge) { lastBadge = badge; window.dex.setBadge?.(badge); }
+  if (badge !== lastBadge && !isPopout) { lastBadge = badge; window.dex.setBadge?.(badge); }
 }
 
 export function useChat<T>(select: (s: ChatState) => T): T {

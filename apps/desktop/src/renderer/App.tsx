@@ -2,6 +2,7 @@
 // title bar with brand, lens bar, command button and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right.
 import { setAlertPrefs } from './alerts.ts';
+import { Pane } from './chat/Pane.tsx';
 import { setTimeFormat } from './time.ts';
 import { startPolicy } from './policy.ts';
 import { startEmoji } from './emoji.tsx';
@@ -507,5 +508,41 @@ export function OfflineBanner({ state }: { state: AppState }) {
         ? `The office hub is unreachable. Direct messages still reach colleagues on this network${state.p2p.queued ? ` (${state.p2p.queued} waiting to be added to the history)` : ''}; everything else works again once it reconnects.`
         : 'The office hub is unreachable. You can keep reading; changes will be possible again once it reconnects.'}</span>
     </div>
+  );
+}
+
+/** A conversation in a window of its own (desktop: "Open in a new window"). */
+export function PopoutApp({ convId }: { convId: string }) {
+  const state = useAppState();
+  useTheme(state);
+  const lastSession = useRef<Session | null>(null);
+  if (state?.session) lastSession.current = state.session;
+  const session = state?.session ?? lastSession.current;
+  const usersRef = useRef(session?.users ?? []);
+  if (session) usersRef.current = session.users;
+  const ready = state?.phase === 'ready';
+  useEffect(() => {
+    if (!ready || !session) return;
+    void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
+    void startDesk(session.me.id, () => usersRef.current);
+    startPolicy();
+    startEmoji();
+  }, [ready, session?.me.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!state || !session) return;
+    setPresenceSource(ready ? session.online : [], session.away ?? [], session.users, session.inRoom ?? [], session.inMeeting ?? []);
+    setTimeFormat(state.settings.timeFormat);
+  });
+  const conv = useChat((s) => s.conversations.get(convId));
+  useEffect(() => { if (conv && session) document.title = `${convTitle(conv, new Map(session.users.map((u) => [u.id, u] as const)), session.me.id)} · Dexterity Connect`; }, [conv, session]);
+  if (!state || !session) return <div className="popout-wait"><span className="spinner" /></div>;
+  const users = new Map(session.users.map((u) => [u.id, u] as const));
+  return (
+    <ToastHost>
+      <div className="popout">
+        <Pane convId={convId} users={users} meId={session.me.id} isAdmin={session.me.role === 'owner' || session.me.role === 'admin'} online={new Set(session.online)}
+          live={ready} onBack={() => void window.dex.showMain?.(convId)} session={session} />
+      </div>
+    </ToastHost>
   );
 }

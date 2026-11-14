@@ -227,6 +227,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <button className={`icon-btn${side?.kind === 'notes' ? ' on' : ''}`} title="Notes" onClick={() => setSide(side?.kind === 'notes' ? null : { kind: 'notes', noteId: null })}><Icon name="doc" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'boards' ? ' on' : ''}`} title="Whiteboards" onClick={() => setSide(side?.kind === 'boards' ? null : { kind: 'boards' })}><Icon name="drawing" size={17} /></button>
             <button className="icon-btn" title="Search this conversation" onClick={() => window.dispatchEvent(new CustomEvent('dex-search', { detail: conv.id }))}><Icon name="search" size={17} /></button>
+            {window.dex.popOut && !location.hash.startsWith('#popout=') && <button className="icon-btn wide-only" title="Open in a new window" onClick={() => void window.dex.popOut!(conv.id, title)}><Icon name="open" size={17} /></button>}
             <button ref={dateBtn} className="icon-btn" title="Jump to a date" onClick={() => setDatePick(!datePick)}><Icon name="history" size={17} /></button>
             {datePick && (
               <Popover anchor={dateBtn.current} onClose={() => setDatePick(false)} className="menu jump-date">

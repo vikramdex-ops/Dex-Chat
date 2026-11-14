@@ -2,7 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
@@ -61,6 +61,29 @@ function applyTheme(settings: Settings): void {
 function applyLogin(settings: Settings): void {
   if (!app.isPackaged) return; // never register a development build to start at sign-in
   app.setLoginItemSettings({ openAtLogin: settings.startAtLogin, args: ['--hidden'] });
+}
+
+/** Conversations popped out into windows of their own, by conversation id. */
+const popouts = new Map<string, BrowserWindow>();
+
+function popOut(convId: string, title: string): void {
+  if (!/^[0-9A-Za-z_-]{8,40}$/.test(convId)) return;
+  const open = popouts.get(convId);
+  if (open && !open.isDestroyed()) { open.show(); open.focus(); return; }
+  const p = new BrowserWindow({
+    width: 560, height: 760, minWidth: 380, minHeight: 420,
+    title: `${title.slice(0, 80)} · Dexterity Connect`, icon: iconPath(),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#132b2e' : '#f4f9f9',
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true },
+  });
+  p.setMenuBarVisibility(false);
+  p.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' }; });
+  p.webContents.on('will-navigate', (e, url) => { if (!devUrl || !url.startsWith(devUrl)) e.preventDefault(); });
+  p.webContents.on('did-finish-load', () => p.webContents.setZoomFactor((controller?.settings.textSize ?? 100) / 100));
+  if (devUrl) void p.loadURL(`${devUrl}#popout=${convId}`);
+  else void p.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'), { hash: `popout=${convId}` });
+  popouts.set(convId, p);
+  p.on('closed', () => popouts.delete(convId));
 }
 
 function createWindow(startHidden: boolean): void {
@@ -241,6 +264,8 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
   ipcMain.handle('tools:installed', () => installedTools());
+  ipcMain.handle('window:popout', (_e, convId: string, title: string) => { popOut(String(convId), String(title ?? '')); });
+  ipcMain.handle('window:main', (_e, convId: string) => { showWindow(); if (typeof convId === 'string') win?.webContents.send('app:deeplink', `${PROTOCOL}://conversation/${convId}`); });
   ipcMain.handle('tools:open', (_e, url: string) => wrap(async () => {
     if (String(url).startsWith('dexconnect://')) { routeDeepLink(String(url)); return; }
     await openToolLink(String(url));
@@ -294,9 +319,10 @@ function wireIpc(c: Controller): void {
   });
   ipcMain.on('app:badge', (_e, count: unknown) => { if (typeof count === 'number') setBadge(count); });
 
-  c.on('state', (s) => win?.webContents.send('app:state', s));
+  c.on('state', (s) => { win?.webContents.send('app:state', s); for (const p of popouts.values()) p.webContents.send('app:state', s); });
   c.on('hub-event', (name: string, data: unknown) => {
     win?.webContents.send('hub:event', name, data);
+    for (const p of popouts.values()) p.webContents.send('hub:event', name, data);
     if (name === 'admin.pending' && !win?.isFocused()) {
       const d = data as { displayName: string; hostname: string };
       notify('New device waiting for approval', `${d.displayName} wants to join from ${d.hostname}.`);
@@ -364,6 +390,13 @@ void app.whenReady().then(async () => {
     if (Date.now() - last > 30 * 60 * 1000) void updater?.check(false);
   });
   wireIpc(controller);
+  // Ctrl+Alt+D from anywhere in Windows brings Dexterity Connect forward (or hides it again)
+  try {
+    globalShortcut.register('CommandOrControl+Alt+D', () => {
+      if (win && win.isVisible() && win.isFocused()) win.hide(); else showWindow();
+    });
+  } catch { /* another app owns the combination */ }
+  app.on('will-quit', () => globalShortcut.unregisterAll());
   handleFileScheme(() => {
     const hub = controller?.hubEndpoint();
     const token = controller?.state().session?.fileToken;

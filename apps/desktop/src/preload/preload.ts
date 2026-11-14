@@ -16,6 +16,8 @@ async function unwrap<T>(p: Promise<{ ok: boolean; data?: T; error?: string }>):
 
 const bridge: DexBridge = {
   getState: () => ipcRenderer.invoke('app:getState'),
+  popOut: (convId: string, title: string) => ipcRenderer.invoke('window:popout', convId, title),
+  showMain: (convId?: string) => ipcRenderer.invoke('window:main', convId),
   onState: (cb) => subscribe('app:state', cb),
   onHubEvent: (cb) => subscribe('hub:event', cb),
   onDeepLink: (cb) => subscribe('app:deeplink', cb),

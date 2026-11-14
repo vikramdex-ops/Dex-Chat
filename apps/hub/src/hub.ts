@@ -26,6 +26,7 @@ import { Policies, PolicyError } from './policies.ts';
 import { Emoji, EmojiError } from './emoji.ts';
 import { RemoteGateway } from './remote.ts';
 import { Ice } from './ice.ts';
+import { slackToMarkdown } from './slack.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
@@ -291,6 +292,7 @@ export class Hub {
     if (this.mirror?.handle(req, res)) return;
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -366,6 +368,36 @@ export class Hub {
     }
     this.log('info', 'bot message', { bot: bot.displayName, delivered: delivered.length, unknown: unknown.length });
     reply(delivered.length ? 200 : 404, { ok: delivered.length > 0, delivered, unknown });
+  }
+
+  /** POST /api/hooks/<token>: a Slack-style incoming webhook into one Space (at most 60 a minute). */
+  private readonly hookRate = new Map<string, number[]>();
+  private async hookRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const reply = (code: number, text: string) => { res.writeHead(code, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }); res.end(text); };
+    const m = (req.url ?? '').match(/^\/api\/hooks\/([A-Za-z0-9_-]{20,64})$/);
+    if (req.method !== 'POST' || !m) { req.resume(); reply(404, 'no_service'); return; }
+    const hook = this.store.db.prepare('SELECT * FROM hooks WHERE token_hash = ?').get(crypto.createHash('sha256').update(m[1]).digest('hex')) as { id: string; bot_id: string; conv_id: string } | undefined;
+    const bot = hook ? this.store.userById(hook.bot_id) : null;
+    if (!hook || !bot || bot.role !== 'bot' || !this.store.botActive(bot.id)) { req.resume(); reply(404, 'no_service'); return; }
+    const now = Date.now();
+    const times = (this.hookRate.get(hook.id) ?? []).filter((t) => t > now - 60_000);
+    if (times.length >= 60) { req.resume(); reply(429, 'rate_limited'); return; }
+    times.push(now); this.hookRate.set(hook.id, times);
+    let raw = '';
+    try { for await (const c of req) { raw += c; if (raw.length > 256 * 1024) throw new Error('too large'); } } catch { reply(413, 'too_large'); return; }
+    let payload: Record<string, unknown>;
+    try {
+      // Slack also accepts form posts with a "payload" field
+      payload = raw.trim().startsWith('{') ? JSON.parse(raw) : JSON.parse(new URLSearchParams(raw).get('payload') ?? '{}');
+    } catch { reply(400, 'invalid_payload'); return; }
+    const body = slackToMarkdown(payload);
+    if (!body) { reply(400, 'no_text'); return; }
+    try {
+      this.messaging.ensureMember(hook.conv_id, bot.id);
+      this.messaging.handle('msg.send', bot, { convId: hook.conv_id, body, clientId: `hook-${crypto.randomBytes(8).toString('hex')}` });
+      this.store.db.prepare('UPDATE hooks SET last_used = ? WHERE id = ?').run(now, hook.id);
+      reply(200, 'ok');
+    } catch (err) { reply(400, (err as Error).message); }
   }
 
   /** POST /files?name=…&type=…  and  GET /files/<id>[?download=1], authorised by a session file token. */
@@ -847,6 +879,35 @@ export class Hub {
         this.store.audit(me.id, 'bot.created', bot.id, { name });
         this.emit('user.added', bot);
         return { bot, token } satisfies Ops['admin.bots.create']['res'];
+      }
+
+      case 'admin.hooks.list': {
+        this.requireAdmin(conn);
+        return (this.store.db.prepare('SELECT h.*, c.name AS conv_name FROM hooks h JOIN conversations c ON c.id = h.conv_id ORDER BY h.created_at DESC').all() as Array<{ id: string; bot_id: string; conv_id: string; conv_name: string | null; created_at: number; last_used: number | null }>)
+          .map((h) => ({ id: h.id, botId: h.bot_id, convId: h.conv_id, convName: h.conv_name ?? 'Space', createdAt: h.created_at, lastUsed: h.last_used })) satisfies Ops['admin.hooks.list']['res'];
+      }
+
+      case 'admin.hooks.create': {
+        const me = this.requireAdmin(conn);
+        const bot = typeof d.botId === 'string' ? this.store.userById(d.botId) : null;
+        if (!bot || bot.role !== 'bot') throw new OpError('Choose an integration.');
+        const conv = typeof d.convId === 'string' ? this.messaging.handle('conv.list', me, {}) as Array<{ id: string; kind: string }> : [];
+        const target = conv.find((c) => c.id === d.convId && c.kind === 'space');
+        if (!target) throw new OpError('Choose a Space you are in.');
+        const token = crypto.randomBytes(24).toString('base64url');
+        const id = crypto.randomBytes(8).toString('hex');
+        this.store.db.prepare('INSERT INTO hooks (id, token_hash, bot_id, conv_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(id, crypto.createHash('sha256').update(token).digest('hex'), bot.id, target.id, me.id, Date.now());
+        this.messaging.ensureMember(target.id, bot.id);
+        this.store.audit(me.id, 'hook.created', bot.id, { space: target.id });
+        return { id, path: `/api/hooks/${token}` } satisfies Ops['admin.hooks.create']['res'];
+      }
+
+      case 'admin.hooks.revoke': {
+        const me = this.requireAdmin(conn);
+        this.store.db.prepare('DELETE FROM hooks WHERE id = ?').run(String(d.id ?? ''));
+        this.store.audit(me.id, 'hook.revoked', null, { id: d.id });
+        return { ok: true } satisfies Ops['admin.hooks.revoke']['res'];
       }
 
       case 'admin.bots.revoke': {
