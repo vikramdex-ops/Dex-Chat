@@ -8,7 +8,7 @@ import type { Attachment } from './files.tsx';
 import { Avatar, Icon, Popover, colorFor, useToast, presenceFor } from '../ui.tsx';
 import { isEmojiOnly, renderBody } from './format.tsx';
 import {
-  chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
+  addConversation, chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
   setActiveConversation, setDraft, tlKey, useChat,
 } from './store.ts';
 import type { AnyMessage, PendingMessage } from './store.ts';
@@ -20,7 +20,7 @@ import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
 import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
-import { describeWhen, toggleSaved, useDesk } from '../desk/store.ts';
+import { describeWhen, deskState, toggleSaved, useDesk } from '../desk/store.ts';
 import { EventDialog } from '../calendar/CalendarView.tsx';
 import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
@@ -40,7 +40,14 @@ type Side = { kind: 'track'; parentId: string } | { kind: 'pins' } | { kind: 'me
 interface Ctx {
   users: Map<string, PublicUser>; meId: string; isAdmin: boolean; conv: Conversation; online: Set<string>;
   view: (f: FileInfo, all: FileInfo[]) => void;
+  /** Multi-select: the chosen message ids (null when not selecting). */
+  selected: Set<string> | null;
+  select: (id: string | null) => void;
 }
+
+/** The text of a message as a Markdown quote, for the Dock. */
+const quoteOf = (m: AnyMessage, users: Map<string, PublicUser>) =>
+  `> **${users.get(m.authorId)?.displayName ?? 'Someone'}:** ${(m.body || (m.files.length ? `📎 ${m.files.map((f) => f.name).join(', ')}` : '')).replace(/\n/g, '\n> ')}\n\n`;
 
 function dayLabel(ts: number): string {
   const d = new Date(ts);
@@ -62,6 +69,15 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const conv = useChat((s) => s.conversations.get(convId));
   const [side, setSide] = useState<Side>(null);
   const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [fwdMany, setFwdMany] = useState(false);
+  useEffect(() => { setSelected(null); }, [convId]);
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setSelected(null); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [selected]);
   const [dragging, setDragging] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [headMenu, setHeadMenu] = useState(false);
@@ -125,7 +141,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   }, [convId]);
 
   if (!conv) return <div className="pane empty"><div className="empty"><Icon name="chat" size={36} /><span>This conversation is no longer available.</span></div></div>;
-  const ctx: Ctx = { users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }) };
+  const ctx: Ctx = {
+    users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }), selected,
+    select: (id) => setSelected((cur) => {
+      if (id === null) return null;
+      const next = new Set(cur ?? []);
+      if (next.has(id)) next.delete(id); else if (next.size < 50) next.add(id);
+      return next;
+    }),
+  };
+  const picked = (): AnyMessage[] => (chatState().timelines.get(convId)?.messages ?? []).filter((m) => selected?.has(m.id) && !('pending' in m));
   const canAttach = filesSupported() && live && !direct;
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -210,6 +235,20 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           </div>
         ))}
         <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
+        {selected && (
+          <div className="select-bar" role="toolbar" aria-label="Selected messages">
+            <b>{selected.size} selected</b>
+            <button className="btn sm" disabled={!selected.size} onClick={() => setFwdMany(true)}><Icon name="forward" size={14} />Forward</button>
+            <button className="btn sm" disabled={!selected.size} onClick={() => { void navigator.clipboard.writeText(picked().map((m) => `${users.get(m.authorId)?.displayName ?? ''} (${new Date(m.createdAt).toLocaleString()}):\n${m.body}`).join('\n\n')); toast('Copied'); }}><Icon name="copy" size={14} />Copy</button>
+            <button className="btn sm" disabled={!selected.size} onClick={() => void Promise.all(picked().filter((m) => !deskState().saved.has(m.id)).map((m) => toggleSaved(m as never).catch(() => null))).then(() => toast('Saved to your Desk'))}><Icon name="star" size={14} />Save</button>
+            {picked().length > 0 && picked().every((m) => m.authorId === meId || (isAdmin && conv.kind === 'space')) && (
+              <button className="btn sm danger" onClick={() => { if (confirm(`Delete ${selected.size} messages for everyone?`)) void Promise.all(picked().map((m) => window.dex.request('msg.delete', { messageId: m.id }).catch(() => null))).then(() => { toast('Deleted'); setSelected(null); }); }}><Icon name="trash" size={14} />Delete</button>
+            )}
+            <span style={{ flex: 1 }} />
+            <button className="btn ghost sm" onClick={() => setSelected(null)}>Done</button>
+          </div>
+        )}
+        {fwdMany && picked().length > 0 && <ForwardDialog message={picked()[0] as never} more={picked().slice(1) as never} users={users} meId={meId} online={online} onClose={() => { setFwdMany(false); setSelected(null); }} />}
         <TypingLine k={tlKey(convId)} users={users} />
         {conv.archived ? null : conv.postPolicy === 'moderators' && !(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) ? (
           <div className="dock-locked faint"><Icon name="lock" size={14} />Only moderators post here. You can reply to a message in its side-track.</div>
@@ -414,7 +453,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   if (m.deleted) return <div className="msg deleted"><span className="faint">Message deleted</span></div>;
 
   return (
-    <div data-mid={m.id} className={`msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
+    <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
+      className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
@@ -475,6 +515,19 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           {more && (
             <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu">
               <button role="menuitem" onClick={() => { setMore(false); setDialog('forward'); }}><Icon name="forward" size={16} />Forward</button>
+              {m.body && <button role="menuitem" onClick={() => { setMore(false); window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(m.convId, inTrack ? m.parentId : null), text: quoteOf(m, ctx.users) } })); }}><Icon name="reply" size={16} />Quote</button>}
+              {ctx.conv.kind === 'space' && !mine && ctx.users.get(m.authorId)?.role !== 'bot' && (
+                <button role="menuitem" onClick={() => {
+                  setMore(false);
+                  void window.dex.request('conv.create', { kind: 'direct', members: [m.authorId] }).then((c) => {
+                    addConversation(c);
+                    window.dispatchEvent(new CustomEvent('dex-open', { detail: c.id }));
+                    setTimeout(() => window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(c.id), text: quoteOf(m, ctx.users) } })), 250);
+                  }).catch((e: Error) => toast(e.message, true));
+                }}><Icon name="chat" size={16} />Reply privately</button>
+              )}
+              <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(`dexconnect://message/${m.convId}/${m.id}`); toast('Link copied: paste it anywhere in Dexterity Connect'); }}><Icon name="open" size={16} />Copy link</button>
+              {!inTrack && <button role="menuitem" onClick={() => { setMore(false); ctx.select(m.id); }}><Icon name="check" size={16} />Select</button>}
               <button role="menuitem" onClick={() => { setMore(false); void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned for everyone here'); }}><Icon name="pin" size={16} />{m.pinned ? 'Unpin' : 'Pin'}</button>
               {!inTrack && !m.parentId && <button role="menuitem" onClick={() => { setMore(false); void act(markUnreadFrom(m), 'Marked as unread from here'); }}><Icon name="unread" size={16} />Mark unread from here</button>}
               {m.body && <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(m.body); toast('Copied'); }}><Icon name="copy" size={16} />Copy text</button>}
@@ -580,6 +633,16 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     setAttachments((list) => [...list, ...fresh]);
     ref.current?.focus();
   };
+  useEffect(() => {
+    const onQuote = (e: Event) => {
+      const d = (e as CustomEvent).detail as { key: string; text: string };
+      if (d.key !== key) return;
+      setText((t) => { const v = `${d.text}${t}`; setDraft(key, v); return v; });
+      requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+    };
+    window.addEventListener('dex-quote', onQuote);
+    return () => window.removeEventListener('dex-quote', onQuote);
+  }, [key]);
   useEffect(() => {
     const onAttach = (e: Event) => { const d = (e as CustomEvent).detail as { key: string; files: File[] }; if (d.key === key) addFiles(d.files); };
     window.addEventListener('dex-attach', onAttach);

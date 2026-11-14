@@ -16,6 +16,8 @@ function ToolLink({ url }: { url: string }) {
   const scheme = url.split(':')[0];
   let label = url.replace(/^[a-z]+:\/\//, '');
   try { label = decodeURIComponent(label); } catch { /* keep as is */ }
+  if (/^dexconnect:\/\/message\//.test(url)) label = 'Open the message';
+  else if (/^dexconnect:\/\/conversation\//.test(url)) label = 'Open the conversation';
   return (
     <button className="tool-link" title={url} onClick={() => void window.dex.openLink?.(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })))}>
       <span className="tool-name">{TOOL_NAME[scheme] ?? scheme}</span>{label.length > 60 ? `${label.slice(0, 57)}…` : label}

@@ -1470,3 +1470,13 @@ button.sb-group-title.link { text-decoration: none; }
 .tool-name { padding: 0 6px; border-radius: 4px; background: var(--accent-soft); font-size: 11px; font-weight: 600; }
 button.line-ref.find { border: 0; cursor: pointer; font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 .menu-input { display: flex; gap: 6px; padding: 4px 6px; } .menu-input .input { flex: 1; min-width: 0; }
+
+/* multi-select */
+.select-bar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; margin: 0 12px 6px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent); font-size: 13px; flex-wrap: wrap; }
+.select-bar b { margin-right: 6px; color: var(--accent-ink); }
+.selectable-msg { cursor: pointer; position: relative; }
+.selectable-msg { padding-right: 40px; }
+.selectable-msg::before { content: ''; position: absolute; right: 12px; top: 50%; margin-top: -8px; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--text-3); background: var(--layer-solid); z-index: 1; }
+.selectable-msg.chosen { background: var(--accent-soft); }
+.selectable-msg.chosen::before { border-color: var(--accent); background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat; }
+.selectable-msg .msg-tools { display: none !important; }

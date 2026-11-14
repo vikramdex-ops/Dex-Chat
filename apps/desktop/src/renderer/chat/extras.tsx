@@ -156,8 +156,9 @@ export function RemindDialog({ message, users, meId, onClose }: {
 }
 
 // ------------------------------------------------------------------ forward dialog
-export function ForwardDialog({ message, users, meId, online, onClose }: {
-  message: Message; users: Map<string, PublicUser>; meId: string; online: Set<string>; onClose: () => void;
+export function ForwardDialog({ message, more = [], users, meId, online, onClose }: {
+  message: Message; /** further messages forwarded together (multi-select), in order */ more?: Message[];
+  users: Map<string, PublicUser>; meId: string; online: Set<string>; onClose: () => void;
 }) {
   const toast = useToast();
   const conversations = useChat((s) => s.conversations);
@@ -172,14 +173,16 @@ export function ForwardDialog({ message, users, meId, online, onClose }: {
   const go = async () => {
     setBusy(true);
     try {
-      await window.dex.request('msg.forward', { messageId: message.id, convIds: picked, note: note.trim() || undefined });
+      const all = [message, ...more];
+      for (const [i, m] of all.entries()) await window.dex.request('msg.forward', { messageId: m.id, convIds: picked, note: i === 0 ? note.trim() || undefined : undefined });
       toast(picked.length === 1 ? `Forwarded to ${convTitle(conversations.get(picked[0])!, users, meId)}` : `Forwarded to ${picked.length} conversations`);
       onClose();
     } catch (e) { toast((e as Error).message, true); setBusy(false); }
   };
   return (
     <Dialog title="Forward" onClose={onClose}>
-      <div className="quote">{message.body ? renderBody(message.body, users, meId) : <span className="faint">{message.files.length} {message.files.length === 1 ? 'file' : 'files'}</span>}</div>
+      {more.length ? <div className="quote">{1 + more.length} messages</div>
+        : <div className="quote">{message.body ? renderBody(message.body, users, meId) : <span className="faint">{message.files.length} {message.files.length === 1 ? 'file' : 'files'}</span>}</div>}
       <input className="input" autoFocus placeholder="Search conversations" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search conversations" />
       <div className="picker-list">
         {list.length === 0 && <div className="faint" style={{ padding: 12 }}>No conversations match.</div>}

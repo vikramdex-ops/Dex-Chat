@@ -15,7 +15,7 @@ import { Home } from './views/Home.tsx';
 import { People } from './views/People.tsx';
 import { SettingsView } from './views/Settings.tsx';
 import { ChatView } from './chat/ChatView.tsx';
-import { addConversation, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
+import { addConversation, chatState, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
 import { IncomingCall, RoomStage } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
@@ -176,6 +176,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     openConversation(c.id, c.kind);
     if (messageId) setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId, messageId, parentId: parentId ?? null } })), 120);
   };
+  // other parts of the app open a conversation by id (Reply privately, links)
+  useEffect(() => {
+    const onOpen = (e: Event) => { const c = chatState().conversations.get(String((e as CustomEvent).detail)); if (c) openConversation(c.id, c.kind); };
+    window.addEventListener('dex-open', onOpen);
+    return () => window.removeEventListener('dex-open', onOpen);
+  }, []);
   const messagePerson = async (userId: string) => {
     if (userId === session.me.id) return;
     try {
@@ -225,9 +231,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   useEffect(() => window.dex.onDeepLink((url) => {
     const shareReq = parseShare(url);
     if (shareReq) { setShare(shareReq); return; }
-    const m = url.match(/^dexconnect:\/\/([a-z]+)\/?([\w-]*)/i);
+    const m = url.match(/^dexconnect:\/\/([a-z]+)\/?([\w-]*)\/?([\w-]*)/i);
     if (!m) return;
     const target = m[1].toLowerCase();
+    if (target === 'message' && m[2]) {
+      if (conversations.has(m[2])) jump(m[2], m[3] || undefined);
+      else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'That message is in a conversation you are not part of' }));
+      return;
+    }
     if (target === 'people' || target === 'directory') { setLens('directory'); if (m[2]) setFocusUser(m[2]); }
     else if (target === 'admin' && isAdmin) setSheet('control');
     else if (target === 'settings') setSheet('preferences');
