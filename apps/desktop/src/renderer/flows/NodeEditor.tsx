@@ -148,7 +148,7 @@ export function NodeEditor({ graph, nodeId, onChange, lists, readOnly, onRemove,
     </>);
     if (t.kind === 'response.confirmed') body = (<>
       <div className="field"><label>Responses to</label>
-        <Segmented<'any' | 'poll' | 'form'> label="Responses to" value={t.source ?? 'any'} onChange={(source) => setTrigger({ ...t, source })} options={[{ value: 'any', label: 'Polls and forms' }, { value: 'poll', label: 'Polls' }, { value: 'form', label: 'Forms' }]} />
+        <Segmented<'any' | 'poll' | 'form' | 'decision'> label="Responses to" value={t.source ?? 'any'} onChange={(source) => setTrigger({ ...t, source })} options={[{ value: 'any', label: 'All' }, { value: 'poll', label: 'Polls' }, { value: 'form', label: 'Forms' }, { value: 'decision', label: 'Decisions' }]} />
       </div>
       <div className="field"><label>Only this choice (leave empty for any)</label><input className="input" aria-label="Only this choice" placeholder="e.g. Yes" value={t.choice ?? ''} onChange={(e) => setTrigger({ ...t, choice: e.target.value || undefined })} />
         <span className="faint fl-help">For a form, the choice is the answer to its first multiple-choice question.</span></div>

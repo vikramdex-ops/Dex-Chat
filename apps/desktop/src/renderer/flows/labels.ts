@@ -58,7 +58,7 @@ export function triggerSummary(t: TriggerNode, n: Names): string {
   switch (t.kind) {
     case 'file.added': return `${types(t.types)}${t.namePattern ? ` named ${t.namePattern}` : ''}`;
     case 'reaction.added': return `${t.emoji || 'a reaction (choose one)'}${t.by?.length ? ` on messages by ${peopleText(t.by, n)}` : ' on any message'}`;
-    case 'response.confirmed': return `${t.source === 'poll' ? 'a poll vote' : t.source === 'form' ? 'a form answer' : 'a poll vote or form answer'}${t.choice ? ` of “${t.choice}”` : ''}`;
+    case 'response.confirmed': return `${t.source === 'poll' ? 'a poll vote' : t.source === 'form' ? 'a form answer' : t.source === 'decision' ? 'the end of a Decision' : 'a poll vote, form answer or Decision'}${t.choice ? ` of “${t.choice}”` : ''}`;
     case 'message.matched': return t.pattern ? (t.mode === 'regex' ? `matches /${clip(t.pattern, 40)}/` : `has “${clip(t.pattern, 50)}”`) : 'words not chosen yet';
     case 'message.mentioned': return `mentions ${peopleText(t.targets, n)}`;
   }

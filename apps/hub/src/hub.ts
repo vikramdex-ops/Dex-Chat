@@ -43,6 +43,8 @@ import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 import { Links, LinkError } from './links.ts';
 import { ReactionInsights, InsightError } from './reactions.ts';
+import { Decisions, DecisionError } from './decisions.ts';
+import { Refs, RefError } from './refs.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -131,6 +133,8 @@ export class Hub {
   readonly links: Links;
   readonly reactionInsights: ReactionInsights;
   readonly flows: Flows;
+  readonly decisions: Decisions;
+  readonly refs: Refs;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -187,8 +191,20 @@ export class Hub {
     this.messaging.customEmoji = (name) => this.emoji.exists(name);
     this.commands = new Commands(this.store, this.messaging);
     this.workspace = new Workspace(this.store.db, this.messaging, (userIds, name, data) => this.deliver(userIds, name, data));
+    const meetings = new Meetings(this.store.db, this.messaging, (uid) => {
+      const u = this.store.userById(uid);
+      return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
+    });
     this.links = new Links({ store: this.store, messaging: this.messaging, files: this.files, visibleUsers: (u) => this.guests.visibleTo(u, this.store.activeUsers()),
-      event: (u, id) => { try { return this.calendar.handle('cal.get', u, { eventId: id }) as import('@dex/core').CalEvent; } catch { return null; } } });
+      event: (u, id) => { try { return this.calendar.handle('cal.get', u, { eventId: id }) as import('@dex/core').CalEvent; } catch { return null; } },
+      meeting: (u, id) => {
+        const m = meetings.get(id);
+        if (!m) return null;
+        const live = (this.rooms.handle('room.list', u, '', {}) as import('@dex/core').RoomInfo[]).find((r) => r.meetingId === m.id) ?? null;
+        return { info: meetings.info(m, live), insider: meetings.insider(m, u.id) };
+      } });
+    this.decisions = new Decisions(this.store.db, this.messaging);
+    this.refs = new Refs(this.store.db, this.messaging, this.files);
     this.reactionInsights = new ReactionInsights(this.store, this.messaging);
     this.messaging.onReaction = (messageId, convId, userId, emoji, on) => this.reactionInsights.record(messageId, convId, userId, emoji, on);
     this.messaging.afterSend = (msg, author) => this.links.prefetch(msg, author);
@@ -221,10 +237,7 @@ export class Hub {
       relayAvailable: () => this.opts.relay !== false && this.relay.available(),
       deviceLeft: (_roomId, deviceId) => this.relay.leave(deviceId),
       roomClosed: (roomId) => this.relay.closeRoom(roomId),
-      meetings: new Meetings(this.store.db, this.messaging, (uid) => {
-        const u = this.store.userById(uid);
-        return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
-      }),
+      meetings,
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -1283,6 +1296,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(decision|refs)\./.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = op.startsWith('decision.') ? this.decisions.handle(op, me, d) : this.refs.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof DecisionError || err instanceof RefError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }

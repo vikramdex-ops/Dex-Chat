@@ -118,7 +118,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNIN
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number; archived: number; post_policy: 'everyone' | 'moderators' }
-export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; pin_until?: number | null; client_id: string | null; forwarded: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null }
+export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; pin_until?: number | null; client_id: string | null; forwarded: string | null; ref?: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null }
 
 const MAX_BODY = 8000;
 /** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
@@ -144,6 +144,10 @@ export class Messaging {
   observe: ((e: FlowEvent) => void) | null = null;
   /** Tags Automations added to a message, kept when its text is indexed again. */
   keptTags: (messageId: string) => string[] = () => [];
+  /** Other parts of the hub add to a message as each person sees it (Decisions, references, hidden link cards). */
+  readonly viewExtras: Array<(r: MsgRow, viewer: string | null) => Partial<Message>> = [];
+  /** Other parts of the hub forget their data about a message removed for good (retention). */
+  readonly purgeExtras: Array<(messageId: string) => void> = [];
 
   /** Office data-loss rules on a message the hub can read: throws when blocked, returns it masked otherwise. */
   guardText(body: string, convId: string): string {
@@ -174,6 +178,8 @@ export class Messaging {
     // hubs from before forwarding existed
     const cols = (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('forwarded')) db.exec('ALTER TABLE messages ADD COLUMN forwarded TEXT');
+    // a reference to a message or file elsewhere (like a forward, but pointing rather than copying)
+    if (!cols.includes('ref')) db.exec('ALTER TABLE messages ADD COLUMN ref TEXT');
     // join/leave/rename notices are messages with a system field
     if (!cols.includes('system')) db.exec('ALTER TABLE messages ADD COLUMN system TEXT');
     if (!cols.includes('reply_to')) db.exec('ALTER TABLE messages ADD COLUMN reply_to TEXT');
@@ -354,7 +360,19 @@ export class Messaging {
       inReplyTo: r.reply_to ? (() => { const p = this.message(r.reply_to!); return p ? { messageId: p.id, authorId: p.author_id } : null; })() : null,
       poll: r.deleted ? null : this.pollView(r.id, viewer),
       form: r.deleted ? null : this.formView(r.id, viewer),
+      ...Object.assign({}, ...this.viewExtras.map((f) => f(r, viewer))),
     };
+  }
+
+  /** A message as stored (for the parts of the hub that add to messages). */
+  row(id: string): MsgRow | undefined {
+    return this.message(id);
+  }
+
+  /** Send everyone in the conversation the message again, after something about it changed. */
+  pushUpdate(id: string): void {
+    const row = this.message(id);
+    if (row) this.pushMessage('msg.updated', row);
   }
 
   /** Find the conversation for a message the viewer can see. */
@@ -424,8 +442,8 @@ export class Messaging {
   private pushMessage(name: 'msg.new' | 'msg.updated', msg: MsgRow): void {
     const view = this.messageView(msg);
     const members = this.members(msg.conv_id);
-    // polls carry each person's own vote
-    this.deliver(members, name, view.poll || view.form ? (uid) => this.messageView(msg, uid) : () => view);
+    // polls, forms and Decisions carry each person's own answers; references what each person may open
+    this.deliver(members, name, view.poll || view.form || view.decision || view.ref ? (uid) => this.messageView(msg, uid) : () => view);
     // a reply also changes the parent's reply count
     if (msg.parent_id) {
       const parent = this.message(msg.parent_id);
@@ -847,7 +865,7 @@ export class Messaging {
           if (note) this.sendAs(me, c, note, undefined, [], `fwdnote-${stamp}-${c.id}`, {});
           const poll = this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(src.id);
           const text = typeof bodies[c.id] === 'string' ? cleanBody(bodies[c.id]) : poll ? `📊 ${src.body}` : src.body;
-          out.push(this.sendAs(me, c, text, undefined, files, `fwd-${stamp}-${c.id}`, { forwarded, skipFileCheck: true }));
+          out.push(this.sendAs(me, c, text, undefined, files, `fwd-${stamp}-${c.id}`, { forwarded, skipFileCheck: true, ...(src.ref ? { ref: src.ref } : {}) }));
         }
         return out satisfies Ops['msg.forward']['res'];
       }
@@ -984,6 +1002,7 @@ export class Messaging {
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
         this.requireMember(msg.conv_id, me.id);
         if (msg.author_id !== me.id) throw new MsgError('You can only edit your own messages.');
+        if (msg.ref) throw new MsgError('A reference cannot be edited. Delete it and share it again.');
         this.checkWindow(msg, 'edited');
         const raw = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
         if (!raw) throw new MsgError('A message cannot be empty. Delete it instead.');
@@ -1147,7 +1166,7 @@ export class Messaging {
 
   /** Post a message as someone (the person, a scheduled send, a bot or a forward). */
   sendAs(me: PublicUser, c: ConvRow, body: string, rawParent: unknown, fileIds: string[], rawClientId: unknown,
-    extra: { forwarded?: string; skipFileCheck?: boolean; poll?: { options: string[]; multi: boolean; anonymous: boolean; closesAt: number | null } }): Message {
+    extra: { forwarded?: string; ref?: string; skipFileCheck?: boolean; poll?: { options: string[]; multi: boolean; anonymous: boolean; closesAt: number | null } }): Message {
     if (fileIds.length > 20) throw new MsgError('Attach up to 20 files at a time.');
     if (!extra.skipFileCheck) for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
     if (!body && !fileIds.length) throw new MsgError('Write something first.');
@@ -1169,8 +1188,8 @@ export class Messaging {
       parentId = parent.id;
     }
     const id = ulid();
-    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id, forwarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, c.id, me.id, body, parentId, Date.now(), clientId, extra.forwarded ?? null);
+    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id, forwarded, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, c.id, me.id, body, parentId, Date.now(), clientId, extra.forwarded ?? null, extra.ref ?? null);
     if (extra.poll) {
       this.db.prepare('INSERT INTO polls (message_id, question, options, multi, anonymous, closes_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(id, body, JSON.stringify(extra.poll.options), extra.poll.multi ? 1 : 0, extra.poll.anonymous ? 1 : 0, extra.poll.closesAt);
@@ -1216,6 +1235,7 @@ export class Messaging {
       const form = this.db.prepare('SELECT id FROM forms WHERE message_id = ?').get(id) as { id: string } | undefined;
       if (form) { this.db.prepare('DELETE FROM form_responses WHERE form_id = ?').run(form.id); this.db.prepare('DELETE FROM forms WHERE id = ?').run(form.id); }
       this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
+      for (const forget of this.purgeExtras) forget(id);
       this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
     }
     this.deliver(this.members(msg.conv_id), 'msg.removed', () => ({ convId: msg.conv_id, messageIds: ids }));

@@ -326,7 +326,7 @@ export class Flows {
         return null;
       }
       case 'response.confirmed': {
-        if (e.kind !== 'response.confirmed') return 'It is not a poll vote or form answer.';
+        if (e.kind !== 'response.confirmed') return 'It is not a poll vote, form answer or Decision.';
         if (t.source && t.source !== 'any' && t.source !== e.source) return `It is a ${e.source}, not a ${t.source}.`;
         if (t.choice && t.choice.trim().toLowerCase() !== e.choice.trim().toLowerCase()) return `The choice was “${e.choice}”, not “${t.choice}”.`;
         return null;
@@ -389,7 +389,7 @@ export class Flows {
     const where = this.convName(ctx.conv);
     const e = ctx.event;
     if (e.kind === 'reaction.added') return `${who} reacted ${e.emoji} in ${where}`;
-    if (e.kind === 'response.confirmed') return e.source === 'poll' ? `${who} voted “${e.choice}” in ${where}` : `${who} answered a form in ${where}`;
+    if (e.kind === 'response.confirmed') return e.source === 'poll' ? `${who} voted “${e.choice}” in ${where}` : e.source === 'decision' ? `${who} reached “${e.choice}” in a Decision in ${where}` : `${who} answered a form in ${where}`;
     if (ctx.file) return `${who} shared ${ctx.file.name} in ${where}`;
     return `${who} wrote in ${where}`;
   }
@@ -755,7 +755,7 @@ export class Flows {
       const e: FlowEvent = t.kind === 'reaction.added'
         ? { kind: 'reaction.added', messageId: m.id, convId: m.convId, userId: me.id, emoji: typeof sample.emoji === 'string' && sample.emoji ? sample.emoji : t.emoji }
         : t.kind === 'response.confirmed'
-          ? { kind: 'response.confirmed', messageId: m.id, convId: m.convId, userId: me.id, source: m.form ? 'form' : 'poll', choice: typeof sample.choice === 'string' && sample.choice ? sample.choice : t.choice ?? m.poll?.options[0]?.text ?? '' }
+          ? { kind: 'response.confirmed', messageId: m.id, convId: m.convId, userId: me.id, source: m.decision ? 'decision' : m.form ? 'form' : 'poll', choice: typeof sample.choice === 'string' && sample.choice ? sample.choice : t.choice ?? m.poll?.options[0]?.text ?? '' }
           : { kind: 'message.new', messageId: m.id, convId: m.convId, authorId: m.authorId };
       const actorId = e.kind === 'message.new' ? e.authorId : e.userId;
       ctx = this.makeContext(e, conv, m, this.user(m.authorId), this.user(actorId), true, false);
@@ -774,7 +774,7 @@ export class Flows {
       const e: FlowEvent = t.kind === 'reaction.added'
         ? { kind: 'reaction.added', messageId: 'sample', convId: conv.id, userId: me.id, emoji: typeof sample.emoji === 'string' && sample.emoji ? sample.emoji : t.emoji }
         : t.kind === 'response.confirmed'
-          ? { kind: 'response.confirmed', messageId: 'sample', convId: conv.id, userId: me.id, source: t.source === 'form' ? 'form' : 'poll', choice: typeof sample.choice === 'string' ? sample.choice : t.choice ?? '' }
+          ? { kind: 'response.confirmed', messageId: 'sample', convId: conv.id, userId: me.id, source: t.source === 'form' || t.source === 'decision' ? t.source : 'poll', choice: typeof sample.choice === 'string' ? sample.choice : t.choice ?? '' }
           : { kind: 'message.new', messageId: 'sample', convId: conv.id, authorId: author.id };
       ctx = this.makeContext(e, conv, message, author, e.kind === 'message.new' ? author : me, true, true);
     }
