@@ -1,6 +1,6 @@
 # Integrating office tools with Dexterity Connect
 
-Four ways for a tool to work with Dexterity Connect, from the simplest to the most capable. None
+Several ways for a tool to work with Dexterity Connect, from the simplest to the most capable. None
 needs the internet: everything runs on the office network.
 
 ## 1. Share a file or a note (no setup)
@@ -124,7 +124,214 @@ there, for example when a drawing is shared, with the PDF's title and revision i
 request format, the values a body can use and the safety rules (office-network addresses only when
 an administrator allows them) are in [`AUTOMATIONS.md`](AUTOMATIONS.md#webhooks).
 
-## 4. Links that open Dexterity Connect
+## 4. Conversations that take several steps (flows)
+
+A flow asks one thing at a time in the person's Direct conversation with an integration: a plot
+request, a leave request, a site-visit booking. Each step is a card with its input inline; **Back**
+and **Cancel** are always there. The hub keeps where each person is: the current step, the answers
+so far, when it started, when it was last answered and when it expires (7 days after the last
+answer unless the flow says otherwise). When the person comes back later, on any of their
+devices or after restarting the app, the integration shows **Pick up where you left off: step 3
+of 5** with **Resume**, **Start over** and **Cancel**.
+
+People start a flow by its slash command (`/plot`), by writing to the integration (a keyword or
+the flow's title; anything else gets a card listing what it can do), or with a **Start** button
+on a card the integration or a colleague posted.
+
+(Flows are conversations with a person. [Automations](AUTOMATIONS.md) are something else: rules
+that react to what happens in a conversation, such as a drawing being shared.)
+
+### Flows run by the hub
+
+Keep a flow with the integration's token:
+
+```
+PUT https://<hub>:47900/api/flows/site-visit
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "Book a site visit",
+  "description": "The site lead gets it on their Desk.",
+  "command": "sitevisit",
+  "keywords": ["site visit"],
+  "expiresInDays": 7,
+  "vars": { "office": "Mumbai" },
+  "steps": [
+    { "id": "site", "label": "Site", "prompt": "Which site?",
+      "input": { "kind": "choice", "options": ["Refinery", { "value": "depot", "label": "Depot (hard hat only)" }] },
+      "branches": [{ "if": { "equals": "depot" }, "goto": "people", "set": { "ppe": "Hard hat" } }] },
+    { "id": "permit", "label": "Permit", "prompt": "Work permit number?",
+      "input": { "kind": "regex", "pattern": "WP-\\d{4}", "message": "Permit numbers look like WP-1234." } },
+    { "id": "people", "label": "People", "prompt": "How many people?", "input": { "kind": "number", "integer": true, "min": 1, "max": 8 } },
+    { "id": "day", "label": "Day", "prompt": "Which day?", "input": { "kind": "date", "notBefore": "today" } },
+    { "id": "lead", "label": "Site lead", "prompt": "Who is the site lead?", "input": { "kind": "person" } },
+    { "id": "pack", "label": "Briefing pack", "prompt": "Attach the briefing pack if there is one.", "input": { "kind": "file", "accept": [".pdf"], "optional": true } },
+    { "id": "ok", "prompt": "Send this to {{lead}}?\n\n{{summary}}", "input": { "kind": "confirm", "yes": "Send", "no": "Change something" },
+      "branches": [{ "if": { "equals": "no" }, "goto": "site" }] }
+  ],
+  "finish": [
+    { "do": "task", "assignee": "lead", "text": "Site visit to {{site}} on {{day}} for {{people}} ({{user}})", "due": "day" },
+    { "do": "post", "to": "origin", "text": "Site visit booked: {{site}}, {{day}}." },
+    { "do": "webhook" }
+  ],
+  "done": "Sent to {{lead}}."
+}
+```
+
+| Part | Meaning |
+| --- | --- |
+| `name` (in the address) | Lower-case letters, digits and dashes; unique in the office. `PUT` again to change it; `DELETE /api/flows/<name>` removes it (anyone in the middle is stopped). `GET /api/flows` lists yours. |
+| `input.kind` | `choice` (buttons; `options` as text or `{value, label}`), `text` (add `validate`, or use the short kinds `number` with `min`, `max`, `integer`; `date` with `notBefore` (`"today"` or a date); `email`; `regex` with `pattern`), `person` (anyone in the office except the person answering), `file` (`accept` extensions; the person attaches it in the card), `confirm` (`yes` and `no` words). `optional: true` adds **Skip**. `message` replaces the hint shown when an answer does not pass. |
+| `branches` | Checked in order after the step is answered; the first whose `if` passes decides where to go (`goto` a step id, or `"end"`), and may `set` variables. Tests: `equals`, `notEquals`, `in`, `matches`, `gt`, `gte`, `lt`, `lte`, `empty`, on the step's answer or on another `var`. Without a branch the flow goes to `next`, or the following step. |
+| Variables | Each answer is kept under its step id (or `save`). In prompts and messages `{{name}}` shows the answer as the person saw it (a person's name, a date in words), `{{name.value}}` the raw value (an id, `2026-11-20`), `{{summary}}` all answers so far as a list, `{{user}}` who is answering. |
+| `finish` | `task`: a task on the Desk of the person in `assignee` (a person step), due at 09:00 on the `due` date step (or `dueInDays`); they also get the answers, and any file, in their conversation with the integration. `post`: `to` is `origin` (the Space the flow was started from), `space:<name>`, or `person:<step>`. `webhook`: the integration's webhook (Control room → Integrations → Commands) receives `{ "type": "flow.completed", "flow", "sessionId", "user", "answers", "labels", "files", "conversation" }`, signed like slash commands; a reply `{ "text": "…" }` is posted to the person. |
+
+Other calls: `POST /api/flows/<name>/offer` with `{ "to": ["priya.raman"], "space": "Site team" }`
+posts a card with a **Start** button; `POST /api/flows/<name>/start` with `{ "user": "priya.raman" }`
+starts it for someone (the first step appears in their conversation with the integration).
+Answers are checked again on the hub, whatever the app shows. Administrators can write, change and
+switch flows off in **Control room → Bots & tools → Flows**.
+
+Dexterity Connect comes with **Front Office** and two flows: **Request a plot** (`/plot`: job,
+drawings and revisions, the plot set, sheet size, media, sets, date needed, approver; the approver
+gets a task on their Desk) and **Leave request** (`/leave`: kind, from, working days, who covers,
+handover, approver; the approver gets a task and the person covering is told). Revoking Front Office
+in Control room → Integrations switches them off.
+
+### Integrations with their own logic (sessions)
+
+An integration that decides each step itself can still keep its state on the hub, so it survives
+restarts and other devices:
+
+```
+GET    /api/sessions/<user>        the conversation in progress with that person (404 if none)
+PUT    /api/sessions/<user>        { "step": "drawing", "data": { … }, "expiresInDays": 3,
+                                     "prompt": { "title": "Plot spooler", "text": "Which drawing?",
+                                                 "input": { "kind": "text" }, "of": 4 } }
+DELETE /api/sessions/<user>        end it
+```
+
+`<user>` is a Windows sign-in (`priya.raman` or `DEX\priya.raman`) or a person's id. `data` is
+your own JSON (up to 64 KB). A `prompt` shows a card for that step with the same inputs as above
+(`of` is how many steps there are, for "step 2 of 4"); `"end": "done"` or `"end": "cancelled"`
+finishes it. The session you get back has `id`, `step`, `history`, `answers`, `data`,
+`startedAt`, `updatedAt` and `expiresAt`.
+
+What happens in the conversation is sent to your webhook, signed, with the session id and step:
+
+```
+{ "type": "answer", "sessionId": "01J…", "step": "qty", "value": "4", "label": "4",
+  "session": { … }, "user": { "id": "…", "name": "Priya Raman", "account": "dex\\priya.raman" },
+  "conversation": { "id": "…", "kind": "direct" }, "at": "2026-11-14T10:00:00Z" }
+```
+
+`type` is `answer` (a card was answered), `message` (the person wrote; with `text`, `files` and
+`messageId`), `back` (they went back to the previous card, which the hub shows again), `cancel` or
+`restart`. Reply with `{ "text": "…" }` to answer in the conversation and/or
+`{ "session": { "step": …, "data": …, "prompt": … } }` to move on, exactly like `PUT`.
+
+## 5. Tools inside conversations (mini-apps)
+
+A tool is a small web page that runs inside a conversation: everyone in it sees the same tool and
+its shared state. Members add approved tools from the conversation's menu (**Add a tool…**); each
+one added is a sheet-framed card in the timeline that can be popped out larger.
+
+### The bundle
+
+Upload either **one HTML file** that describes itself:
+
+```html
+<!doctype html>
+<html><head>
+<script type="application/dex-manifest+json">
+{ "id": "rfi-log", "name": "RFI log", "version": "1.2.0", "description": "Open RFIs for this job",
+  "permissions": ["state", "post", "members"], "hosts": ["https://docs.office.local"], "height": 360 }
+</script>
+<style>…</style></head>
+<body>…<script>…</script></body></html>
+```
+
+or a **.zip** with `manifest.json` (the same fields, plus `entry` if the page is not `index.html`)
+next to the page, its scripts, styles, images and fonts. The hub writes everything the page refers
+to into it (scripts, styles, `url()` in styles, `src` of images and media become inline or `data:`);
+anything loaded from elsewhere (`https://…`, `//…`) is refused. Up to 2 MB packed, 4 MB unpacked,
+64 files, 3 MB as one page. Ids starting with `dex-` belong to the tools that come with the app.
+
+| Permission | What the tool may do |
+| --- | --- |
+| `state` | Read and write its shared state in that conversation. |
+| `post` | Post a message as the person, after they see it and press **Post it**. |
+| `members` | See who is in the conversation (names and titles). |
+| `files` | List the files shared in the conversation; open one after the person agrees (once per file). |
+| `network` | Reach the `hosts` the administrator granted (set by listing `hosts`). |
+
+Every tool can read who is looking (`context`) and ask for a different height.
+
+### The sandbox
+
+The app shows a tool in `<iframe sandbox="allow-scripts">` loaded from its own `dexapp:` address:
+no same origin with the app, no top navigation, no popups, no form submission (handle clicks and
+Enter in your script), no `alert` or `prompt`, no camera, microphone, clipboard or location. The page is served with this policy (also written into the page
+before anything else):
+
+```
+default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:;
+font-src data:; media-src data: blob:; connect-src 'none' (or the granted hosts); frame-src 'none';
+child-src 'none'; worker-src 'none'; object-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'
+```
+
+Its frame may only ever show tools: the app refuses to send it anywhere else.
+
+### The API
+
+The page gets `window.dex` before its own scripts run:
+
+```js
+const ctx = await dex.context();
+// { viewer: { id, name }, conversation: { id, kind, name }, app: { id, name, version },
+//   instanceId, permissions, theme: { mode: 'light' | 'dark', colors: { bg, text, accent, … } } }
+const people = await dex.members();                 // [{ id, name, title }]
+const { posted } = await dex.post('**Tape**\n- 12 × 3 = 36');
+const { state, version } = await dex.state.get();
+const r = await dex.state.set(next, version);       // { state, version, conflict }
+dex.on('state', ({ state, version, updatedBy }) => render(state));
+const files = await dex.files.list();               // [{ id, name, mime, size, createdAt }]
+const f = await dex.files.read(files[0].id);        // { id, name, mime, size, bytes: ArrayBuffer }
+await dex.resize(480);                              // 120 to 900 px
+dex.on('theme', ({ mode, colors }) => …);
+```
+
+The app's colours are also set as CSS variables (`--dex-bg`, `--dex-text`, `--dex-text-2`,
+`--dex-text-3`, `--dex-stroke`, `--dex-stroke-strong`, `--dex-accent`, `--dex-accent-soft`,
+`--dex-amber`, `--dex-danger`, `--dex-font-body`, `--dex-font-mono`, …) and follow light and dark.
+
+Shared state is one JSON value per tool added, up to 64 KB, sent to everyone in the conversation.
+The last write wins and each write increases `version`; pass the version you started from and the
+answer's `conflict` says whether someone wrote in between, so you can merge (the tools that come
+with the app keep lists of records with ids and merge by id). Up to 25 writes in 5 seconds per person.
+
+Underneath, `window.dex` is `postMessage`: the page sends `{ dex: 1, id, method, params }` to its
+parent (`context.get`, `members.list`, `message.post`, `state.get`, `state.set`, `files.list`,
+`files.read`, `ui.resize`) and gets `{ dex: 1, id, ok, result | error }`; changes arrive as
+`{ dex: 1, event: 'state' | 'theme', data }`.
+
+### Review
+
+In **Control room → Bots & tools → Tools in conversations** an administrator uploads a bundle, reads
+what it asks for (permissions, hosts, its whole page), grants some or all of the hosts, and approves
+or rejects it with a note. A new version goes back for review before anyone runs it. Switching a tool
+off stops it everywhere at once; its cards say so. Uploading, approving, rejecting, switching on or
+off, and every tool added to a conversation are in the audit log.
+
+Dexterity Connect comes with five tools: **Calculator** (a tape everyone in the conversation sees),
+**Unit converter** (length, pressure, flow, temperature, mass, area, volume and density, with a
+shared list of noted conversions), **Drawing viewer** (SVG, PNG, JPEG or the first page of a PDF,
+with pan, zoom and numbered markers), **Data sheet** (a CSV as a sortable table and a bar chart;
+for a workbook, save the sheet as CSV first) and **Punch list** (snags by area, discipline and
+priority, with a tally board).
+
+## 6. Links that open Dexterity Connect
 
 | Link | Opens |
 | --- | --- |
@@ -139,7 +346,7 @@ an administrator allows them) are in [`AUTOMATIONS.md`](AUTOMATIONS.md#webhooks)
 Every one of these links, the tools' own links below, and paths on the office share are shown in
 messages as cards (see [Link cards](#5-link-cards-side-tracks-about-links-and-reaction-insights)).
 
-## 5. Link cards, side-tracks about links and reaction insights
+## 7. Link cards, side-tracks about links and reaction insights
 
 These are operations the apps call on the hub over their signed-in connection (like every other
 operation; there is no separate HTTP API). Types are in `packages/core/src/protocol.ts`.
