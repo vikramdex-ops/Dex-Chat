@@ -90,3 +90,17 @@ test('forms take files and scanned codes; the author can open the files', async 
   assert.ok(hub.files.canRead(me(owner), photo.id), 'the form author opens the photo');
   assert.ok(!hub.files.canRead(me(ravi), photo.id), 'others do not');
 });
+
+test("the office's own lines for the day's line: administrators add them, everyone reads them", async () => {
+  const { owner, priya } = await office();
+  await assert.rejects(priya.request('admin.lines.add', { text: 'Hello' }), /administrators/);
+  const changed = new Promise<unknown[]>((r) => priya.on('event', (n: string, d: unknown[]) => { if (n === 'lines.updated') r(d); }));
+  await owner.request('admin.lines.add', { text: 'Twenty years of drawings, one sheet at a time.', date: '2026-12-01' });
+  assert.equal((await changed).length, 1);
+  await assert.rejects(owner.request('admin.lines.add', { text: 'x', date: 'tomorrow' }), /Write the line first|Choose a date/);
+  await assert.rejects(owner.request('admin.lines.add', { text: 'A good line', date: 'tomorrow' }), /Choose a date/);
+  const list = await owner.request('admin.lines.add', { text: 'Safety first, always.', by: 'Site team' });
+  assert.equal(list.length, 2);
+  assert.deepEqual((await priya.request('lines.office')).map((l) => l.by), [null, 'Site team']);
+  assert.equal((await owner.request('admin.lines.remove', { id: list[0].id })).length, 1);
+});

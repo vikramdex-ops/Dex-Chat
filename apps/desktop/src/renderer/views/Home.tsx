@@ -11,6 +11,7 @@ import { plainPreview } from '../chat/format.tsx';
 import { describeWhen, useDesk } from '../desk/store.ts';
 import { DayLogCard } from '../work/WorkUi.tsx';
 import { NextMeeting } from '../calendar/CalendarView.tsx';
+import { DayLine } from '../pulse/DayLine.tsx';
 
 function greeting(d = new Date()): string {
   const h = d.getHours();
@@ -59,6 +60,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
           <p className="label">Pulse · {onlineUsers.length} of {people.length} online · {session.hub.name}</p>
         </div>
       </div>
+
+      <DayLine live={live} />
 
       <section className="pulse-section">
         <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length + dueToday.length ? ` · ${needsYou.length + dueToday.length}` : ''}</div>

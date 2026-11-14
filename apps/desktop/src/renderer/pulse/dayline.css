@@ -1,0 +1,55 @@
+/* The day's line (Pulse) */
+.dayline {
+  --dl-ink: var(--accent); --dl-dim: var(--amber, #f7af44); --dl-paper: var(--card);
+  --px: 0; --py: 0;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: stretch;
+  border: 1px solid var(--stroke); border-radius: var(--radius-l, 16px); overflow: hidden; margin-bottom: 18px;
+  background:
+    linear-gradient(var(--dl-tint), var(--dl-tint)),
+    repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--dl-ink) 7%, transparent) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in srgb, var(--dl-ink) 7%, transparent) 23px 24px),
+    var(--dl-paper);
+  contain: layout paint;
+}
+.dayline.tod-dawn { --dl-tint: color-mix(in srgb, #f7af44 9%, transparent); }
+.dayline.tod-day { --dl-tint: transparent; }
+.dayline.tod-dusk { --dl-tint: color-mix(in srgb, #e07a3f 8%, transparent); }
+.dayline.tod-night { --dl-tint: color-mix(in srgb, #1b3c66 14%, transparent); }
+.dl-text { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; padding: 22px 26px 18px; }
+.dl-head { display: flex; justify-content: space-between; gap: 12px; font-size: 10.5px; letter-spacing: .12em; color: var(--text-3); border-bottom: 1px solid var(--stroke); padding-bottom: 8px; }
+.dl-quote { margin: 0; font-family: var(--font-display, inherit); font-size: clamp(19px, 2.1vw, 25px); line-height: 1.32; font-weight: 600; color: var(--text); text-wrap: balance; position: relative; padding-left: 18px; animation: dl-rise .5s cubic-bezier(.2,.8,.2,1) both; }
+.dl-quote::before { content: ''; position: absolute; left: 0; top: .2em; bottom: .2em; width: 6px; border: 2px solid var(--dl-dim); border-right: 0; border-radius: 2px 0 0 2px; }
+.dl-by { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-2); }
+.dl-rule { width: 26px; height: 2px; background: var(--dl-dim); border-radius: 1px; }
+.dl-actions { display: flex; align-items: center; gap: 4px; margin-top: auto; }
+.dl-actions .flip svg { transform: scaleX(-1); }
+.dl-sep { flex: 1; }
+.dl-plot { width: 100%; height: 100%; min-height: 220px; display: block; }
+.dl-plot .dl-layer { transition: transform .4s cubic-bezier(.2,.8,.2,1); will-change: transform; }
+.dayline .dl-layer.back { transform: translate(calc(var(--px) * -6px), calc(var(--py) * -6px)); }
+.dayline .dl-layer.mid { transform: translate(calc(var(--px) * 6px), calc(var(--py) * 5px)); }
+.dayline .dl-layer.front { transform: translate(calc(var(--px) * 12px), calc(var(--py) * 9px)); }
+.dl-plot path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.dl-plot .s-main { stroke: var(--dl-ink); stroke-width: 1.8; }
+.dl-plot .s-fine { stroke: var(--dl-ink); stroke-width: 1; opacity: .75; }
+.dl-plot .s-dim { stroke: var(--dl-dim); stroke-width: 1.1; }
+.dl-plot .s-centre { stroke: var(--text-3); stroke-width: .9; stroke-dasharray: 10 3 2 3; }
+.dl-plot .s-hatch { stroke: var(--dl-ink); stroke-width: .6; opacity: .14; }
+.dl-plot .s-node { fill: var(--dl-paper); stroke: var(--dl-ink); stroke-width: 1.4; }
+.dl-plot text { font: 600 10.5px var(--font-mono, monospace); fill: var(--text-2); letter-spacing: .04em; }
+.dl-plot .dl-title { fill: var(--text-3); font-size: 9.5px; letter-spacing: .12em; }
+/* the pen plotter: each stroke draws in after the one before */
+.dl-plot.draw path:not(.s-centre) { stroke-dasharray: 1; stroke-dashoffset: 1; animation: dl-draw .7s cubic-bezier(.45,0,.2,1) forwards; animation-delay: calc(var(--i) * 45ms + 150ms); }
+.dl-plot.draw .s-node, .dl-plot.draw text, .dl-plot.draw .s-centre { opacity: 0; animation: dl-fade .4s ease forwards; animation-delay: calc(var(--i) * 45ms + 300ms); }
+@keyframes dl-draw { to { stroke-dashoffset: 0; } }
+@keyframes dl-fade { to { opacity: 1; } }
+@keyframes dl-rise { from { opacity: 0; transform: translateY(6px); } }
+@media (max-width: 760px) { .dayline { grid-template-columns: 1fr; } .dl-plot { min-height: 180px; max-height: 220px; } }
+@media (prefers-reduced-motion: reduce) { .dl-plot.draw path, .dl-plot.draw text, .dl-plot.draw .s-node, .dl-plot.draw .s-centre, .dl-quote { animation: none; stroke-dashoffset: 0; opacity: 1; } .dl-plot .dl-layer { transform: none !important; } }
+
+/* the morning moment */
+.dl-moment { position: fixed; inset: 0; z-index: 500; display: grid; grid-template-rows: 1fr auto; place-items: center; background: color-mix(in srgb, var(--bg, #0f1b1d) 94%, transparent); backdrop-filter: blur(6px); animation: dl-fade .35s ease both; cursor: pointer; --dl-ink: var(--accent); --dl-dim: var(--amber, #f7af44); --dl-paper: var(--bg, #0f1b1d); }
+.dl-moment .dl-plot { position: absolute; inset: 6vh 6vw; width: 88vw; height: 70vh; opacity: .55; }
+.dl-moment-text { position: relative; max-width: min(900px, 86vw); display: grid; gap: 16px; padding: 28px 32px; background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--stroke); border-radius: 18px; box-shadow: 0 30px 80px rgba(0,0,0,.25); animation: dl-rise .6s .25s cubic-bezier(.2,.8,.2,1) both; }
+.dl-moment .dl-quote { font-size: clamp(24px, 3.4vw, 40px); }
+.dl-moment-opt { position: absolute; bottom: 18px; display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--text-2); cursor: default; }

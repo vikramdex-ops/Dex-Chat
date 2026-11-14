@@ -168,6 +168,9 @@ export interface Sticker { id: string; name: string; pack: string; fileId: strin
 export const STICKER_RE = /^\[\[sticker:([0-9A-Za-z]{10,40})\]\]$/;
 
 /** Office rules set by an administrator. */
+/** A line the office adds to the day's line on Pulse (optionally for a given date). */
+export interface OfficeLine { id: string; text: string; by: string | null; date: string | null; addedBy: string; addedAt: number }
+
 export interface OfficePolicy {
   /** Minutes after sending that people can edit or delete their own messages; null = any time. */
   editWindowMinutes: number | null;
@@ -722,6 +725,10 @@ export interface Ops {
   'ping': { req: void; res: { at: number } };
   'org.get': { req: void; res: OrgInfo };
   'policy.get': { req: void; res: OfficePolicy };
+  /** The office's own lines for Pulse. */
+  'lines.office': { req: void; res: OfficeLine[] };
+  'admin.lines.add': { req: { text: string; by?: string | null; date?: string | null }; res: OfficeLine[] };
+  'admin.lines.remove': { req: { id: string }; res: OfficeLine[] };
   'emoji.list': { req: void; res: CustomEmoji[] };
   /** How to reach this hub from outside (for a phone's setup code); null url when it is off. */
   'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean } };
@@ -904,6 +911,7 @@ export interface Events {
   'emoji.updated': CustomEmoji[];
   'sticker.updated': Sticker[];
   'widgets.updated': Widget[];
+  'lines.updated': OfficeLine[];
   'org.updated': OrgInfo;
   /** One of your devices was added with a pairing code. */
   'me.devicePaired': DeviceRecord;

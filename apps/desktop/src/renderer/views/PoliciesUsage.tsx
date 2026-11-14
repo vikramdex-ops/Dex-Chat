@@ -2,7 +2,7 @@
 // ▸ Usage (activity per day, busiest Spaces and people, storage, calls).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmojiImg, StickerImg, useCustomEmoji, useStickers } from '../emoji.tsx';
-import type { OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
+import type { OfficeLine, OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
 import { DLP_DETECTORS, validCidr } from '@dex/core/dlp';
 import type { DlpDetector, DlpRule } from '@dex/core/dlp';
 import { useChat } from '../chat/store.ts';
@@ -43,6 +43,7 @@ export function PoliciesAdmin() {
           <Toggle label="Direct messages pass straight between PCs" checked={p.peerFallback} onChange={(v) => save({ peerFallback: v })} />
         </div>
       </section>
+      <OfficeLines />
       <DataProtection p={p} save={save} />
       <DefaultSpaces p={p} save={save} />
       <EmojiAdmin />
@@ -339,6 +340,43 @@ export function ReportsAdmin({ users, onOpen }: { users: PublicUser[]; onOpen: (
   );
 }
 const relativeTimeOf = (t: number) => relativeTime(t);
+
+/** Control room ▸ Policies ▸ The day's line: the office's own lines, any day or on a date. */
+function OfficeLines() {
+  const toast = useToast();
+  const [list, setList] = useState<OfficeLine[]>([]);
+  const [text, setText] = useState('');
+  const [by, setBy] = useState('');
+  const [date, setDate] = useState('');
+  useEffect(() => { void window.dex.request('lines.office').then(setList).catch(() => {}); }, []);
+  const add = () => void window.dex.request('admin.lines.add', { text, by: by || null, date: date || null })
+    .then((l) => { setList(l); setText(''); setBy(''); setDate(''); toast(date ? `Set for ${new Date(`${date}T00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Added to the office lines'); })
+    .catch((e: Error) => toast(e.message, true));
+  return (
+    <section className="card">
+      <div className="eyebrow">The day's line</div>
+      <p className="muted" style={{ marginTop: 0 }}>Pulse shows one line a day to everyone. Add the office's own: a line on a date (a launch, a festival, a milestone) is shown that day; the others come round every third day between the built-in ones.</p>
+      {list.length > 0 && (
+        <div className="dlp-rules" style={{ marginBottom: 10 }}>
+          {list.map((l) => (
+            <div key={l.id} className="dlp-rule">
+              <span className="dlp-act mask">{l.date ? new Date(`${l.date}T00:00`).toLocaleDateString([], { day: '2-digit', month: 'short' }).toUpperCase() : 'ANY DAY'}</span>
+              <span className="txt"><b>{l.text}</b><span className="faint">{l.by ?? 'Dexterity Design Services'}</span></span>
+              <button className="icon-btn" title="Remove this line" aria-label="Remove this line" onClick={() => void window.dex.request('admin.lines.remove', { id: l.id }).then(setList).catch((e: Error) => toast(e.message, true))}><Icon name="trash" size={15} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="field"><label htmlFor="ol-text">A line</label>
+        <textarea id="ol-text" className="input" rows={2} maxLength={280} value={text} onChange={(e) => setText(e.target.value)} placeholder="Twenty years of drawings, one sheet at a time." /></div>
+      <div className="form-row" style={{ alignItems: 'end' }}>
+        <div className="field"><label htmlFor="ol-by">By (optional)</label><input id="ol-by" className="input" maxLength={80} value={by} onChange={(e) => setBy(e.target.value)} placeholder="Dexterity Design Services" /></div>
+        <div className="field"><label htmlFor="ol-date">On (optional)</label><input id="ol-date" className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <button className="btn primary" disabled={text.trim().length < 3} onClick={add}><Icon name="plus" size={14} />Add line</button>
+      </div>
+    </section>
+  );
+}
 
 /** Control room ▸ Policies ▸ Data protection: sensitive numbers and words, file types, outside networks. */
 function DataProtection({ p, save }: { p: OfficePolicy; save: (patch: Partial<OfficePolicy>) => void }) {

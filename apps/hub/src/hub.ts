@@ -167,6 +167,7 @@ export class Hub {
         if (c.remote && !this.outsideAllowed(c)) { this.send(c, { t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }); c.ws.close(); }
       }
     });
+    this.policies.linesChanged = (list) => this.emit('lines.updated', list);
     this.pairing = new Pairing(this.store);
     this.system = new SystemBot(this.store, this.messaging);
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
@@ -1209,7 +1210,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(policy\.get|admin\.policy\.set|admin\.usage)$/.test(op)) {
+        if (typeof op === 'string' && /^(policy\.get|admin\.policy\.set|admin\.usage|lines\.office|admin\.lines\.(add|remove))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.policies.handle(op, me, d);

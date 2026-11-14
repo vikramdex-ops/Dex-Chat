@@ -2,7 +2,8 @@
 // the largest upload, whether PCs may message each other directly while the hub is off, whether
 // calls may be recorded) and the usage report: activity per day, busiest Spaces, storage, calls.
 import type { DatabaseSync } from 'node:sqlite';
-import type { OfficePolicy, Ops, PublicUser, UsageReport } from '@dex/core';
+import type { OfficeLine, OfficePolicy, Ops, PublicUser, UsageReport } from '@dex/core';
+import { ulid } from '@dex/core';
 import { validCidr, validDlpRules } from '@dex/core/dlp';
 import type { FileStore } from './files.ts';
 import type { Store } from './store.ts';
@@ -70,6 +71,9 @@ export class Policies {
   private json<T>(key: string, fallback: T): T {
     try { const v = this.meta(key); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
   }
+
+  lines(): OfficeLine[] { return this.json<OfficeLine[]>('office_lines', []); }
+  linesChanged: (list: OfficeLine[]) => void = () => {};
 
   /** The upload limit in bytes: the administrator's choice, or what the hub was started with. */
   private uploadBytes(): number {
@@ -141,8 +145,29 @@ export class Policies {
 
   handle(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     if (op === 'policy.get') return this.get() satisfies Ops['policy.get']['res'];
+    if (op === 'lines.office') return this.lines() satisfies Ops['lines.office']['res'];
     if (me.role !== 'owner' && me.role !== 'admin') throw new PolicyError('Only administrators can do that.');
     switch (op) {
+      case 'admin.lines.add': {
+        const text = typeof d.text === 'string' ? d.text.replace(/\s+/g, ' ').trim().slice(0, 280) : '';
+        if (text.length < 3) throw new PolicyError('Write the line first.');
+        const by = typeof d.by === 'string' && d.by.trim() ? d.by.trim().slice(0, 80) : null;
+        const date = typeof d.date === 'string' && d.date ? d.date : null;
+        if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new PolicyError('Choose a date, or none for any day.');
+        const list = this.lines();
+        if (list.length >= 500) throw new PolicyError('The office can keep up to 500 lines.');
+        list.push({ id: ulid(), text, by, date, addedBy: me.id, addedAt: Date.now() });
+        this.setMeta('office_lines', JSON.stringify(list));
+        this.store.audit(me.id, 'lines.add', null, { date });
+        this.linesChanged(list);
+        return list satisfies Ops['admin.lines.add']['res'];
+      }
+      case 'admin.lines.remove': {
+        const list = this.lines().filter((l) => l.id !== d.id);
+        this.setMeta('office_lines', JSON.stringify(list));
+        this.linesChanged(list);
+        return list satisfies Ops['admin.lines.remove']['res'];
+      }
       case 'admin.policy.set': {
         if (d.editWindowMinutes !== undefined) {
           const v = d.editWindowMinutes;
