@@ -33,10 +33,38 @@ function ocrAssets(): Plugin {
   };
 }
 
+/** Background blur for calls: MediaPipe's image segmenter (Apache-2.0) and its selfie model,
+ * copied beside the app so it works with no internet. */
+function segmenterAssets(): Plugin {
+  const wasm = path.join(path.dirname(require.resolve('@mediapipe/tasks-vision')), 'wasm');
+  const files: Array<[string, string]> = [
+    [path.join(wasm, 'vision_wasm_internal.js'), 'vision_wasm_internal.js'],
+    [path.join(wasm, 'vision_wasm_internal.wasm'), 'vision_wasm_internal.wasm'],
+    [path.resolve(__dirname, 'assets/models/selfie_segmenter.tflite'), 'selfie_segmenter.tflite'],
+  ];
+  let outDir = '';
+  return {
+    name: 'dex-segmenter-assets',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    writeBundle() {
+      fs.mkdirSync(path.join(outDir, 'segmenter'), { recursive: true });
+      for (const [from, to] of files) fs.copyFileSync(from, path.join(outDir, 'segmenter', to));
+    },
+    configureServer(server) {
+      server.middlewares.use('/segmenter/', (req, res, next) => {
+        const hit = files.find(([, to]) => req.url === `/${to}`);
+        if (!hit) return next();
+        res.setHeader('content-type', hit[1].endsWith('.js') ? 'text/javascript' : hit[1].endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream');
+        fs.createReadStream(hit[0]).pipe(res);
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: 'src/renderer',
   base: './',
-  plugins: [react(), ocrAssets()],
+  plugins: [react(), ocrAssets(), segmenterAssets()],
   build: {
     outDir: '../../dist-renderer',
     emptyOutDir: true,

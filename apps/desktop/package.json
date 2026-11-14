@@ -121,6 +121,7 @@
     "publish": null
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
     "jsqr": "^1.4.0"
   }
 }

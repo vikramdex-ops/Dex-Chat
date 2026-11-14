@@ -2,6 +2,8 @@
 // a LAN for up to ~8 people). Uses the "perfect negotiation" pattern so cameras and screen
 // shares can be switched on and off mid-call without glare. No STUN/TURN: host candidates
 // on the office network are enough, and nothing leaves the building.
+import { blurTrack } from './blur.ts';
+import type { Blurred } from './blur.ts';
 import { useSyncExternalStore } from 'react';
 import type { RoomInfo } from '@dex/core';
 import { timeOpts } from '../time.ts';
@@ -20,13 +22,60 @@ export interface CallState {
   peers: Map<string, RemotePeer>;
   muted: boolean;
   camera: boolean;
+  /** The camera's background is blurred (on this PC, before it is sent). */
+  blur: boolean;
   minimized: boolean;
   error: string | null;
   /** Rooms running in my conversations (to offer "Join"). */
   active: Map<string, RoomInfo>;
 }
 
-let state: CallState = { room: null, incoming: null, local: null, screen: null, peers: new Map(), muted: false, camera: false, minimized: false, error: null, active: new Map() };
+const BLUR_KEY = 'dex.room.blur';
+const blurPref = () => { try { return localStorage.getItem(BLUR_KEY) === '1'; } catch { return false; } };
+let state: CallState = { room: null, incoming: null, local: null, screen: null, peers: new Map(), muted: false, camera: false, blur: blurPref(), minimized: false, error: null, active: new Map() };
+
+// ------------------------------------------------------------------ background blur
+/** The camera as it comes from the device, while a blurred copy is what is shown and sent. */
+let rawCamera: MediaStreamTrack | null = null;
+let blurred: Blurred | null = null;
+
+/** Put a track in place of another in the local stream and on every connection. */
+function swapVideo(local: MediaStream, from: MediaStreamTrack, to: MediaStreamTrack): void {
+  local.removeTrack(from);
+  local.addTrack(to);
+  for (const l of links.values()) for (const sd of l.senders) if (sd.track === from) void sd.replaceTrack(to).catch(() => {});
+}
+
+/** Blur (or stop blurring) the camera track in this stream. */
+async function applyBlur(local: MediaStream, on: boolean): Promise<void> {
+  const cur = local.getVideoTracks()[0];
+  if (!cur) return;
+  if (on && !blurred) {
+    rawCamera = cur;
+    blurred = await blurTrack(cur);
+    swapVideo(local, cur, blurred.track);
+  } else if (!on && blurred && rawCamera) {
+    swapVideo(local, blurred.track, rawCamera);
+    blurred.stop();
+    blurred = null;
+    rawCamera = null;
+  }
+}
+
+function stopCameraTracks(local: MediaStream): void {
+  for (const t of local.getVideoTracks()) t.stop();
+  blurred?.stop(); blurred = null;
+  rawCamera?.stop(); rawCamera = null;
+}
+
+export async function toggleBlur(): Promise<void> {
+  const on = !state.blur;
+  try { localStorage.setItem(BLUR_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+  if (state.local && state.camera) {
+    try { await applyBlur(state.local, on); } catch { set({ error: 'The background could not be blurred on this PC.' }); return; }
+    set({ blur: on, local: new MediaStream(state.local.getTracks()) });
+  } else set({ blur: on });
+}
 const listeners = new Set<() => void>();
 const set = (patch: Partial<CallState>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
 export const useCall = <T,>(sel: (s: CallState) => T): T => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => sel(state));
@@ -161,6 +210,7 @@ export async function startCall(convId: string, video: boolean): Promise<void> {
   if (state.room) return;
   try {
     const [local] = await Promise.all([getMedia(video), refreshIce()]);
+    if (state.blur) await applyBlur(local, true).catch(() => {});
     const room = await window.dex.request('room.start', { convId, video });
     set({ room, local, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
     if (room.participants.length > 1) connectAll(room); else startRing(true);
@@ -179,6 +229,7 @@ export async function joinRoom(roomId: string, video: boolean): Promise<void> {
   if (state.room) return;
   try {
     const [local] = await Promise.all([getMedia(video), refreshIce()]);
+    if (state.blur) await applyBlur(local, true).catch(() => {});
     const room = await window.dex.request('room.join', { roomId });
     set({ room, local, incoming: null, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
     connectAll(room); // the newcomer reaches out to everyone already there
@@ -202,6 +253,7 @@ export function leave(): void {
 function cleanup(): void {
   stopRing();
   for (const dev of [...links.keys()]) dropLink(dev);
+  if (state.local) stopCameraTracks(state.local);
   state.local?.getTracks().forEach((t) => t.stop());
   state.screen?.getTracks().forEach((t) => t.stop());
   set({ room: null, local: null, screen: null, peers: new Map(), camera: false, muted: false, minimized: false });
@@ -218,8 +270,9 @@ export async function toggleCamera(): Promise<void> {
   const local = state.local;
   if (!local) return;
   if (state.camera) {
-    for (const t of local.getVideoTracks()) {
-      t.stop();
+    const live = local.getVideoTracks();
+    stopCameraTracks(local);
+    for (const t of live) {
       local.removeTrack(t);
       for (const l of links.values()) for (const s of l.senders.filter((x) => x.track === t)) { l.pc.removeTrack(s); l.senders = l.senders.filter((x) => x !== s); }
     }
@@ -227,7 +280,10 @@ export async function toggleCamera(): Promise<void> {
   } else {
     try {
       const cam = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
-      const track = cam.getVideoTracks()[0];
+      let track = cam.getVideoTracks()[0];
+      if (state.blur) {
+        try { rawCamera = track; blurred = await blurTrack(track); track = blurred.track; } catch { rawCamera = null; blurred = null; }
+      }
       local.addTrack(track);
       for (const l of links.values()) l.senders.push(l.pc.addTrack(track, local));
       set({ camera: true, local: new MediaStream(local.getTracks()) });

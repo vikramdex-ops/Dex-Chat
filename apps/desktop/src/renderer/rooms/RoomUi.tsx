@@ -1,12 +1,13 @@
 // Room surfaces, drawn like a drawing sheet: the Room stage (tiles in zones, a schedule of who is
 // in the Room, a title block with the controls), the Room chip for the title bar, the amber
 // banner when someone opens a Room with you, the screen picker and the "Open a Room" button.
+import { blurAvailable } from './blur.ts';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { PublicUser } from '@dex/core';
 import { Avatar, Dialog, Icon, Popover, colorFor, presenceFor, useToast } from '../ui.tsx';
 import {
-  answer, callQuality, capName, clock, decline, joinRoom, leave, levelMeter, setMinimized, sheetColumns, startCall, toggleCamera, toggleMute,
+  answer, callQuality, capName, clock, decline, joinRoom, leave, levelMeter, setMinimized, sheetColumns, startCall, toggleBlur, toggleCamera, toggleMute,
   toggleScreen, useCall, zoneRef,
 } from './engine.ts';
 import { addConversation, chatState, sendMessage } from '../chat/store.ts';
@@ -32,6 +33,7 @@ function useDuration(since: number | undefined): string {
 /** Glyphs only the Room uses, drawn on the same 24 px grid and stroke as the shared icon set. */
 const GLYPHS = {
   float: 'M3.5 5h17v14h-17zM12 12h6.5v5H12z',
+  blur: 'M12 4.5a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM6.5 19.5c.6-3.2 2.8-5.2 5.5-5.2s4.9 2 5.5 5.2M3 7h1M3 11h1M3 15h1M20 7h1M20 11h1M20 15h1',
   ring: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 9c.5-3.4 2.9-5.5 6-5.5 1.5 0 2.8.5 3.8 1.4M18 13.5v7M14.5 17h7',
   chevron: 'm7 10 5 5 5-5',
   door: 'M5 20.5h14M7 20.5V3.5h8.5v17M12.5 12h.01M15.5 6.5l3-1.5v15.5',
@@ -139,6 +141,9 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
   const peers = useCall((s) => s.peers);
   const muted = useCall((s) => s.muted);
   const camera = useCall((s) => s.camera);
+  const blur = useCall((s) => s.blur);
+  const [canBlur, setCanBlur] = useState(false);
+  useEffect(() => { void blurAvailable().then(setCanBlur); }, []);
   const minimized = useCall((s) => s.minimized);
   const [picker, setPicker] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -291,6 +296,11 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
               <button className={camera ? 'on' : 'off'} aria-pressed={camera} onClick={() => void toggleCamera()} title={camera ? 'Turn your camera off' : 'Turn your camera on'}>
                 <Icon name={camera ? 'video' : 'video-off'} size={18} /><span>{camera ? 'Camera on' : 'Camera off'}</span>
               </button>
+              {canBlur && (
+                <button className={blur ? 'on' : ''} aria-pressed={blur} onClick={() => void toggleBlur()} title={blur ? 'Show your background again' : 'Blur what is behind you (done on this PC)'}>
+                  <Glyph name="blur" /><span>{blur ? 'Blur on' : 'Blur background'}</span>
+                </button>
+              )}
               {window.dex.listScreens && (
                 <button className={screen ? 'on' : ''} aria-pressed={!!screen} onClick={() => (screen ? void toggleScreen() : setPicker(true))} title={screen ? 'Stop sharing your screen' : 'Share a screen or window with the Room'}>
                   <Icon name="screen" size={18} /><span>{screen ? 'Stop sharing' : 'Share sheet'}</span>
