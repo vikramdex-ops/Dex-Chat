@@ -226,5 +226,5 @@ test('integrations: admins mint bot tokens; bots message people by Windows sign-
 
   await owner.request('admin.bots.revoke', { userId: bot.id });
   assert.equal((await post(token, { text: 'after revoke', to: ['priya'] })).status, 401);
-  assert.equal((await owner.request('admin.bots'))[0].active, false);
+  assert.equal((await owner.request('admin.bots')).find((b) => b.bot.id === bot.id)?.active, false);
 });

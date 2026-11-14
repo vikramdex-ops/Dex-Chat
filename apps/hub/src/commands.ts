@@ -45,7 +45,7 @@ export const BUILT_IN = ['remind', 'poll', 'meet', 'call', 'video', 'available',
 const TIMEOUT_MS = 8000;
 
 /** POST JSON and read a JSON reply (up to 64 KB), ignoring certificate names on the LAN. */
-function post(url: string, body: string, headers: Record<string, string>): Promise<{ status: number; text: string }> {
+export function post(url: string, body: string, headers: Record<string, string>): Promise<{ status: number; text: string }> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'https:' ? https : http;
@@ -125,9 +125,16 @@ export class Commands {
 
   list(): SlashCommand[] {
     const active = new Set(this.store.bots().filter((b) => b.active).map((b) => b.bot.id));
-    return (this.db.prepare('SELECT * FROM bot_commands ORDER BY command').all() as Array<{ command: string; bot_id: string; description: string }>)
-      .filter((c) => active.has(c.bot_id)).map((c) => ({ command: c.command, description: c.description, botId: c.bot_id }));
+    return [...(this.db.prepare('SELECT * FROM bot_commands ORDER BY command').all() as Array<{ command: string; bot_id: string; description: string }>)
+      .filter((c) => active.has(c.bot_id)).map((c) => ({ command: c.command, description: c.description, botId: c.bot_id })), ...(this.extra?.list() ?? [])]
+      .sort((a, b) => a.command.localeCompare(b.command));
   }
+
+  /** Commands the hub answers itself for an integration (the commands that start flows). */
+  extra: {
+    list: () => SlashCommand[];
+    run: (command: string, me: PublicUser, convId: string, text: string) => Promise<{ text: string | null; ephemeral: boolean; open?: string }> | null;
+  } | null = null;
 
   async handle(op: string, me: PublicUser, d: Record<string, unknown>): Promise<unknown> {
     switch (op) {
@@ -145,6 +152,7 @@ export class Commands {
           if (BUILT_IN.includes(c.command)) throw new CommandError(`/${c.command} is built into the app.`);
           const owner = this.db.prepare('SELECT bot_id FROM bot_commands WHERE command = ?').get(c.command) as { bot_id: string } | undefined;
           if (owner && owner.bot_id !== bot.id) throw new CommandError(`/${c.command} already belongs to another integration.`);
+          if (this.extra?.list().some((x) => x.command === c.command)) throw new CommandError(`/${c.command} already starts a flow.`);
         }
         const actions = (Array.isArray(d.actions) ? d.actions as Array<Record<string, unknown>> : []).slice(0, 10)
           .map((a) => ({ label: String(a.label ?? '').trim().slice(0, 40), scope: a.scope === 'spaces' || a.scope === 'direct' ? a.scope : 'everywhere' }))
@@ -196,6 +204,8 @@ export class Commands {
 
       case 'cmd.run': {
         const command = typeof d.command === 'string' ? d.command.replace(/^\//, '').toLowerCase() : '';
+        const hooked = this.extra?.run(command, me, String(d.convId), typeof d.text === 'string' ? d.text.slice(0, 4000) : '');
+        if (hooked) return await hooked;
         const row = this.db.prepare('SELECT c.bot_id, w.url, w.secret FROM bot_commands c JOIN bot_webhooks w ON w.bot_id = c.bot_id WHERE c.command = ?').get(command) as { bot_id: string; url: string; secret: string } | undefined;
         const bot = row ? this.store.userById(row.bot_id) : null;
         if (!row || !bot || !this.list().some((c) => c.command === command)) throw new CommandError(`There is no /${command} command.`);

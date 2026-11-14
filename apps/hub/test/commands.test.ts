@@ -31,7 +31,7 @@ test('integration slash commands call a signed webhook and post the reply', asyn
   await assert.rejects(owner.request('admin.bots.commands', { userId: bot.id, webhookUrl: url, commands: [{ command: 'remind', description: 'x' }] }), /built into the app/);
   await assert.rejects(owner.request('admin.bots.commands', { userId: bot.id, webhookUrl: 'ftp://x', commands: [] }), /http/);
   secret = (await owner.request('admin.bots.commands', { userId: bot.id, webhookUrl: url, commands: [{ command: '/open', description: 'Open a job folder' }] })).secret;
-  assert.deepEqual((await priya.request('cmd.list')).map((c) => c.command), ['open']);
+  assert.deepEqual((await priya.request('cmd.list')).filter((c) => c.botId === bot.id).map((c) => c.command), ['open']);
 
   const space = await owner.request('conv.create', { kind: 'space', name: 'Jobs', members: [me(priya)] });
   const posted = nextEvent<Message>(priya, 'msg.new', (m) => m.authorId === bot.id);
@@ -46,7 +46,7 @@ test('integration slash commands call a signed webhook and post the reply', asyn
   await assert.rejects(priya.request('cmd.run', { convId: space.id, command: 'nope', text: '' }), /no \/nope/);
   // revoking the integration removes its commands
   await owner.request('admin.bots.revoke', { userId: bot.id });
-  assert.equal((await priya.request('cmd.list')).length, 0);
+  assert.equal((await priya.request('cmd.list')).filter((c) => c.botId === bot.id).length, 0);
 });
 
 test('integration message actions get the message, signed; widgets come from the Bot API', async () => {
