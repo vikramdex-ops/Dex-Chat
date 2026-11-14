@@ -7,6 +7,8 @@ import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { renderBody } from '../chat/format.tsx';
 import { toLocalInput } from '../desk/store.ts';
+import { allZones, fromZoneInput, localZone, zoneOffsetMin, setCalPrefs, timeIn, toZoneInput, useCalPrefs, zoneName, zoneOffsetLabel } from './tz.ts';
+import './calendar.css';
 import { DAY, addDays, describeSpan, dismissSoon, hm, joinMeeting, startOfDay, startOfWeek, useCal } from './store.ts';
 import { timeOpts } from '../time.ts';
 
@@ -31,6 +33,9 @@ const myResponse = (ev: CalEvent, meId: string): Rsvp | null => ev.attendees.fin
 export function CalendarView({ session, openConv }: { session: Session; openConv: Open }) {
   const [mode, setMode] = useState<Mode>(() => (window.matchMedia('(max-width: 720px)').matches ? 'agenda' : 'week'));
   const [anchor, setAnchor] = useState(() => startOfWeek(Date.now()));
+  const prefs = useCalPrefs();
+  const [settings, setSettings] = useState(false);
+  useEffect(() => { setAnchor((a) => startOfWeek(a + 3 * DAY, prefs.firstDay)); }, [prefs.firstDay]);
   const [editing, setEditing] = useState<{ ev?: CalEvent; startAt?: number; allDay?: boolean } | null>(null);
   const [viewing, setViewing] = useState<Occurrence | null>(null);
   const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
@@ -59,15 +64,46 @@ export function CalendarView({ session, openConv }: { session: Session; openConv
             </div>
           )}
           <Segmented<Mode> label="Calendar view" value={mode} onChange={setMode} options={[{ value: 'week', label: 'Week', icon: 'calendar' }, { value: 'agenda', label: 'Agenda', icon: 'list' }]} />
+          <button className="icon-btn" title="Calendar settings" aria-label="Calendar settings" onClick={() => setSettings(true)}><Icon name="settings" size={17} /></button>
           {canCreate && <button className="btn primary" onClick={() => setEditing({})}><Icon name="plus" size={15} />New meeting</button>}
         </div>
       </div>
       {mode === 'week'
-        ? <Week from={anchor} list={list ?? []} meId={meId} onSlot={(t, allDay) => canCreate && setEditing({ startAt: t, allDay })} onOpen={setViewing} />
+        ? <Week from={anchor} zone2={prefs.zone2} list={list ?? []} meId={meId} onSlot={(t, allDay) => canCreate && setEditing({ startAt: t, allDay })} onOpen={setViewing} />
         : <Agenda list={list} meId={meId} users={users} onOpen={setViewing} />}
       {viewing && <EventDetails occ={viewing} session={session} users={users} onClose={() => setViewing(null)} onEdit={(ev) => { setViewing(null); setEditing({ ev }); }} openConv={openConv} />}
       {editing && <EventDialog session={session} ev={editing.ev} startAt={editing.startAt} allDay={editing.allDay} onClose={() => setEditing(null)} />}
+      {settings && <CalendarSettings onClose={() => setSettings(false)} />}
     </div>
+  );
+}
+
+function ZoneSelect({ id, value, onChange, empty }: { id: string; value: string; onChange: (z: string) => void; empty: string }) {
+  const zones = useMemo(() => allZones(), []);
+  return (
+    <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{empty}</option>
+      {zones.map((z) => <option key={z} value={z}>{zoneName(z)} · {zoneOffsetLabel(z)}{z.includes('/') ? ` · ${z.split('/')[0].replace('America', 'Americas')}` : ''}</option>)}
+    </select>
+  );
+}
+
+function CalendarSettings({ onClose }: { onClose: () => void }) {
+  const prefs = useCalPrefs();
+  return (
+    <Dialog title="Calendar settings" onClose={onClose} narrow>
+      <div className="field">
+        <label>Weeks start on</label>
+        <Segmented<string> label="Weeks start on" value={String(prefs.firstDay)} onChange={(v) => setCalPrefs({ firstDay: Number(v) as 0 | 1 | 6 })}
+          options={[{ value: '1', label: 'Monday' }, { value: '0', label: 'Sunday' }, { value: '6', label: 'Saturday' }]} />
+      </div>
+      <div className="field">
+        <label htmlFor="cal-zone2">Also show times in</label>
+        <ZoneSelect id="cal-zone2" value={prefs.zone2 ?? ''} onChange={(z) => setCalPrefs({ zone2: z || null })} empty="Only my time zone" />
+        <span className="faint" style={{ fontSize: 12 }}>Your time zone is {zoneName(localZone())} ({zoneOffsetLabel(localZone())}). A second column on the week shows the other zone's hours, for clients and sites abroad.</span>
+      </div>
+      <div className="dialog-actions"><button className="btn primary" onClick={onClose}>Done</button></div>
+    </Dialog>
   );
 }
 
@@ -90,7 +126,7 @@ function layoutDay(items: Occurrence[]): Array<{ o: Occurrence; col: number; col
   return out;
 }
 
-function Week({ from, list, meId, onSlot, onOpen }: { from: number; list: Occurrence[]; meId: string; onSlot: (t: number, allDay?: boolean) => void; onOpen: (o: Occurrence) => void }) {
+function Week({ from, zone2, list, meId, onSlot, onOpen }: { from: number; zone2: string | null; list: Occurrence[]; meId: string; onSlot: (t: number, allDay?: boolean) => void; onOpen: (o: Occurrence) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
@@ -99,9 +135,9 @@ function Week({ from, list, meId, onSlot, onOpen }: { from: number; list: Occurr
   const allDay = list.filter((o) => o.event.allDay || o.endAt - o.startAt >= DAY);
   const timed = list.filter((o) => !allDay.includes(o));
   return (
-    <div className="week">
+    <div className={`week${zone2 ? ' two-zones' : ''}`}>
       <div className="week-head">
-        <span />
+        {zone2 ? <span className="zone-heads mono" title={`${zoneName(zone2)} and your time`}><i>{zoneName(zone2).slice(0, 3).toUpperCase()}</i><i>{zoneName(localZone()).slice(0, 3).toUpperCase()}</i></span> : <span />}
         {days.map((d) => {
           const today = startOfDay(now) === d;
           const dt = new Date(d);
@@ -119,7 +155,13 @@ function Week({ from, list, meId, onSlot, onOpen }: { from: number; list: Occurr
         ))}
       </div>
       <div className="week-body" ref={scroller}>
-        <div className="week-hours">{Array.from({ length: 24 }, (_, h) => <span key={h} style={{ top: h * HOUR_PX }}>{h === 0 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric' })}</span>)}</div>
+        <div className="week-hours">
+          {Array.from({ length: 24 }, (_, h) => <span key={h} style={{ top: h * HOUR_PX }}>{h === 0 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric' })}</span>)}
+          {zone2 && Array.from({ length: 24 }, (_, h) => {
+            const t = new Date(from).setHours(h, 0, 0, 0);
+            return <span key={`z${h}`} className="z2" style={{ top: h * HOUR_PX }}>{h === 0 ? '' : timeIn(t, zone2, { ...timeOpts(), minute: new Date(t).getMinutes() === 0 && zoneOffsetMin(zone2, t) % 60 === 0 ? undefined : '2-digit' })}</span>;
+          })}
+        </div>
         {days.map((d) => {
           const items = layoutDay(timed.filter((o) => o.startAt < addDays(d, 1) && o.endAt > d));
           return (
@@ -208,6 +250,9 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
       {ev.cancelled && <div className="error-box">This meeting was cancelled.</div>}
       <div className="ev-facts">
         <div><Icon name="clock" size={16} /><span>{describeSpan(occ.startAt, occ.endAt, ev.allDay)}{ev.recurrence !== 'none' && <span className="faint"> · repeats {ev.recurrence === 'weekdays' ? 'every weekday' : ev.recurrence}</span>}</span></div>
+        {!ev.allDay && ev.timeZone && ev.timeZone !== localZone() && (
+          <div><Icon name="globe" size={16} /><span>{timeIn(occ.startAt, ev.timeZone, timeOpts())} – {timeIn(occ.endAt, ev.timeZone, timeOpts())} in {zoneName(ev.timeZone)} <span className="faint">({zoneOffsetLabel(ev.timeZone, occ.startAt)})</span></span></div>
+        )}
         {(venue || ev.location) && <div><Icon name="home" size={16} /><span>{venue ? `${venue.name}${venue.capacity ? ` · seats ${venue.capacity}` : ''}` : ev.location}</span></div>}
         {ev.online && <div><Icon name="video" size={16} /><span>Call in Dexterity Connect</span></div>}
         {conv && <div><Icon name={conv.kind === 'space' ? 'grid' : 'chat'} size={16} /><button className="link" onClick={() => { onClose(); openConv(conv.id); }}>{convTitle(conv, users, meId)}</button></div>}
@@ -255,6 +300,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
   const [title, setTitle] = useState(ev?.title ?? '');
   const [start, setStart] = useState(ev?.startAt ?? defaultStart);
   const [minutes, setMinutes] = useState(ev ? Math.round((ev.endAt - ev.startAt) / 60_000) : 60);
+  const [zone, setZone] = useState(ev?.timeZone ?? '');
   const [allDay, setAllDay] = useState(ev?.allDay ?? initialAllDay ?? false);
   const [recurrence, setRecurrence] = useState<Recurrence>(ev?.recurrence ?? 'none');
   const [until, setUntil] = useState<string>(ev?.until ? new Date(ev.until).toISOString().slice(0, 10) : '');
@@ -286,7 +332,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
   const save = async () => {
     setSaving(true);
     const body = {
-      title, startAt: allDay ? startOfDay(start) : start, endAt: end, allDay, attendees: people, convId: convId || null, online, recurrence,
+      title, startAt: allDay ? startOfDay(start) : start, endAt: end, allDay, attendees: people, convId: convId || null, online, recurrence, timeZone: allDay || !zone ? null : zone,
       until: recurrence !== 'none' && until ? new Date(`${until}T23:59:59`).getTime() : null, reminderMin: reminder,
       venueId: venueId || null, location: venueId ? null : location || null, description: description || null,
     };
@@ -309,17 +355,24 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
           <label htmlFor="ev-start">{allDay ? 'Day' : 'Starts'}</label>
           {allDay
             ? <input id="ev-start" className="input" type="date" value={toLocalInput(start).slice(0, 10)} onChange={(e) => { const t = new Date(`${e.target.value}T00:00:00`).getTime(); if (Number.isFinite(t)) setStart(t); }} />
-            : <input id="ev-start" className="input" type="datetime-local" step={300} value={toLocalInput(start)} onChange={(e) => { const t = new Date(e.target.value).getTime(); if (Number.isFinite(t)) setStart(t); }} />}
+            : <input id="ev-start" className="input" type="datetime-local" step={300} value={toZoneInput(start, zone)} onChange={(e) => { const t = fromZoneInput(e.target.value, zone); if (Number.isFinite(t)) setStart(t); }} />}
         </div>
         <div className="field">
           <label htmlFor="ev-len">{allDay ? 'Days' : 'Length'}</label>
           {allDay
             ? <select id="ev-len" className="input" value={Math.max(1, Math.round(minutes / 1440))} onChange={(e) => setMinutes(Number(e.target.value) * 1440)}>{[1, 2, 3, 4, 5, 7, 10, 14].map((n) => <option key={n} value={n}>{n} {n === 1 ? 'day' : 'days'}</option>)}</select>
             : <select id="ev-len" className="input" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-                {[...new Set([...DURATIONS, minutes])].sort((a, b) => a - b).map((m) => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? 'hour' : 'hours'}`} · until {hm(start + m * 60_000)}</option>)}
+                {[...new Set([...DURATIONS, minutes])].sort((a, b) => a - b).map((m) => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? 'hour' : 'hours'}`} · until {zone ? timeIn(start + m * 60_000, zone, timeOpts()) : hm(start + m * 60_000)}</option>)}
               </select>}
         </div>
       </div>
+      {!allDay && (
+        <div className="field">
+          <label htmlFor="ev-zone">Time zone</label>
+          <ZoneSelect id="ev-zone" value={zone} onChange={setZone} empty={`My time · ${zoneName(localZone())}`} />
+          {zone && zone !== localZone() && <span className="faint" style={{ fontSize: 12 }}>That is {timeIn(start, localZone(), timeOpts())} – {timeIn(start + minutes * 60_000, localZone(), timeOpts())} your time. Invitees see it in their own time and in {zoneName(zone)} time.</span>}
+        </div>
+      )}
       <div className="form-row">
         <ToggleRow checked={allDay} onChange={(v) => { setAllDay(v); if (v) setMinutes(1440); else setMinutes(60); }} label="All day" />
         <ToggleRow checked={online} onChange={setOnline} label="Hold it as a call in Dexterity Connect" />

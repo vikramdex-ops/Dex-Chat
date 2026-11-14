@@ -1,0 +1,8 @@
+/* Calendar: a second time zone on the week grid */
+.week.two-zones .week-head, .week.two-zones .week-allday, .week.two-zones .week-body { grid-template-columns: 104px repeat(7, minmax(0, 1fr)); }
+.week.two-zones .week-hours span { right: 6px; }
+.week.two-zones .week-hours span.z2 { right: auto; left: 6px; color: var(--accent); opacity: .8; }
+.zone-heads { display: flex; justify-content: space-between; align-items: end; padding: 0 6px 8px; font-size: 10px; letter-spacing: .08em; color: var(--text-3); }
+.zone-heads i { font-style: normal; }
+.zone-heads i:first-child { color: var(--accent); }
+@media (max-width: 720px) { .week.two-zones .week-head, .week.two-zones .week-allday, .week.two-zones .week-body { grid-template-columns: 76px repeat(7, minmax(44px, 1fr)); } }

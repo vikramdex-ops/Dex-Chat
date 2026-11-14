@@ -1,5 +1,6 @@
 // Calendar on the client: conference rooms, a version counter that bumps whenever a meeting
 // changes (views refetch their range), invitations and "starting soon" cards.
+import { calPrefs } from './tz.ts';
 import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { CalEvent, Occurrence, PublicUser, Venue } from '@dex/core';
@@ -67,7 +68,8 @@ export async function joinMeeting(ev: CalEvent, video = true): Promise<string> {
 export const DAY = 86400_000;
 export const startOfDay = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 export const addDays = (t: number, n: number) => { const d = new Date(t); d.setDate(d.getDate() + n); return d.getTime(); };
-export const startOfWeek = (t: number) => { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+/** The first day of the week holding t (Monday unless the person chose Sunday or Saturday). */
+export const startOfWeek = (t: number, firstDay: number = calPrefs().firstDay) => { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay() - firstDay + 7) % 7)); return d.getTime(); };
 export const hm = (t: number) => new Date(t).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
 
 export function describeSpan(startAt: number, endAt: number, allDay: boolean): string {

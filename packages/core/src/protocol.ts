@@ -497,6 +497,8 @@ export interface CalEvent {
   attendees: Array<{ userId: string; response: Rsvp }>;
   cancelled: boolean;
   createdAt: number;
+  /** The time zone the organiser set it in (IANA, e.g. "Asia/Dubai"); null = the office's own. */
+  timeZone?: string | null;
 }
 
 /** One time a (possibly repeating) event happens. */

@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS event_reminders_sent (
 interface EventRow {
   id: string; title: string; description: string | null; location: string | null; venue_id: string | null; start_at: number; end_at: number;
   all_day: number; organizer_id: string; conv_id: string | null; online: number; recurrence: Recurrence; until_at: number | null;
-  reminder_min: number | null; cancelled: number; created_at: number;
+  reminder_min: number | null; cancelled: number; created_at: number; time_zone?: string | null;
 }
 
 const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekdays', 'weekly', 'monthly'];
@@ -117,6 +117,7 @@ export class Calendar {
     this.deliver = deliver;
     this.broadcast = broadcast;
     db.exec(SCHEMA);
+    try { db.exec('ALTER TABLE events ADD COLUMN time_zone TEXT'); } catch { /* already there */ }
   }
 
   // ------------------------------------------------------------ views
@@ -133,7 +134,7 @@ export class Calendar {
     return {
       id: r.id, title: r.title, description: r.description, location: r.location, venueId: r.venue_id, startAt: r.start_at, endAt: r.end_at,
       allDay: !!r.all_day, organizerId: r.organizer_id, convId: r.conv_id, online: !!r.online, recurrence: r.recurrence, until: r.until_at,
-      reminderMin: r.reminder_min, attendees: this.attendees(r.id), cancelled: !!r.cancelled, createdAt: r.created_at,
+      reminderMin: r.reminder_min, attendees: this.attendees(r.id), cancelled: !!r.cancelled, createdAt: r.created_at, timeZone: r.time_zone ?? null,
     };
   }
 
@@ -190,6 +191,12 @@ export class Calendar {
       description: pick('description', existing?.description ?? null, (v) => text(v, 4000)),
       location: pick('location', existing?.location ?? null, (v) => text(v, 140)),
       online: pick('online', !!existing?.online, (v) => v === true),
+      timeZone: pick('timeZone', existing?.time_zone ?? null, (v) => {
+        if (v === null || v === '') return null;
+        if (typeof v !== 'string' || v.length > 64) throw new CalError('Choose a time zone from the list.');
+        try { new Intl.DateTimeFormat('en', { timeZone: v }); } catch { throw new CalError('Choose a time zone from the list.'); }
+        return v;
+      }),
     };
   }
 
@@ -310,6 +317,7 @@ export class Calendar {
         this.db.prepare(`INSERT INTO events (id, title, description, location, venue_id, start_at, end_at, all_day, organizer_id, conv_id, online, recurrence, until_at, reminder_min, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, v.title, v.description, v.location, v.venueId, v.startAt, v.endAt, v.allDay ? 1 : 0, me.id,
           v.convId, v.online ? 1 : 0, v.recurrence, v.until, v.reminderMin, Date.now());
+        this.db.prepare('UPDATE events SET time_zone = ? WHERE id = ?').run(v.timeZone, id);
         const ins = this.db.prepare('INSERT OR IGNORE INTO event_attendees (event_id, user_id, response) VALUES (?, ?, ?)');
         ins.run(id, me.id, 'yes');
         for (const u of v.attendees ?? []) ins.run(id, u, 'pending');
@@ -340,6 +348,7 @@ export class Calendar {
         this.db.prepare(`UPDATE events SET title = ?, description = ?, location = ?, venue_id = ?, start_at = ?, end_at = ?, all_day = ?, conv_id = ?, online = ?,
           recurrence = ?, until_at = ?, reminder_min = ? WHERE id = ?`).run(v.title, v.description, v.location, v.venueId, v.startAt, v.endAt, v.allDay ? 1 : 0,
           v.convId, v.online ? 1 : 0, v.recurrence, v.until, v.reminderMin, r.id);
+        this.db.prepare('UPDATE events SET time_zone = ? WHERE id = ?').run(v.timeZone, r.id);
         let added: string[] = [];
         if (v.attendees) {
           const cur = new Set(this.attendees(r.id).map((a) => a.userId));
