@@ -70,6 +70,8 @@ export class FileStore {
     this.dir = dir;
     this.maxBytes = max;
     db.exec(SCHEMA);
+    // text read from images (by the sender's PC), for search
+    try { db.exec('ALTER TABLE files ADD COLUMN ocr_text TEXT'); } catch { /* already there */ }
     fs.mkdirSync(path.join(dir, 'tmp'), { recursive: true });
     // half-finished uploads from a previous run
     for (const f of fs.readdirSync(path.join(dir, 'tmp'))) fs.rmSync(path.join(dir, 'tmp', f), { force: true });
@@ -85,6 +87,20 @@ export class FileStore {
   }
 
   /** May this person read the file? Uploaders always can; others through a conversation they are in. */
+  /**
+   * Text found in an image, sent by the PC that uploaded it. Not for images in Direct
+   * conversations: those are private and their text must not sit on the hub.
+   */
+  setText(userId: string, fileId: string, text: string): void {
+    const f = this.db.prepare('SELECT uploader_id, mime FROM files WHERE id = ?').get(fileId) as { uploader_id: string; mime: string } | undefined;
+    if (!f || f.uploader_id !== userId) throw Object.assign(new Error('File not found.'), { status: 404 });
+    if (!f.mime.startsWith('image/')) throw Object.assign(new Error('Only images have text to read.'), { status: 400 });
+    const direct = this.db.prepare(`SELECT 1 FROM message_files mf JOIN conversations c ON c.id = mf.conv_id WHERE mf.file_id = ? AND c.kind = 'direct' LIMIT 1`).get(fileId);
+    if (direct) throw Object.assign(new Error('Images in Direct conversations stay private.'), { status: 400 });
+    const clean = text.replace(/[\u0000-\u0008\u000b-\u001f]+/g, ' ').replace(/[ \t]+/g, ' ').trim().slice(0, 20_000);
+    this.db.prepare('UPDATE files SET ocr_text = ? WHERE id = ?').run(clean || null, fileId);
+  }
+
   /** Files everyone may read (custom emoji images). */
   isPublic: (fileId: string) => boolean = () => false;
 

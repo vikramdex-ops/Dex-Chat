@@ -779,7 +779,11 @@ export class Messaging {
         const messages = rows.map((r) => ({ message: this.messageView(this.message(r.message_id)!, me.id), snippet: r.snip })).filter((x) => !x.message.deleted);
         const fWhere: string[] = ['m.deleted = 0'];
         const fArgs: Array<string | number> = [me.id];
-        if (terms.length) { fWhere.push('lower(f.name) LIKE ?'); fArgs.push(`%${terms.join('%')}%`); }
+        if (terms.length) {
+          // the name, or the text read from an image
+          fWhere.push(`(lower(f.name) LIKE ? OR (${terms.map(() => "lower(COALESCE(f.ocr_text, '')) LIKE ?").join(' AND ')}))`);
+          fArgs.push(`%${terms.join('%')}%`, ...terms.map((t) => `%${t}%`));
+        }
         if (scope) { fWhere.push('mf.conv_id = ?'); fArgs.push(scope); }
         if (from) { fWhere.push('m.author_id = ?'); fArgs.push(from); }
         if (kind) { fWhere.push('c.kind = ?'); fArgs.push(kind); }
@@ -790,10 +794,18 @@ export class Messaging {
           JOIN conv_members cm ON cm.conv_id = mf.conv_id AND cm.user_id = ? JOIN messages m ON m.id = mf.message_id
           JOIN conversations c ON c.id = mf.conv_id
           WHERE ${fWhere.join(' AND ')} ORDER BY mf.message_id DESC LIMIT ?`)
-          .all(...fArgs, terms.length ? 10 : limit) as Array<{ id: string; name: string; mime: string; size: number; uploader_id: string; created_at: number; message_id: string; conv_id: string }>;
+          .all(...fArgs, terms.length ? 20 : limit) as Array<{ id: string; name: string; mime: string; size: number; uploader_id: string; created_at: number; message_id: string; conv_id: string; ocr_text: string | null }>;
+        /** A few words around the first match in an image's text. */
+        const textMatch = (t: string | null): string | undefined => {
+          if (!t || !terms.length) return undefined;
+          const at = t.toLowerCase().indexOf(terms[0]);
+          if (at < 0) return undefined;
+          const from = Math.max(0, at - 40);
+          return `${from ? '…' : ''}${t.slice(from, at)}[[${t.slice(at, at + terms[0].length)}]]${t.slice(at + terms[0].length, at + terms[0].length + 60)}…`;
+        };
         return {
           messages,
-          files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size, uploaderId: f.uploader_id, createdAt: f.created_at, messageId: f.message_id, convId: f.conv_id })),
+          files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size, uploaderId: f.uploader_id, createdAt: f.created_at, messageId: f.message_id, convId: f.conv_id, textMatch: textMatch(f.ocr_text) })),
         } satisfies Ops['search']['res'];
       }
 

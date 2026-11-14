@@ -838,6 +838,14 @@ export class Hub {
             throw err;
           }
         }
+        if (op === 'file.setText') {
+          try {
+            this.files.setText(conn.userId!, String(d.fileId ?? ''), typeof d.text === 'string' ? d.text : '');
+            return { ok: true };
+          } catch (err) {
+            throw new OpError((err as Error).message);
+          }
+        }
         if (typeof op === 'string' && /^(emoji\.list|admin\.emoji\.(add|remove))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {

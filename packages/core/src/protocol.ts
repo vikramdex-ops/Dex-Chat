@@ -606,6 +606,8 @@ export interface Ops {
   'org.get': { req: void; res: OrgInfo };
   'policy.get': { req: void; res: OfficePolicy };
   'emoji.list': { req: void; res: CustomEmoji[] };
+  /** Text the uploader's PC read from an image, so search can find it (not Direct conversations). */
+  'file.setText': { req: { fileId: string; text: string }; res: { ok: true } };
   'admin.emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
   'admin.emoji.remove': { req: { name: string }; res: { ok: true } };
   'admin.policy.set': { req: Partial<OfficePolicy>; res: OfficePolicy };
@@ -718,7 +720,7 @@ export interface Ops {
       /** Page further back: only results older than this message id. */
       olderThan?: string;
     };
-    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string }> };
+    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string; textMatch?: string }> };
   };
 }
 export type OpName = keyof Ops;

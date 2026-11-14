@@ -17,7 +17,7 @@ export const FILE_SCHEME = 'dexfile';
 
 /** Must run before app 'ready'. */
 export function registerFileScheme(): void {
-  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 }
 
 function pinnedRequest(access: HubAccess, method: string, pathname: string, headers: Record<string, string | number> = {}): Promise<{ req: ReturnType<typeof https.request>; res: Promise<IncomingMessage> }> {
@@ -146,11 +146,11 @@ export function handleFileScheme(getAccess: () => HubAccess | null): void {
         if (start > end || start >= size) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
         return new Response(Readable.toWeb(fs.createReadStream(p, { start, end })) as ReadableStream, {
           status: 206,
-          headers: { 'content-type': ext, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(end - start + 1), 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=31536000, immutable' },
+          headers: { 'content-type': ext, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(end - start + 1), 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=31536000, immutable', 'access-control-allow-origin': '*' },
         });
       }
       return new Response(Readable.toWeb(fs.createReadStream(p)) as ReadableStream, {
-        headers: { 'content-type': ext, 'content-length': String(size), 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=31536000, immutable' },
+        headers: { 'content-type': ext, 'content-length': String(size), 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=31536000, immutable', 'access-control-allow-origin': '*' },
       });
     } catch {
       return new Response('unavailable', { status: 502 });

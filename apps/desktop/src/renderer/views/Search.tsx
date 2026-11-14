@@ -11,7 +11,7 @@ import { chatState } from '../chat/store.ts';
 export interface SearchInit { q?: string; convId?: string | null }
 type When = 'any' | 'today' | 'week' | 'month' | 'year';
 type Hit = { message: Message; snippet: string };
-type FileHit = FileInfo & { messageId: string; convId: string };
+type FileHit = FileInfo & { messageId: string; convId: string; textMatch?: string };
 
 const WHEN: Array<{ value: When; label: string }> = [
   { value: 'any', label: 'Any time' }, { value: 'today', label: 'Today' }, { value: 'week', label: 'Past 7 days' },
@@ -188,6 +188,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
                 <span className="sb-main">
                   <span className="search-meta"><b>{f.name}</b><span className="mono faint">{when(f.createdAt)}</span></span>
                   <span className="search-snippet faint">{formatSize(f.size)} · {byId.get(f.uploaderId)?.displayName ?? 'Someone'}{c ? ` · ${convTitle(c, byId, meId)}` : ''}</span>
+                  {f.textMatch && <span className="search-snippet"><span className="faint">Text in the image: </span><Snippet text={f.textMatch.replace(/\n/g, ' · ')} /></span>}
                 </span>
               </button>
             );

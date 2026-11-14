@@ -177,3 +177,23 @@ test('custom emoji: admins add them, everyone can see the image and react with t
   await owner.request('admin.emoji.remove', { name: 'pipe' });
   assert.equal((await priya.request('emoji.list')).length, 0);
 });
+
+test('text read from images is searchable, never for Direct conversations', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), crypto.randomBytes(100)]);
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Scans', members: [priya.session!.me.id] });
+  const { info } = await upload(hub, owner, 'IMG_2041.png', png, 'image/png');
+  await owner.request('msg.send', { convId: space.id, body: '', clientId: 'o1', files: [info.id] });
+  await assert.rejects(priya.request('file.setText', { fileId: info.id, text: 'nope' }), /not found/);
+  await owner.request('file.setText', { fileId: info.id, text: 'NOZZLE SCHEDULE\nN1 150# RF  N2 300# RF\nTag V-2201' });
+  const r = await priya.request('search', { q: 'v-2201' });
+  assert.equal(r.files.length, 1);
+  assert.match(r.files[0].textMatch!, /\[\[V-2201\]\]/);
+  assert.equal((await priya.request('search', { q: 'nozzle 300' })).files.length, 1, 'every word, anywhere in the text');
+  assert.equal((await ravi.request('search', { q: 'v-2201' })).files.length, 0, 'not a member');
+  // Direct conversations stay private
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [priya.session!.me.id] });
+  const { info: d } = await upload(hub, owner, 'private.png', Buffer.concat([png, Buffer.from('x')]), 'image/png');
+  await owner.request('msg.send', { convId: dm.id, body: '', clientId: 'o2', files: [d.id] });
+  await assert.rejects(owner.request('file.setText', { fileId: d.id, text: 'secret' }), /stay private/);
+});

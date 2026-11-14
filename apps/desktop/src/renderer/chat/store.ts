@@ -2,6 +2,7 @@
 // drafts. Sends are optimistic (shown instantly, confirmed by the hub, retried with the same
 // clientId so they never duplicate). Components subscribe with useChat(selector).
 import { alertUser } from '../alerts.ts';
+import { readImageText } from '../ocr.ts';
 import { useSyncExternalStore } from 'react';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
 import { plainPreview } from './format.tsx';
@@ -215,6 +216,7 @@ async function deliver(m: PendingMessage): Promise<void> {
       const saved = await window.dex.request('msg.send', { convId: m.convId, body: m.body, parentId: m.parentId ?? undefined, clientId: m.clientId!, files: m.files.map((f) => f.id) });
       upsertMessage(saved);
       changed();
+      if (saved.files.length) { const c = state.conversations.get(saved.convId); if (c) readImageText(saved.files, c.kind); }
       return;
     } catch (err) {
       const msg = (err as Error).message;
