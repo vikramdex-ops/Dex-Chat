@@ -22,7 +22,10 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | mediasoup (hub) and mediasoup-client (apps) | The relay for Rooms of more than 8 people | ISC |
 | MediaPipe Tasks Vision (@mediapipe/tasks-vision) | Background blur in calls, on the PC | Apache-2.0 |
 | MediaPipe selfie segmentation model (`selfie_segmenter.tflite`) | Background blur in calls | Apache-2.0 |
+| RNNoise (Xiph.Org, via the WebAssembly build in @sapphi-red/web-noise-suppressor) | Strong noise suppression for the microphone in Rooms, on the PC | BSD-3-Clause (RNNoise); the WebAssembly build comes from @shiguredo/rnnoise-wasm, Apache-2.0 |
+| @sapphi-red/web-noise-suppressor | The audio worklet that runs RNNoise (`rnnoiseWorklet.js`, `rnnoise.wasm`, `rnnoise_simd.wasm`, bundled beside the app) | MIT |
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
+| esbuild (build tool only) | Building the gateway's guest meeting page into the Worker | MIT |
 | WinSW | Running the hub as a Windows service | MIT |
 
 Everything else (the design language, icons, sounds, illustrations and the 3D landing page) is

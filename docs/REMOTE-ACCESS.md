@@ -14,10 +14,11 @@ and how to set it up.
 
 - **The office opens no ports.** The hub connects *out* to the gateway and keeps that connection
   open. Nothing on the office network listens on the internet.
-- **The gateway only relays.** It is a small Cloudflare Worker (`apps/gateway`, about 250 lines)
+- **The gateway only relays.** It is a small Cloudflare Worker (`apps/gateway`, about 350 lines, plus the guest meeting page)
   with one Durable Object per hub. It pairs each device's WebSocket with the hub's and passes
-  opaque binary frames. It stores no messages, files or keys. The only thing it saves is the hub's
-  certificate fingerprint, and only when you don't pin one.
+  opaque binary frames. It stores no messages, files or keys. The only things it saves are the hub's
+  certificate fingerprint (only when you don't pin one), which hub its meeting pages lead to, and,
+  for ten minutes, how many wrong guest passcodes came from an address.
 - **Each device has an encrypted channel to the hub.** Inside the gateway's WebSocket, the device and
   the hub run their own handshake (`packages/core/src/remote.ts`):
   - X25519 key exchange, HKDF-SHA256, and one AES-256-GCM key per direction.
@@ -45,6 +46,8 @@ and how to set it up.
 | Gateway `/hub/<id>` | Anyone on the internet | Only a connection that signs a fresh challenge with the hub certificate's key is accepted. With `HUB_FINGERPRINT` set, it must be *this* hub's certificate. Otherwise the first hub is remembered and any other hub is refused. At most 4 hub connections. |
 | Gateway `/c/<id>` | Anyone on the internet | Refused unless the hub is connected. Binary frames only, at most 1 MiB each. 40 connections a minute per address, 600 devices at once. The first frame must be a valid handshake, or the hub closes it. |
 | Gateway `/join`, `/health` | Anyone | Static pages, strict headers, no data. |
+| Gateway `/m/<meeting ID>` | Anyone | The guest meeting page and its script and styles: static, served from the Worker, with a strict content security policy (nothing loads from anywhere else). |
+| Gateway `/m/<meeting ID>/ws` | Anyone with a guest link | Refused unless the hub is connected. JSON frames only, at most 64 KiB each and 400 per 10 seconds. 20 connections a minute and 5 wrong passcodes per 10 minutes per address (kept in the Durable Object's storage), 300 guests at once. The hub checks the passcode (and limits wrong ones again, 10 per 10 minutes per address); a guest only ever reaches the meeting's lobby. |
 | Hub, through a channel | A device that completed the handshake | Unknown devices can only *ask* to join (they become pending). At most 10 such requests an hour from outside, and administrators can turn new joins from outside off altogether. The Control room is office-only unless an administrator allows it. Every action is audited, and outside connections show as `internet <address> (<country>)`. |
 | Office hub on the internet | Nobody | It accepts no inbound connections from the internet. |
 | Bot API, integrations, update mirror admin | Office network only | Not reachable through the gateway. |
@@ -54,6 +57,43 @@ What the gateway (and Cloudflare) *can* see:
 - The sizes and timing of encrypted frames.
 
 They never see message text, file contents, names, keys or call media.
+
+## Guests in meetings (browser, no install)
+
+A meeting's hosts can give people outside the office a **guest link**, for example
+`https://dexconnect-gateway.example.workers.dev/m/482913207#Hx7kP2qR`. It opens a small page served by
+the gateway: the guest enters their name, checks their camera and microphone, and waits in the
+lobby until a host lets them in. Then they see and hear the meeting, share their screen, write in
+the meeting chat, raise a hand and react. Nothing is installed.
+
+- **The passcode** (6 to 10 letters and digits) is the part after `#`. Browsers never send the
+  fragment to a server, so it appears in no log; the page sends it in its first frame and then
+  removes it from the address bar. The hub checks it.
+- **Guests always wait in the lobby**, whatever the meeting's lobby setting, and a locked meeting
+  refuses them. They have no account: the hub gives each one a short session that can only take
+  part in that meeting. They see the names of the people in the meeting and nothing else (no
+  Directory, no conversations, no presence). They never inherit host controls.
+- **Hosts** turn the link on or off, renew its passcode (the old link stops working), and copy it
+  or a whole invitation (as text, or an `.ics` file for any calendar) from the Room's host controls,
+  the Calendar's meeting dialog, or the personal room card on the Meet lens. **Administrators**
+  can turn guest links off for the office (**Control room → Policies → Meetings**): every link
+  stops at once.
+- **How it travels.** The page's WebSocket goes to the gateway, which passes its frames to the
+  hub as *guest frames* on the hub's own outbound connection (TLS to Cloudflare). Guest frames are
+  not inside a device's end-to-end channel: the gateway serves the guest's page, so for guests it
+  is trusted the way any website is trusted by its visitors. Pin the gateway to the hub
+  (`HUB_FINGERPRINT`) so only your hub can receive them. The gateway remembers which hub
+  meeting pages lead to: the first hub that signs in, and only that hub (the same certificate)
+  afterwards.
+- **Media** goes straight between the guest's browser and the PCs in the meeting (WebRTC,
+  encrypted with DTLS-SRTP), through TURN when needed: set up **Cloudflare TURN** (below) for
+  guests on strict networks. The gateway never carries audio or video.
+- **Meetings of more than 8 people** run on the hub's relay, which is on the office network.
+  Browsers outside cannot reach it (the office opens no ports, and a TURN server on the internet
+  cannot reach a private address), so such meetings refuse browser guests with a clear message,
+  and their hosts are told. The guest link panel says so before anyone is invited. Guests count
+  towards the 8 people a PC-to-PC meeting holds.
+- Every guest knocking, being let in, refused or removed is in the audit log, with the address.
 
 ## Data protection and allowed networks
 
