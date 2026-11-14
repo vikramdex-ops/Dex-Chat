@@ -70,6 +70,8 @@ export function useChat<T>(select: (s: ChatState) => T): T {
 }
 
 export const chatState = () => snapshot;
+/** The signed-in person, as the directory knows them. */
+export const meUser = (): PublicUser | undefined => directory().find((u) => u.id === state.meId);
 export const tlKey = (convId: string, parentId?: string | null) => (parentId ? `${convId}/${parentId}` : convId);
 
 // ------------------------------------------------------------------ sync with the hub

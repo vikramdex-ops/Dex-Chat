@@ -36,12 +36,13 @@ function compile(d: Record<string, string>): Array<{ re: RegExp; out: string }> 
 export const language = () => lang;
 export const translating = () => lang !== 'en';
 
-/** Change the language (the window reloads so every screen is drawn again). */
+/** Change the language (then every screen is drawn again: see Preferences → Language). */
 export function setLanguage(code: string): void {
   try { localStorage.setItem(KEY, code); } catch { /* private mode */ }
   lang = code;
   exact = DICTS[code] ?? {};
   patterns = compile(exact);
+  cache.clear();
   document.documentElement.lang = code;
 }
 

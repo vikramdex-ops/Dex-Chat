@@ -1,5 +1,5 @@
 // Shared UI building blocks: icons, avatars, controls, toasts and formatting helpers.
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { PublicUser } from '@dex/core';
@@ -152,7 +152,7 @@ export function Avatar({ user, online, presence, size }: {
 }) {
   const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
   return (
-    <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }}
+    <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }} translate="no"
       title={p ? `${user.displayName} · ${PRESENCE_LABEL[p]}` : user.displayName}>
       {initials(user.displayName)}
     </span>
@@ -246,14 +246,21 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
   useLayoutEffect(() => {
     const el = ref.current;
     if (!anchor || !el) return;
-    const a = anchor.getBoundingClientRect();
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    let left = align === 'end' ? a.right - w : align === 'right' ? a.right + 6 : a.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-    let top = align === 'right' ? a.top - 6 : a.bottom + 6;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, align === 'right' ? window.innerHeight - h - 8 : a.top - h - 6);
-    setPos({ left, top });
+    const place = () => {
+      const a = anchor.getBoundingClientRect();
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      let left = align === 'end' ? a.right - w : align === 'right' ? a.right + 6 : a.left;
+      left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+      let top = align === 'right' ? a.top - 6 : a.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, align === 'right' ? window.innerHeight - h - 8 : a.top - h - 6);
+      setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
+    };
+    place();
+    // content that arrives or opens later (a submenu, items loaded on open) places it again
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    ro?.observe(el);
+    return () => ro?.disconnect();
   }, [anchor, align]);
   useEffect(() => {
     const down = (e: MouseEvent) => {
@@ -288,6 +295,13 @@ export const useToast = () => useContext(ToastCtx);
 
 export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // everything below is drawn afresh on 'dex-redraw' (a new language), where the window cannot reload
+  const [epoch, setEpoch] = useState(0);
+  useEffect(() => {
+    const on = () => setEpoch((n) => n + 1);
+    window.addEventListener('dex-redraw', on);
+    return () => window.removeEventListener('dex-redraw', on);
+  }, []);
   const push = useCallback((text: string, bad?: boolean) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t.slice(-3), { id, text, bad }]);
@@ -301,7 +315,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
   }, [push]);
   return (
     <ToastCtx.Provider value={push}>
-      {children}
+      <Fragment key={epoch}>{children}</Fragment>
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`}>

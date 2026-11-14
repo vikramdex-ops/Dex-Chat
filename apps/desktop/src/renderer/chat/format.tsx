@@ -1,10 +1,15 @@
+/** @jsxImportSource react */
 // Message formatting: a small, safe Markdown subset rendered straight to React elements
 // (never HTML strings). Supports **bold**, *italic*, ~~strike~~, `code`, ``` blocks ```,
-// > quotes, lists, links, <@mentions> and engineering line-number references.
+// > quotes, lists, links, <@mentions>, #tags, <#Space> references and engineering
+// line-number references. What people wrote is never translated (the plain React runtime above).
 import { EmojiImg, customEmoji } from '../emoji.tsx';
 import { highlight } from './highlight.tsx';
-import { useEffect, useState, type ReactNode } from 'react';
-import type { Message, PublicUser } from '@dex/core';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { HASHTAG_RE, STICKER_RE } from '@dex/core';
+import type { Conversation, Message, PublicUser } from '@dex/core';
+import { Icon, Popover } from '../ui.tsx';
+import { addConversation, chatState, useChat } from './store.ts';
 
 /** Piping line numbers such as 6"-P-1001-A1B or 2-CW-2045 (Sleuth integration hooks onto these). */
 export const LINE_REF_RE = /\b\d{1,2}(?:"|''|in)?-[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]{1,6})?\b/g;
@@ -63,6 +68,80 @@ function TagRef({ tag, kind }: { tag: string; kind: 'line' | 'drawing' }) {
 export const toolsInstalled: Record<string, boolean> = {};
 void window.dex?.installedTools?.().then((t) => Object.assign(toolsInstalled, t)).catch(() => {});
 
+// ------------------------------------------------------------------ #tags and Space references
+/** A Space reference in a message body: <#CONVERSATIONID>. */
+export const SPACE_REF_RE = /<#([0-9A-Z]{26})>/g;
+
+/** Open Spaces anyone can join (fetched when needed, kept for two minutes). */
+let browse: Promise<Conversation[]> | null = null;
+let browseAt = 0;
+let browsed: Conversation[] = [];
+export function openSpaces(): Promise<Conversation[]> {
+  if (!browse || Date.now() - browseAt > 120_000) {
+    browseAt = Date.now();
+    browse = window.dex.request('conv.browse').then((l) => { browsed = l; return l; }).catch(() => { browse = null; return browsed; });
+  }
+  return browse;
+}
+/** A Space's name, if this device knows it. */
+export function spaceName(id: string): string | null {
+  return chatState().conversations.get(id)?.name ?? browsed.find((c) => c.id === id)?.name ?? null;
+}
+
+/** #tag: opens Search for it. */
+function TagChip({ text, tag }: { text: string; tag: string }) {
+  return (
+    <button className="tag-chip" translate="no" title={`Find #${tag}`}
+      onClick={() => window.dispatchEvent(new CustomEvent('dex-search', { detail: { q: `#${tag.toLowerCase()}` } }))}>{text}</button>
+  );
+}
+
+/** <#Space>: opens the Space, or offers to join an open one you are not in. */
+function SpaceRef({ id }: { id: string }) {
+  const mine = useChat((s) => s.conversations.get(id));
+  const [open, setOpen] = useState<Conversation | null | undefined>(undefined);
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const joined = !!mine?.joined;
+  useEffect(() => {
+    if (joined) return;
+    let live = true;
+    void openSpaces().then((l) => { if (live) setOpen(l.find((c) => c.id === id) ?? null); });
+    return () => { live = false; };
+  }, [id, joined]);
+  const c = joined ? mine : open ?? mine;
+  if (!c) return <span className="space-ref none" title="A private Space you are not in"><Icon name="lock" size={11} />{open === undefined ? <span>…</span> : <span>a private Space</span>}</span>;
+  const join = async () => {
+    setBusy(true);
+    try {
+      const conv = await window.dex.request('conv.join', { convId: id });
+      addConversation(conv);
+      setAsk(false);
+      window.dispatchEvent(new CustomEvent('dex-open', { detail: id }));
+    } catch (e) { window.dispatchEvent(new CustomEvent('dex-toast', { detail: (e as Error).message })); setBusy(false); }
+  };
+  return (
+    <>
+      <button ref={btn} className={`space-ref${joined ? '' : ' outside'}`} title={joined ? `Open ${c.name}` : `${c.name}: an open Space you are not in`}
+        onClick={() => (joined ? window.dispatchEvent(new CustomEvent('dex-open', { detail: id })) : setAsk(!ask))}>
+        <Icon name="grid" size={11} /><span translate="no">{c.name ?? 'Space'}</span>
+      </button>
+      {ask && !joined && (
+        <Popover anchor={btn.current} onClose={() => setAsk(false)} className="menu space-join" align="start">
+          <div className="menu-label label">Open Space</div>
+          <div className="space-join-body">
+            <b translate="no">{c.name}</b>
+            {c.topic && <span className="faint" translate="no">{c.topic}</span>}
+            <span className="mono faint">{c.members.length} {c.members.length === 1 ? 'person' : 'people'}</span>
+          </div>
+          <button role="menuitem" disabled={busy} onClick={() => void join()}><Icon name="plus" size={16} />Join the Space</button>
+        </Popover>
+      )}
+    </>
+  );
+}
+
 type Inline = { re: RegExp; render: (m: RegExpExecArray, key: string, ctx: Ctx) => ReactNode };
 interface Ctx { users: Map<string, PublicUser>; meId: string }
 
@@ -70,6 +149,8 @@ const INLINE: Inline[] = [
   // \* \_ \` \~ \\ show the character itself
   { re: /\\([\\`*_~<>])/y, render: (m) => m[1] },
   { re: /`([^`\n]+)`/y, render: (m, k) => <code key={k} className="md-code">{m[1]}</code> },
+  { re: /<#([0-9A-Z]{26})>/y, render: (m, k) => <SpaceRef key={k} id={m[1]} /> },
+  { re: new RegExp(HASHTAG_RE.source, 'yu'), render: (m, k) => <TagChip key={k} text={m[0]} tag={m[1]} /> },
   { re: /<@([0-9A-Z]{26}|all)>/y, render: (m, k, ctx) => {
     if (m[1] === 'all') return <span key={k} className="mention all">@everyone</span>;
     const u = ctx.users.get(m[1]);
@@ -94,7 +175,7 @@ const INLINE: Inline[] = [
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_+h0-9\\pdsDIGLPS:[]/;
+const TRIGGER = /[`<*~_+h0-9\\pdsDIGLPS:[#]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];
@@ -221,8 +302,10 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
 
 /** Plain-text preview for lists and notifications: mentions become names, markup is dropped. */
 export function plainPreview(body: string, users: Map<string, PublicUser>): string {
+  if (STICKER_RE.test(body)) return 'Sticker';
   return body
     .replace(/<@all>/g, '@everyone')
+    .replace(SPACE_REF_RE, (_, id: string) => `#${spaceName(id) ?? 'a Space'}`)
     .replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')

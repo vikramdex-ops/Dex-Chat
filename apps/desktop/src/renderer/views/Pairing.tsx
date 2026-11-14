@@ -111,18 +111,41 @@ function AddDevice({ kind, onClose }: { kind: 'phone' | 'laptop'; onClose: () =>
 }
 
 /** A camera viewfinder that reads a QR code (BarcodeDetector where available, else jsQR). */
-export function QrScanner({ onCode, onClose }: { onCode: (text: string) => void; onClose: () => void }) {
+/** Barcode kinds a form's Scan field reads (QR codes always; jsQR reads QR where the system cannot). */
+export const BARCODE_FORMATS = ['qr_code', 'code_128', 'code_39', 'ean_13', 'data_matrix'];
+
+export function QrScanner({ onCode, onClose, formats = ['qr_code'], hint }: {
+  onCode: (text: string) => void; onClose: () => void;
+  /** What BarcodeDetector looks for (default: QR codes only). */
+  formats?: string[];
+  /** The line under the camera (default: where the pairing code is on the PC). */
+  hint?: string;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const done = useRef(onCode);
+  done.current = onCode;
+  const wanted = formats.join(',');
+  const custom = !!hint;
   useEffect(() => {
     let stream: MediaStream | null = null;
     let stop = false;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     type Detector = { detect(v: HTMLVideoElement): Promise<Array<{ rawValue: string }>> };
-    const BD = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Detector }).BarcodeDetector;
+    type DetectorClass = { new (o: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> };
+    const BD = (window as unknown as { BarcodeDetector?: DetectorClass }).BarcodeDetector;
     let detector: Detector | null = null;
-    try { detector = BD ? new BD({ formats: ['qr_code'] }) : null; } catch { detector = null; }
+    const qr = wanted.split(',').includes('qr_code');
+    const ready = (async () => {
+      if (!BD) return;
+      try {
+        // only the kinds this system reads, or the detector refuses to start
+        const supported = BD.getSupportedFormats ? await BD.getSupportedFormats() : wanted.split(',');
+        const use = wanted.split(',').filter((f) => supported.includes(f));
+        detector = use.length ? new BD({ formats: use }) : null;
+      } catch { detector = null; }
+    })();
     const tick = async () => {
       if (stop) return;
       const v = video.current;
@@ -130,33 +153,35 @@ export function QrScanner({ onCode, onClose }: { onCode: (text: string) => void;
         let found: string | null = null;
         if (detector) {
           try { found = (await detector.detect(v))[0]?.rawValue ?? null; } catch { detector = null; }
-        } else if (ctx) {
+        }
+        if (!found && !detector && qr && ctx) {
           const w = Math.min(640, v.videoWidth);
           const h = Math.round((v.videoHeight / v.videoWidth) * w);
           canvas.width = w; canvas.height = h;
           ctx.drawImage(v, 0, 0, w, h);
           found = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' })?.data ?? null;
         }
-        if (found && !stop) { stop = true; onCode(found); return; }
+        if (found && !stop) { stop = true; done.current(found); return; }
       }
       setTimeout(() => void tick(), 180);
     };
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false })
-      .then((s) => {
+      .then(async (s) => {
         stream = s;
         if (stop) { s.getTracks().forEach((t) => t.stop()); return; }
         if (video.current) { video.current.srcObject = s; void video.current.play(); }
+        await ready;
         void tick();
       })
-      .catch(() => setError('The camera could not be opened. Allow camera access for Dexterity Connect, or paste the code instead.'));
+      .catch(() => setError(custom ? 'The camera could not be opened. Allow camera access for Dexterity Connect, or type the code instead.' : 'The camera could not be opened. Allow camera access for Dexterity Connect, or paste the code instead.'));
     return () => { stop = true; stream?.getTracks().forEach((t) => t.stop()); };
-  }, [onCode]);
+  }, [wanted, custom]);
   return (
     <div className="scan-overlay" role="dialog" aria-label="Scan the code">
       <video ref={video} playsInline muted />
       <div className="scan-window" aria-hidden="true"><i /><i /><i /><i /></div>
       <div className="scan-foot">
-        {error ? <div className="error-box">{error}</div> : <p>Point at the square on your PC: <b>Preferences → Your devices → Add my phone</b></p>}
+        {error ? <div className="error-box">{error}</div> : hint ? <p>{hint}</p> : <p>Point at the square on your PC: <b>Preferences → Your devices → Add my phone</b></p>}
         <button className="btn" onClick={onClose}>Cancel</button>
       </div>
     </div>

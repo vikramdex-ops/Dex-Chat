@@ -41,7 +41,7 @@ export function Viewer({ file, all, convId, onClose }: { file: FileInfo; all: Fi
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={f.name} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <header>
         <span className="lb-title">
-          <span className="sb-name">{f.name}</span>
+          <span className="sb-name" translate="no">{f.name}</span>
           <span className="lb-meta mono">{formatSize(f.size)}{all.length > 1 ? ` · sheet ${i + 1} of ${all.length}` : ''}</span>
         </span>
         <span style={{ flex: 1 }} />

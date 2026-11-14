@@ -3,12 +3,13 @@
 // Pane's right edge; a side-track opens the same way, tied to its message by a hairline.
 import { Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
+import { STICKER_RE } from '@dex/core';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
 import { Avatar, Icon, Popover, colorFor, relativeTime, useToast, presenceFor } from '../ui.tsx';
 import type { IconName, Presence } from '../ui.tsx';
-import { isEmojiOnly, renderBody } from './format.tsx';
+import { SPACE_REF_RE, isEmojiOnly, openSpaces, renderBody, spaceName } from './format.tsx';
 import {
   addConversation, chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
   setDraft, showConversation, tlKey, useChat,
@@ -23,23 +24,27 @@ import { VoiceRecorder } from './voice.tsx';
 import { Viewer } from './Viewer.tsx';
 import { EmojiPicker } from './EmojiPicker.tsx';
 import { stampsOnHand } from './quick.ts';
-import { EmojiGlyph, EmojiImg, useCustomEmoji } from '../emoji.tsx';
+import { EmojiGlyph, StickerImg } from '../emoji.tsx';
 import { ClipRecorder, clipsSupported, screenClipsSupported } from './clips.tsx';
 import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
-import { describeWhen, deskState, toggleSaved, useDesk } from '../desk/store.ts';
+import { KEEP_LABEL, describeWhen, deskState, toggleSaved, useDesk } from '../desk/store.ts';
 import { policyNow, usePolicy, withinEditWindow } from '../policy.ts';
 import { EventDialog } from '../calendar/CalendarView.tsx';
 import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
 import { timeOpts } from '../time.ts';
+import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeople, openWithQuote, pinEnd, runAction, useActions } from './wire.tsx';
+import { useMsgLayout } from './prefs.ts';
+import { keyFor, keyHint, keyText, pressed, useKeys } from './keys.ts';
 import './chat.css';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
 
 const WhiteboardStage = lazy(() => import('./Whiteboard.tsx').then((m) => ({ default: m.WhiteboardStage })));
+const ScanDialog = lazy(() => import('../scan/ScanDialog.tsx').then((m) => ({ default: m.ScanDialog })));
 
 const RUN_GAP = 5 * 60 * 1000;
 /** A time tick on the spine every ten minutes of activity. */
@@ -63,6 +68,8 @@ interface Ctx {
   /** Multi-select: the chosen message ids (null when not picking). */
   selected: Set<string> | null;
   select: (id: string | null) => void;
+  /** Messages drawn as compact cards (Preferences) rather than on the spine. */
+  cards: boolean;
 }
 
 /** The stamps on hand (Preferences), kept live. */
@@ -84,7 +91,7 @@ function insertAtCursor(el: HTMLTextAreaElement, ins: string): void {
 
 /** The text of a message as a Markdown quote, for the Dock. */
 const quoteOf = (m: AnyMessage, users: Map<string, PublicUser>) =>
-  `> **${users.get(m.authorId)?.displayName ?? 'Someone'}:** ${(m.body || (m.files.length ? `📎 ${m.files.map((f) => f.name).join(', ')}` : '')).replace(/\n/g, '\n> ')}\n\n`;
+  `> **${users.get(m.authorId)?.displayName ?? 'Someone'}:** ${(STICKER_RE.test(m.body) ? 'Sticker' : m.body || (m.files.length ? `📎 ${m.files.map((f) => f.name).join(', ')}` : '')).replace(/\n/g, '\n> ')}\n\n`;
 
 function dayLabel(ts: number): string {
   const d = new Date(ts);
@@ -139,6 +146,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const [fwdMany, setFwdMany] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const narrow = useNarrow();
+  const layout = useMsgLayout();
   useEffect(() => { setSelected(null); }, [convId]);
   useEffect(() => {
     if (!selected) return;
@@ -211,7 +219,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
 
   if (!conv) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
   const ctx: Ctx = {
-    users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }), selected,
+    users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }), selected, cards: layout === 'cards',
     select: (id) => setSelected((cur) => {
       if (id === null) return null;
       const next = new Set(cur ?? []);
@@ -261,7 +269,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           {onBack && <button className="icon-btn only-narrow" onClick={onBack} aria-label="Back to the Switchboard"><Icon name="back" size={18} /></button>}
           <ConvTile c={conv} users={users} meId={meId} />
           <div className="pane-title">
-            <h2>{title}{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
+            <h2 translate="no">{title}{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
             <p className="faint">
               {e2e && conv.kind === 'direct' && (
                 <button className={`e2e-chip${e2e.encrypted ? '' : ' off'}`} onClick={() => setVerify(true)} title={e2e.encrypted ? 'Messages here are end-to-end encrypted' : 'Not end-to-end encrypted yet'}>
@@ -270,7 +278,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
               )}
               {sheetNo && sheetNo.of > 1 && <span className="sheet-no mono">Sheet {sheetNo.n}/{sheetNo.of}</span>}
               {conv.muted && <span className="sheet-no mono hushed">Hushed</span>}
-              <span className="pane-sub">{subtitle}</span>
+              <span className="pane-sub" translate={conv.kind === 'space' && !conv.topic ? undefined : 'no'}>{subtitle}</span>
             </p>
           </div>
           <dl className="title-block" aria-label="About this conversation">
@@ -516,6 +524,18 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   }, [messages]);
 
   useEffect(() => { stick.current = true; }, [convId]);
+  // switching between spine and cards changes every height: stay with the newest message while
+  // the runs settle (they are laid out as they come into view)
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !stick.current) return;
+    el.scrollTop = el.scrollHeight;
+    let n = 0;
+    let frame = 0;
+    const again = () => { if (stick.current) el.scrollTop = el.scrollHeight; if (++n < 4) frame = requestAnimationFrame(again); };
+    frame = requestAnimationFrame(again);
+    return () => cancelAnimationFrame(frame);
+  }, [ctx.cards]);
 
   // stay pinned to the newest message when the window or the Dock changes size
   useEffect(() => {
@@ -565,7 +585,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   }, [messages, ctx.meId]);
 
   return (
-    <div className="timeline" ref={scroller} onScroll={onScroll}>
+    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll}>
       <div className="spine">
         {tl?.hasMore && <div className="tl-more">{tl.loading ? <span className="spinner" /> : null}</div>}
         {tl?.loaded && !tl.hasMore && <Beginning ctx={ctx} />}
@@ -588,9 +608,9 @@ function Beginning({ ctx }: { ctx: Ctx }) {
     <div className="tl-start">
       <ConvTile c={c} users={ctx.users} meId={ctx.meId} size="lg" />
       <div className="tl-start-text">
-        <h3>{convTitle(c, ctx.users, ctx.meId)}</h3>
+        <h3 translate="no">{convTitle(c, ctx.users, ctx.meId)}</h3>
         <div className="tl-start-line mono">Sheet 1 · started {fullDate(c.createdAt)} by {by}</div>
-        {c.topic && <p className="muted">{c.topic}</p>}
+        {c.topic && <p className="muted" translate="no">{c.topic}</p>}
         <p className="faint" style={{ fontSize: 12.5 }}>{c.kind === 'space' ? (c.private ? 'A private Space: only people who were added can see it.' : 'An open Space: anyone in the office can find and join it.') : 'Only the people here can see these messages.'}</p>
       </div>
     </div>
@@ -606,7 +626,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }:
       <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
-          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
+          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
           {u?.role === 'bot' && <span className="chip accent bot-chip">Integration</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
@@ -631,21 +651,34 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   const [editing, setEditing] = useState(false);
   const [stamp, setStamp] = useState<'chips' | 'picker' | null>(null);
   const [more, setMore] = useState(false);
+  const [pinFor, setPinFor] = useState(false);
+  const [keep, setKeep] = useState(false);
   const moreBtn = useRef<HTMLButtonElement>(null);
   const stampBtn = useRef<HTMLButtonElement>(null);
-  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | null>(null);
-  const saved = useDesk((s) => s.saved.has(m.id));
+  const keepBtn = useRef<HTMLButtonElement>(null);
+  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | 'fork' | null>(null);
+  const kept = useDesk((s) => s.saved.get(m.id));
+  const saved = !!kept;
   const pending = 'pending' in m;
   const failed = pending ? (m as PendingMessage).failed : undefined;
   const mine = m.authorId === ctx.meId;
   const receiptsOn = ctx.users.get(ctx.meId)?.readReceipts !== false;
   const stamps = useStamps();
   const policy = usePolicy();
+  const actions = useActions(ctx.conv, more);
   const inWindow = withinEditWindow(m.createdAt, policy);
+  const sticker = STICKER_RE.exec(m.body)?.[1] ?? null;
   const moderator = ctx.conv.kind === 'space' && (ctx.isAdmin || ctx.conv.moderators?.includes(ctx.meId) || ctx.conv.createdBy === ctx.meId);
-  const canEdit = mine && inWindow && !!m.body && !m.poll && !m.form;
+  const canEdit = mine && inWindow && !!m.body && !m.poll && !m.form && !sticker;
   const canDelete = (mine && inWindow) || moderator;
   const mentioned = m.mentions.includes(ctx.meId) || (m.mentions.includes('all') && !mine);
+  const guest = ctx.users.get(ctx.meId)?.role === 'guest';
+  const named = namedPeople(m as Message, ctx.meId, ctx.users);
+  const author = ctx.users.get(m.authorId);
+  // a group Direct with the people named, unless that is just the author (Take to Direct does that)
+  const canTakeNamed = !pending && m.e2e !== 'locked' && named.length > 0 && !(named.length === 1 && named[0] === m.authorId && ctx.conv.kind === 'space');
+  // a Space starts from a whole message (not a side-track reply), never from end-to-end encrypted text
+  const canFork = !guest && !inTrack && !m.parentId && !m.poll && !m.form && !m.e2e && !m.deleted;
 
   // Ctrl+Up in the Dock edits your last message
   useEffect(() => {
@@ -660,7 +693,13 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
     setStamp(null);
     void act(window.dex.request('msg.react', { messageId: m.id, emoji, on }));
   };
-  const close = (then?: () => void) => { setMore(false); then?.(); };
+  const close = (then?: () => void) => { setMore(false); setPinFor(false); then?.(); };
+  const pin = (until: number | null) => close(() => void act(window.dex.request('msg.pin', { messageId: m.id, pinned: true, until }), until ? `Pinned for everyone here · ${pinEnd(until)}` : 'Pinned for everyone here'));
+  const keepClick = () => {
+    if (saved) { setKeep(!keep); return; }
+    // one press keeps it; the flyout then offers what to file it as
+    void toggleSaved(m as Message).then(() => setKeep(true)).catch((e: Error) => toast(e.message, true));
+  };
 
   if (m.deleted) return (
     <div className="msg deleted"><span className="faint">{m.removed
@@ -682,7 +721,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   return (
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
       onMouseEnter={inTrack ? undefined : toolsFit} onFocus={inTrack ? undefined : toolsFit}
-      className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
+      className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
+      {ctx.cards && !inTrack && <span className="card-time mono" aria-hidden="true">{clock(m.createdAt)}</span>}
       {seen && <span className={`notch ${seen.state}`} role={seen.tag ? 'img' : undefined} aria-label={seen.tag || undefined} />}
       {seen?.tag && <span className="seen-tag mono" aria-hidden="true">{seen.tag}</span>}
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
@@ -693,7 +733,9 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
       )}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
-      ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
+      ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : sticker ? (
+        <div className="sticker-body"><StickerImg id={sticker} size={ctx.cards ? 112 : 132} /></div>
+      ) : editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
       ) : (
         m.body ? (
@@ -706,6 +748,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
         ) : null
       )}
       <MessageFiles files={m.files ?? []} onView={ctx.view} />
+      {!pending && <MsgFlags m={m as Message} />}
 
       {Object.keys(m.reactions).length > 0 && (
         <div className="reactions">
@@ -733,12 +776,14 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
       )}
 
       {!pending && !editing && (
-        <div className={`spine-tools${stamp || more ? ' open' : ''}`} role="toolbar" aria-label="Tools for this message" aria-orientation="vertical">
+        <div className={`spine-tools${stamp || more || keep ? ' open' : ''}`} role="toolbar" aria-label="Tools for this message" aria-orientation="vertical">
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Side-track" aria-label="Side-track"><Icon name="branch" size={15} /></button>}
           <button ref={stampBtn} className={stamp ? 'on' : undefined} onClick={() => setStamp(stamp ? null : 'chips')} title="Stamp" aria-label="Stamp" aria-haspopup="dialog" aria-expanded={!!stamp}><Icon name="stamp" size={15} /></button>
-          <button className={saved ? 'on kept' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Kept on your Desk' : 'Taken off your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Take off my Desk' : 'Keep on my Desk'} aria-label={saved ? 'Take off my Desk' : 'Keep on my Desk'} aria-pressed={saved}><Icon name="drawer" size={15} /></button>
+          <button ref={keepBtn} className={saved ? 'on kept' : undefined} onClick={keepClick}
+            title={saved ? `On my Desk · ${KEEP_LABEL[kept?.kind ?? 'keep']}` : 'Keep on my Desk'} aria-label={saved ? `On my Desk · ${KEEP_LABEL[kept?.kind ?? 'keep']}` : 'Keep on my Desk'}
+            aria-haspopup="menu" aria-expanded={keep} aria-pressed={saved}><Icon name="drawer" size={15} /></button>
           <button onClick={() => setDialog('remind')} title="Remind me" aria-label="Remind me"><Icon name="alarm" size={15} /></button>
-          <button ref={moreBtn} onClick={() => setMore(!more)} title="More" aria-label="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={15} /></button>
+          <button ref={moreBtn} onClick={() => { setMore(!more); setPinFor(false); }} title="More" aria-label="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={15} /></button>
           {stamp && (
             <Popover anchor={stampBtn.current} onClose={() => setStamp(null)} className={stamp === 'picker' ? 'emoji-pop-wrap' : 'menu stamp-fly'} align="right">
               {stamp === 'picker' ? <EmojiPicker onPick={(e) => react(e)} onClose={() => setStamp(null)} /> : (
@@ -756,33 +801,67 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
               )}
             </Popover>
           )}
+          {keep && saved && (
+            <Popover anchor={keepBtn.current} onClose={() => setKeep(false)} className="menu keep-menu" align="right">
+              <KeepMenu m={m as Message} onClose={() => setKeep(false)} />
+            </Popover>
+          )}
           {more && (
-            <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu" align="right">
+            <Popover anchor={moreBtn.current} onClose={() => close()} className="menu msg-menu" align="right">
               <div className="menu-label label">Send on</div>
               <button role="menuitem" onClick={() => close(() => setDialog('forward'))}><Icon name="forward" size={16} />Forward</button>
               {m.body && <button role="menuitem" onClick={() => close(() => window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(m.convId, inTrack ? m.parentId : null), text: quoteOf(m, ctx.users) } })))}><Icon name="reply" size={16} />Quote</button>}
-              {ctx.conv.kind === 'space' && !mine && ctx.users.get(m.authorId)?.role !== 'bot' && (
+              {ctx.conv.kind === 'space' && !mine && author?.role !== 'bot' && (
                 <button role="menuitem" onClick={() => close(() => {
                   void window.dex.request('conv.create', { kind: 'direct', members: [m.authorId] }).then((c) => {
                     addConversation(c);
-                    window.dispatchEvent(new CustomEvent('dex-open', { detail: c.id }));
-                    setTimeout(() => window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(c.id), text: quoteOf(m, ctx.users) } })), 250);
+                    openWithQuote(c.id, quoteOf(m, ctx.users));
                   }).catch((e: Error) => toast(e.message, true));
                 })}><Icon name="direct" size={16} />Take to Direct</button>
               )}
+              {canTakeNamed && (
+                <button role="menuitem" onClick={() => close(() => {
+                  void window.dex.request('conv.create', { kind: 'direct', members: named }).then((c) => {
+                    addConversation(c);
+                    openWithQuote(c.id, quoteOf(m, ctx.users));
+                  }).catch((e: Error) => toast(e.message, true));
+                })}><Icon name="people" size={16} />Take to Direct with the people named<span className="menu-note mono">{named.length + 1}</span></button>
+              )}
+              {canFork && <button role="menuitem" onClick={() => close(() => setDialog('fork'))}><Icon name="grid" size={16} />Start a Space from this</button>}
               <div className="menu-label label">Keep</div>
-              <button role="menuitem" onClick={() => close(() => void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned for everyone' : 'Pinned for everyone here'))}><Icon name="pin" size={16} />{m.pinned ? 'Unpin for everyone' : 'Pin for everyone'}</button>
+              {m.pinned ? (
+                <button role="menuitem" onClick={() => close(() => void act(window.dex.request('msg.pin', { messageId: m.id, pinned: false }), 'Unpinned for everyone'))}>
+                  <Icon name="pin" size={16} />Unpin for everyone{m.pinnedUntil ? <span className="menu-note mono">{pinEnd(m.pinnedUntil)}</span> : null}
+                </button>
+              ) : (
+                <>
+                  <button role="menuitem" aria-expanded={pinFor} onClick={() => setPinFor(!pinFor)}><Icon name="pin" size={16} />Pin for everyone<Icon name="chevron" size={13} className={`menu-caret${pinFor ? ' open' : ''}`} /></button>
+                  {pinFor && (
+                    <div className="pin-for" role="group" aria-label="How long to pin it">
+                      {PIN_FOR.map((o) => <button key={o.id} role="menuitem" autoFocus={o.id === 'day'} onClick={() => pin(o.until())}>{o.label}</button>)}
+                    </div>
+                  )}
+                </>
+              )}
               <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(`dexconnect://message/${m.convId}/${m.id}`); toast('Reference copied: paste it anywhere in Dexterity Connect'); })}><Icon name="open" size={16} />Copy reference</button>
-              {m.body && <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(m.body); toast('Copied'); })}><Icon name="copy" size={16} />Copy text</button>}
+              {m.body && !sticker && <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(m.body); toast('Copied'); })}><Icon name="copy" size={16} />Copy text</button>}
               {!inTrack && !m.parentId && <>
                 <div className="menu-label label">Later</div>
                 <button role="menuitem" onClick={() => close(() => void act(markUnreadFrom(m), 'Left unread from here'))}><Icon name="unread" size={16} />Come back to this</button>
               </>}
+              {actions.length > 0 && m.e2e !== 'locked' && <>
+                <div className="menu-label label">Integrations</div>
+                {actions.map((a) => (
+                  <button key={a.id} role="menuitem" title={`${a.label} · ${a.botName}`} onClick={() => close(() => void runAction(a, m as Message, ctx.conv, toast))}>
+                    <Icon name="send" size={16} /><span className="menu-text">{a.label}</span><span className="menu-note" translate="no">{a.botName}</span>
+                  </button>
+                ))}
+              </>}
               <div className="menu-label label">This message</div>
-              {canEdit && <button role="menuitem" onClick={() => close(() => setEditing(true))}><Icon name="edit" size={16} />Edit<span className="kbd">Ctrl ↑</span></button>}
+              {canEdit && <button role="menuitem" onClick={() => close(() => setEditing(true))}><Icon name="edit" size={16} />Edit<span className="kbd">{keyHint(keyFor('editLast'))}</span></button>}
               {mine && receiptsOn && ctx.conv.members.length > 1 && <button role="menuitem" onClick={() => close(() => setDialog('readers'))}><Icon name="eye" size={16} />Who has seen it</button>}
               {!inTrack && <button role="menuitem" onClick={() => close(() => ctx.select(m.id))}><Icon name="check" size={16} />Pick several</button>}
-              {!mine && ctx.users.get(m.authorId)?.role !== 'bot' && <button role="menuitem" onClick={() => close(() => setDialog('report'))}><Icon name="warning" size={16} />Report to administrators…</button>}
+              {!mine && author?.role !== 'bot' && <button role="menuitem" onClick={() => close(() => setDialog('report'))}><Icon name="warning" size={16} />Report to administrators…</button>}
               {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => close(() => {
                 if (!mine) { setDialog('remove'); return; }
                 if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id }));
@@ -791,12 +870,13 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
           )}
         </div>
       )}
-      {saved && <span className="kept-corner" title="Kept on your Desk" />}
-      {m.pinned && <span className="pin-flag" title="Pinned for everyone"><Icon name="pin" size={12} /></span>}
+      {saved && <span className="kept-corner" title={`Kept on your Desk · ${KEEP_LABEL[kept?.kind ?? 'keep']}`} />}
+      {m.pinned && <span className="pin-flag" title={m.pinnedUntil ? `Pinned for everyone · ${pinEnd(m.pinnedUntil)}` : 'Pinned for everyone'}><Icon name="pin" size={12} /></span>}
       {dialog === 'remind' && <RemindDialog message={m} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
       {dialog === 'readers' && <ReadersDialog m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
       {(dialog === 'report' || dialog === 'remove') && <ReasonDialog kind={dialog} m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
       {dialog === 'forward' && <ForwardDialog message={m} users={ctx.users} meId={ctx.meId} online={ctx.online} onClose={() => setDialog(null)} />}
+      {dialog === 'fork' && <StartSpaceDialog m={m as Message} users={ctx.users} onClose={() => setDialog(null)} />}
     </div>
   );
 }
@@ -804,10 +884,12 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
 function EditBox({ m, ctx, onDone }: { m: AnyMessage; ctx: Ctx; onDone: () => void }) {
   const toast = useToast();
   const [text, setText] = useState(() => toEditable(m.body, ctx.users));
+  // Space references in the message keep pointing at their Spaces while it is edited
+  const refs = useMemo(() => [...m.body.matchAll(SPACE_REF_RE)].map((x) => ({ id: x[1], name: spaceName(x[1]) ?? '' })).filter((x) => x.name), [m.body]);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); autoGrow(el); } }, []);
   const save = async () => {
-    const body = toWire(text, ctx.users, ctx.conv);
+    const body = toWire(text, ctx.users, ctx.conv, refs);
     if (!body.trim()) return;
     if (body === m.body) { onDone(); return; }
     try { await window.dex.request('msg.edit', { messageId: m.id, body }); onDone(); } catch (e) { toast((e as Error).message, true); }
@@ -841,13 +923,16 @@ const autoGrow = (el: HTMLTextAreaElement) => {
   el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
 };
 
-/** Stored bodies use <@id>; while typing people see @Name. */
+/** Stored bodies use <@id> and <#space>; while typing people see @Name and #Space name. */
 function toEditable(body: string, users: Map<string, PublicUser>): string {
-  return body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`);
+  return body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
+    .replace(SPACE_REF_RE, (x, id: string) => { const n = spaceName(id); return n ? `#${n}` : x; });
 }
 
-function toWire(text: string, users: Map<string, PublicUser>, conv: Conversation): string {
+function toWire(text: string, users: Map<string, PublicUser>, conv: Conversation, spaces: Array<{ id: string; name: string }> = []): string {
   let out = text;
+  // Spaces chosen from the # list (longest names first, so "Site team (Jamnagar)" wins over "Site team")
+  for (const sp of [...spaces].sort((a, b) => b.name.length - a.name.length)) out = out.split(`#${sp.name}`).join(`<#${sp.id}>`);
   const members = conv.members.map((id) => users.get(id)).filter(Boolean) as PublicUser[];
   // longest names first so "Priya Raman" wins over "Priya"
   for (const u of members.sort((a, b) => b.displayName.length - a.displayName.length)) {
@@ -870,6 +955,15 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [text, setText] = useState(() => chatState().drafts.get(key) ?? '');
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null);
   const [mIndex, setMIndex] = useState(0);
+  /** Typing #: tags people use and Spaces you can see. */
+  const [hash, setHash] = useState<{ q: string; start: number } | null>(null);
+  const [hIndex, setHIndex] = useState(0);
+  const [hashTags, setHashTags] = useState<Array<{ tag: string; count: number }>>([]);
+  const [openList, setOpenList] = useState<Conversation[]>([]);
+  /** Spaces chosen from the # list in this draft, sent as references. */
+  const picked = useRef<Array<{ id: string; name: string }>>([]);
+  const [stickers, setStickers] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [emoji, setEmoji] = useState(false);
   /** In a side-track: echo the reply in the conversation too. */
   const [alsoToConv, setAlsoToConv] = useState(false);
@@ -909,8 +1003,9 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   };
   useEffect(() => {
     const onQuote = (e: Event) => {
-      const d = (e as CustomEvent).detail as { key: string; text: string };
+      const d = (e as CustomEvent).detail as { key: string; text: string; taken?: boolean };
       if (d.key !== key) return;
+      d.taken = true;
       setText((t) => { const v = `${d.text}${t}`; setDraft(key, v); return v; });
       requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
     };
@@ -926,8 +1021,38 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const uploading = attachments.some((a) => !a.info && !a.error);
   const ready = attachments.filter((a) => a.info);
 
-  useEffect(() => { setText(chatState().drafts.get(key) ?? ''); setMention(null); ref.current?.focus(); }, [key]);
+  useEffect(() => { setText(chatState().drafts.get(key) ?? ''); setMention(null); setHash(null); picked.current = []; ref.current?.focus(); }, [key]);
+  // # suggestions: tags from the hub (as you type), and Spaces you are in or could join
+  const hashOn = hash !== null;
+  useEffect(() => { if (hashOn) void openSpaces().then(setOpenList); }, [hashOn]);
+  const hashQ = hash?.q ?? null;
+  useEffect(() => {
+    if (hashQ === null) return;
+    let live = true;
+    const t = setTimeout(() => {
+      void window.dex.request('tags.top', hashQ ? { prefix: hashQ } : {}).then((r) => { if (live) setHashTags(r); }).catch(() => { if (live) setHashTags([]); });
+    }, 120);
+    return () => { live = false; clearTimeout(t); };
+  }, [hashQ]);
+  const hashList = useMemo(() => {
+    if (!hash) return [];
+    const q = hash.q.toLowerCase();
+    const mineSpaces = [...chatState().conversations.values()].filter((c) => c.kind === 'space' && c.joined && !c.archived);
+    const seen = new Set(mineSpaces.map((c) => c.id));
+    const spaces = [...mineSpaces, ...openList.filter((c) => !seen.has(c.id))]
+      .filter((c) => (c.name ?? '').toLowerCase().includes(q))
+      .sort((a, b) => Number(!(a.name ?? '').toLowerCase().startsWith(q)) - Number(!(b.name ?? '').toLowerCase().startsWith(q)) || (a.name ?? '').localeCompare(b.name ?? ''))
+      .slice(0, 5).map((c) => ({ kind: 'space' as const, id: `s-${c.id}`, conv: c, joined: seen.has(c.id) }));
+    const tags = hashTags.filter((t) => t.tag.startsWith(q)).slice(0, 6).map((t) => ({ kind: 'tag' as const, id: `t-${t.tag}`, tag: t.tag, count: t.count }));
+    return [...tags, ...spaces];
+  }, [hash, hashTags, openList]);
   useEffect(() => { if (ref.current) autoGrow(ref.current); }, [text]);
+  /** Where the caret goes once a chosen suggestion is in the text (before the next key press lands). */
+  const caretTo = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && caretTo.current !== null) { el.focus(); el.setSelectionRange(caretTo.current, caretTo.current); caretTo.current = null; }
+  }, [text]);
   // Panes change width as others open and close beside them: wrap the text again
   useEffect(() => {
     const el = ref.current;
@@ -956,7 +1081,23 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     const before = v.slice(0, caret);
     const m = before.match(/(?:^|\s)@([\w.\- ]{0,24})$/);
     if (m && !m[1].includes('  ')) { setMention({ q: m[1], start: caret - m[1].length - 1 }); setMIndex(0); } else setMention(null);
+    const h = m ? null : before.match(/(?:^|\s)#([\p{L}\p{N}_-]{0,48})$/u);
+    if (h) { setHash((cur) => (cur?.q === h[1] ? cur : { q: h[1], start: caret - h[1].length - 1 })); setHIndex(0); } else setHash(null);
   };
+
+  const pickHash = (c: (typeof hashList)[number]) => {
+    const el = ref.current!;
+    const caret = el.selectionStart;
+    const ins = c.kind === 'tag' ? `#${c.tag}` : `#${c.conv.name ?? ''}`;
+    if (c.kind === 'space' && c.conv.name) picked.current = [...picked.current.filter((x) => x.id !== c.conv.id), { id: c.conv.id, name: c.conv.name }];
+    const v = `${text.slice(0, hash!.start)}${ins} ${text.slice(caret)}`;
+    setText(v);
+    setDraft(key, v);
+    setHash(null);
+    caretTo.current = hash!.start + ins.length + 1;
+  };
+  /** The draft as sent: @names and chosen #Spaces become references. */
+  const wire = () => toWire(text, ctx.users, ctx.conv, picked.current);
 
   const pick = (c: { label: string }) => {
     const el = ref.current!;
@@ -965,7 +1106,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     setText(v);
     setDraft(key, v);
     setMention(null);
-    requestAnimationFrame(() => { el.focus(); const pos = mention!.start + c.label.length + 2; el.setSelectionRange(pos, pos); });
+    caretTo.current = mention!.start + c.label.length + 2;
   };
 
   // edits go through the browser's own editing, so Ctrl+Z undoes them like typing
@@ -985,9 +1126,9 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     else el.setSelectionRange(a + (sel || 'link text').length + 3, a + (sel || 'link text').length + 11);
   };
 
-  const clear = () => { setText(''); setDraft(key, ''); setMention(null); };
+  const clear = () => { setText(''); setDraft(key, ''); setMention(null); setHash(null); picked.current = []; };
   const send = () => {
-    const body = toWire(text, ctx.users, ctx.conv);
+    const body = wire();
     if ((!body && !ready.length) || !live || uploading) return;
     if (text.startsWith('/') && !ready.length) {
       const typed = text;
@@ -1005,21 +1146,18 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     void sendMessage(convId, body, parentId, ready.map((a) => a.info!), { alsoToConv });
     for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
     setAttachments([]);
-    setText('');
-    setDraft(key, '');
-    setMention(null);
+    clear();
   };
   const canLater = (!!text.trim() || ready.length > 0) && live && !direct && !uploading;
 
   const schedule = async (at: number) => {
-    const body = toWire(text, ctx.users, ctx.conv);
+    const body = wire();
     try {
       await window.dex.request('sched.create', { convId, body, parentId: parentId ?? undefined, files: ready.map((a) => a.info!.id), sendAt: at });
       toast(`Goes out ${describeWhen(at)}`);
       for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
       setAttachments([]);
-      setText('');
-      setDraft(key, '');
+      clear();
       setDockDialog(null);
     } catch (e) { toast((e as Error).message, true); }
   };
@@ -1036,6 +1174,12 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       }
       if (e.key === 'Escape') { e.preventDefault(); clear(); return; }
     }
+    if (hash && hashList.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHIndex((i) => (i + 1) % hashList.length); return; }
+      if (e.key === 'ArrowUp' && !e.ctrlKey) { e.preventDefault(); setHIndex((i) => (i - 1 + hashList.length) % hashList.length); return; }
+      if ((e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); pickHash(hashList[Math.min(hIndex, hashList.length - 1)]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setHash(null); return; }
+    }
     if (mention && candidates.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMIndex((i) => (i + 1) % candidates.length); return; }
       if (e.key === 'ArrowUp' && !e.ctrlKey) { e.preventDefault(); setMIndex((i) => (i - 1 + candidates.length) % candidates.length); return; }
@@ -1045,9 +1189,9 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     const k = e.key.toLowerCase();
     // the Dock's own shortcuts win over the app's (Ctrl+5 strikes through here, it does not change lens)
     const own = () => { e.preventDefault(); e.stopPropagation(); };
-    if (e.ctrlKey && e.shiftKey && e.key === 'Enter') { own(); if (canLater) setDockDialog('schedule'); return; }
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); return; }
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'ArrowUp') {
+    if (pressed(e.nativeEvent, keyFor('sendLater'))) { own(); if (canLater) setDockDialog('schedule'); return; }
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); return; }
+    if (pressed(e.nativeEvent, keyFor('editLast'))) {
       const tl = chatState().timelines.get(key);
       const last = [...(tl?.messages ?? [])].reverse().find((m) => m.authorId === ctx.meId && !m.deleted && !('pending' in m) && !!m.body && !m.poll && !m.form && withinEditWindow(m.createdAt));
       if (last) { own(); window.dispatchEvent(new CustomEvent('dex-edit', { detail: last.id })); }
@@ -1071,6 +1215,8 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   };
   const guest = ctx.users.get(ctx.meId)?.role === 'guest';
   const sideEvent = (side: 'notes-new' | 'boards') => window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side } }));
+  const canScan = canAttach && !!navigator.mediaDevices?.getUserMedia;
+  useKeys();
 
   return (
     <div className="dock-wrap">
@@ -1083,6 +1229,23 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               <span className="slash-name mono">/{c.command}</span>
               <span className="slash-desc">{c.description}</span>
               {c.bot ? <span className="chip accent">Integration</span> : c.hint ? <span className="faint mono slash-hint">{c.hint}</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {hash && hashList.length > 0 && !mention && (
+        <ul className="mention-pop hash-pop" role="listbox" aria-label="Tags and Spaces">
+          {hashList.map((c, i) => (
+            <li key={c.id} role="option" aria-selected={i === Math.min(hIndex, hashList.length - 1)} onMouseDown={(e) => { e.preventDefault(); pickHash(c); }} onMouseEnter={() => setHIndex(i)}>
+              {c.kind === 'tag' ? <>
+                <span className="hash-mark mono" aria-hidden="true">#</span>
+                <span className="hash-name" translate="no">{c.tag}</span>
+                <span className="faint mono hash-meta">{c.count} {c.count === 1 ? 'message' : 'messages'}</span>
+              </> : <>
+                <ConvTile c={c.conv} users={ctx.users} meId={ctx.meId} />
+                <span className="hash-name" translate="no">{c.conv.name}</span>
+                <span className="faint mono hash-meta">{c.joined ? 'Space' : 'Open Space · not in it'}</span>
+              </>}
             </li>
           ))}
         </ul>
@@ -1121,6 +1284,8 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
                 <button role="menuitem" onClick={() => { setAddMenu(false); sideEvent('notes-new'); }}><Icon name="doc" size={16} />Note</button>
                 <button role="menuitem" onClick={() => { setAddMenu(false); sideEvent('boards'); }}><Icon name="drawing" size={16} />Whiteboard</button>
                 {!guest && <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); }}><Icon name="calendar" size={16} />Meeting</button>}
+                <button role="menuitem" onClick={() => { setAddMenu(false); setStickers(true); }}><Icon name="stamp" size={16} />Stickers</button>
+                {canScan && <button role="menuitem" onClick={() => { setAddMenu(false); setScanning(true); }}><Icon name="doc" size={16} />Scan a document</button>}
               </>}
             </Popover>
           )}
@@ -1129,8 +1294,15 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               <EmojiPicker onClose={() => { setEmoji(false); ref.current?.focus(); }} onPick={insertEmoji} />
             </Popover>
           )}
+          {stickers && (
+            <Popover anchor={addBtn.current ?? ref.current} onClose={() => setStickers(false)} className="sticker-pop" align="start">
+              <StickerSheet onClose={() => { setStickers(false); ref.current?.focus(); }}
+                onPick={(st) => { setStickers(false); void sendMessage(convId, `[[sticker:${st.id}]]`, parentId, [], { alsoToConv }); ref.current?.focus(); }} />
+            </Popover>
+          )}
         </div>
         {clipMode && <ClipRecorder mode={clipMode} convId={convId} parentId={parentId} onClose={() => setClipMode(null)} />}
+        {scanning && <Suspense fallback={null}><ScanDialog onClose={() => setScanning(false)} onDone={(file) => { setScanning(false); addFiles([file]); }} /></Suspense>}
         <textarea
           ref={ref}
           hidden={recording}
@@ -1155,7 +1327,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         )}
         {sendMenu && (
           <Popover anchor={sendMore.current} onClose={() => setSendMenu(false)} className="menu send-menu">
-            <button role="menuitem" onClick={() => { setSendMenu(false); setDockDialog('schedule'); }}><Icon name="schedule" size={16} />Send later…<span className="kbd">Ctrl ⇧ Enter</span></button>
+            <button role="menuitem" onClick={() => { setSendMenu(false); setDockDialog('schedule'); }}><Icon name="schedule" size={16} />Send later…<span className="kbd">{keyHint(keyFor('sendLater'))}</span></button>
           </Popover>
         )}
       </div>
@@ -1172,7 +1344,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
           <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>Start a message with // to send a line that begins with a slash.</p>
         </Dialog>
       )}
-      {dockDialog === 'schedule' && <ScheduleDialog preview={toWire(text, ctx.users, ctx.conv)} users={ctx.users} meId={ctx.meId} onPick={schedule} onClose={() => setDockDialog(null)} />}
+      {dockDialog === 'schedule' && <ScheduleDialog preview={wire()} users={ctx.users} meId={ctx.meId} onPick={schedule} onClose={() => setDockDialog(null)} />}
       {parentId && (
         <label className="also-conv">
           <input type="checkbox" checked={alsoToConv} onChange={(e) => setAlsoToConv(e.target.checked)} />
@@ -1181,7 +1353,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       )}
       <div className="dock-hint faint">
         {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 waiting to go out · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} waiting to go out`} · see Desk</span>}
-        <span>{parentId ? <><b>Enter</b> send · </> : <><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>Ctrl+↑</b> edit last · </>}<button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
+        <span>{parentId ? <><b>Enter</b> send · </> : <><b>Enter</b> send · <b>/</b> commands · <b>#</b> tags · <b>Shift+Enter</b> new line{keyFor('editLast') ? <> · <b>{keyText(keyFor('editLast'))}</b> edit last</> : null} · </>}<button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
         {mdHelp && (
           <Popover anchor={mdBtn.current} onClose={() => setMdHelp(false)} className="menu md-help" align="end">
             <div className="menu-label label">Formatting</div>
@@ -1216,7 +1388,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
           <div className="track-parent">
             <div className="run-head">
               <Avatar user={{ id: parent.authorId, displayName: author?.displayName ?? '?' }} size="sm" />
-              <span className="run-name">{parent.authorId === ctx.meId ? 'You' : author?.displayName}</span>
+              <span className="run-name" translate={parent.authorId === ctx.meId ? undefined : 'no'}>{parent.authorId === ctx.meId ? 'You' : author?.displayName}</span>
               <span className="run-time">{clock(parent.createdAt)}</span>
             </div>
             <div className="msg-text selectable">{parent.deleted ? <span className="faint">Message deleted</span> : renderBody(parent.body, ctx.users, ctx.meId)}</div>
@@ -1229,7 +1401,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
               <div key={m.clientId ?? m.id} className={`track-reply${m.authorId === ctx.meId ? ' mine' : ''}`}>
                 <div className="run-head">
                   <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} size="sm" />
-                  <span className="run-name">{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
+                  <span className="run-name" translate={m.authorId === ctx.meId ? undefined : 'no'}>{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
                   <span className="run-time">{clock(m.createdAt)}</span>
                 </div>
                 <MessageItem ctx={ctx} m={m} inTrack />
@@ -1257,7 +1429,7 @@ function PinsPanel({ ctx, onClose, onJump }: { ctx: Ctx; onClose: () => void; on
         {pins?.length === 0 && <div className="empty"><Icon name="pin" size={28} /><span>Pin what everyone here needs to find again.</span></div>}
         {pins?.map((m) => (
           <button key={m.id} className="pin-card" onClick={() => onJump(m.id)}>
-            <div className="run-head"><span className="run-name">{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}</span></div>
+            <div className="run-head"><span className="run-name" translate="no">{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}{m.pinnedUntil ? ` · ${pinEnd(m.pinnedUntil)}` : ''}</span></div>
             <div className="msg-text">{renderBody(m.body, ctx.users, ctx.meId)}</div>
           </button>
         ))}
@@ -1289,7 +1461,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         {members.sort((a, b) => Number(ctx.online.has(b.id)) - Number(ctx.online.has(a.id))).map((u) => (
           <div key={u.id} className="member-row">
             <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
-            <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last on ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
+            <span className="sb-main"><span className="sb-name" translate="no">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last on ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
             {canModerate && c.kind === 'space' && !c.everyone && u.id !== ctx.meId && (
               <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => { if (confirm(`Remove ${u.displayName} from ${c.name}?`)) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); }}><Icon name="x" size={14} /></button>
             )}

@@ -40,7 +40,7 @@ export function PollCard({ m, meId, users }: { m: Message; meId: string; users: 
               onClick={() => void vote(i)} aria-pressed={mine}>
               <span className="poll-row">
                 <span className={`poll-mark${poll.multi ? ' square' : ''}`}>{mine && <Icon name="check" size={12} />}</span>
-                <span className="poll-text">{o.text}</span>
+                <span className="poll-text" translate="no">{o.text}</span>
                 {showResults && (
                   <span className="poll-count">
                     {!poll.anonymous && o.voters.length > 0 && (

@@ -38,7 +38,7 @@ export function convTitle(c: Conversation, users: Map<string, PublicUser>, meId:
 export function ConvTile({ c, users, meId, size }: { c: Conversation; users: Map<string, PublicUser>; meId: string; online?: Set<string>; size?: 'sm' | 'lg' }) {
   if (c.kind === 'space') {
     return (
-      <span className={`avatar space-tile${size ? ` ${size}` : ''}`} style={{ background: colorFor(c.id) }} aria-hidden="true">
+      <span className={`avatar space-tile${size ? ` ${size}` : ''}`} style={{ background: colorFor(c.id) }} aria-hidden="true" translate="no">
         {initials(c.name ?? 'S').slice(0, 1)}
       </span>
     );
@@ -50,7 +50,7 @@ export function ConvTile({ c, users, meId, size }: { c: Conversation; users: Map
   }
   // a small group: a stack of sheets with the head count on the top one
   return (
-    <span className={`avatar group-tile${size ? ` ${size}` : ''}`} style={{ background: colorFor(others[0] ?? c.id) }} aria-hidden="true">
+    <span className={`avatar group-tile${size ? ` ${size}` : ''}`} style={{ background: colorFor(others[0] ?? c.id) }} aria-hidden="true" translate="no">
       {initials(users.get(others[0])?.displayName ?? '?').slice(0, 1)}<small>{c.members.length}</small>
     </span>
   );
@@ -201,11 +201,11 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
           <ConvTile c={c} users={users} meId={meId} />
           <span className="sb-main">
             <span className="sb-title">
-              <span className="sb-name">{title}</span>
+              <span className="sb-name" translate="no">{title}</span>
               {c.private && c.kind === 'space' && <Icon name="lock" size={12} />}
               {c.muted && <Icon name="mute" size={12} />}
             </span>
-            <span className="sb-preview">{last && <span className="sb-time">{shortTime(last.createdAt)}</span>}{preview}</span>
+            <span className="sb-preview">{last && <span className="sb-time">{shortTime(last.createdAt)}</span>}<span translate={last?.body || (!last && c.topic) ? 'no' : undefined}>{preview}</span></span>
           </span>
           {c.mentions > 0 ? <span className="badge" aria-label={`${c.mentions} for you`}>{c.mentions}</span> : c.pinnedAt && !folded ? <Icon name="pin" size={11} className="sb-pin" /> : null}
         </button>
