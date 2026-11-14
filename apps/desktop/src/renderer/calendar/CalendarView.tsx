@@ -28,7 +28,7 @@ function useRange(from: number, to: number): Occurrence[] | null {
 const myResponse = (ev: CalEvent, meId: string): Rsvp | null => ev.attendees.find((a) => a.userId === meId)?.response ?? null;
 
 export function CalendarView({ session, openConv }: { session: Session; openConv: Open }) {
-  const [mode, setMode] = useState<Mode>('week');
+  const [mode, setMode] = useState<Mode>(() => (window.matchMedia('(max-width: 720px)').matches ? 'agenda' : 'week'));
   const [anchor, setAnchor] = useState(() => startOfWeek(Date.now()));
   const [editing, setEditing] = useState<{ ev?: CalEvent; startAt?: number; allDay?: boolean } | null>(null);
   const [viewing, setViewing] = useState<Occurrence | null>(null);

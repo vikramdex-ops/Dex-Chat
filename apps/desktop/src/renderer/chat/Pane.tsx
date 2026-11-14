@@ -16,7 +16,7 @@ import { ConvTile, convTitle } from './Switchboard.tsx';
 import { CallButtons } from '../rooms/RoomUi.tsx';
 import { FormBuilder, FormCard } from './forms.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
-import { BoardsList } from './Whiteboard.tsx';
+import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
 import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
@@ -64,6 +64,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [headMenu, setHeadMenu] = useState(false);
+  const moreBtn = useRef<HTMLButtonElement>(null);
   const [board, setBoard] = useState<Board | null>(null);
   const [e2e, setE2e] = useState<{ encrypted: boolean; code: string | null; missing: string[] } | null>(null);
   const [verify, setVerify] = useState(false);
@@ -163,6 +165,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           <div className="row-actions">
             {conv.members.length > 1 && <CallButtons convId={convId} live={live} />}
             <span className="head-sep" />
+            <span className="head-tools">
             {live && session && session.me.role !== 'guest' && <button className="icon-btn" title="Plan a meeting with these people" onClick={() => setPlanning(true)}><Icon name="calendar" size={17} /></button>}
             <button className={`icon-btn${side?.kind === 'notes' ? ' on' : ''}`} title="Notes" onClick={() => setSide(side?.kind === 'notes' ? null : { kind: 'notes', noteId: null })}><Icon name="doc" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'boards' ? ' on' : ''}`} title="Whiteboards" onClick={() => setSide(side?.kind === 'boards' ? null : { kind: 'boards' })}><Icon name="drawing" size={17} /></button>
@@ -173,6 +176,19 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
               onClick={() => void window.dex.request('conv.mute', { convId, muted: !conv.muted }).then(() => toast(conv.muted ? 'Notifications on' : 'Muted. You will still hear about mentions.')).catch((e: Error) => toast(e.message, true))}>
               <Icon name={conv.muted ? 'mute' : 'bell'} size={17} />
             </button>
+            </span>
+            <button ref={moreBtn} className="icon-btn head-more" title="More" aria-haspopup="menu" aria-expanded={headMenu} onClick={() => setHeadMenu(!headMenu)}><Icon name="more" size={18} /></button>
+            {headMenu && (
+              <Popover anchor={moreBtn.current} onClose={() => setHeadMenu(false)} className="menu head-menu">
+                {live && session && session.me.role !== 'guest' && <button role="menuitem" onClick={() => { setHeadMenu(false); setPlanning(true); }}><Icon name="calendar" size={16} />Plan a meeting</button>}
+                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'notes', noteId: null }); }}><Icon name="doc" size={16} />Notes</button>
+                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'boards' }); }}><Icon name="drawing" size={16} />Whiteboards</button>
+                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'files' }); }}><Icon name="paperclip" size={16} />Files</button>
+                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'pins' }); }}><Icon name="pin" size={16} />Pinned</button>
+                <button role="menuitem" onClick={() => { setHeadMenu(false); setSide({ kind: 'members' }); }}><Icon name="people" size={16} />People</button>
+                <button role="menuitem" onClick={() => { setHeadMenu(false); void window.dex.request('conv.mute', { convId, muted: !conv.muted }).then(() => toast(conv.muted ? 'Notifications on' : 'Muted. You will still hear about mentions.')).catch((e: Error) => toast(e.message, true)); }}><Icon name={conv.muted ? 'bell' : 'mute'} size={16} />{conv.muted ? 'Unmute' : 'Mute'}</button>
+              </Popover>
+            )}
           </div>
         </header>
         {direct && (
@@ -701,7 +717,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
             </>
           )}
-          <button className="icon-btn" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
+          <button className="icon-btn wide-only" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
           <button ref={addBtn} className="icon-btn" title="Add a poll, form, note or whiteboard" disabled={!live || direct} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
           {addMenu && (
             <Popover anchor={addBtn.current} onClose={() => setAddMenu(false)} className="menu add-menu" align="start">
@@ -712,7 +728,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               {ctx.users.get(ctx.meId)?.role !== 'guest' && <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); }}><Icon name="calendar" size={16} />Meeting</button>}
             </Popover>
           )}
-          <button className="icon-btn" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
+          <button className="icon-btn wide-only" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
             <div className="emoji-pop dock-emoji" onMouseLeave={() => setEmoji(false)}>
               {EMOJI.map((e) => <button key={e} onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = text.slice(0, pos) + e + text.slice(pos); setText(v); setDraft(key, v); setEmoji(false); el.focus(); }}>{e}</button>)}

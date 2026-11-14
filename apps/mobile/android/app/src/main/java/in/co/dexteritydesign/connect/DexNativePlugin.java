@@ -322,6 +322,138 @@ public class DexNativePlugin extends Plugin {
         call.resolve();
     }
 
+    // ---------------------------------------------------------------- conversation files
+    private static String safeName(String n) {
+        String s = n == null ? "file" : n.replaceAll("[\\\\/:*?\"<>|\\x00-\\x1f]", "_").trim();
+        if (s.isEmpty()) s = "file";
+        return s.length() > 150 ? s.substring(0, 150) : s;
+    }
+
+    /** Download a file from the hub once (pinned, with the session's file token); returns its path. */
+    @PluginMethod
+    public void fileGet(PluginCall call) {
+        final String url = call.getString("url");
+        final String fp = call.getString("fingerprint");
+        final String token = call.getString("token", "");
+        final String id = call.getString("id", "");
+        final String name = safeName(call.getString("name"));
+        if (url == null || fp == null || !id.matches("[0-9A-Z]{26}")) { call.reject("Invalid file request"); return; }
+        io.execute(() -> {
+            try {
+                File dir = new File(new File(getContext().getCacheDir(), "files"), id);
+                File dest = new File(dir, name);
+                if (dest.exists() && dest.length() > 0) { resolvePath(call, dest); return; }
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("Cannot create the file cache");
+                File part = new File(dir, name + ".part");
+                Request req = new Request.Builder().url(url).header("Authorization", "Bearer " + token).build();
+                try (Response res = hubClient.newCall(req).execute()) {
+                    if (!fp.equals(peerFingerprint(res))) throw new Exception("The hub presented an unexpected certificate.");
+                    if (!res.isSuccessful()) throw new Exception(res.code() == 404 ? "This file is no longer available." : "Download failed (HTTP " + res.code() + ")");
+                    try (InputStream in = res.body().byteStream(); OutputStream out = new FileOutputStream(part)) {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                    }
+                }
+                if (!part.renameTo(dest)) throw new Exception("Could not save the file");
+                resolvePath(call, dest);
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Download failed" : e.getMessage());
+            }
+        });
+    }
+
+    /** Upload bytes (base64) to the hub's /files endpoint; resolves with the hub's JSON reply. */
+    @PluginMethod
+    public void fileUpload(PluginCall call) {
+        final String url = call.getString("url");
+        final String fp = call.getString("fingerprint");
+        final String token = call.getString("token", "");
+        final String data = call.getString("data", "");
+        if (url == null || fp == null) { call.reject("Invalid upload"); return; }
+        io.execute(() -> {
+            try {
+                byte[] bytes = Base64.decode(data, Base64.DEFAULT);
+                okhttp3.RequestBody body = okhttp3.RequestBody.create(bytes, okhttp3.MediaType.parse("application/octet-stream"));
+                Request req = new Request.Builder().url(url).post(body).header("Authorization", "Bearer " + token).build();
+                try (Response res = hubClient.newCall(req).execute()) {
+                    if (!fp.equals(peerFingerprint(res))) throw new Exception("The hub presented an unexpected certificate.");
+                    String text = res.body() != null ? res.body().string() : "";
+                    JSObject ret = new JSObject();
+                    ret.put("status", res.code());
+                    ret.put("body", text);
+                    call.resolve(ret);
+                }
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Upload failed" : e.getMessage());
+            }
+        });
+    }
+
+    private File cachedFile(String path) {
+        File f = path == null ? null : new File(path);
+        File files = new File(getContext().getCacheDir(), "files");
+        if (f == null || !f.exists()) return null;
+        try { return f.getCanonicalPath().startsWith(files.getCanonicalPath() + File.separator) ? f : null; } catch (Exception e) { return null; }
+    }
+
+    /** Open a downloaded file in another app (PDF viewer, gallery, Office…). */
+    @PluginMethod
+    public void openFile(PluginCall call) {
+        File f = cachedFile(call.getString("path"));
+        String mime = call.getString("mime", "*/*");
+        if (f == null) { call.reject("The file is missing."); return; }
+        Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", f);
+        Intent view = new Intent(Intent.ACTION_VIEW);
+        view.setDataAndType(uri, mime);
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            getContext().startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("No app on this phone can open this kind of file.");
+        }
+    }
+
+    /** Copy a downloaded file into the phone's Downloads folder. */
+    @PluginMethod
+    public void saveToDownloads(PluginCall call) {
+        File f = cachedFile(call.getString("path"));
+        String name = safeName(call.getString("name"));
+        String mime = call.getString("mime", "application/octet-stream");
+        if (f == null) { call.reject("The file is missing."); return; }
+        io.execute(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name);
+                    v.put(android.provider.MediaStore.Downloads.MIME_TYPE, mime);
+                    v.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/Dexterity Connect");
+                    Uri dest = getContext().getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                    if (dest == null) throw new Exception("Could not save to Downloads");
+                    try (InputStream in = new FileInputStream(f); OutputStream out = getContext().getContentResolver().openOutputStream(dest)) {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                    }
+                } else {
+                    File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "Dexterity Connect");
+                    if (!dir.exists() && !dir.mkdirs()) throw new Exception("Could not save to Downloads");
+                    try (InputStream in = new FileInputStream(f); OutputStream out = new FileOutputStream(new File(dir, name))) {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                    }
+                }
+                JSObject ret = new JSObject();
+                ret.put("path", "Downloads/Dexterity Connect/" + name);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Could not save the file" : e.getMessage());
+            }
+        });
+    }
+
     @PluginMethod
     public void deviceInfo(PluginCall call) {
         JSObject ret = new JSObject();

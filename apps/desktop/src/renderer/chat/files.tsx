@@ -9,6 +9,23 @@ import { VoicePlayer } from './voice.tsx';
 
 export const filesSupported = () => typeof window.dex.uploadFile === 'function';
 export const fileSrc = (id: string) => `dexfile://f/${id}`;
+/** Where to load a file from: the dexfile: scheme on desktop, a cached copy on phones. */
+export function useFileSrc(f: Pick<FileInfo, 'id' | 'name'>): string | undefined {
+  const [url, setUrl] = useState<string | undefined>(() => (window.dex.fileUrl ? undefined : fileSrc(f.id)));
+  useEffect(() => {
+    if (!window.dex.fileUrl) return;
+    let alive = true;
+    void window.dex.fileUrl(f.id, f.name).then((u) => { if (alive) setUrl(u); }).catch(() => {});
+    return () => { alive = false; };
+  }, [f.id, f.name]);
+  return url;
+}
+
+export function FileImg({ f, lazy }: { f: Pick<FileInfo, 'id' | 'name'>; lazy?: boolean }) {
+  const src = useFileSrc(f);
+  return src ? <img src={src} alt={f.name} loading={lazy ? 'lazy' : undefined} /> : <span className="img-loading"><span className="spinner" /></span>;
+}
+
 export const isImage = (f: Pick<FileInfo, 'mime'>) => /^image\/(png|jpeg|gif|webp|bmp)$/.test(f.mime);
 
 export function formatSize(n: number): string {
@@ -63,7 +80,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
         <div className={`img-grid n${Math.min(images.length, 4)}`}>
           {images.slice(0, 4).map((f, i) => (
             <button key={f.id} className="img-tile" onClick={() => onView(f, images)} title={f.name}>
-              <img src={fileSrc(f.id)} alt={f.name} loading="lazy" />
+              <FileImg f={f} lazy />
               {i === 3 && images.length > 4 && <span className="more">+{images.length - 4}</span>}
             </button>
           ))}
@@ -104,7 +121,7 @@ export function Lightbox({ file, all, onClose }: { file: FileInfo; all: FileInfo
         <FileActions f={f} />
         <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
       </header>
-      <img src={fileSrc(f.id)} alt={f.name} />
+      <FileImg f={f} />
       {all.length > 1 && i > 0 && <button className="lb-nav prev" onClick={() => setI(i - 1)} aria-label="Previous"><Icon name="back" size={22} /></button>}
       {all.length > 1 && i < all.length - 1 && <button className="lb-nav next" onClick={() => setI(i + 1)} aria-label="Next"><Icon name="back" size={22} /></button>}
     </div>,
@@ -192,7 +209,7 @@ export function FilesPanel({ convId, onView, onClose }: { convId: string; onView
         {list === null && <div className="tl-more"><span className="spinner" /></div>}
         {list?.length === 0 && <div className="empty"><Icon name="paperclip" size={28} /><span>Files shared here will be listed in this panel.</span></div>}
         {filesSupported() && images.length > 0 && (
-          <div className="files-images">{images.map((f) => <button key={f.id} className="img-tile" onClick={() => onView(f, images)}><img src={fileSrc(f.id)} alt={f.name} loading="lazy" /></button>)}</div>
+          <div className="files-images">{images.map((f) => <button key={f.id} className="img-tile" onClick={() => onView(f, images)}><FileImg f={f} lazy /></button>)}</div>
         )}
         {(list ?? []).filter((f) => !isImage(f) || !filesSupported()).map((f) => (
           <div key={`${f.messageId}-${f.id}`} className="file-card compact">

@@ -2,7 +2,7 @@
 // Electron main process plays on desktop: identity, hub discovery and connection, settings and
 // the in-app updater. Networking that a WebView cannot do (UDP discovery, TLS pinned to a
 // self-issued certificate, installing an APK) goes through the small native DexNative plugin.
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { createEncKeys } from '@dex/core/e2e';
@@ -11,7 +11,7 @@ import { E2EClient } from '@dex/core/e2e-client';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION } from '@dex/core/protocol';
-import type { OpName, Ops, WindowsAccount } from '@dex/core/protocol';
+import type { FileInfo, OpName, Ops, WindowsAccount } from '@dex/core/protocol';
 import { HubSession } from '@dex/core/session';
 import type { ClientState, HubTarget } from '@dex/core/session';
 import { chooseUpdate, feedUrl, parseFeed } from '@dex/core/feed';
@@ -27,6 +27,10 @@ interface DexNativePlugin {
   download(o: { url: string; fingerprint?: string; file: string; size: number; sha512: string }): Promise<{ path: string }>;
   installApk(o: { path: string }): Promise<void>;
   deviceInfo(): Promise<{ model: string; manufacturer: string; androidVersion: string; appVersion: string }>;
+  fileGet(o: { url: string; fingerprint: string; token: string; id: string; name: string }): Promise<{ path: string }>;
+  fileUpload(o: { url: string; fingerprint: string; token: string; data: string }): Promise<{ status: number; body: string }>;
+  openFile(o: { path: string; mime: string }): Promise<void>;
+  saveToDownloads(o: { path: string; name: string; mime: string }): Promise<{ path: string }>;
   addListener(event: 'wsOpen', fn: (e: { id: string; fingerprint: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'wsMessage', fn: (e: { id: string; data: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'wsClose', fn: (e: { id: string; reason: string }) => void): Promise<PluginListenerHandle>;
@@ -66,6 +70,13 @@ async function loadEncKeys(): Promise<EncKeyPair> {
   await Preferences.set({ key: 'device-enc', value: JSON.stringify(k) });
   return k;
 }
+
+const MIME: Record<string, string> = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  txt: 'text/plain', csv: 'text/csv', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip', mp4: 'video/mp4', webm: 'audio/webm', dwg: 'image/vnd.dwg',
+};
+const mimeOf = (name: string) => MIME[name.split('.').pop()?.toLowerCase() ?? ''] ?? '*/*';
 
 interface MobileConfig {
   hub: HubTarget | null;
@@ -168,6 +179,27 @@ class MobileApp {
     await Native.addListener('wsMessage', (e) => this.sockets.get(e.id)?.onMessage(e.data));
     await Native.addListener('wsClose', (e) => { const s = this.sockets.get(e.id); this.sockets.delete(e.id); s?.onClose(e.reason); });
     await Native.addListener('downloadProgress', (e) => this.setUpdate({ progress: e }));
+  }
+
+  /** Where and how to reach the hub's file endpoint for this session. */
+  private hubAccess(): { base: string; fp: string; token: string } {
+    const hub = this.config.hub;
+    const session = this.session.state.kind === 'ready' ? this.session.state.session : null;
+    if (!hub?.fp || !session) throw new Error('The office hub is not connected.');
+    const host = hub.host.includes(':') ? `[${hub.host}]` : hub.host;
+    return { base: `https://${host}:${hub.port}`, fp: hub.fp, token: session.fileToken };
+  }
+
+  private readonly fileCache = new Map<string, Promise<{ path: string }>>();
+  private fetchFile(id: string, name: string): Promise<{ path: string }> {
+    let p = this.fileCache.get(id);
+    if (!p) {
+      const hub = this.hubAccess();
+      p = Native.fileGet({ url: `${hub.base}/files/${id}?download=1`, fingerprint: hub.fp, token: hub.token, id, name });
+      p.catch(() => this.fileCache.delete(id));
+      this.fileCache.set(id, p);
+    }
+    return p;
   }
 
   private newSession(): HubSession {
@@ -383,6 +415,20 @@ class MobileApp {
         return this.e2e.incoming(await this.session.request(op, out));
       },
       e2eStatus: (convId: string) => this.e2e.status(convId),
+      // files: downloaded once into the app's cache through the pinned connection
+      uploadFile: async (_uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string }) => {
+        if (!src.data) throw new Error('Choose the file again.');
+        if (src.data.byteLength > 100 * 1024 * 1024) throw new Error('Files from a phone can be up to 100 MB.');
+        const hub = this.hubAccess();
+        const q = `/files?name=${encodeURIComponent(src.name)}${src.mime ? `&type=${encodeURIComponent(src.mime)}` : ''}`;
+        const r = await Native.fileUpload({ url: `${hub.base}${q}`, fingerprint: hub.fp, token: hub.token, data: b64(new Uint8Array(src.data)) });
+        const json = JSON.parse(r.body || '{}') as FileInfo & { error?: string };
+        if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
+        return json;
+      },
+      fileUrl: async (id: string, name: string) => Capacitor.convertFileSrc((await this.fetchFile(id, name)).path),
+      openFile: async (id: string, name: string) => { const f = await this.fetchFile(id, name); await Native.openFile({ path: f.path, mime: mimeOf(name) }); },
+      saveFile: async (id: string, name: string) => { const f = await this.fetchFile(id, name); return (await Native.saveToDownloads({ path: f.path, name, mime: mimeOf(name) })).path; },
       setSettings: async (patch) => {
         Object.assign(this.config.settings, patch);
         await this.save();

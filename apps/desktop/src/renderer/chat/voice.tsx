@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FileInfo } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
-import { fileSrc } from './files.tsx';
+import { useFileSrc } from './files.tsx';
 import { sendMessage } from './store.ts';
 
 const MAX_MS = 5 * 60_000;
@@ -109,6 +109,7 @@ export function VoiceRecorder({ convId, parentId, onActive }: { convId: string; 
 
 export function VoicePlayer({ f }: { f: FileInfo }) {
   const audio = useRef<HTMLAudioElement>(null);
+  const src = useFileSrc(f);
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
   const [dur, setDur] = useState(() => { const m = f.name.match(/(?:(\d+)m)?(\d+)s\.\w+$/); return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : 0; });
@@ -133,7 +134,7 @@ export function VoicePlayer({ f }: { f: FileInfo }) {
         {heights.map((h, i) => <i key={i} className={i / bars < progress ? 'on' : ''} style={{ height: `${h}%` }} />)}
       </span>
       <span className="mono voice-time">{mmss((playing || pos ? pos : dur) * 1000)}</span>
-      <audio ref={audio} src={fileSrc(f.id)} preload="none"
+      <audio ref={audio} src={src} preload="none"
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setPos(0); }}
         onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => { if (Number.isFinite(e.currentTarget.duration)) setDur(e.currentTarget.duration); }} />
