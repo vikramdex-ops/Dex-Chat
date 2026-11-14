@@ -2,7 +2,7 @@
 // integration registered goes to the hub, which calls that tool's webhook.
 import type { Availability, SlashCommand, WorkMode } from '@dex/core';
 import { startCall } from '../rooms/engine.ts';
-import { setWork, workOf } from '../work/store.ts';
+import { MODE_SHORT, setWork, workOf } from '../work/store.ts';
 
 export interface CommandInfo { command: string; hint: string; description: string; bot?: boolean }
 
@@ -10,17 +10,17 @@ export const BUILT_INS: CommandInfo[] = [
   { command: 'remind', hint: 'in 30m Call the client', description: 'Set a reminder (in 20m, in 2h, tomorrow, monday, at 5pm)' },
   { command: 'poll', hint: 'Lunch? | Dosa | Biryani', description: 'Ask a question with choices' },
   { command: 'meet', hint: '', description: 'Plan a meeting with the people here' },
-  { command: 'call', hint: '', description: 'Start a voice call here' },
-  { command: 'video', hint: '', description: 'Start a video call here' },
+  { command: 'call', hint: '', description: 'Open a Room here, with voice' },
+  { command: 'video', hint: '', description: 'Open a Room here, with video' },
   { command: 'schedule', hint: '', description: 'Send what you are writing later' },
   { command: 'status', hint: 'At the site till 3', description: 'Set (or clear) your status message' },
-  { command: 'available', hint: '', description: 'Show me as available' },
-  { command: 'busy', hint: '', description: 'Show me as busy' },
-  { command: 'dnd', hint: '', description: 'Do not disturb: no notifications' },
-  { command: 'invisible', hint: '', description: 'Appear offline' },
-  { command: 'checkin', hint: 'home', description: 'Check in (office, home, site or client)' },
-  { command: 'checkout', hint: '', description: 'Check out for the day' },
-  { command: 'break', hint: '', description: 'Start or end a break' },
+  { command: 'here', hint: '', description: 'Show me as at my desk' },
+  { command: 'headsdown', hint: '', description: 'Heads-down: shown as focused, notifications still on' },
+  { command: 'quiet', hint: '', description: 'No interruptions: no notifications or sounds' },
+  { command: 'unlisted', hint: '', description: 'Unlisted: you appear offline' },
+  { command: 'startday', hint: 'site', description: 'Start my day (office, home, site or client)' },
+  { command: 'endday', hint: '', description: 'Close my day' },
+  { command: 'stepout', hint: '', description: 'Step out, or come back to your desk' },
   { command: 'me', hint: 'is reviewing the isometrics', description: 'Say what you are doing, in italics' },
   { command: 'shrug', hint: 'no idea', description: 'Add ¯\\_(ツ)_/¯' },
   { command: 'help', hint: '', description: 'List the commands' },
@@ -98,27 +98,33 @@ export async function runSlash(input: string, ctx: RunContext): Promise<boolean>
   const cmd = m[1].toLowerCase();
   const arg = (m[2] ?? '').trim();
   const req = window.dex.request;
-  const avail = (a: Availability, label: string) => req('me.update', { availability: a }).then(() => ctx.toast(`You're now shown as ${label}`));
+  const avail = (a: Availability, label: string) => req('me.update', { availability: a }).then(() => ctx.toast(`Shown as ${label}`));
   try {
     switch (cmd) {
       case 'shrug': ctx.send(`${arg ? `${arg} ` : ''}${String.raw`¯\\\_(ツ)\_/¯`}`); return true;
       case 'me': if (!arg) { ctx.toast('Write what you are doing after /me', true); return true; } ctx.send(`_${ctx.displayName} ${arg}_`); return true;
       case 'status': await req('me.update', { statusText: arg || null }); ctx.toast(arg ? 'Status updated' : 'Status cleared'); return true;
-      case 'available': await avail('available', 'available'); return true;
-      case 'busy': await avail('busy', 'busy'); return true;
-      case 'dnd': await avail('dnd', 'do not disturb'); return true;
-      case 'invisible': await avail('invisible', 'invisible'); return true;
-      case 'checkin': {
+      case 'here': await avail('available', 'At my desk'); return true;
+      case 'headsdown': await avail('busy', 'Heads-down'); return true;
+      case 'quiet': await avail('dnd', 'No interruptions'); return true;
+      case 'unlisted': await avail('invisible', 'Unlisted'); return true;
+      case 'startday': {
         const mode = (['office', 'home', 'site', 'client'] as WorkMode[]).find((x) => arg.toLowerCase().startsWith(x)) ?? (/wfh|remote/i.test(arg) ? 'home' : 'office');
         setWork(await req('work.checkIn', { mode }));
-        ctx.toast(`Checked in (${mode})`);
+        ctx.toast(`Day started · ${MODE_SHORT[mode]}`);
         return true;
       }
-      case 'checkout': setWork(await req('work.checkOut')); ctx.toast('Checked out'); return true;
-      case 'break': {
-        const onBreak = workOf(ctx.meId)?.status === 'break';
-        setWork(await req('work.break', { on: !onBreak }));
-        ctx.toast(onBreak ? 'Welcome back' : 'Enjoy your break');
+      case 'endday': {
+        const s = await req('work.checkOut');
+        setWork(s);
+        const m = Math.max(0, Math.round(s.workedTodayMs / 60_000));
+        ctx.toast(`Day closed · ${Math.floor(m / 60)} h ${m % 60} m`);
+        return true;
+      }
+      case 'stepout': {
+        const out = workOf(ctx.meId)?.status === 'break';
+        setWork(await req('work.break', { on: !out }));
+        ctx.toast(out ? 'Back at desk' : 'Stepped out');
         return true;
       }
       case 'call': case 'video': await startCall(ctx.convId, cmd === 'video'); return true;

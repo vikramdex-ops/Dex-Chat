@@ -79,7 +79,7 @@ const INLINE: Inline[] = [
   { re: /\[([^\]\n]{1,200})\]\(((?:https?|dexconnect|projectopener|dexterity|sleuth|datum):\/\/[^\s)]{1,2000})\)/y, render: (m, k, ctx) => /^https?:/.test(m[2])
     ? <a key={k} href={m[2]} target="_blank" rel="noreferrer noopener" title={m[2]}>{inline(m[1], ctx, k)}</a>
     : <button key={k} className="md-link" title={m[2]} onClick={() => void window.dex.openLink?.(m[2]).catch(() => {})}>{inline(m[1], ctx, k)}</button> },
-  { re: /__([^_\n]+)__/y, render: (m, k, ctx) => <u key={k}>{inline(m[1], ctx, k)}</u> },
+  { re: /\+\+(?=\S)([^+\n]*[^+\s])\+\+/y, render: (m, k, ctx) => <u key={k}>{inline(m[1], ctx, k)}</u> },
   { re: /\*\*([^*\n]+)\*\*/y, render: (m, k, ctx) => <strong key={k}>{inline(m[1], ctx, k)}</strong> },
   { re: /~~([^~\n]+)~~/y, render: (m, k, ctx) => <s key={k}>{inline(m[1], ctx, k)}</s> },
   { re: /(?<![\w*])\*([^*\n]+)\*(?![\w*])/y, render: (m, k, ctx) => <em key={k}>{inline(m[1], ctx, k)}</em> },
@@ -94,7 +94,7 @@ const INLINE: Inline[] = [
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS:[]/;
+const TRIGGER = /[`<*~_+h0-9\\pdsDIGLPS:[]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];
@@ -103,7 +103,7 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   let n = 0;
   while (i < text.length) {
     let matched = false;
-    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~' || text[i] === '[')) {
+    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~' || text[i] === '+' || text[i] === '[')) {
       for (const rule of INLINE) {
         rule.re.lastIndex = i;
         const m = rule.re.exec(text);
@@ -227,6 +227,7 @@ export function plainPreview(body: string, users: Map<string, PublicUser>): stri
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
     .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message')
+    .replace(/\+\+(?=\S)([^+\n]*[^+\s])\+\+/g, '$1')
     // escaped characters stay, markup goes
     .replace(/\\([\\`*_~<>])/g, (_, c: string) => `\u0000${c}`)
     .replace(/(^|[^\u0000])[*_~`>]+/g, '$1')

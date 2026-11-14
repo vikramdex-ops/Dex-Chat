@@ -56,10 +56,13 @@ export function NoteEditor({ id, convId, users, meId, onClose }: { id: string | 
   const latest = useRef({ title: '', body: '' });
   latest.current = { title, body };
 
+  // load once per note: the Pane around it re-renders often, and must not reset what is being written
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!id) { setNote(null); setTitle(''); setBody(''); return; }
-    void window.dex.request('note.get', { id }).then((n) => { setNote(n); setTitle(n.title); setBody(n.body); version.current = n.version; }).catch((e: Error) => { toast(e.message, true); onClose(); });
-  }, [id, toast, onClose]);
+    void window.dex.request('note.get', { id }).then((n) => { setNote(n); setTitle(n.title); setBody(n.body); version.current = n.version; }).catch((e: Error) => { toast(e.message, true); closeRef.current(); });
+  }, [id, toast]);
 
   const save = useCallback(async (force = false) => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
