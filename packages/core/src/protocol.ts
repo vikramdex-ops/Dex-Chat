@@ -118,6 +118,26 @@ export interface ProfileField {
   label: string;
 }
 
+/** Office rules set by an administrator. */
+export interface OfficePolicy {
+  /** Minutes after sending that people can edit or delete their own messages; null = any time. */
+  editWindowMinutes: number | null;
+  maxUploadMb: number;
+  /** Direct messages may pass straight between PCs while the hub is off. */
+  peerFallback: boolean;
+  /** Calls may be recorded (everyone in the call is told). */
+  allowRecording: boolean;
+}
+
+export interface UsageReport {
+  days: number;
+  from: number;
+  daily: Array<{ day: string; messages: number; direct: number; space: number; activePeople: number; calls: number; callMinutes: number }>;
+  totals: { people: number; activePeople: number; activeDevices: number; spaces: number; messages: number; files: number; fileBytes: number; calls: number; callMinutes: number };
+  topSpaces: Array<{ id: string; name: string; messages: number }>;
+  topPeople: Array<{ userId: string; messages: number }>;
+}
+
 export interface OrgInfo {
   departments: Department[];
   fields: ProfileField[];
@@ -579,6 +599,9 @@ export interface Ops {
   };
   'ping': { req: void; res: { at: number } };
   'org.get': { req: void; res: OrgInfo };
+  'policy.get': { req: void; res: OfficePolicy };
+  'admin.policy.set': { req: Partial<OfficePolicy>; res: OfficePolicy };
+  'admin.usage': { req: { days?: 7 | 30 | 90 }; res: UsageReport };
   /** Contact details anyone can keep up to date themselves. */
   'me.profile': { req: { phone?: string | null; extension?: string | null; location?: string | null; birthday?: string | null }; res: PublicUser };
   'admin.org.saveDepartment': { req: { id?: string; name: string; parentId?: string | null; headId?: string | null }; res: Department };
@@ -697,6 +720,7 @@ export interface Events {
   'user.updated': PublicUser;
   'user.added': PublicUser;
   'admin.pending': DeviceRecord;
+  'policy.updated': OfficePolicy;
   'org.updated': OrgInfo;
   'device.updated': DeviceRecord;
   /** The viewer's copy of a conversation changed (new member, name, unread counts...). */

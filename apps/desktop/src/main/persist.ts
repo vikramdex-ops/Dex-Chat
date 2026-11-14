@@ -19,6 +19,8 @@ export interface Config {
   lastRunVersion?: string;
   /** Notes of the update being installed, shown after relaunch. */
   pendingNotes?: { version: string; notes: string } | null;
+  /** The office policy allows PC-to-PC messages while the hub is off (remembered for then). */
+  peerFallback?: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {

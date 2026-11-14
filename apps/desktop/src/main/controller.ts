@@ -130,6 +130,7 @@ export class Controller extends EventEmitter {
         void this.e2e.ready(session.me.id, session.users.filter((u) => u.role === 'bot').map((u) => u.id))
           .then(async () => {
             this.peers?.setActive(false);
+            await client.request('policy.get').then((p) => this.setPeerPolicy(p.peerFallback)).catch(() => {});
             // anything written while the hub was off goes to the hub now
             await this.peers?.flush((item) => client.request('msg.send', { convId: item.convId, body: item.body, clientId: item.clientId, parentId: item.parentId ?? undefined }).then(() => undefined));
             // keep keys and conversations for the next time the hub is off
@@ -151,6 +152,7 @@ export class Controller extends EventEmitter {
     client.on('pinned', (t: HubTarget) => { this.config.hub = { ...t }; this.persist(); });
     client.on('session', () => this.push());
     client.on('event', (name: string, data: unknown) => {
+      if (name === 'policy.updated') this.setPeerPolicy((data as { peerFallback: boolean }).peerFallback);
       if (name === 'user.added' && (data as { role?: string }).role === 'bot') this.e2e.setBots([...(client.session?.users ?? []).filter((u) => u.role === 'bot').map((u) => u.id), (data as { id: string }).id]);
       this.events = this.events.then(async () => {
         await this.e2e.onEvent(name, data).catch(() => {});
@@ -158,7 +160,7 @@ export class Controller extends EventEmitter {
       });
     });
     client.on('state', (s: ClientState) => {
-      if (s.kind === 'offline') { this.e2e.reset(); this.peers?.setActive(true); this.push(); }
+      if (s.kind === 'offline') { this.e2e.reset(); if (this.peerAllowed) this.peers?.setActive(true); this.push(); }
     });
     client.on('warning', (err: Error) => this.emit('warning', err));
     client.connect({ ...target });
@@ -221,6 +223,14 @@ export class Controller extends EventEmitter {
   }
 
   /** Turn on the hub-off fallback (Direct messages straight between PCs). */
+  private get peerAllowed(): boolean { return this.config.peerFallback !== false; }
+  private setPeerPolicy(on: boolean): void {
+    if (this.config.peerFallback === on) return;
+    this.config.peerFallback = on;
+    this.persist();
+    if (!on) this.peers?.setActive(false);
+  }
+
   usePeers(peers: PeerNet): void {
     this.peers = peers;
     peers.on('changed', () => this.push());
@@ -228,7 +238,7 @@ export class Controller extends EventEmitter {
       this.events = this.events.then(async () => { this.emit('hub-event', 'msg.new', await this.e2e.incoming(m).catch(() => m)); });
     });
     peers.on('dropped', (item: { convId: string }, err: Error) => this.emit('warning', Object.assign(new Error(`A message written while the hub was off could not be posted: ${err.message}`), { convId: item.convId })));
-    if (this.client?.state.kind === 'offline') peers.setActive(true);
+    if (this.client?.state.kind === 'offline' && this.peerAllowed) peers.setActive(true);
   }
 
   async request<K extends OpName>(op: K, data?: Ops[K]['req']): Promise<Ops[K]['res']> {

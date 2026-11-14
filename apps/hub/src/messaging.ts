@@ -116,6 +116,15 @@ export class Messaging {
   private readonly files: FileStore;
   /** Called before a message is edited or deleted (compliance keeps earlier versions). */
   beforeChange: ((msg: MsgRow, change: 'edit' | 'delete', actorId: string) => void) | null = null;
+  /** The office policy: how long after sending an author may edit or delete (null: any time). */
+  editWindowMs: () => number | null = () => null;
+  private checkWindow(msg: MsgRow, what: 'edited' | 'deleted'): void {
+    const w = this.editWindowMs();
+    if (w !== null && Date.now() - msg.created_at > w) {
+      const mins = Math.round(w / 60_000);
+      throw new MsgError(`Messages can be ${what} for ${mins >= 120 && mins % 60 === 0 ? `${mins / 60} hours` : `${mins} minute${mins === 1 ? '' : 's'}`} after sending.`);
+    }
+  }
 
   constructor(db: DatabaseSync, deliver: Messaging['deliver'], users: () => PublicUser[], files: FileStore) {
     this.db = db;
@@ -669,6 +678,7 @@ export class Messaging {
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
         this.requireMember(msg.conv_id, me.id);
         if (msg.author_id !== me.id) throw new MsgError('You can only edit your own messages.');
+        this.checkWindow(msg, 'edited');
         const body = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
         if (!body) throw new MsgError('A message cannot be empty. Delete it instead.');
         if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
@@ -687,7 +697,9 @@ export class Messaging {
         const msg = typeof d.messageId === 'string' ? this.message(d.messageId) : undefined;
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
         const c = this.requireMember(msg.conv_id, me.id);
-        if (msg.author_id !== me.id && !(c.kind === 'space' && this.isModerator(c, me))) throw new MsgError('You can only delete your own messages.');
+        const moderating = c.kind === 'space' && this.isModerator(c, me);
+        if (msg.author_id !== me.id && !moderating) throw new MsgError('You can only delete your own messages.');
+        if (!moderating) this.checkWindow(msg, 'deleted');
         this.beforeChange?.(msg, 'delete', me.id);
         this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ? WHERE id = ?').run(Date.now(), msg.id);
         this.db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msg.id);

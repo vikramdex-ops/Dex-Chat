@@ -21,6 +21,7 @@ import { VoiceRecorder } from './voice.tsx';
 import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
 import { describeWhen, deskState, toggleSaved, useDesk } from '../desk/store.ts';
+import { policyNow, usePolicy, withinEditWindow } from '../policy.ts';
 import { EventDialog } from '../calendar/CalendarView.tsx';
 import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
@@ -434,7 +435,11 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   const pending = 'pending' in m;
   const failed = pending ? (m as PendingMessage).failed : undefined;
   const mine = m.authorId === ctx.meId;
-  const canDelete = mine || (ctx.isAdmin && ctx.conv.kind === 'space');
+  const policy = usePolicy();
+  const inWindow = withinEditWindow(m.createdAt, policy);
+  const moderator = ctx.conv.kind === 'space' && (ctx.isAdmin || ctx.conv.moderators?.includes(ctx.meId) || ctx.conv.createdBy === ctx.meId);
+  const canEdit = mine && inWindow;
+  const canDelete = (mine && inWindow) || moderator;
   const mentioned = m.mentions.includes(ctx.meId) || (m.mentions.includes('all') && !mine);
 
   // ArrowUp in an empty Dock edits your last message
@@ -511,7 +516,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Reply in a side-track"><Icon name="reply" size={16} /></button>}
           <button className={saved ? 'on' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Saved to your Desk' : 'Removed from your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Remove from saved' : 'Save for later'} aria-pressed={saved}><Icon name="star" size={16} /></button>
           <button onClick={() => setDialog('remind')} title="Remind me about this"><Icon name="alarm" size={16} /></button>
-          {mine && m.body && !m.poll && !m.form && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
+          {canEdit && m.body && !m.poll && !m.form && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
           <button ref={moreBtn} onClick={() => setMore(!more)} title="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={16} /></button>
           {more && (
             <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu">
@@ -626,8 +631,12 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const picker = useRef<HTMLInputElement>(null);
   const canAttach = filesSupported() && live && !direct;
 
-  const addFiles = (files: File[]) => {
-    if (!files.length || !canAttach) return;
+  const addFiles = (all: File[]) => {
+    if (!all.length || !canAttach) return;
+    const limit = policyNow().maxUploadMb;
+    const files = all.filter((f) => f.size <= limit * 1024 * 1024);
+    if (files.length < all.length) toast(`${all.length - files.length === 1 ? 'A file is' : `${all.length - files.length} files are`} larger than the office limit of ${limit >= 1024 ? `${limit / 1024} GB` : `${limit} MB`}.`, true);
+    if (!files.length) return;
     const room = 20 - attachments.length;
     const fresh = startUploads(files.slice(0, room), (k, patch) =>
       setAttachments((list) => (patch === null ? list.filter((a) => a.key !== k) : list.map((a) => (a.key === k ? { ...a, ...patch } : a)))));
@@ -754,7 +763,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); return; }
     if (e.key === 'ArrowUp' && !text) {
       const tl = chatState().timelines.get(key);
-      const last = [...(tl?.messages ?? [])].reverse().find((m) => m.authorId === ctx.meId && !m.deleted && !('pending' in m));
+      const last = [...(tl?.messages ?? [])].reverse().find((m) => m.authorId === ctx.meId && !m.deleted && !('pending' in m) && withinEditWindow(m.createdAt));
       if (last) { e.preventDefault(); window.dispatchEvent(new CustomEvent('dex-edit', { detail: last.id })); }
     }
     if (e.ctrlKey && !e.shiftKey && (e.key === 'b' || e.key === 'i')) { e.preventDefault(); wrap(e.key === 'b' ? '**' : '*'); }

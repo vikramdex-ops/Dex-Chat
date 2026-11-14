@@ -62,12 +62,13 @@ function cleanMime(mime: string | undefined, name: string): string {
 export class FileStore {
   readonly db: DatabaseSync;
   readonly dir: string;
-  private readonly max: number;
+  /** The largest upload; the office policy can change it while the hub runs. */
+  maxBytes: number;
 
   constructor(db: DatabaseSync, dir: string, max = MAX_FILE_BYTES) {
     this.db = db;
     this.dir = dir;
-    this.max = max;
+    this.maxBytes = max;
     db.exec(SCHEMA);
     fs.mkdirSync(path.join(dir, 'tmp'), { recursive: true });
     // half-finished uploads from a previous run
@@ -96,7 +97,7 @@ export class FileStore {
   async receive(req: IncomingMessage, uploaderId: string, rawName: string, rawMime: string | undefined): Promise<FileInfo> {
     const declared = Number(req.headers['content-length'] ?? NaN);
     if (!Number.isFinite(declared)) throw Object.assign(new Error('Content-Length is required.'), { status: 411 });
-    if (declared > this.max) throw Object.assign(new Error(`Files can be up to ${Math.round(this.max / 1024 / 1024)} MB.`), { status: 413 });
+    if (declared > this.maxBytes) throw Object.assign(new Error(`Files can be up to ${Math.round(this.maxBytes / 1024 / 1024)} MB.`), { status: 413 });
     const name = cleanName(rawName);
     const mime = cleanMime(rawMime, name);
     const tmp = path.join(this.dir, 'tmp', ulid());
@@ -138,7 +139,7 @@ export class FileStore {
 
   /** Store generated content (an export) as a file the given person can download. */
   storeBuffer(uploaderId: string, rawName: string, rawMime: string, data: Buffer): FileInfo {
-    if (data.length > this.max) throw Object.assign(new Error('That export is too large. Choose a shorter period.'), { status: 413 });
+    if (data.length > this.maxBytes) throw Object.assign(new Error('That export is too large. Choose a shorter period.'), { status: 413 });
     const sha = crypto.createHash('sha256').update(data).digest('hex');
     const blob = this.blobPath(sha);
     if (!fs.existsSync(blob)) {

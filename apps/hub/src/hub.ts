@@ -22,6 +22,7 @@ import { Work, WorkError } from './work.ts';
 import { Calendar, CalError } from './calendar.ts';
 import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
+import { Policies, PolicyError } from './policies.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
@@ -96,6 +97,7 @@ export class Hub {
   readonly calendar: Calendar;
   readonly guests: Guests;
   readonly compliance: Compliance;
+  readonly policies: Policies;
   readonly commands: Commands;
   readonly workspace: Workspace;
   private lastPurge = 0;
@@ -134,6 +136,8 @@ export class Hub {
       }
     });
     this.compliance = new Compliance(this.store, this.messaging, this.files);
+    this.policies = new Policies(this.store, this.files, (p) => this.emit('policy.updated', p));
+    this.messaging.editWindowMs = () => this.policies.editWindowMs();
     this.commands = new Commands(this.store, this.messaging);
     this.workspace = new Workspace(this.store.db, this.messaging, (userIds, name, data) => this.deliver(userIds, name, data));
     this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
@@ -146,6 +150,7 @@ export class Hub {
       deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
       deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
       broadcast: (name, data) => this.emit(name, data),
+      ended: (room, missed, durationMs) => this.policies.logCall(room.id, room.convId, room.startedBy, room.video, missed, durationMs),
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -824,6 +829,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof WorkError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(policy\.get|admin\.policy\.set|admin\.usage)$/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.policies.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof PolicyError) throw new OpError(err.message);
             throw err;
           }
         }

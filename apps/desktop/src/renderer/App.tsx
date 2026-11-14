@@ -2,6 +2,7 @@
 // title bar with brand, lens bar, command button and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right.
 import { setAlertPrefs } from './alerts.ts';
+import { startPolicy } from './policy.ts';
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
@@ -173,6 +174,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
     void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
     void startOrg();
+    startPolicy();
     void startWork();
     void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);
