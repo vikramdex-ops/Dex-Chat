@@ -192,8 +192,40 @@ function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onCl
           <button className="link" onClick={onChart}>See in the org chart</button>
         </div>
       )}
+      {u.id !== meId && live && <InCommon userId={u.id} />}
       {isAdmin && u.role !== 'bot' && <button className="btn" onClick={onEdit}><Icon name="edit" size={15} />Edit details</button>}
     </aside>
+  );
+}
+
+/** Spaces you are both in, and your recent calls with them. */
+function InCommon({ userId }: { userId: string }) {
+  const [d, setD] = useState<{ spaces: Array<{ id: string; name: string }>; calls: Array<{ at: number; durationMs: number; missed: boolean; video: boolean; convId: string }> } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setD(null);
+    window.dex.request('people.common', { userId }).then((v) => { if (live) setD(v); }).catch(() => {});
+    return () => { live = false; };
+  }, [userId]);
+  if (!d || (!d.spaces.length && !d.calls.length)) return null;
+  const mins = (ms: number) => (ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))} s` : `${Math.round(ms / 60_000)} min`);
+  return (
+    <div className="profile-line in-common">
+      {d.spaces.length > 0 && (
+        <>
+          <div className="label">Spaces in common · {d.spaces.length}</div>
+          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
+        </>
+      )}
+      {d.calls.length > 0 && (
+        <>
+          <div className="label">Calls</div>
+          <ul className="call-history">{d.calls.slice(0, 6).map((c) => (
+            <li key={c.at}><Icon name={c.video ? 'video' : 'phone'} size={13} /><span className={c.missed ? 'missed' : ''}>{c.missed ? 'Missed' : mins(c.durationMs)}</span><span className="faint">{new Date(c.at).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span></li>
+          ))}</ul>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -727,6 +727,26 @@ export class Messaging {
         return rows.map((r) => ({ parent: this.messageView(this.message(r.id)!, me.id), lastReplyAt: r.last, replyCount: r.n })) satisfies Ops['activity.tracks']['res'];
       }
 
+      case 'msg.get': {
+        const v = typeof d.messageId === 'string' ? this.messageFor(d.messageId, me.id) : null;
+        if (!v || v.deleted) throw new MsgError('Message not found.');
+        return v satisfies Ops['msg.get']['res'];
+      }
+
+      case 'people.common': {
+        const other = String(d.userId ?? '');
+        const spaces = this.db.prepare(`SELECT c.id, c.name FROM conversations c JOIN conv_members a ON a.conv_id = c.id AND a.user_id = ?
+          JOIN conv_members b ON b.conv_id = c.id AND b.user_id = ? WHERE c.kind = 'space' AND c.everyone = 0 AND c.archived = 0 ORDER BY c.name COLLATE NOCASE LIMIT 50`).all(me.id, other) as Array<{ id: string; name: string }>;
+        let calls: Ops['people.common']['res']['calls'] = [];
+        try {
+          calls = (this.db.prepare(`SELECT l.conv_id, l.ended_at, l.duration_ms, l.missed, l.video FROM call_log l
+            JOIN conv_members a ON a.conv_id = l.conv_id AND a.user_id = ? JOIN conv_members b ON b.conv_id = l.conv_id AND b.user_id = ?
+            JOIN conversations c ON c.id = l.conv_id WHERE c.kind = 'direct' ORDER BY l.ended_at DESC LIMIT 20`).all(me.id, other) as Array<{ conv_id: string; ended_at: number; duration_ms: number; missed: number; video: number }>)
+            .map((r) => ({ at: r.ended_at, durationMs: r.duration_ms, missed: !!r.missed, video: !!r.video, convId: r.conv_id }));
+        } catch { /* hubs without the call log yet */ }
+        return { spaces, calls } satisfies Ops['people.common']['res'];
+      }
+
       case 'msg.at': {
         const c = this.requireMember(String(d.convId), me.id);
         const at = typeof d.at === 'number' && Number.isFinite(d.at) ? d.at : Date.now();

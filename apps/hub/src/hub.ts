@@ -1105,7 +1105,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|typing$|search$)/.test(op)) {
+        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|people\.common$|typing$|search$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);

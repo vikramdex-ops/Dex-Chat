@@ -112,3 +112,18 @@ test('out of office: a notice for whoever writes or mentions, once per conversat
   await new Promise((r) => setTimeout(r, 200));
   assert.deepEqual([...(priya.session!.inMeeting ?? [])].sort(), [me(owner), me(ravi)].sort());
 });
+
+test('a message by id for link previews; Spaces and calls in common', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  const a = await owner.request('conv.create', { kind: 'space', name: 'Alpha', members: [me(priya)] });
+  await owner.request('conv.create', { kind: 'space', name: 'Beta', members: [me(ravi)] });
+  const m = await send(owner, a.id, 'see this');
+  assert.equal((await priya.request('msg.get', { messageId: m.id })).body, 'see this');
+  await assert.rejects(ravi.request('msg.get', { messageId: m.id }), /not found/);
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [me(priya)] });
+  hub.policies.logCall('c1', dm.id, me(owner), true, false, 120_000);
+  const common = await priya.request('people.common', { userId: me(owner) });
+  assert.deepEqual(common.spaces.map((s) => s.name), ['Alpha']);
+  assert.equal(common.calls.length, 1);
+  assert.equal(common.calls[0].video, true);
+});

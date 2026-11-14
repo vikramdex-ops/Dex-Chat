@@ -730,6 +730,10 @@ export interface Ops {
   'activity.list': { req: { kind?: 'all' | 'mentions' | 'replies'; before?: string }; res: { items: Array<{ kind: 'mention' | 'reply'; message: Message }>; hasMore: boolean } };
   /** Side-tracks you started or replied in, by latest reply. */
   'activity.tracks': { req: void; res: Array<{ parent: Message; lastReplyAt: number; replyCount: number }> };
+  /** One message you can see (for previews of message links). */
+  'msg.get': { req: { messageId: string }; res: Message };
+  /** Spaces you share with someone, and your calls with them (newest first). */
+  'people.common': { req: { userId: string }; res: { spaces: Array<{ id: string; name: string }>; calls: Array<{ at: number; durationMs: number; missed: boolean; video: boolean; convId: string }> } };
   /** The first message on or after a moment, for "jump to date". */
   'msg.at': { req: { convId: string; at: number }; res: { messageId: string | null } };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };

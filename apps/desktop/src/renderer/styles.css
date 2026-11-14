@@ -1689,3 +1689,16 @@ body.resizing { user-select: none; cursor: col-resize; }
 .popout { height: 100vh; display: grid; }
 .popout .pane-wrap { height: 100vh; }
 .popout-wait { height: 100vh; display: grid; place-items: center; }
+
+/* links to messages, shown as a small quote */
+.msg-link-card { display: flex; flex-direction: column; gap: 2px; max-width: 420px; margin: 4px 0; padding: 7px 11px; border-radius: 10px; border-left: 3px solid var(--accent); background: var(--subtle-2); text-align: left; cursor: pointer; }
+.msg-link-card:hover { background: var(--subtle-3, var(--subtle-2)); }
+.msg-link-card .mlc-who { font-size: 12px; font-weight: 700; color: var(--text-2); }
+.msg-link-card .mlc-text { font-size: 13px; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: pre-wrap; }
+/* profile: Spaces and calls in common */
+.in-common .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.in-common .chip { cursor: pointer; border: 0; }
+.in-common .chip:hover { background: var(--accent-soft, var(--subtle-2)); color: var(--accent-ink, var(--text)); }
+.call-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
+.call-history li { display: flex; align-items: center; gap: 8px; }
+.call-history .missed { color: var(--danger); font-weight: 600; }

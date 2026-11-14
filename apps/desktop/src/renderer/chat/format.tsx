@@ -3,8 +3,8 @@
 // > quotes, lists, links, <@mentions> and engineering line-number references.
 import { EmojiImg, customEmoji } from '../emoji.tsx';
 import { highlight } from './highlight.tsx';
-import type { ReactNode } from 'react';
-import type { PublicUser } from '@dex/core';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { Message, PublicUser } from '@dex/core';
 
 /** Piping line numbers such as 6"-P-1001-A1B or 2-CW-2045 (Sleuth integration hooks onto these). */
 export const LINE_REF_RE = /\b\d{1,2}(?:"|''|in)?-[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]{1,6})?\b/g;
@@ -13,6 +13,31 @@ export const LINE_REF_RE = /\b\d{1,2}(?:"|''|in)?-[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]
 export const DRAWING_RE = /\b(?:ISO|PID|GA|DWG|DOC|STR|LAY)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/g;
 
 const TOOL_NAME: Record<string, string> = { projectopener: 'Project Opener', dexterity: 'Dexterity Sheets', sleuth: 'Sleuth', datum: 'Datum', dexconnect: 'Dexterity Connect' };
+
+/** Messages fetched for link previews, shared across the conversation (null = not visible). */
+const linked = new Map<string, Promise<Message | null>>();
+
+/** A link to a message shows who wrote it and how it starts, like a quote. */
+function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
+  const id = url.split('/')[4] ?? '';
+  const [m, setM] = useState<Message | null | undefined>(undefined);
+  useEffect(() => {
+    let p = linked.get(id);
+    if (!p) { p = window.dex.request('msg.get', { messageId: id }).catch(() => null); linked.set(id, p); }
+    let live = true;
+    void p.then((v) => { if (live) setM(v); });
+    return () => { live = false; };
+  }, [id]);
+  if (m === null) return <ToolLink url={url} />;
+  const who = m ? ctx.users.get(m.authorId)?.displayName ?? 'Someone' : '…';
+  const text = m ? (m.body || (m.files.length ? `📎 ${m.files[0].name}` : '')).replace(/<@([0-9A-Z]{26}|all)>/g, (_x, u: string) => `@${u === 'all' ? 'everyone' : ctx.users.get(u)?.displayName ?? 'someone'}`) : '';
+  return (
+    <button className="msg-link-card" title="Open the message" onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
+      <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span> : null}</span>
+      <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
+    </button>
+  );
+}
 
 function ToolLink({ url }: { url: string }) {
   const scheme = url.split(':')[0];
@@ -61,7 +86,7 @@ const INLINE: Inline[] = [
   { re: /(?<![\w_])_([^_\n]+)_(?![\w_])/y, render: (m, k, ctx) => <em key={k}>{inline(m[1], ctx, k)}</em> },
   { re: /https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k) => <a key={k} href={m[0]} target="_blank" rel="noreferrer noopener">{m[0]}</a> },
   // links for the other office tools become chips that open the tool
-  { re: /(?:projectopener|dexterity|sleuth|datum|dexconnect):\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k) => <ToolLink key={k} url={m[0]} /> },
+  { re: /(?:projectopener|dexterity|sleuth|datum|dexconnect):\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k, ctx) => (/^dexconnect:\/\/message\/[\w-]+\/[\w-]+$/.test(m[0]) ? <MessageLink key={k} url={m[0]} ctx={ctx} /> : <ToolLink key={k} url={m[0]} />) },
   // office emoji, written :name:
   { re: /:([a-z0-9][a-z0-9_-]{1,31}):/y, render: (m, k) => (customEmoji().has(m[1]) ? <EmojiImg key={k} name={m[1]} /> : m[0]) },
   { re: new RegExp(LINE_REF_RE.source, 'y'), render: (m, k) => <TagRef key={k} tag={m[0]} kind="line" /> },
@@ -201,6 +226,7 @@ export function plainPreview(body: string, users: Map<string, PublicUser>): stri
     .replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
+    .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message')
     // escaped characters stay, markup goes
     .replace(/\\([\\`*_~<>])/g, (_, c: string) => `\u0000${c}`)
     .replace(/(^|[^\u0000])[*_~`>]+/g, '$1')
