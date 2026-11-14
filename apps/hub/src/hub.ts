@@ -341,6 +341,16 @@ export class Hub {
     const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : '';
     const bot = token ? this.store.botByTokenHash(crypto.createHash('sha256').update(token).digest('hex')) : null;
     if (!bot || bot.role !== 'bot') { req.resume(); reply(401, { ok: false, error: 'Unknown or revoked integration token.' }); return; }
+    if (req.method === 'POST' && req.url?.split('?')[0] === '/api/bot/widget') {
+      let raw = '';
+      try { for await (const c of req) { raw += c; if (raw.length > 16 * 1024) throw new Error('too large'); } } catch { reply(413, { ok: false, error: 'Widget too large.' }); return; }
+      try {
+        const list = this.commands.setWidget(bot.id, JSON.parse(raw) as Record<string, unknown>);
+        this.emit('widgets.updated', list);
+        reply(200, { ok: true });
+      } catch (err) { reply(400, { ok: false, error: (err as Error).message }); }
+      return;
+    }
     if (req.method !== 'POST' || req.url?.split('?')[0] !== '/api/bot/message') { req.resume(); reply(404, { ok: false, error: 'not found' }); return; }
     let raw = '';
     try {
@@ -1042,7 +1052,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(cmd\.|admin\.bots\.commands$)/.test(op)) {
+        if (typeof op === 'string' && /^(cmd\.|admin\.bots\.commands$|actions\.list$|action\.run$|widgets\.list$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = await this.commands.handle(op, me, d);

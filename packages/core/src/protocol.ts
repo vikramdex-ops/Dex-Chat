@@ -155,6 +155,12 @@ export interface IceConfig {
 }
 
 /** An office emoji added by an administrator, used as :name:. */
+/** An action an integration adds to messages' menus ("Raise an RFI", "Log as defect"). */
+export interface BotAction { id: string; label: string; scope: 'everywhere' | 'spaces' | 'direct'; botId: string; botName: string }
+
+/** A card an integration keeps up to date on everyone's Pulse (build status, plotter queue). */
+export interface Widget { botId: string; botName: string; key: string; title: string; lines: string[]; url: string | null; updatedAt: number }
+
 export interface CustomEmoji { name: string; fileId: string; createdBy: string; createdAt: number }
 
 /** A sticker: a larger image sent on its own, grouped in packs. Sent as the message body [[sticker:ID]]. */
@@ -674,7 +680,13 @@ export interface Ops {
   'admin.hooks.create': { req: { botId: string; convId: string }; res: { id: string; path: string } };
   'admin.hooks.revoke': { req: { id: string }; res: { ok: true } };
   /** Give an integration slash commands that call its webhook. Returns the signing secret once. */
-  'admin.bots.commands': { req: { userId: string; webhookUrl: string; commands: Array<{ command: string; description: string }> }; res: { secret: string } };
+  'admin.bots.commands': { req: { userId: string; webhookUrl: string; commands: Array<{ command: string; description: string }>; actions?: Array<{ label: string; scope?: BotAction['scope'] }> }; res: { secret: string } };
+  /** Message actions integrations offer (in a message's menu). */
+  'actions.list': { req: void; res: BotAction[] };
+  /** Send a message to an integration's action; text is given by the app for an encrypted message. */
+  'action.run': { req: { actionId: string; messageId: string; text?: string }; res: { text: string | null; ephemeral: boolean } };
+  /** Cards integrations keep up to date on Pulse. */
+  'widgets.list': { req: void; res: Widget[] };
   'cmd.list': { req: void; res: SlashCommand[] };
   /** Run an integration's command; its reply is posted (or, if it asks, shown only to you). */
   'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean } };
@@ -875,6 +887,7 @@ export interface Events {
   'policy.updated': OfficePolicy;
   'emoji.updated': CustomEmoji[];
   'sticker.updated': Sticker[];
+  'widgets.updated': Widget[];
   'org.updated': OrgInfo;
   /** One of your devices was added with a pairing code. */
   'me.devicePaired': DeviceRecord;
