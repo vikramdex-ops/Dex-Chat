@@ -7,8 +7,15 @@
 // Hardening, in the spirit of the relays it learnt from:
 // - Only the hub that proves it holds the pinned certificate key can take the hub side.
 // - Device sockets are binary-only, at most 1 MiB a frame, rate limited per address, and capped.
-// - Nothing but /hub/<id>, /c/<id>, /join and /health answers; every reply carries strict headers.
+// - Nothing but /hub/<id>, /c/<id>, /join, /m/<meeting> and /health answers; every reply carries strict headers.
+//
+// Guests (meetings, M2): /m/<meeting ID> serves a small join page (guest/page.ts, built into
+// guest-assets.gen.ts). Its WebSocket, /m/<meeting ID>/ws, goes to the office hub's relay as a
+// "guest" socket: JSON frames, passed to the hub as guest frames on the hub's own connection.
+// The page sends the passcode (from the link's #fragment, which never reaches a server log) in
+// its first frame; the hub checks it. Connections and wrong passcodes are limited per address.
 import { DurableObject } from 'cloudflare:workers';
+import { GUEST_CSS, GUEST_JS } from './guest-assets.gen.ts';
 
 interface Env {
   RELAY: DurableObjectNamespace<Relay>;
@@ -20,6 +27,16 @@ const MAX_FRAME = (1 << 20) + 64;
 const MAX_DEVICES = 600;
 const CONNECTS_PER_MINUTE = 40;
 const ID_RE = '[0-9A-Za-z_-]{6,64}';
+/** Guests: at most this many at once, frames of at most 64 KiB, and few wrong passcodes per address. */
+const MAX_GUESTS = 300;
+const MAX_GUEST_FRAME = 64 * 1024;
+const GUEST_CONNECTS_PER_MINUTE = 20;
+const GUEST_FAILS = 5;
+const GUEST_FAIL_WINDOW_MS = 10 * 60_000;
+const GUEST_FRAMES_PER_10S = 400;
+/** The relay that remembers which hub's meetings /m/ leads to (not a hub id: ID_RE never matches it). */
+const HOME = '~home';
+const MEETING_RE = /^\/m\/([1-9]\d{8})(\/ws)?\/?$/;
 
 const SECURITY_HEADERS: Record<string, string> = {
   'x-content-type-options': 'nosniff',
@@ -44,6 +61,18 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === '/' || url.pathname === '/health') return text('Dexterity Connect gateway\n');
     if (url.pathname === '/join') return joinPage();
+    if (url.pathname === '/guest/app.js') return asset(GUEST_JS, 'text/javascript; charset=utf-8');
+    if (url.pathname === '/guest/app.css') return asset(GUEST_CSS, 'text/css; charset=utf-8');
+    const meet = url.pathname.match(MEETING_RE);
+    if (meet) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return text('Method not allowed\n', 405);
+      if (!meet[2]) return guestPage(meet[1]);
+      if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') return text('Expected a WebSocket\n', 426);
+      const home = await env.RELAY.get(env.RELAY.idFromName(HOME)).fetch('https://gateway/~home/get');
+      const hubId = home.ok ? ((await home.json()) as { hubId?: string }).hubId : undefined;
+      if (!hubId) return refuse(4404, 'The office is not connected to the gateway');
+      return env.RELAY.get(env.RELAY.idFromName(hubId)).fetch(req);
+    }
     const m = url.pathname.match(new RegExp(`^/(hub|c)/(${ID_RE})$`));
     if (!m) return text('Not found\n', 404);
     if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') return text('Expected a WebSocket\n', 426);
@@ -51,7 +80,7 @@ export default {
   },
 };
 
-interface Attachment { kind: 'hub' | 'device'; hubId: string; authed?: boolean; nonce?: string; sid?: number; ip?: string }
+interface Attachment { kind: 'hub' | 'device' | 'guest'; hubId: string; authed?: boolean; nonce?: string; sid?: number; gid?: number; ip?: string; meetingId?: string }
 
 const u32 = (n: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n >>> 0); return b; };
 const b64d = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -67,25 +96,56 @@ function contains(hay: Uint8Array, needle: Uint8Array): boolean {
 /** One relay per hub id. Uses hibernating WebSockets, so a quiet office costs nothing between frames. */
 export class Relay extends DurableObject<Env> {
   private readonly attempts = new Map<string, { n: number; until: number }>();
+  private readonly frames = new Map<number, { n: number; until: number }>();
 
-  private limited(ip: string): boolean {
+  private limited(ip: string, max = CONNECTS_PER_MINUTE, key = ip): boolean {
     const now = Date.now();
     for (const [k, w] of this.attempts) { if (w.until > now) break; this.attempts.delete(k); }
-    const w = this.attempts.get(ip) ?? { n: 0, until: now + 60_000 };
+    const w = this.attempts.get(key) ?? { n: 0, until: now + 60_000 };
     w.n++;
-    this.attempts.set(ip, w);
-    return w.n > CONNECTS_PER_MINUTE;
+    this.attempts.set(key, w);
+    return w.n > max;
+  }
+
+  /** Wrong passcodes from an address in the last ten minutes (kept in storage: they outlast hibernation). */
+  private async guestFails(ip: string): Promise<number[]> {
+    const now = Date.now();
+    return ((await this.ctx.storage.get<number[]>(`gf:${ip}`)) ?? []).filter((t) => now - t < GUEST_FAIL_WINDOW_MS);
+  }
+
+  private async guestFailed(ip: string): Promise<void> {
+    const list = await this.guestFails(ip);
+    list.push(Date.now());
+    await this.ctx.storage.put(`gf:${ip}`, list.slice(-GUEST_FAILS * 2));
+  }
+
+  /** The relay named ~home: which hub /m/ pages lead to. The first hub to sign in claims it; only it (same certificate) may change it. */
+  private async home(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    if (url.pathname === '/~home/get') {
+      const h = await this.ctx.storage.get<{ hubId: string; fp: string }>('home');
+      return h ? Response.json({ hubId: h.hubId }) : new Response('none', { status: 404 });
+    }
+    if (url.pathname === '/~home/claim' && req.method === 'POST') {
+      const c = await req.json() as { hubId: string; fp: string; pinned: boolean };
+      const h = await this.ctx.storage.get<{ hubId: string; fp: string }>('home');
+      if (!h || h.fp === c.fp || c.pinned) await this.ctx.storage.put('home', { hubId: c.hubId, fp: c.fp });
+      return new Response('ok');
+    }
+    return new Response('not found', { status: 404 });
   }
 
   private hub(): WebSocket | null {
-    for (const ws of this.ctx.getWebSockets('hub')) if ((ws.deserializeAttachment() as Attachment).authed) return ws;
+    for (const ws of this.ctx.getWebSockets('hub')) if (ws.readyState === 1 && (ws.deserializeAttachment() as Attachment).authed) return ws;
     return null;
   }
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname.startsWith('/~home/')) return this.home(req);
     const [, kind, hubId] = url.pathname.split('/');
     const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
+    if (kind === 'm') return this.guest(req, ip, hubId);
     if (this.limited(ip)) return refuse(4429, 'Too many connections; try again in a minute');
     const { 0: client, 1: server } = new WebSocketPair();
 
@@ -110,10 +170,41 @@ export class Relay extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  /** A browser guest's socket for a meeting: limited per address, then announced to the hub. */
+  private async guest(req: Request, ip: string, meetingId: string): Promise<Response> {
+    if (this.limited(ip, GUEST_CONNECTS_PER_MINUTE, `g:${ip}`)) return refuse(4429, 'Too many tries from your network. Wait a minute.');
+    if ((await this.guestFails(ip)).length >= GUEST_FAILS) return refuse(4429, 'Too many wrong passcodes from your network. Try again in 10 minutes.');
+    const hub = this.hub();
+    if (!hub) return refuse(4404, 'The office is not connected to the gateway');
+    if (this.ctx.getWebSockets('guest').length >= MAX_GUESTS) return refuse(4429, 'Too many guests are connected. Try again soon.');
+    let gid = 0;
+    do gid = crypto.getRandomValues(new Uint32Array(1))[0] || 1; while (this.ctx.getWebSockets(`g:${gid}`).length);
+    const { 0: client, 1: server } = new WebSocketPair();
+    this.ctx.acceptWebSocket(server, ['guest', `g:${gid}`]);
+    server.serializeAttachment({ kind: 'guest', hubId: (hub.deserializeAttachment() as Attachment).hubId, gid, ip, meetingId } satisfies Attachment);
+    const cf = (req as Request & { cf?: { country?: string } }).cf;
+    hub.send(JSON.stringify({ t: 'g-open', g: gid, ip, country: cf?.country ?? null, m: meetingId }));
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
   async webSocketMessage(ws: WebSocket, msg: string | ArrayBuffer): Promise<void> {
     const a = ws.deserializeAttachment() as Attachment;
     const size = typeof msg === 'string' ? msg.length * 3 : msg.byteLength;
     if (size > MAX_FRAME) { ws.close(1009, 'Message too big'); return; }
+
+    if (a.kind === 'guest') {
+      if (typeof msg !== 'string') { ws.close(1003, 'Text frames only'); return; }
+      if (msg.length > MAX_GUEST_FRAME) { ws.close(1009, 'Message too big'); return; }
+      const now = Date.now();
+      const f = this.frames.get(a.gid!) ?? { n: 0, until: now + 10_000 };
+      if (f.until < now) { f.n = 0; f.until = now + 10_000; }
+      if (++f.n > GUEST_FRAMES_PER_10S) { ws.close(4429, 'Slow down'); return; }
+      this.frames.set(a.gid!, f);
+      const hub = this.hub();
+      if (!hub) { ws.close(4404, 'The office disconnected'); return; }
+      hub.send(JSON.stringify({ t: 'g', g: a.gid, d: msg }));
+      return;
+    }
 
     if (a.kind === 'device') {
       if (typeof msg === 'string') { ws.close(1003, 'Binary frames only'); return; }
@@ -132,10 +223,21 @@ export class Relay extends DurableObject<Env> {
       return;
     }
     if (typeof msg === 'string') {
-      let c: { t?: string; s?: number; code?: number; reason?: string };
+      let c: { t?: string; s?: number; g?: number; d?: string; code?: number; reason?: string };
       try { c = JSON.parse(msg); } catch { return; }
+      const code = c.code && c.code >= 4000 && c.code < 5000 ? c.code : 4000;
       if (c.t === 'close' && typeof c.s === 'number') {
-        for (const d of this.ctx.getWebSockets(`s:${c.s}`)) d.close(c.code && c.code >= 4000 && c.code < 5000 ? c.code : 4000, (c.reason ?? 'Closed by the hub').slice(0, 120));
+        for (const d of this.ctx.getWebSockets(`s:${c.s}`)) d.close(code, (c.reason ?? 'Closed by the hub').slice(0, 120));
+      } else if (c.t === 'g' && typeof c.g === 'number' && typeof c.d === 'string') {
+        for (const g of this.ctx.getWebSockets(`g:${c.g}`)) g.send(c.d);
+      } else if (c.t === 'g-close' && typeof c.g === 'number') {
+        for (const g of this.ctx.getWebSockets(`g:${c.g}`)) {
+          const ga = g.deserializeAttachment() as Attachment;
+          // the hub refused the passcode: it counts against the address
+          if (code === 4403 && ga.ip) await this.guestFailed(ga.ip);
+          this.frames.delete(c.g);
+          g.close(code, (c.reason ?? 'Closed by the office').slice(0, 120));
+        }
       }
       return;
     }
@@ -162,7 +264,10 @@ export class Relay extends DurableObject<Env> {
       // a reconnecting hub replaces the old connection; devices reconnect to reach it
       for (const old of this.ctx.getWebSockets('hub')) if (old !== ws && (old.deserializeAttachment() as Attachment).authed) old.close(4001, 'Replaced');
       for (const d of this.ctx.getWebSockets('device')) d.close(4404, 'The office hub reconnected');
+      for (const g of this.ctx.getWebSockets('guest')) g.close(4404, 'The office reconnected');
       ws.serializeAttachment({ ...a, authed: true, nonce: undefined } satisfies Attachment);
+      // meeting pages (/m/…) lead to this hub
+      await this.env.RELAY.get(this.env.RELAY.idFromName(HOME)).fetch('https://gateway/~home/claim', { method: 'POST', body: JSON.stringify({ hubId: a.hubId, fp, pinned: !!this.env.HUB_FINGERPRINT }) });
       ws.send(JSON.stringify({ t: 'ready', fp, pinned: !!this.env.HUB_FINGERPRINT }));
     } catch {
       ws.close(4401, 'Authentication failed');
@@ -177,8 +282,13 @@ export class Relay extends DurableObject<Env> {
     if (!a) return;
     if (a.kind === 'device') {
       this.hub()?.send(JSON.stringify({ t: 'closed', s: a.sid }));
-    } else if (a.authed && !this.hub()) {
+    } else if (a.kind === 'guest') {
+      this.frames.delete(a.gid!);
+      this.hub()?.send(JSON.stringify({ t: 'g-closed', g: a.gid }));
+    } else if (a.authed && !this.ctx.getWebSockets('hub').some((h) => h !== ws && (h.deserializeAttachment() as Attachment).authed)) {
+      // (the closing socket is still listed while this runs)
       for (const d of this.ctx.getWebSockets('device')) d.close(4404, 'The office hub disconnected');
+      for (const g of this.ctx.getWebSockets('guest')) g.close(4404, 'The office disconnected');
     }
   }
 }
@@ -207,6 +317,30 @@ document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(code).
     headers: {
       'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS,
       'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    },
+  });
+}
+
+/** The guest page's script and styles: same for every meeting, cached briefly. */
+function asset(body: string, type: string): Response {
+  return new Response(body, { headers: { 'content-type': type, ...SECURITY_HEADERS, 'cache-control': 'public, max-age=300' } });
+}
+
+/**
+ * /m/<meeting ID>#<passcode>: the page a guest opens from an invitation. Everything it runs is
+ * served from here; the passcode stays in the fragment until the page sends it to the hub.
+ */
+function guestPage(meetingId: string): Response {
+  const id = `${meetingId.slice(0, 3)}-${meetingId.slice(3, 6)}-${meetingId.slice(6)}`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark"><meta name="robots" content="noindex">
+<title>Meeting ${id} · Dexterity Connect</title><link rel="stylesheet" href="/guest/app.css"></head>
+<body><main id="app" data-meeting="${meetingId}"><noscript>This meeting page needs JavaScript.</noscript></main><script src="/guest/app.js" defer></script></body></html>`;
+  return new Response(html, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS,
+      'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'permissions-policy': 'camera=(self), microphone=(self), display-capture=(self), geolocation=()',
     },
   });
 }
