@@ -112,6 +112,13 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             ]} />
           </div>
           <div className="setting">
+            <Icon name="clock" className="lead" />
+            <div className="txt"><div>Time format</div><div className="faint">How times show in conversations, the Calendar and the Desk.</div></div>
+            <Segmented<'system' | '12' | '24'> label="Time format" value={state.settings.timeFormat ?? 'system'} onChange={(timeFormat) => set({ timeFormat })} options={[
+              { value: 'system', label: 'Windows' }, { value: '12', label: '1:30 PM' }, { value: '24', label: '13:30' },
+            ]} />
+          </div>
+          <div className="setting">
             <Icon name="textsize" className="lead" />
             <div className="txt"><div>Text size</div><div className="faint">Makes everything larger or smaller. <span className="mono">Ctrl</span>+<span className="mono">=</span> and <span className="mono">Ctrl</span>+<span className="mono">-</span> work too.</div></div>
             <Segmented<Settings['textSize']> label="Text size" value={state.settings.textSize} onChange={(textSize) => set({ textSize })} options={[
@@ -157,6 +164,18 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               { value: 'drop', label: 'Drop' },
               { value: 'none', label: 'Off' },
             ]} />
+          </div>
+          <div className="setting">
+            <Icon name="moon" className="lead" />
+            <div className="txt"><div>Quiet hours</div><div className="faint">No message notifications or sounds between these times, every day. Reminders and meetings still notify.</div></div>
+            <span className="quiet-hours">
+              <Toggle label="Quiet hours" checked={!!state.settings.quietFrom} onChange={(v) => set(v ? { quietFrom: '19:00', quietTo: '09:00' } : { quietFrom: null, quietTo: null })} />
+              {state.settings.quietFrom && <>
+                <input type="time" className="input" aria-label="Quiet from" value={state.settings.quietFrom} onChange={(e) => e.target.value && set({ quietFrom: e.target.value })} />
+                <span className="faint">to</span>
+                <input type="time" className="input" aria-label="Quiet until" value={state.settings.quietTo ?? '09:00'} onChange={(e) => e.target.value && set({ quietTo: e.target.value })} />
+              </>}
+            </span>
           </div>
           <div className="setting">
             <Icon name="eye" className="lead" />

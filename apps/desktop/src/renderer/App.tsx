@@ -2,6 +2,7 @@
 // title bar with brand, lens bar, command button and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right.
 import { setAlertPrefs } from './alerts.ts';
+import { setTimeFormat } from './time.ts';
 import { startPolicy } from './policy.ts';
 import { startEmoji } from './emoji.tsx';
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -34,6 +35,7 @@ import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
+import { timeOpts } from './time.ts';
 
 // the Control room is used by a few people now and then: load it when opened
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
@@ -74,6 +76,7 @@ function useTheme(state: AppState | null): void {
     // desktop zooms the window from the main process; the phone's WebView zooms here
     if (state.platform === 'android') root.style.zoom = String((state.settings.textSize ?? 100) / 100);
     setAlertPrefs(state.settings, state.platform);
+    setTimeFormat(state.settings.timeFormat);
   }, [state?.settings, state?.platform]);
 }
 
@@ -218,10 +221,10 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
   const live = state.phase === 'ready';
   const online = new Set(session.online);
-  setPresenceSource(live ? session.online : [], session.away ?? [], session.users, session.inRoom ?? []);
+  setPresenceSource(live ? session.online : [], session.away ?? [], session.users, session.inRoom ?? [], session.inMeeting ?? []);
   const toast = useToast();
   const setAvailability = (availability: Availability, until: number | null = null) => {
-    void window.dex.request('me.update', { availability, until }).then(() => toast(`You're now shown as ${AVAILABILITY.find((a) => a.id === availability)!.label.toLowerCase()}${until ? ` until ${new Date(until).toLocaleTimeString([], { weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined, hour: 'numeric', minute: '2-digit' })}` : ''}`)).catch((e: Error) => toast(e.message, true));
+    void window.dex.request('me.update', { availability, until }).then(() => toast(`You're now shown as ${AVAILABILITY.find((a) => a.id === availability)!.label.toLowerCase()}${until ? ` until ${new Date(until).toLocaleTimeString([], { ...timeOpts(), weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined, hour: 'numeric', minute: '2-digit' })}` : ''}`)).catch((e: Error) => toast(e.message, true));
   };
   const [ooo, setOoo] = useState(false);
 
@@ -366,7 +369,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 {AVAILABILITY.map((a) => (
                   <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => { setMenu(a.id !== 'available'); setAvailability(a.id); }}>
                     <span className={`avail-ring ${a.id}`} />
-                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Until ${new Date(session.me.availabilityUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : a.hint}</span></span>
+                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Until ${new Date(session.me.availabilityUntil).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}` : a.hint}</span></span>
                     {session.me.availability === a.id && <Icon name="check" size={15} />}
                   </button>
                 ))}

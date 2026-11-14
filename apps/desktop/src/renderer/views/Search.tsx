@@ -7,6 +7,7 @@ import { convTitle } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { chatState } from '../chat/store.ts';
+import { timeOpts } from '../time.ts';
 
 export interface SearchInit { q?: string; convId?: string | null }
 type When = 'any' | 'today' | 'week' | 'month' | 'year';
@@ -31,7 +32,7 @@ function Snippet({ text }: { text: string }) {
 }
 const when = (t: number) => {
   const d = new Date(t);
-  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 };
 
 export function SearchView({ init, users, meId, conversations, onOpen }: {

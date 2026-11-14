@@ -309,7 +309,7 @@ export interface Message {
   /** A side-track reply also shown in the conversation: the message it answers. */
   inReplyTo?: { messageId: string; authorId: string } | null;
   /** A notice rather than something someone wrote: people joining, leaving, a rename. */
-  system?: { kind: 'joined' | 'left' | 'added' | 'removed' | 'renamed'; users: string[]; name?: string } | null;
+  system?: { kind: 'joined' | 'left' | 'added' | 'removed' | 'renamed' | 'away'; users: string[]; name?: string; until?: number } | null;
   poll: PollView | null;
   form: FormView | null;
   /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
@@ -567,6 +567,8 @@ export interface Session {
   away: string[];
   /** People currently in a Room (call). */
   inRoom: string[];
+  /** People in a meeting on their calendar right now. */
+  inMeeting?: string[];
   /** Bearer token for this connection's file uploads and downloads over HTTPS. */
   fileToken: string;
 }
@@ -807,6 +809,8 @@ export interface Events {
   'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number };
   'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
   'room.busy': { userId: string; inRoom: boolean };
+  /** Someone's calendar says they are in a meeting now (or no longer). */
+  'meeting.busy': { userId: string; inMeeting: boolean };
   'star.updated': { messageId: string; on: boolean };
   'work.updated': WorkState;
   /** Someone's devices or encryption keys changed. */

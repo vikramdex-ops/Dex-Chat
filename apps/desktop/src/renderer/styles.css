@@ -1677,3 +1677,6 @@ body.resizing { user-select: none; cursor: col-resize; }
 .q-poor .q-bars i:nth-child(1) { opacity: 1; color: #ff8a80; }
 .add-people { width: 280px; }
 .add-people .input { margin: 4px 4px 6px; width: calc(100% - 8px); }
+.quiet-hours { display: flex; align-items: center; gap: 6px; } .quiet-hours .input { width: 110px; }
+.avatar[data-presence='meeting'] { --ring: #8a6be0; }
+.notice-line.away { margin: 8px 0 8px 76px; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--text-2); justify-content: flex-start; }

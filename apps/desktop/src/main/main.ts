@@ -202,6 +202,11 @@ function wireIpc(c: Controller): void {
     if (typeof patch.showPreviews === 'boolean') safe.showPreviews = patch.showPreviews;
     if (patch.density === 'comfortable' || patch.density === 'compact') safe.density = patch.density;
     if (patch.textSize === 90 || patch.textSize === 100 || patch.textSize === 110 || patch.textSize === 125) safe.textSize = patch.textSize;
+    if (patch.timeFormat === 'system' || patch.timeFormat === '12' || patch.timeFormat === '24') safe.timeFormat = patch.timeFormat;
+    for (const k of ['quietFrom', 'quietTo'] as const) {
+      const v = patch[k];
+      if (v === null || (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v))) safe[k] = v;
+    }
     const channelChanged = safe.updateChannel && safe.updateChannel !== c.settings.updateChannel;
     const s = c.updateSettings(safe);
     applyTheme(s);

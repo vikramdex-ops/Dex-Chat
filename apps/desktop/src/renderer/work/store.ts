@@ -1,6 +1,7 @@
 // Client copy of everyone's working state (checked in, on a break, where), kept live.
 import { useSyncExternalStore } from 'react';
 import type { WorkMode, WorkState } from '@dex/core';
+import { timeOpts } from '../time.ts';
 
 /** A state plus when we received it, so the day's clock can keep ticking locally. */
 export type LiveWork = WorkState & { at: number };
@@ -50,7 +51,7 @@ export function duration(ms: number): string {
 
 export function workLine(s: WorkState | undefined): string | null {
   if (!s || s.status === 'out' || !s.mode) return null;
-  const since = s.since ? new Date(s.since).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const since = s.since ? new Date(s.since).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' }) : '';
   return s.status === 'break' ? `On a break since ${since}` : `${MODE_LABEL[s.mode]} since ${since}`;
 }
 

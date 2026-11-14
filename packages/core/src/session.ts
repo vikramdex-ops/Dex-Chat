@@ -318,6 +318,11 @@ export class HubSession extends Emitter {
       const set = new Set(session.inRoom ?? []);
       if (inRoom) set.add(userId); else set.delete(userId);
       session.inRoom = [...set];
+    } else if (name === 'meeting.busy') {
+      const { userId, inMeeting } = data as Events['meeting.busy'];
+      const set = new Set(session.inMeeting ?? []);
+      if (inMeeting) set.add(userId); else set.delete(userId);
+      session.inMeeting = [...set];
     } else if (name === 'user.updated' || name === 'user.added') {
       upsert(data as PublicUser);
     } else {

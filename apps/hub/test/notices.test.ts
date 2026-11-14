@@ -87,3 +87,28 @@ test('activity: mentions of me and replies in my side-tracks; tracks I follow; j
   const at = await priya.request('msg.at', { convId: space.id, at: 0 });
   assert.equal(at.messageId, mine.id);
 });
+
+test('out of office: a notice for whoever writes or mentions, once per conversation; in a meeting from the calendar', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  await priya.request('me.update', { ooo: { until: Date.now() + 3 * 86400_000, message: 'At the Jamnagar site', delegateId: me(ravi) } });
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [me(priya)] });
+  await send(owner, dm.id, 'Can you send the MTO?');
+  await send(owner, dm.id, 'And the BOM?');
+  const notes = (await owner.request('msg.list', { convId: dm.id })).messages.filter((m) => m.system?.kind === 'away');
+  assert.equal(notes.length, 1, 'once, not for every message');
+  assert.equal(notes[0].authorId, me(priya));
+  assert.deepEqual(notes[0].system!.users, [me(priya), me(ravi)]);
+  assert.equal(notes[0].system!.name, 'At the Jamnagar site');
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Away', members: [me(priya), me(ravi)] });
+  await send(ravi, space.id, 'no mention here');
+  await send(ravi, space.id, `<@${me(priya)}> when you are back`);
+  const sn = (await owner.request('msg.list', { convId: space.id })).messages.filter((m) => m.system?.kind === 'away');
+  assert.equal(sn.length, 1);
+
+  // in a meeting
+  const ev = await owner.request('cal.create', { title: 'Design review', startAt: Date.now() - 60_000, endAt: Date.now() + 3600_000, attendees: [me(ravi)] });
+  await ravi.request('cal.respond', { eventId: ev.id, response: 'yes' });
+  (hub as unknown as { presenceTick(): void }).presenceTick();
+  await new Promise((r) => setTimeout(r, 200));
+  assert.deepEqual([...(priya.session!.inMeeting ?? [])].sort(), [me(owner), me(ravi)].sort());
+});

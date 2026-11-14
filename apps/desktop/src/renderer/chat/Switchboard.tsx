@@ -5,6 +5,7 @@ import type { Conversation, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from '../ui.tsx';
 import { plainPreview } from './format.tsx';
 import { useChat } from './store.ts';
+import { timeOpts } from '../time.ts';
 
 export function convTitle(c: Conversation, users: Map<string, PublicUser>, meId: string): string {
   if (c.kind === 'space') return c.name ?? 'Space';
@@ -37,7 +38,7 @@ export function ConvTile({ c, users, meId, online, size }: { c: Conversation; us
 export function shortTime(ts: number, now = Date.now()): string {
   const d = new Date(ts);
   const today = new Date(now);
-  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' });
   const days = Math.floor((today.setHours(0, 0, 0, 0) - new Date(ts).setHours(0, 0, 0, 0)) / 86400000);
   if (days === 1) return 'Yesterday';
   if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
@@ -221,7 +222,7 @@ function ConvMenu({ c, anchor, sections, onClose }: { c: Conversation; anchor: H
       {c.section && <button role="menuitem" onClick={() => organise({ section: null }, 'Removed from the section')}><Icon name="x" size={16} />Remove from {c.section}</button>}
       <div className="menu-sep" />
       {c.muted
-        ? <button role="menuitem" onClick={() => run(window.dex.request('conv.mute', { convId: c.id, muted: false }), 'Notifications on')}><Icon name="bell" size={16} />Unmute{c.mutedUntil ? ` (muted until ${new Date(c.mutedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}</button>
+        ? <button role="menuitem" onClick={() => run(window.dex.request('conv.mute', { convId: c.id, muted: false }), 'Notifications on')}><Icon name="bell" size={16} />Unmute{c.mutedUntil ? ` (muted until ${new Date(c.mutedUntil).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })})` : ''}</button>
         : <>
             <div className="menu-label label">Mute</div>
             <button role="menuitem" onClick={() => mute(3600_000, 'Muted for an hour')}><Icon name="mute" size={16} />For 1 hour</button>

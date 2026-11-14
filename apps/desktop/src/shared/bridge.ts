@@ -80,10 +80,15 @@ export interface Settings {
   density: 'comfortable' | 'compact';
   /** Text and interface size, percent. */
   textSize: 90 | 100 | 110 | 125;
+  /** 12- or 24-hour times, or the system's choice. */
+  timeFormat?: 'system' | '12' | '24';
+  /** Quiet hours: no message notifications or sounds between these times (HH:MM), every day. */
+  quietFrom?: string | null;
+  quietTo?: string | null;
 }
 
 export type MessageSound = 'chime' | 'tick' | 'drop' | 'none';
-export const SETTINGS_EXTRA_DEFAULTS = { sound: 'chime', notifyFor: 'all', showPreviews: true, density: 'comfortable', textSize: 100 } as const;
+export const SETTINGS_EXTRA_DEFAULTS = { sound: 'chime', notifyFor: 'all', showPreviews: true, density: 'comfortable', textSize: 100, timeFormat: 'system', quietFrom: null, quietTo: null } as const;
 
 /** Hub-off mode: Direct messages pass straight between PCs on the network. */
 export interface P2PState { active: boolean; reachable: string[]; queued: number }

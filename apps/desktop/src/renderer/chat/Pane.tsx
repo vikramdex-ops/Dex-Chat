@@ -31,6 +31,7 @@ import { EventDialog } from '../calendar/CalendarView.tsx';
 import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
+import { timeOpts } from '../time.ts';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
@@ -81,7 +82,7 @@ function dayLabel(ts: number): string {
   return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
 }
 
-const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' });
 
 // ------------------------------------------------------------------ pane
 export function Pane({ convId, users, meId, isAdmin, online, live, onBack, session, direct = false, reachable = [] }: {
@@ -192,7 +193,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       ? (() => {
         const u = users.get(others[0]);
         const status = u?.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : null;
-        if (online.has(others[0])) return status ?? u?.title ?? 'Available';
+        if (online.has(others[0])) return presenceFor(others[0]) === 'meeting' ? `In a meeting${status ? ` · ${status}` : ''}` : status ?? u?.title ?? 'Available';
         return [status, u?.lastSeen ? `Last seen ${relativeTime(u.lastSeen)}` : 'Offline'].filter(Boolean).join(' · ');
       })()
       : `${conv.members.length} people`;
@@ -1140,6 +1141,16 @@ function Notice({ m, users, meId }: { m: Message; users: Map<string, PublicUser>
   const actor = m.authorId === meId ? 'You' : users.get(m.authorId)?.displayName ?? 'Someone';
   const list = (ids: string[]) => ids.map(name).join(', ');
   const s = m.system!;
+  if (s.kind === 'away') {
+    const who = users.get(s.users[0])?.displayName ?? 'They';
+    const deputy = s.users[1] ? users.get(s.users[1])?.displayName : null;
+    return (
+      <div className="notice-line away" data-mid={m.id}>
+        <span><b>{who}</b> is out of office{s.until ? ` until ${new Date(s.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : ''}{s.name ? `: “${s.name}”` : ''}{s.users[1] === meId ? '. You are standing in meanwhile.' : deputy ? `. Ask ${deputy} meanwhile.` : '.'}</span>
+        <span className="mono faint">{clock(m.createdAt)}</span>
+      </div>
+    );
+  }
   const text = s.kind === 'joined' ? `${actor} joined` : s.kind === 'left' ? `${actor} left`
     : s.kind === 'added' ? `${actor} added ${list(s.users)}` : s.kind === 'removed' ? `${actor} removed ${list(s.users)}`
       : `${actor} renamed the Space to “${s.name ?? ''}”`;

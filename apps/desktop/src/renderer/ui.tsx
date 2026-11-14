@@ -108,12 +108,12 @@ export function initials(name: string): string {
   return ((parts[0][0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
-export type Presence = 'on' | 'off' | 'away' | 'room' | 'dnd' | 'busy';
+export type Presence = 'on' | 'off' | 'away' | 'room' | 'dnd' | 'busy' | 'meeting';
 
 // Presence of everyone, refreshed by the app frame whenever the session changes.
-let presenceSource: { online: Set<string>; away: Set<string>; inRoom: Set<string>; users: Map<string, PublicUser> } = { online: new Set(), away: new Set(), inRoom: new Set(), users: new Map() };
-export function setPresenceSource(online: string[], away: string[], users: PublicUser[], inRoom: string[] = []): void {
-  presenceSource = { online: new Set(online), away: new Set(away), inRoom: new Set(inRoom), users: new Map(users.map((u) => [u.id, u] as const)) };
+let presenceSource: { online: Set<string>; away: Set<string>; inRoom: Set<string>; inMeeting: Set<string>; users: Map<string, PublicUser> } = { online: new Set(), away: new Set(), inRoom: new Set(), inMeeting: new Set(), users: new Map() };
+export function setPresenceSource(online: string[], away: string[], users: PublicUser[], inRoom: string[] = [], inMeeting: string[] = []): void {
+  presenceSource = { online: new Set(online), away: new Set(away), inRoom: new Set(inRoom), inMeeting: new Set(inMeeting), users: new Map(users.map((u) => [u.id, u] as const)) };
 }
 export function presenceFor(id: string): Presence {
   const { online, away, users } = presenceSource;
@@ -121,7 +121,9 @@ export function presenceFor(id: string): Presence {
   if (presenceSource.inRoom.has(id)) return 'room';
   if (away.has(id)) return 'away';
   const a = users.get(id)?.availability;
-  return a === 'dnd' ? 'dnd' : a === 'busy' ? 'busy' : 'on';
+  if (a === 'dnd') return 'dnd';
+  if (presenceSource.inMeeting.has(id)) return 'meeting';
+  return a === 'busy' ? 'busy' : 'on';
 }
 
 /** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
@@ -140,7 +142,7 @@ export function Avatar({ user, online, presence, size }: {
   );
 }
 
-export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb', busy: 'busy' };
+export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb', busy: 'busy', meeting: 'in a meeting' };
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;

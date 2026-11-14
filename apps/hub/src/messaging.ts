@@ -13,8 +13,8 @@ const cleanBody = (v: unknown) => (typeof v === 'string' ? v.replace(/\r\n/g, '\
 function parseSystem(raw: string): Message['system'] {
   try {
     const s = JSON.parse(raw) as { kind?: string; users?: unknown; name?: unknown };
-    if (!['joined', 'left', 'added', 'removed', 'renamed'].includes(String(s.kind))) return null;
-    return { kind: s.kind as NonNullable<Message['system']>['kind'], users: Array.isArray(s.users) ? s.users.map(String).slice(0, 50) : [], ...(typeof s.name === 'string' ? { name: s.name } : {}) };
+    if (!['joined', 'left', 'added', 'removed', 'renamed', 'away'].includes(String(s.kind))) return null;
+    return { kind: s.kind as NonNullable<Message['system']>['kind'], users: Array.isArray(s.users) ? s.users.map(String).slice(0, 50) : [], ...(typeof s.name === 'string' ? { name: s.name } : {}), ...(typeof (s as { until?: unknown }).until === 'number' ? { until: (s as { until: number }).until } : {}) };
   } catch { return null; }
 }
 
@@ -337,12 +337,29 @@ export class Messaging {
   pushConvTo(convId: string): void { this.pushConv(convId); }
 
   /** A notice in the conversation: someone joined, left, was added or removed, or it was renamed. */
-  private notice(convId: string, actorId: string, kind: NonNullable<Message['system']>['kind'], users: string[], name?: string): void {
+  private notice(convId: string, actorId: string, kind: NonNullable<Message['system']>['kind'], users: string[], name?: string, until?: number): void {
     const id = ulid();
     this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, system) VALUES (?, ?, ?, ?, NULL, ?, ?)')
-      .run(id, convId, actorId, '', Date.now(), JSON.stringify({ kind, users, ...(name ? { name } : {}) }));
+      .run(id, convId, actorId, '', Date.now(), JSON.stringify({ kind, users, ...(name ? { name } : {}), ...(until ? { until } : {}) }));
     const row = this.message(id);
     if (row) this.pushMessage('msg.new', row);
+  }
+
+  /** Out of office: tell whoever writes to (or mentions) someone away, once every 12 hours per conversation. */
+  private readonly awayNoticed = new Map<string, number>();
+  private outOfOffice(c: ConvRow, authorId: string, mentioned: string[]): void {
+    const now = Date.now();
+    const targets = c.kind === 'direct' ? this.members(c.id).filter((u) => u !== authorId) : mentioned.filter((u) => u !== authorId);
+    if (!targets.length) return;
+    const people = new Map(this.users().map((u) => [u.id, u] as const));
+    for (const uid of targets) {
+      const u = people.get(uid);
+      if (!u?.ooo || u.ooo.until <= now) continue;
+      const key = `${c.id}:${uid}`;
+      if (now - (this.awayNoticed.get(key) ?? 0) < 12 * 3600_000) continue;
+      this.awayNoticed.set(key, now);
+      this.notice(c.id, uid, 'away', u.ooo.delegateId ? [uid, u.ooo.delegateId] : [uid], u.ooo.message ?? undefined, u.ooo.until);
+    }
   }
 
   /** Push every member their own copy of the conversation (unread counts differ per person). */
@@ -967,6 +984,7 @@ export class Messaging {
     const row = this.message(id)!;
     this.pushMessage('msg.new', row);
     if (!parentId) this.pushConv(c.id);
+    if (!extra.forwarded) this.outOfOffice(c, me.id, (this.db.prepare('SELECT user_id FROM mentions WHERE message_id = ?').all(id) as Array<{ user_id: string }>).map((r) => r.user_id));
     return this.messageView(row, me.id);
   }
 

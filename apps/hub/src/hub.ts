@@ -629,6 +629,7 @@ export class Hub {
       online: this.onlineUserIds(conn.userId!),
       away: [...new Set(this.onlineUserIds(conn.userId!).filter((id) => this.isAway(id)))],
       inRoom: this.rooms.inRoomUsers(),
+      inMeeting: [...this.inMeeting],
       fileToken: conn.fileToken!,
     };
   }
@@ -651,7 +652,13 @@ export class Hub {
   }
 
   /** Timed availability returns to Available; out of office ends on its date. */
+  private inMeeting = new Set<string>();
   private presenceTick(now = Date.now()): void {
+    // "in a meeting", from the calendar
+    const meeting = this.calendar.inMeetingNow(now);
+    for (const u of meeting) if (!this.inMeeting.has(u)) this.emit('meeting.busy', { userId: u, inMeeting: true });
+    for (const u of this.inMeeting) if (!meeting.has(u)) this.emit('meeting.busy', { userId: u, inMeeting: false });
+    this.inMeeting = meeting;
     const rows = this.store.db.prepare('SELECT id, availability, availability_until, ooo FROM users WHERE (availability_until IS NOT NULL AND availability_until <= ?) OR ooo IS NOT NULL').all(now) as Array<{ id: string; availability: string; availability_until: number | null; ooo: string | null }>;
     for (const r of rows) {
       let changed = false;

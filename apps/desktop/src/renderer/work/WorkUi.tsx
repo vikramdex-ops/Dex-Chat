@@ -6,9 +6,10 @@ import type { AttendanceDay, PublicUser, WorkMode, WorkState } from '@dex/core';
 import { Avatar, Icon, Popover, Segmented, presenceFor, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { MODES, MODE_LABEL, MODE_SHORT, downloadText, duration, setWork, useWork, workedNow } from './store.ts';
+import { timeOpts } from '../time.ts';
 
 const MODE_ICON: Record<WorkMode, IconName> = { office: 'home', home: 'laptop', site: 'drawing', client: 'people' };
-const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const clock = (t: number) => new Date(t).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
 
 function useTick(ms: number, on: boolean): number {
   const [now, setNow] = useState(Date.now());

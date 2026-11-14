@@ -8,6 +8,7 @@ import { convTitle } from '../chat/Switchboard.tsx';
 import { renderBody } from '../chat/format.tsx';
 import { toLocalInput } from '../desk/store.ts';
 import { DAY, addDays, describeSpan, dismissSoon, hm, joinMeeting, startOfDay, startOfWeek, useCal } from './store.ts';
+import { timeOpts } from '../time.ts';
 
 const HOUR_PX = 48;
 const H = 3600_000;
@@ -118,7 +119,7 @@ function Week({ from, list, meId, onSlot, onOpen }: { from: number; list: Occurr
         ))}
       </div>
       <div className="week-body" ref={scroller}>
-        <div className="week-hours">{Array.from({ length: 24 }, (_, h) => <span key={h} style={{ top: h * HOUR_PX }}>{h === 0 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric' })}</span>)}</div>
+        <div className="week-hours">{Array.from({ length: 24 }, (_, h) => <span key={h} style={{ top: h * HOUR_PX }}>{h === 0 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric' })}</span>)}</div>
         {days.map((d) => {
           const items = layoutDay(timed.filter((o) => o.startAt < addDays(d, 1) && o.endAt > d));
           return (

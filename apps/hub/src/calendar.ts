@@ -213,6 +213,18 @@ export class Calendar {
   }
 
   // ------------------------------------------------------------ reminders
+  /** People in a meeting right now: organisers and everyone who said they are going, not all-day events. */
+  inMeetingNow(now = Date.now()): Set<string> {
+    const out = new Set<string>();
+    const rows = this.db.prepare(`SELECT * FROM events WHERE cancelled = 0 AND all_day = 0 AND start_at <= ? AND (recurrence != 'none' AND (until_at IS NULL OR until_at >= ?) OR end_at >= ?)`).all(now, now - DAY, now) as unknown as EventRow[];
+    for (const r of rows) {
+      if (!expand(r, now - DAY, now + 1, 50).some((o) => o.startAt <= now && o.endAt > now)) continue;
+      out.add(r.organizer_id);
+      for (const a of this.attendees(r.id)) if (a.response === 'yes') out.add(a.userId);
+    }
+    return out;
+  }
+
   tick(now = Date.now()): void {
     const rows = this.db.prepare(`SELECT * FROM events WHERE cancelled = 0 AND reminder_min IS NOT NULL AND start_at <= ?
       AND (end_at >= ? OR (recurrence != 'none' AND (until_at IS NULL OR until_at >= ?)))`).all(now + 8 * DAY, now - DAY, now - DAY) as unknown as EventRow[];

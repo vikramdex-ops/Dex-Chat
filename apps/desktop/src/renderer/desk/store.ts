@@ -4,6 +4,7 @@ import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { Message, PublicUser, Reminder, SavedMessage, ScheduledMessage } from '@dex/core';
 import { plainPreview } from '../chat/format.tsx';
+import { timeOpts } from '../time.ts';
 
 interface DeskState {
   saved: Map<string, SavedMessage>;
@@ -174,7 +175,7 @@ export function describeWhen(ts: number, now = Date.now()): string {
   const d = new Date(ts);
   const today = new Date(now);
   const tomorrow = new Date(now); tomorrow.setDate(today.getDate() + 1);
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const time = d.toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
   if (d.toDateString() === today.toDateString()) return `Today, ${time}`;
   if (d.toDateString() === tomorrow.toDateString()) return `Tomorrow, ${time}`;
   const sameYear = d.getFullYear() === today.getFullYear();
