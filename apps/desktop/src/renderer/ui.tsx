@@ -28,6 +28,19 @@ const PATHS = {
   warning: 'M12 4 2.8 19.5h18.4zM12 10v4.5M12 17h.01',
   edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
   pulse: 'M3 12h4l2.5-6 4 12 2.5-6H21',
+  plus: 'M12 5v14M5 12h14',
+  back: 'M15 5l-7 7 7 7',
+  bell: 'M6 16.5h12l-1.5-2.5V10a4.5 4.5 0 0 0-9 0v4zM10 19.5h4',
+  mute: 'M6 16.5h10.5M10 19.5h4M7.5 10a4.5 4.5 0 0 1 7.7-3.2M16.5 10.5V14l1.5 2.5M4 4l16 16',
+  pin: 'M9 4h6l-1 6 3 3H7l3-3zM12 13v7',
+  reply: 'M10 7 5 12l5 5M5 12h9a5 5 0 0 1 5 5v1',
+  smile: 'M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm-3.5-6.5c.8 1.4 2 2 3.5 2s2.7-.6 3.5-2M9 9.5h.01M15 9.5h.01',
+  copy: 'M8 8h11v12H8zM5 16V4h11',
+  trash: 'M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13',
+  at: 'M16 12a4 4 0 1 1-1.2-2.9M16 8v5.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.6 7.2',
+  send: 'M4.5 12 20 4.5 15.5 20l-3.5-6.5zM12 13.5l8-9',
+  chat: 'M4.5 5.5h15v10h-8l-4.5 4v-4h-2.5z',
+  grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 } as const;
 
 export type IconName = keyof typeof PATHS;

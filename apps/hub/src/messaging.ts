@@ -117,6 +117,7 @@ export class Messaging {
       id: c.id, kind: c.kind, name: c.name, topic: c.topic, private: !!c.private, everyone: !!c.everyone,
       createdBy: c.created_by, createdAt: c.created_at, members: this.members(c.id), lastMessage: this.preview(c.id),
       joined: !!m, unread, mentions, lastReadId: m?.last_read_id ?? null, muted: !!m?.muted,
+      reads: Object.fromEntries((this.db.prepare('SELECT user_id, last_read_id FROM conv_members WHERE conv_id = ?').all(c.id) as Array<{ user_id: string; last_read_id: string | null }>).map((r) => [r.user_id, r.last_read_id])),
     };
   }
 

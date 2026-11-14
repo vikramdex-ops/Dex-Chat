@@ -50,6 +50,10 @@
       {
         "from": "build/tray.png",
         "to": "tray.png"
+      },
+      {
+        "from": "build/badge.png",
+        "to": "badge.png"
       }
     ],
     "protocols": [

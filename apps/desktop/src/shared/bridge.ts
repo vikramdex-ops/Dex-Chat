@@ -88,7 +88,9 @@ export interface DexBridge {
   rescan(): Promise<void>;
   request<K extends OpName>(op: K, data?: Ops[K]['req']): Promise<Ops[K]['res']>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
-  notify(title: string, body: string): void;
+  notify(title: string, body: string, link?: string): void;
+  /** Unread attention count for the taskbar / dock badge. */
+  setBadge?(count: number): void;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   installUpdate(): Promise<void>;

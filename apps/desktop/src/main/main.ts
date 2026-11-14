@@ -80,6 +80,7 @@ function createWindow(startHidden: boolean): void {
   win.setMenuBarVisibility(false);
 
   win.once('ready-to-show', () => { if (!startHidden) win?.show(); });
+  win.on('focus', () => win?.flashFrame(false));
   win.on('close', (e) => {
     if (!quitting && controller?.settings.closeToTray) {
       e.preventDefault();
@@ -115,11 +116,28 @@ function routeDeepLink(url: string): void {
   win.webContents.send('app:deeplink', url);
 }
 
-function notify(title: string, body: string): void {
+const shownNotifications = new Set<Notification>();
+function notify(title: string, body: string, link?: string): void {
   if (!Notification.isSupported()) return;
   const n = new Notification({ title, body, icon: iconPath(), silent: false });
-  n.on('click', showWindow);
+  shownNotifications.add(n); // keep a reference so the click handler survives garbage collection
+  n.on('click', () => { showWindow(); if (link) routeDeepLink(link); });
+  n.on('close', () => shownNotifications.delete(n));
   n.show();
+}
+
+/** Taskbar overlay (Windows) / dock badge (macOS) for things that need you. */
+let badgeImage: Electron.NativeImage | null = null;
+function setBadge(count: number): void {
+  const n = Math.max(0, Math.floor(count));
+  if (process.platform === 'darwin') { app.dock?.setBadge(n ? String(n > 99 ? '99+' : n) : ''); return; }
+  app.setBadgeCount(n);
+  if (win && isWin) {
+    badgeImage ??= nativeImage.createFromPath(resource('badge.png'));
+    win.setOverlayIcon(n ? badgeImage : null, n ? `${n} need you` : '');
+    if (n && !win.isFocused()) win.flashFrame(true);
+  }
+  tray?.setToolTip(n ? `Dexterity Connect — ${n} need you` : 'Dexterity Connect');
 }
 
 function buildTray(): void {
@@ -187,9 +205,12 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('update:download', () => updater?.download());
   ipcMain.handle('update:install', () => { updater?.install(true); });
   ipcMain.handle('update:dismissWhatsNew', () => updater?.dismissWhatsNew());
-  ipcMain.on('app:notify', (_e, title: unknown, body: unknown) => {
-    if (typeof title === 'string' && typeof body === 'string') notify(title.slice(0, 120), body.slice(0, 400));
+  ipcMain.on('app:notify', (_e, title: unknown, body: unknown, link: unknown) => {
+    if (typeof title === 'string' && typeof body === 'string') {
+      notify(title.slice(0, 120), body.slice(0, 400), typeof link === 'string' && link.startsWith(`${PROTOCOL}://`) ? link : undefined);
+    }
   });
+  ipcMain.on('app:badge', (_e, count: unknown) => { if (typeof count === 'number') setBadge(count); });
 
   c.on('state', (s) => win?.webContents.send('app:state', s));
   c.on('hub-event', (name: string, data: unknown) => {

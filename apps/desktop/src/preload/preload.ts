@@ -22,7 +22,8 @@ const bridge: DexBridge = {
     return r.data as never;
   },
   setSettings: (patch) => ipcRenderer.invoke('app:setSettings', patch),
-  notify: (title, body) => ipcRenderer.send('app:notify', title, body),
+  notify: (title, body, link) => ipcRenderer.send('app:notify', title, body, link),
+  setBadge: (count) => ipcRenderer.send('app:badge', count),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

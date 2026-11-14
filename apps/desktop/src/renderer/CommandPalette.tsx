@@ -4,7 +4,7 @@ import type { PublicUser } from '@dex/core';
 import { Avatar, Icon } from './ui.tsx';
 import type { IconName } from './ui.tsx';
 
-interface Command { id: string; label: string; icon: IconName; run: () => void }
+interface Command { id: string; label: string; icon: IconName; run: () => void; hint?: string }
 
 export function CommandPalette({ users, online, commands, onClose, onPerson }: {
   users: PublicUser[];
@@ -28,7 +28,8 @@ export function CommandPalette({ users, online, commands, onClose, onPerson }: {
     const cmds = commands
       .filter((c) => !s || c.label.toLowerCase().includes(s))
       .map((c) => ({ kind: 'command' as const, id: c.id, command: c }));
-    return s ? [...people, ...cmds] : [...cmds, ...people];
+    return s ? [...cmds.filter((c) => c.command.hint), ...people, ...cmds.filter((c) => !c.command.hint)].slice(0, 14)
+      : [...cmds.filter((c) => !c.command.hint), ...people.slice(0, 5)];
   }, [q, users, online, commands]);
 
   useEffect(() => { setIndex(0); }, [q]);
@@ -48,7 +49,7 @@ export function CommandPalette({ users, online, commands, onClose, onPerson }: {
           <input
             ref={input}
             value={q}
-            placeholder="Find a person or a command"
+            placeholder="Find a person, a conversation or a command"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(results.length - 1, i + 1)); }
@@ -75,7 +76,7 @@ export function CommandPalette({ users, online, commands, onClose, onPerson }: {
                 <>
                   <span className="pal-icon"><Icon name={r.command.icon} size={16} /></span>
                   <span className="pal-main">{r.command.label}</span>
-                  <span className="pal-meta">Command</span>
+                  <span className="pal-meta">{r.command.hint ?? 'Command'}</span>
                 </>
               )}
             </li>

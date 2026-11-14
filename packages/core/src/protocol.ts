@@ -94,6 +94,8 @@ export interface Conversation {
   mentions: number;
   lastReadId: string | null;
   muted: boolean;
+  /** Each member's last read message id (read receipts). */
+  reads: Record<string, string | null>;
 }
 
 export interface Message {

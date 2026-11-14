@@ -14,8 +14,11 @@ import { Home } from './views/Home.tsx';
 import { People } from './views/People.tsx';
 import { Admin } from './views/Admin.tsx';
 import { SettingsView } from './views/Settings.tsx';
+import { ChatView } from './chat/ChatView.tsx';
+import { addConversation, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
+import { convTitle } from './chat/Switchboard.tsx';
 
-export type Lens = 'pulse' | 'directory';
+export type Lens = 'pulse' | 'direct' | 'spaces' | 'directory';
 export type SheetName = 'preferences' | 'control' | null;
 /** Kept for older call sites: a section is a lens or a sheet. */
 export type Section = Lens | 'admin' | 'settings' | 'home' | 'people';
@@ -67,10 +70,28 @@ export function App() {
 
 const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'pulse', label: 'Pulse', icon: 'pulse' },
+  { id: 'direct', label: 'Direct', icon: 'chat' },
+  { id: 'spaces', label: 'Spaces', icon: 'grid' },
   { id: 'directory', label: 'Directory', icon: 'people' },
 ];
 
+/** Badges on lenses: amber count of mentions, teal dot for unread. */
+function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
+  const conversations = useChat((s) => s.conversations);
+  const out: Record<Lens, { mentions: number; unread: boolean }> = {
+    pulse: { mentions: 0, unread: false }, direct: { mentions: 0, unread: false }, spaces: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false },
+  };
+  for (const c of conversations.values()) {
+    const k: Lens = c.kind === 'space' ? 'spaces' : 'direct';
+    // in Direct conversations every message is meant for you
+    out[k].mentions += c.kind === 'direct' && !c.muted ? c.unread : c.mentions;
+    if (c.unread && !c.muted) out[k].unread = true;
+  }
+  return out;
+}
+
 function LensBar({ lens, setLens }: { lens: Lens; setLens: (l: Lens) => void }) {
+  const badges = useLensBadges();
   const refs = useRef(new Map<Lens, HTMLButtonElement>());
   const [bar, setBar] = useState({ left: 0, width: 0 });
   useLayoutEffect(() => {
@@ -83,6 +104,7 @@ function LensBar({ lens, setLens }: { lens: Lens; setLens: (l: Lens) => void }) 
         <button key={l.id} ref={(el) => { if (el) refs.current.set(l.id, el); }} className="lens"
           aria-current={lens === l.id ? 'page' : undefined} title={`${l.label} (Ctrl+${i + 1})`} onClick={() => setLens(l.id)}>
           <Icon name={l.icon} size={17} />{l.label}
+          {badges[l.id].mentions > 0 ? <span className="badge">{badges[l.id].mentions}</span> : badges[l.id].unread ? <span className="sb-dot" /> : null}
         </button>
       ))}
       <span className="lens-ink" style={{ transform: `translateX(${bar.left}px)`, width: bar.width }} />
@@ -98,6 +120,31 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const [query, setQuery] = useState('');
   const [focusUser, setFocusUser] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [openDirect, setOpenDirect] = useState<string | null>(null);
+  const [openSpace, setOpenSpace] = useState<string | null>(null);
+  const conversations = useChat((s) => s.conversations);
+  const usersRef = useRef(session.users);
+  usersRef.current = session.users;
+
+  // messaging: load on sign-in, reload after reconnecting
+  useEffect(() => { loadDrafts(); }, []);
+  useEffect(() => {
+    if (state.phase !== 'ready') return;
+    void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
+  }, [state.phase, session.me.id]);
+
+  const openConversation = (id: string, kind: 'direct' | 'space') => {
+    if (kind === 'space') { setOpenSpace(id); setLens('spaces'); } else { setOpenDirect(id); setLens('direct'); }
+    setSheet(null);
+  };
+  const messagePerson = async (userId: string) => {
+    if (userId === session.me.id) return;
+    try {
+      const c = await window.dex.request('conv.create', { kind: 'direct', members: [userId] });
+      addConversation(c);
+      openConversation(c.id, 'direct');
+    } catch { /* offline */ }
+  };
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
   const live = state.phase === 'ready';
   const online = new Set(session.online);
@@ -137,8 +184,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     if (target === 'people' || target === 'directory') { setLens('directory'); if (m[2]) setFocusUser(m[2]); }
     else if (target === 'admin' && isAdmin) setSheet('control');
     else if (target === 'settings') setSheet('preferences');
+    else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
     else setLens('pulse');
-  }), [isAdmin]);
+  }), [isAdmin, conversations]);
 
   const go = (s: Section) => {
     if (s === 'admin') setSheet('control');
@@ -152,13 +200,19 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       ? { warn: true, text: `Reconnecting${state.retryInMs ? ` in ${Math.ceil(state.retryInMs / 1000)}s` : '…'}` }
       : { warn: true, text: 'Connecting…' };
 
+  const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
   const commands = useMemo(() => [
+    ...[...conversations.values()].filter((c) => c.joined).map((c) => ({
+      id: `conv-${c.id}`, label: convTitle(c, users, session.me.id), icon: (c.kind === 'space' ? 'grid' : 'chat') as IconName,
+      hint: c.kind === 'space' ? 'Space' : 'Direct', run: () => openConversation(c.id, c.kind),
+    })),
+    { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'people' as IconName, run: () => setLens('directory') },
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
     { id: 'updates', label: 'Check for updates', icon: 'refresh' as IconName, run: () => void window.dex.checkForUpdates() },
-  ], [isAdmin]);
+  ], [isAdmin, conversations, users, session.me.id]);
 
   return (
     <div className="frame">
@@ -202,10 +256,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       </header>
 
-      <main className="stage">
+      <main className={`stage${lens === 'direct' || lens === 'spaces' ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
-        {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} />}
-        {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} />}
+        {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} />}
+        {lens === 'direct' && <ChatView kind="direct" state={state} session={session} openId={openDirect} setOpenId={setOpenDirect} />}
+        {lens === 'spaces' && <ChatView kind="space" state={state} session={session} openId={openSpace} setOpenId={setOpenSpace} />}
+        {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} onMessage={(id) => void messagePerson(id)} />}
       </main>
 
       <nav className="lens-dock" aria-label="Sections">
@@ -237,7 +293,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           online={online}
           commands={commands}
           onClose={() => setPalette(false)}
-          onPerson={(id) => { setLens('directory'); setFocusUser(id); setQuery(''); setSheet(null); }}
+          onPerson={(id) => { if (id === session.me.id) { setLens('directory'); setFocusUser(id); } else void messagePerson(id); }}
         />
       )}
       <RequiredUpdate state={state} />

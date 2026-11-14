@@ -6,8 +6,8 @@ import { Avatar, Icon, ROLE_LABEL, Segmented } from '../ui.tsx';
 
 type Filter = 'all' | 'online' | 'admins';
 
-export function People({ state, session, query, setQuery, focusUser }: {
-  state: AppState; session: Session; query: string; setQuery: (q: string) => void; focusUser: string | null;
+export function People({ state, session, query, setQuery, focusUser, onMessage }: {
+  state: AppState; session: Session; query: string; setQuery: (q: string) => void; focusUser: string | null; onMessage: (userId: string) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const online = useMemo(() => new Set(session.online), [session.online]);
@@ -57,6 +57,11 @@ export function People({ state, session, query, setQuery, focusUser }: {
                 <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
                 <div className="line faint mono selectable">{u.account}</div>
                 {u.statusText && <div className="status">{u.statusText}</div>}
+                {u.id !== session.me.id && (
+                  <button className="btn person-msg" onClick={() => onMessage(u.id)} disabled={state.phase !== 'ready'}>
+                    <Icon name="chat" size={15} />Message
+                  </button>
+                )}
               </div>
             </div>
           ))}
