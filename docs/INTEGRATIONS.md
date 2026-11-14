@@ -130,9 +130,9 @@ Up to 8 lines of 200 characters. Revoking the integration removes its widgets.
 | `dexconnect://desk`, `dexconnect://calendar`, `dexconnect://settings` | Those screens |
 
 Every one of these links, the tools' own links below, and paths on the office share are shown in
-messages as cards (see [Link cards](#5-link-cards-and-side-tracks-about-links)).
+messages as cards (see [Link cards](#5-link-cards-side-tracks-about-links-and-reaction-insights)).
 
-## 5. Link cards and side-tracks about links
+## 5. Link cards, side-tracks about links and reaction insights
 
 These are operations the apps call on the hub over their signed-in connection (like every other
 operation; there is no separate HTTP API). Types are in `packages/core/src/protocol.ts`.
@@ -200,6 +200,27 @@ the root for each conversation and link (`{ convId, urlHash, rootMessageId }`). 
 it anchors to the latest message in the conversation that holds the link, or posts a new message
 with the link as the person asking. In a Direct conversation the hub cannot read the messages, so
 the app passes the `messageId` the person started from. Members only.
+
+### `reactions.insights { messageId }` → `ReactionInsights`
+
+What a message's reactions show, for members of its conversation. Every reaction added or removed
+is kept with its time (`reaction_events`), from the moment the hub is updated (reactions from
+before count as added when they were made).
+
+- `distribution`: each emoji with its count and percentage;
+- `audience`: the conversation's members other than the author and integrations: how many
+  reacted, read it without reacting, have not read it, and `unknown` (their read receipts are
+  off). Read receipts are used as people share them: someone with their own receipts off gets
+  `receipts: false` and no read counts, as in Read by…; side-track replies have no receipts;
+- `timeline`: added, removed and cumulative reactions in up to 25 equal steps from the message;
+  `firstAt` and `lastAt`;
+- `byDepartment`: reactors per department (when the office has departments);
+- `announcement`: for messages in the Office space or a Space where only moderators post, the
+  share of members who reacted against the average of the office's other announcements in the
+  last 90 days;
+- `anonymous`: for an anonymous poll only counts are given (no departments, no read counts).
+
+Every answer carries `note: 'Reactions are not approvals'`, which the app shows with the numbers.
 
 ### Communication styles (in the app, no hub)
 

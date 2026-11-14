@@ -136,6 +136,8 @@ export class Messaging {
   /** The office policy: how long after sending an author may edit or delete (null: any time). */
   editWindowMs: () => number | null = () => null;
   dlpRules: () => DlpRule[] = () => [];
+  /** A reaction was added or removed (the hub keeps the history for reaction insights). */
+  onReaction: ((messageId: string, convId: string, userId: string, emoji: string, on: boolean) => void) | null = null;
   /** After a message is posted; nothing waits for it (link previews warm their cache). */
   afterSend: ((msg: Message, author: PublicUser) => void) | null = null;
 
@@ -1024,6 +1026,7 @@ export class Messaging {
         } else {
           this.db.prepare('DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?').run(msg.id, me.id, emoji);
         }
+        this.onReaction?.(msg.id, msg.conv_id, me.id, emoji, d.on === true);
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         return this.messageView(row);

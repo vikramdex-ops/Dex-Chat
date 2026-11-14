@@ -1033,6 +1033,41 @@ export interface LinkThread {
   created: boolean;
 }
 
+// ---------------------------------------------------------------- reaction insights
+/** Descriptive numbers about a message's reactions. Reactions are not approvals. */
+export interface ReactionInsights {
+  messageId: string;
+  convId: string;
+  note: 'Reactions are not approvals';
+  total: number;
+  /** Distinct people who reacted. */
+  people: number;
+  distribution: Array<{ emoji: string; count: number; percent: number }>;
+  /** Conversation members other than the author (integrations left out). */
+  audience: {
+    members: number;
+    reacted: number;
+    /** Read it (by read receipts) but did not react. */
+    seenNoReaction: number;
+    notSeen: number;
+    /** Read receipts off, or a side-track reply (receipts cover the main timeline only). */
+    unknown: number;
+    reactedPercent: number;
+    seenNoReactionPercent: number;
+    /** False when read receipts cannot be shown to this viewer (theirs are off) or do not apply. */
+    receipts: boolean;
+  };
+  timeline: { bucketMs: number; buckets: Array<{ start: number; added: number; removed: number; cumulative: number }> };
+  firstAt: number | null;
+  lastAt: number | null;
+  /** Reactors per department (null for anonymous polls, or when the office has no departments). */
+  byDepartment: Array<{ departmentId: string | null; name: string; members: number; reacted: number; percent: number }> | null;
+  /** Announcements (Spaces where only moderators post, and the Office space): this message against the office's recent ones. */
+  announcement: { responseRate: number; officeAverage: number | null; compared: number } | null;
+  /** The message is an anonymous poll: only counts are given. */
+  anonymous: boolean;
+}
+
 export interface Ops {
   /** A card for a link: internal links as the viewer may see them, web pages fetched by the hub (cached 24 h). */
   'links.preview': { req: { url: string }; res: LinkCard };
@@ -1040,4 +1075,6 @@ export interface Ops {
   'links.discuss': { req: { url: string; convId: string; messageId?: string }; res: LinkThread };
   'admin.links.get': { req: void; res: LinkSettings };
   'admin.links.set': { req: Partial<LinkSettings>; res: LinkSettings };
+  /** Who reacted how, and when; members of the conversation only. */
+  'reactions.insights': { req: { messageId: string }; res: ReactionInsights };
 }
