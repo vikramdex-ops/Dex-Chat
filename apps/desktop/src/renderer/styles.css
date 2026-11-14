@@ -1652,3 +1652,19 @@ body.resizing { user-select: none; cursor: col-resize; }
 .sb-filter { display: flex; gap: 4px; align-items: center; }
 .sb-filter .input { flex: 1; min-width: 0; }
 .sb-only.on { color: var(--accent); background: var(--accent-soft); }
+
+/* viewer and markup */
+.lb-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; }
+.lb-stage img { max-width: 92vw; max-height: calc(100vh - 120px); transition: transform 120ms var(--ease); transform-origin: center; user-select: none; }
+.lb-tools { display: flex; align-items: center; gap: 4px; margin-right: 8px; }
+.lb-tools .icon-btn { color: inherit; }
+.lb-zoom { min-width: 54px; height: 30px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, .1); color: inherit; font: 12px var(--font-mono); cursor: pointer; }
+.markup { flex: 1; min-height: 0; display: grid; grid-template-rows: auto 1fr; gap: 8px; padding: 0 16px 16px; }
+.markup-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.markup-colors { display: flex; gap: 4px; margin: 0 6px; }
+.swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .5); cursor: pointer; }
+.swatch.on { outline: 2px solid #fff; outline-offset: 2px; }
+.markup-stage { min-height: 0; display: grid; place-items: center; overflow: auto; }
+.markup-stage canvas { max-width: 100%; max-height: calc(100vh - 150px); cursor: crosshair; touch-action: none; border-radius: 6px; }
+.voice-rate { flex: none; height: 24px; min-width: 38px; border: 1px solid var(--stroke-strong); border-radius: 12px; background: none; font: 11px var(--font-mono); color: var(--text-2); cursor: pointer; }
+.md-preview { max-height: 70vh; overflow: auto; width: 100%; }

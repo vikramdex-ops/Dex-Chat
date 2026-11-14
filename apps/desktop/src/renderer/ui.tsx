@@ -35,6 +35,8 @@ const PATHS = {
   doc: 'M6 3.5h8l4 4V20.5H6zM14 3.5v4h4M9 12h6M9 15.5h6',
   sheet: 'M4.5 4.5h15v15h-15zM4.5 9.5h15M4.5 14.5h15M10 4.5v15',
   drawing: 'M4 20 20 4M4 20V10M4 20h10M14 4h6v6M8 16l2 2',
+  minus: 'M5 12h14',
+  rotate: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v3.5H16',
   archive: 'M4 7.5h16v12H4zM3 4.5h18v3H3zM10 11.5h4',
   play: 'M7 5v14l11-7z',
   open: 'M14 4.5h5.5V10M19.5 4.5 11 13M17 13.5V19.5H4.5V7H10',

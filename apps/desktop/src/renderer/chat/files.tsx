@@ -61,6 +61,7 @@ export function FileActions({ f }: { f: FileInfo }) {
   return (
     <span className="file-actions">
       <button className="btn" disabled={!!busy} onClick={() => void run('open')}>{busy === 'open' ? <span className="spinner" /> : <Icon name="open" size={14} />}Open</button>
+      {/\.(md|markdown)$/i.test(f.name) && f.size < 512 * 1024 && <button className="btn ghost" onClick={() => window.dispatchEvent(new CustomEvent('dex-mdpreview', { detail: f }))}>Preview</button>}
       {window.dex.hasSlate && /\.(txt|csv|log|md|json|xml|ini|cfg|pcf|lst|tsv|sql|py|bat|ps1)$/i.test(f.name) && (
         <button className="btn ghost" disabled={!!busy} title="Open in Slate" onClick={() => void window.dex.openInSlate!(f.id, f.name).catch((e: Error) => toast(e.message, true))}>Slate</button>
       )}

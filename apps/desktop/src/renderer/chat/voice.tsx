@@ -6,7 +6,7 @@ import { Icon, useToast } from '../ui.tsx';
 import { useFileSrc } from './files.tsx';
 import { sendMessage } from './store.ts';
 
-const MAX_MS = 5 * 60_000;
+const MAX_MS = 15 * 60_000;
 /** "12s" or "1m05s": file names cannot contain a colon on Windows. */
 const tag = (ms: number) => { const s = Math.max(1, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s` : `${s}s`; };
 const mmss = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -112,6 +112,7 @@ export function VoicePlayer({ f }: { f: FileInfo }) {
   const src = useFileSrc(f);
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
+  const [rate, setRate] = useState(1);
   const [dur, setDur] = useState(() => { const m = f.name.match(/(?:(\d+)m)?(\d+)s\.\w+$/); return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : 0; });
   const toggle = () => {
     const a = audio.current;
@@ -134,8 +135,9 @@ export function VoicePlayer({ f }: { f: FileInfo }) {
         {heights.map((h, i) => <i key={i} className={i / bars < progress ? 'on' : ''} style={{ height: `${h}%` }} />)}
       </span>
       <span className="mono voice-time">{mmss((playing || pos ? pos : dur) * 1000)}</span>
+      <button className="voice-rate" title="Playback speed" onClick={() => { const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; setRate(next); if (audio.current) audio.current.playbackRate = next; }}>{rate}×</button>
       <audio ref={audio} src={src} preload="none"
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setPos(0); }}
+        onPlay={(e) => { e.currentTarget.playbackRate = rate; setPlaying(true); }} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setPos(0); }}
         onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => { if (Number.isFinite(e.currentTarget.duration)) setDur(e.currentTarget.duration); }} />
     </div>

@@ -8,7 +8,7 @@ import { sendMessage } from './store.ts';
 import { useFileSrc } from './files.tsx';
 import { policyNow } from '../policy.ts';
 
-const MAX_MS = 5 * 60_000;
+const MAX_MS = 15 * 60_000;
 const tag = (ms: number) => { const s = Math.max(1, Math.round(ms / 1000)); return s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s` : `${s}s`; };
 const mmss = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 

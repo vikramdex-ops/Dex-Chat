@@ -18,6 +18,7 @@ import { FormBuilder, FormCard } from './forms.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
+import { Viewer } from './Viewer.tsx';
 import { EmojiPicker } from './EmojiPicker.tsx';
 import { quickReactions } from './quick.ts';
 import { EmojiGlyph, EmojiImg, useCustomEmoji } from '../emoji.tsx';
@@ -324,7 +325,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       )}
       {board && <Suspense fallback={null}><WhiteboardStage board={board} convId={convId} onClose={() => setBoard(null)} /></Suspense>}
       {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
-      {viewer && <Lightbox file={viewer.file} all={viewer.all} onClose={() => setViewer(null)} />}
+      {viewer && <Viewer file={viewer.file} all={viewer.all} convId={convId} onClose={() => setViewer(null)} />}
       {verify && e2e && (
         <Dialog title={e2e.encrypted ? 'End-to-end encrypted' : 'Not encrypted yet'} onClose={() => setVerify(false)} narrow>
           {e2e.encrypted ? (

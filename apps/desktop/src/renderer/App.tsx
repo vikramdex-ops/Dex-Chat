@@ -29,6 +29,7 @@ import { WorkClock } from './work/WorkUi.tsx';
 import { startCalendar } from './calendar/store.ts';
 import { ShareDialog, parseShare } from './views/ShareDialog.tsx';
 import { ShortcutsSheet } from './views/Shortcuts.tsx';
+import { MdPreview } from './chat/MdPreview.tsx';
 import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
@@ -447,6 +448,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         />
       )}
       <RecordingReady />
+      <MdPreview users={users} meId={session.me.id} />
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
