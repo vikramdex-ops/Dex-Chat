@@ -68,7 +68,7 @@ or from the hub's mirror when they have no internet.
 
 1. **Hub PC:** extract the hub zip to where it should live (for example `D:\Dexterity Connect Hub`) and double-click `Install-Hub.cmd`. It installs the service, opens its two firewall ports and starts it.
 2. **Your PC:** install Dexterity Connect, open it, and click **Request access**. As the first person, you become the owner.
-3. **Everyone else:** they install and open the app, then approve them from **Admin → Approvals**.
+3. **Everyone else:** they install and open the app, then approve them in **Control room → Approvals** (click your tile at the top right).
 
 ## Development
 
