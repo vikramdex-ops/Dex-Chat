@@ -354,7 +354,18 @@ export class Messaging {
       inReplyTo: r.reply_to ? (() => { const p = this.message(r.reply_to!); return p ? { messageId: p.id, authorId: p.author_id } : null; })() : null,
       poll: r.deleted ? null : this.pollView(r.id, viewer),
       form: r.deleted ? null : this.formView(r.id, viewer),
+      ...(r.deleted || !this.extraView ? {} : this.extraView(r)),
     };
+  }
+
+  /** Cards other parts of the hub attach to messages (flows, tools), looked up by the message. */
+  extraView: ((r: MsgRow) => Pick<Message, 'botflow' | 'miniapp'>) | null = null;
+  /** Told about every new message (after it is delivered): integrations answer people this way. */
+  onPosted: ((author: PublicUser, convId: string, msg: Message) => void) | null = null;
+  /** Send everyone in the conversation the message again (its card changed). */
+  refresh(messageId: string): void {
+    const row = this.message(messageId);
+    if (row) this.pushMessage('msg.updated', row);
   }
 
   /** Find the conversation for a message the viewer can see. */
@@ -1186,7 +1197,9 @@ export class Messaging {
     if (!extra.forwarded) this.outOfOffice(c, me.id, (this.db.prepare('SELECT user_id FROM mentions WHERE message_id = ?').all(id) as Array<{ user_id: string }>).map((r) => r.user_id));
     if (this.afterSend) this.afterSend(this.messageView(row), me);
     this.observe?.({ kind: 'message.new', messageId: id, convId: c.id, authorId: me.id });
-    return this.messageView(row, me.id);
+    const view = this.messageView(row, me.id);
+    this.onPosted?.(me, c.id, view);
+    return view;
   }
 
   /** Add wrapped keys to sealed messages the caller can read (history for their new devices). */

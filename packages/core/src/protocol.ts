@@ -2,6 +2,8 @@
 // Every frame is one JSON object with a `t` discriminator.
 import type { FlowEvents, FlowOps } from './flows.ts';
 
+import type { BotEvents, BotOps, BotFlowCard, MiniAppView } from './bots.ts';
+
 export const PROTOCOL_VERSION = 1;
 export const APP_ID = 'dexconnect';
 export const DEFAULT_HUB_PORT = 47900;
@@ -362,6 +364,10 @@ export interface Message {
   system?: { kind: 'joined' | 'left' | 'added' | 'removed' | 'renamed' | 'away'; users: string[]; name?: string; until?: number } | null;
   poll: PollView | null;
   form: FormView | null;
+  /** An integration's interactive card (a step of a flow, Pick up where you left off…). */
+  botflow?: BotFlowCard | null;
+  /** A tool added to the conversation. */
+  miniapp?: MiniAppView | null;
   /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
   e2e?: 'ok' | 'unverified' | 'locked';
   /** Passed straight between PCs while the hub was off (posted to the hub once it is back). */
@@ -730,7 +736,7 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 }
 
 // Request/response operations available in a session.
-export interface Ops extends FlowOps {
+export interface Ops extends FlowOps, BotOps {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
   'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
@@ -763,7 +769,7 @@ export interface Ops extends FlowOps {
   'widgets.list': { req: void; res: Widget[] };
   'cmd.list': { req: void; res: SlashCommand[] };
   /** Run an integration's command; its reply is posted (or, if it asks, shown only to you). */
-  'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean } };
+  'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean; /** A conversation the app should open (a flow started there). */ open?: string } };
   /** Publish this device's encryption key (signed by its identity). */
   'e2e.publish': { req: { encKey: string; sig: string }; res: { ok: true } };
   /** Encryption keys of everyone's approved devices. */
@@ -995,7 +1001,7 @@ export const HASHTAG_RE = /(?<![\p{L}\p{N}&/#])#([\p{L}][\p{L}\p{N}_-]{1,48})/gu
 export const hashtags = (body: string): string[] => [...new Set([...body.matchAll(HASHTAG_RE)].map((m) => m[1].toLowerCase()))].slice(0, 20);
 
 // Server-pushed events.
-export interface Events extends FlowEvents {
+export interface Events extends FlowEvents, BotEvents {
   'presence': { userId: string; online: boolean; away?: boolean };
   'user.updated': PublicUser;
   'user.added': PublicUser;

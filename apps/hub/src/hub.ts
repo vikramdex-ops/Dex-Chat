@@ -39,6 +39,9 @@ import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import { Meetings } from './meetings.ts';
 import { Flows, FlowError } from './flows.ts';
+import { BotFlows, BotFlowsError } from './botflows.ts';
+import { BotFlowError } from '@dex/core/botflows';
+import { MiniApps, MiniAppError } from './miniapps.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 import { Links, LinkError } from './links.ts';
@@ -131,6 +134,8 @@ export class Hub {
   readonly links: Links;
   readonly reactionInsights: ReactionInsights;
   readonly flows: Flows;
+  readonly botflows: BotFlows;
+  readonly miniapps: MiniApps;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -205,6 +210,12 @@ export class Hub {
     });
     this.messaging.observe = (e) => this.flows.onEvent(e);
     this.messaging.keptTags = (id) => this.flows.tagsOf(id);
+    // conversations with integrations (flows, sessions) and tools in conversations
+    this.botflows = new BotFlows({ store: this.store, messaging: this.messaging, files: this.files, desk: this.desk, broadcast: (n, d) => this.emit(n, d), log: (l, m, e) => this.log(l, m, e) });
+    this.miniapps = new MiniApps({ store: this.store, messaging: this.messaging, files: this.files, deliver: (u, n, d) => this.deliver(u, n, d), broadcast: (n, d) => this.emit(n, d) });
+    this.messaging.extraView = (r) => ({ ...this.botflows.view(r), ...this.miniapps.view(r) });
+    this.messaging.onPosted = (author, convId, msg) => this.botflows.onPosted(author, convId, msg);
+    this.commands.extra = { list: () => this.botflows.commandList(), run: (c, me, convId) => this.botflows.runCommand(c, me, convId) };
     this.relay = new Relay({
       // the address PCs use to reach this hub: the one it is bound to, or its office address
       announced: () => (this.opts.host && this.opts.host !== '0.0.0.0' ? this.opts.host : (lanAddresses(this.port)[0] ?? '127.0.0.1:0').split(':')[0]),
@@ -282,6 +293,7 @@ export class Hub {
       try { this.messaging.tick(); } catch (err) { this.log('error', 'mute timer failed', { error: (err as Error).message }); }
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
+      try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -353,6 +365,7 @@ export class Hub {
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
+    if (/^\/api\/(flows|sessions)(\/|\?|$)/.test(req.url ?? '')) { void this.botflows.route(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -766,6 +779,7 @@ export class Hub {
     this.store.touchDevice(device.id);
     this.send(conn, { t: 'ready', session: this.sessionFor(conn) });
     if (!wasOnline || this.isAway(device.userId) === false) this.announcePresence(device.userId, undefined);
+    try { this.botflows.onReady(device.userId); } catch (err) { this.log('warn', 'resume offer failed', { error: (err as Error).message }); }
   }
 
   private sessionFor(conn: Conn): Session {
@@ -1131,6 +1145,24 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof FlowError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(botflow\.|admin\.botflows\.)/.test(op)) {
+          try {
+            const result = await this.botflows.handle(op, this.store.userById(conn.userId!)!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof BotFlowsError || err instanceof BotFlowError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(miniapp\.|admin\.miniapps\.)/.test(op)) {
+          try {
+            const result = this.miniapps.handle(op, this.store.userById(conn.userId!)!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof MiniAppError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }

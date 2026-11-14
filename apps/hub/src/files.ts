@@ -86,6 +86,13 @@ export class FileStore {
     return r ? toFileInfo(r) : null;
   }
 
+  /** A stored file's content (up to `max` bytes; null when missing or larger). */
+  read(id: string, max: number): Buffer | null {
+    const r = this.db.prepare('SELECT sha256, size FROM files WHERE id = ?').get(id) as { sha256: string; size: number } | undefined;
+    if (!r || r.size > max) return null;
+    try { return fs.readFileSync(this.blobPath(r.sha256)); } catch { return null; }
+  }
+
   /** May this person read the file? Uploaders always can; others through a conversation they are in. */
   /**
    * Text found in an image, sent by the PC that uploaded it. Not for images in Direct
