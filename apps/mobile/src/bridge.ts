@@ -98,6 +98,8 @@ interface MobileConfig {
   settings: Settings;
   lastRunVersion?: string;
   pendingNotes?: { version: string; notes: string } | null;
+  /** Other offices this phone belongs to. */
+  otherHubs?: HubTarget[];
 }
 
 const DEFAULTS: MobileConfig = {
@@ -238,6 +240,14 @@ class MobileApp {
     return p;
   }
 
+  /** Remember the current office among the others. */
+  private stashOffice(): void {
+    const cur = this.config.hub;
+    if (!cur?.hubId) return;
+    const name = this.session.state.kind === 'ready' ? this.session.state.session.hub.name : cur.name;
+    this.config.otherHubs = [{ ...cur, name }, ...(this.config.otherHubs ?? []).filter((h) => h.hubId !== cur.hubId)].slice(0, 8);
+  }
+
   private newSession(): HubSession {
     const secret = unb64(this.identity.secret);
     const s = new HubSession({
@@ -331,6 +341,7 @@ class MobileApp {
       deviceId: this.identity.deviceId,
       hubs: [...this.hubs.values()],
       hub: hub ? { id: hub.hubId, name: hub.name, host: hub.host, port: hub.port, fingerprint: hub.fp, gateway: hub.remote?.url ?? null } : null,
+      offices: (this.config.otherHubs ?? []).filter((h) => h.hubId).map((h) => ({ id: h.hubId!, name: h.name ?? h.host })),
       via: cs.kind === 'ready' ? cs.via ?? 'lan' : undefined,
       session: cs.kind === 'ready' ? cs.session : null,
       pendingPosition: cs.kind === 'pending' ? cs.position : 0,
@@ -475,6 +486,28 @@ class MobileApp {
         await this.save();
         this.session.setAccount(this.account);
         this.session.connect(target);
+      },
+      addOffice: async () => {
+        this.stashOffice();
+        this.session.disconnect();
+        this.config.hub = null;
+        await this.save();
+        this.push();
+      },
+      switchOffice: async (hubId: string) => {
+        const next = (this.config.otherHubs ?? []).find((h) => h.hubId === hubId);
+        if (!next) throw new Error('That office is not on this phone any more.');
+        this.stashOffice();
+        this.config.otherHubs = (this.config.otherHubs ?? []).filter((h) => h.hubId !== hubId);
+        this.config.hub = next;
+        await this.save();
+        this.e2e.reset();
+        this.session.connect(next);
+      },
+      removeOffice: async (hubId: string) => {
+        this.config.otherHubs = (this.config.otherHubs ?? []).filter((h) => h.hubId !== hubId);
+        await this.save();
+        this.push();
       },
       forgetHub: async () => {
         this.session.disconnect();

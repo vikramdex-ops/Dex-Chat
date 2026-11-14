@@ -45,6 +45,8 @@ export type Phase =
   | 'mismatch';    // hub certificate changed
 
 export interface AppState {
+  /** Other offices this device belongs to (switch in the tile menu). */
+  offices?: Array<{ id: string; name: string }>;
   phase: Phase;
   account: WindowsAccount;
   /** This PC's device id; its first 8 characters are the code admins see when approving */
@@ -119,6 +121,10 @@ export interface DexBridge {
   join(req: JoinRequest): Promise<void>;
   /** Text on the clipboard (to pick up a pairing code copied from the download page). */
   readClipboard?(): Promise<string>;
+  /** Several offices: join another (keeps this one), switch, or forget one. */
+  addOffice?(): Promise<void>;
+  switchOffice?(hubId: string): Promise<void>;
+  removeOffice?(hubId: string): Promise<void>;
   forgetHub(): Promise<void>;
   rescan(): Promise<void>;
   request<K extends OpName>(op: K, data?: Ops[K]['req']): Promise<Ops[K]['res']>;

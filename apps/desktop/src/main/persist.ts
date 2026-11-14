@@ -21,6 +21,8 @@ export interface Config {
   pendingNotes?: { version: string; notes: string } | null;
   /** The office policy allows PC-to-PC messages while the hub is off (remembered for then). */
   peerFallback?: boolean;
+  /** Other offices (hubs) this device belongs to, to switch to. */
+  otherHubs?: HubTarget[];
 }
 
 const DEFAULT_CONFIG: Config = {

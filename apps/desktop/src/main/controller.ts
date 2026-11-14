@@ -107,6 +107,7 @@ export class Controller extends EventEmitter {
         : cs.kind === 'identity-mismatch' ? `The hub presented a different certificate (${cs.actual.slice(0, 23)}…) than the one this PC trusts.`
         : cs.kind === 'offline' ? cs.error : null,
       settings: this.config.settings,
+      offices: (this.config.otherHubs ?? []).filter((h) => h.hubId).map((h) => ({ id: h.hubId!, name: h.name ?? h.host })),
       update: this.meta.update(),
       platform: this.meta.platform,
       version: this.meta.version,
@@ -235,6 +236,38 @@ export class Controller extends EventEmitter {
     this.invite = req.invite?.trim().toUpperCase() ?? '';
     this.persist();
     this.connect(target);
+  }
+
+  /** Keep this office and go to the welcome screen to join another. */
+  addOffice(): void {
+    this.stash();
+    this.forgetHub();
+  }
+
+  /** Move to another office this device belongs to. */
+  switchOffice(hubId: string): void {
+    const next = (this.config.otherHubs ?? []).find((h) => h.hubId === hubId);
+    if (!next) throw new Error('That office is not on this device any more.');
+    this.stash();
+    this.config.otherHubs = (this.config.otherHubs ?? []).filter((h) => h.hubId !== hubId);
+    this.config.hub = next;
+    this.persist();
+    this.e2e.reset();
+    this.connect(next);
+  }
+
+  removeOffice(hubId: string): void {
+    this.config.otherHubs = (this.config.otherHubs ?? []).filter((h) => h.hubId !== hubId);
+    this.persist();
+    this.push();
+  }
+
+  /** Remember the current office in the list of others. */
+  private stash(): void {
+    const cur = this.config.hub;
+    if (!cur?.hubId) return;
+    const name = this.client?.state.kind === 'ready' ? this.client.state.session.hub.name : cur.name;
+    this.config.otherHubs = [{ ...cur, name }, ...(this.config.otherHubs ?? []).filter((h) => h.hubId !== cur.hubId)].slice(0, 8);
   }
 
   forgetHub(): void {

@@ -213,6 +213,9 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('app:join', (_e, req: JoinRequest) => c.join(req));
   ipcMain.handle('app:clipboard', async () => String(await clipboard.readText()).slice(0, 4000));
   ipcMain.handle('app:forgetHub', () => c.forgetHub());
+  ipcMain.handle('app:addOffice', () => c.addOffice());
+  ipcMain.handle('app:switchOffice', (_e, id: string) => c.switchOffice(String(id)));
+  ipcMain.handle('app:removeOffice', (_e, id: string) => c.removeOffice(String(id)));
   ipcMain.handle('app:rescan', () => c.rescan());
   ipcMain.handle('app:setSettings', (_e, patch: Partial<Settings>) => {
     const safe: Partial<Settings> = {};

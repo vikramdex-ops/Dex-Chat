@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { parsePairCode, parseSetupCode } from '@dex/core/remote';
 import { QrScanner } from './Pairing.tsx';
+import './onboarding.css';
 import type { AppState } from '../../shared/bridge.ts';
 import logo from '../app-icon.svg';
 import { Icon, deviceCode } from '../ui.tsx';
@@ -20,6 +21,19 @@ export function Onboarding({ state }: { state: AppState }) {
           {state.phase === 'mismatch' && <Problem title="This hub's identity changed" text={`${state.error ?? ''} This can happen if the hub was reinstalled — or if something is impersonating it. Check with your administrator before connecting again.`} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Joining another office: a way back to the ones this device already belongs to. */
+function BackToOffices({ state }: { state: AppState }) {
+  if (!state.offices?.length || !window.dex.switchOffice) return null;
+  return (
+    <div className="office-back">
+      <span className="label">Your other offices</span>
+      {state.offices.map((o) => (
+        <button key={o.id} type="button" className="btn ghost sm" onClick={() => void window.dex.switchOffice!(o.id).then(() => location.reload())}><Icon name="back" size={14} />Back to {o.name}</button>
+      ))}
     </div>
   );
 }
@@ -117,6 +131,7 @@ function Welcome({ state }: { state: AppState }) {
           </div>
         )}
         {error && <div className="error-box">{error}</div>}
+        <BackToOffices state={state} />
         <button className="btn primary lg" type="submit" disabled={busy || !(pair || (legacy && name.trim()))}>
           {busy ? <span className="spinner" /> : null}{legacy ? 'Request access' : `Pair this ${deviceWord}`}
         </button>
@@ -221,6 +236,7 @@ function Welcome({ state }: { state: AppState }) {
       )}
 
       {error && <div className="error-box">{error}</div>}
+      <BackToOffices state={state} />
 
       <button className="btn primary lg" type="submit" disabled={!canOffice || (guest && !/^DEX-?[A-Z2-9]{5}-?[A-Z2-9]{5}$/.test(invite.trim()))}>
         {busy ? <span className="spinner" /> : null}

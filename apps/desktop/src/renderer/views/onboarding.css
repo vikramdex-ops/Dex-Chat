@@ -1,0 +1,3 @@
+/* Welcome: a way back to the offices this device already belongs to */
+.office-back { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 12px; border: 1px dashed var(--stroke); border-radius: 10px; }
+.office-back .label { width: 100%; }
