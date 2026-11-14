@@ -958,3 +958,86 @@ export interface Events {
   'sched.removed': { id: string; sentMessageId: string | null };
 }
 export type EventName = keyof Events;
+
+// ---------------------------------------------------------------- link cards
+/** What a link points at. 'restricted' hides everything about something the viewer cannot see. */
+export type LinkCardKind =
+  | 'message' | 'conversation' | 'person' | 'file' | 'event' | 'task'
+  | 'search' | 'workbook' | 'project' | 'component' | 'calculator' | 'tool'
+  | 'folder' | 'path'
+  | 'web' | 'video' | 'repo' | 'issue' | 'pull' | 'pdf' | 'image'
+  | 'restricted' | 'unavailable';
+
+export interface LinkAction {
+  kind: 'open' | 'reply' | 'join' | 'copy-path' | 'open-in-tool';
+  label: string;
+  /** What to open, copy or join: a dexconnect:// link, a tool link, a path or a web address. */
+  target: string;
+  /** For open-in-tool: the tool ('sleuth', 'sheets', 'project-opener', 'datum', 'folder', 'browser'). */
+  tool?: string;
+}
+
+export interface LinkCardMeta {
+  key: 'author' | 'updated' | 'size' | 'members' | 'status' | 'type' | 'site' | 'path' | 'when' | 'dimensions' | 'tool' | 'department' | 'replies' | 'location';
+  label: string;
+  value: string;
+  /** For author: the person's id; for updated/when: the time (ms); for size: bytes. */
+  ref?: string | number;
+}
+
+export interface LinkCard {
+  url: string;
+  kind: LinkCardKind;
+  title: string | null;
+  subtitle: string | null;
+  meta: LinkCardMeta[];
+  preview: {
+    /** Message text or page description (plain text, at most 300 characters). */
+    excerpt?: string;
+    /** A file on the hub to show as a thumbnail (images). */
+    fileId?: string;
+    /** A picture on the web (og:image, a YouTube thumbnail, the image itself). */
+    imageUrl?: string;
+    favicon?: string;
+  } | null;
+  actions: LinkAction[];
+  /** Ids behind an internal card, for the app to act on. */
+  ref?: { convId?: string; messageId?: string; userId?: string; fileId?: string; eventId?: string; taskId?: string };
+  /** Web pages: 'ok', or why there is no preview. */
+  status?: 'ok' | 'disabled' | 'blocked' | 'failed';
+  /** Why a preview failed or was blocked (plain English). */
+  reason?: string;
+  fetchedAt: number;
+  /** Served from the hub's cache (web pages only). */
+  cached?: boolean;
+}
+
+/** Administrators: web previews and which office-network hosts the hub may fetch. */
+export interface LinkSettings {
+  /** The hub fetches web pages to preview them (members). */
+  externalPreviews: boolean;
+  /** The same for guests (off by default: nothing about outside pages is fetched for them). */
+  guestExternalPreviews: boolean;
+  /** Host names on the office network the hub may fetch although they resolve to private addresses. */
+  allowLanHosts: string[];
+}
+
+/** A side-track in a conversation anchored to one link. */
+export interface LinkThread {
+  convId: string;
+  url: string;
+  urlHash: string;
+  rootMessageId: string;
+  root: Message;
+  /** The side-track was started now (with a new message holding the link). */
+  created: boolean;
+}
+
+export interface Ops {
+  /** A card for a link: internal links as the viewer may see them, web pages fetched by the hub (cached 24 h). */
+  'links.preview': { req: { url: string }; res: LinkCard };
+  /** Find or start the side-track about a link in a conversation (messageId: the message to anchor to, needed in Direct conversations). */
+  'links.discuss': { req: { url: string; convId: string; messageId?: string }; res: LinkThread };
+  'admin.links.get': { req: void; res: LinkSettings };
+  'admin.links.set': { req: Partial<LinkSettings>; res: LinkSettings };
+}
