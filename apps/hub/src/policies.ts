@@ -59,6 +59,7 @@ export class Policies {
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
       personalDevices: this.meta('policy_personal_devices') !== '0',
+      memberEmoji: this.meta('policy_member_emoji') !== '0',
       dlp: this.json('policy_dlp', []),
       blockedFileTypes: this.json('policy_blocked_types', []),
       outsideNetworks: this.json('policy_outside_networks', []),
@@ -157,6 +158,7 @@ export class Policies {
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
         if (typeof d.personalDevices === 'boolean') this.setMeta('policy_personal_devices', d.personalDevices ? '1' : '0');
+        if (typeof d.memberEmoji === 'boolean') this.setMeta('policy_member_emoji', d.memberEmoji ? '1' : '0');
         if (d.dlp !== undefined) this.setMeta('policy_dlp', JSON.stringify(validDlpRules(d.dlp)));
         if (d.blockedFileTypes !== undefined) {
           if (!Array.isArray(d.blockedFileTypes)) throw new PolicyError('List file types like exe, bat, ps1.');

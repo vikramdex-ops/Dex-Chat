@@ -165,6 +165,8 @@ export class Hub {
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
     this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
+    this.emoji.membersMay = () => this.policies.get().memberEmoji !== false;
+    this.emoji.stickersChanged = (list) => this.emit('sticker.updated', list);
     this.messaging.customEmoji = (name) => this.emoji.exists(name);
     this.commands = new Commands(this.store, this.messaging);
     this.workspace = new Workspace(this.store.db, this.messaging, (userIds, name, data) => this.deliver(userIds, name, data));
@@ -1152,7 +1154,7 @@ export class Hub {
             throw new OpError((err as Error).message);
           }
         }
-        if (typeof op === 'string' && /^(emoji\.list|admin\.emoji\.(add|remove))$/.test(op)) {
+        if (typeof op === 'string' && /^(emoji\.(list|add|remove)|admin\.emoji\.(add|remove)|sticker\.(list|add|remove))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.emoji.handle(op, me, d);
@@ -1192,7 +1194,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|people\.common$|typing$|search$)/.test(op)) {
+        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|people\.common$|tags\.top$|typing$|search$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);

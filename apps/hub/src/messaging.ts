@@ -1,7 +1,7 @@
 // Spaces, Direct conversations, messages, side-tracks, reactions, pins, read state and
 // typing, stored on the hub (SQLite). Every operation is authorised by membership.
 import type { DatabaseSync } from 'node:sqlite';
-import { MENTION_RE, ulid } from '@dex/core';
+import { MENTION_RE, hashtags, ulid } from '@dex/core';
 import { addWraps, isSealed } from '@dex/core/e2e';
 import { applyDlp, dlpBlockedMessage } from '@dex/core/dlp';
 import type { DlpRule } from '@dex/core/dlp';
@@ -118,7 +118,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNIN
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number; archived: number; post_policy: 'everyone' | 'moderators' }
-export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null }
+export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; pin_until?: number | null; client_id: string | null; forwarded: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null }
 
 const MAX_BODY = 8000;
 /** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
@@ -170,6 +170,13 @@ export class Messaging {
     if (!cols.includes('system')) db.exec('ALTER TABLE messages ADD COLUMN system TEXT');
     if (!cols.includes('reply_to')) db.exec('ALTER TABLE messages ADD COLUMN reply_to TEXT');
     if (!cols.includes('removed_by')) { db.exec('ALTER TABLE messages ADD COLUMN removed_by TEXT'); db.exec('ALTER TABLE messages ADD COLUMN removed_reason TEXT'); }
+    if (!cols.includes('pin_until')) db.exec('ALTER TABLE messages ADD COLUMN pin_until INTEGER');
+    db.exec('CREATE TABLE IF NOT EXISTS form_files (form_id TEXT NOT NULL, file_id TEXT NOT NULL, PRIMARY KEY (form_id, file_id))');
+    // a file given as a form answer opens for the form's author and administrators
+    files.extraRead = (userId, fileId) => !!db.prepare(`SELECT 1 FROM form_files ff JOIN forms fo ON fo.id = ff.form_id JOIN messages m ON m.id = fo.message_id
+      JOIN users u ON u.id = ? WHERE ff.file_id = ? AND (m.author_id = u.id OR u.role IN ('owner', 'admin')) LIMIT 1`).get(userId, fileId);
+    db.exec(`CREATE TABLE IF NOT EXISTS message_tags (message_id TEXT NOT NULL, conv_id TEXT NOT NULL, tag TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (message_id, tag));
+      CREATE INDEX IF NOT EXISTS idx_tags_tag ON message_tags(tag, created_at);`);
     db.exec(`CREATE TABLE IF NOT EXISTS reports (
       id TEXT PRIMARY KEY, message_id TEXT NOT NULL, conv_id TEXT NOT NULL, author_id TEXT NOT NULL, reporter_id TEXT NOT NULL,
       reason TEXT NOT NULL, text TEXT NOT NULL, quoted INTEGER NOT NULL, created_at INTEGER NOT NULL,
@@ -195,8 +202,11 @@ export class Messaging {
   /** Searchable text: mentions become names so "@priya" and "priya" both find the message. */
   private index(messageId: string, convId: string, body: string): void {
     this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(messageId);
+    this.db.prepare('DELETE FROM message_tags WHERE message_id = ?').run(messageId);
     // end-to-end encrypted text cannot be (and must not be) searched on the hub
     if (!body || isSealed(body)) return;
+    const tagAt = Date.now();
+    for (const t of hashtags(body)) this.db.prepare('INSERT OR IGNORE INTO message_tags (message_id, conv_id, tag, created_at) VALUES (?, ?, ?, ?)').run(messageId, convId, t, tagAt);
     const names = new Map(this.users().map((u) => [u.id, u.displayName] as const));
     const text = body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${names.get(id) ?? ''}`);
     this.db.prepare('INSERT INTO messages_fts (body, message_id, conv_id) VALUES (?, ?, ?)').run(text, messageId, convId);
@@ -222,6 +232,13 @@ export class Messaging {
 
   /** Called on the hub timer: timed mutes end. */
   tick(now = Date.now()): void {
+    // pins that end by themselves
+    const ended = this.db.prepare('SELECT id FROM messages WHERE pinned = 1 AND pin_until IS NOT NULL AND pin_until <= ?').all(now) as Array<{ id: string }>;
+    for (const e of ended) {
+      this.db.prepare('UPDATE messages SET pinned = 0, pin_until = NULL WHERE id = ?').run(e.id);
+      const row = this.message(e.id);
+      if (row) this.pushMessage('msg.updated', row);
+    }
     const due = this.db.prepare('SELECT conv_id, user_id FROM conv_members WHERE muted_until IS NOT NULL AND muted_until <= ?').all(now) as Array<{ conv_id: string; user_id: string }>;
     for (const r of due) {
       this.db.prepare('UPDATE conv_members SET muted = 0, muted_until = NULL WHERE conv_id = ? AND user_id = ?').run(r.conv_id, r.user_id);
@@ -319,7 +336,7 @@ export class Messaging {
     const mentions = (this.db.prepare('SELECT user_id FROM mentions WHERE message_id = ?').all(r.id) as Array<{ user_id: string }>).map((x) => x.user_id);
     return {
       id: r.id, convId: r.conv_id, authorId: r.author_id, body: r.deleted ? '' : r.body, parentId: r.parent_id,
-      createdAt: r.created_at, editedAt: r.edited_at, deleted: !!r.deleted, pinned: !!r.pinned, reactions,
+      createdAt: r.created_at, editedAt: r.edited_at, deleted: !!r.deleted, pinned: !!r.pinned, pinnedUntil: r.pinned ? r.pin_until ?? null : null, reactions,
       mentions: r.body.includes('<@all>') && !r.deleted ? ['all', ...mentions] : mentions,
       replyCount: replies?.n ?? 0, lastReplyAt: replies?.last ?? null, clientId: r.client_id,
       files: r.deleted ? [] : this.files.forMessage(r.id),
@@ -471,6 +488,27 @@ export class Messaging {
         const rows = this.db.prepare(`SELECT * FROM conversations c WHERE c.kind = 'space' AND c.private = 0
           AND NOT EXISTS (SELECT 1 FROM conv_members m WHERE m.conv_id = c.id AND m.user_id = ?) ORDER BY c.name COLLATE NOCASE`).all(me.id) as unknown as ConvRow[];
         return rows.map((c) => this.view(c, me.id));
+      }
+
+      case 'conv.fork': {
+        if (me.role === 'guest') throw new MsgError('Guests cannot create Spaces.');
+        const src = this.visibleMessage(d.messageId, me.id);
+        if (src.parent_id) throw new MsgError('Start a new Space from the message that began the side-track.');
+        if (isSealed(src.body)) throw new MsgError('Encrypted Direct messages stay between the people in them and cannot start a Space.');
+        const replies = this.db.prepare('SELECT * FROM messages WHERE parent_id = ? AND deleted = 0 ORDER BY created_at LIMIT 200').all(src.id) as unknown as MsgRow[];
+        // everyone in the thread joins, plus whoever was chosen
+        const people = new Set<string>([src.author_id, ...replies.map((r) => r.author_id), ...(Array.isArray(d.members) ? d.members.filter((x): x is string => typeof x === 'string') : [])]);
+        people.delete(me.id);
+        const conv = this.handle('conv.create', me, { kind: 'space', name: d.name, private: d.private === true, members: [...people] }) as Conversation;
+        const c = this.memberConv(conv.id, me.id);
+        const stamp = `${Date.now().toString(36)}-${src.id}`;
+        const copy = (r: MsgRow, parent: string | undefined) => {
+          const forwarded = JSON.stringify({ authorId: r.author_id, convId: r.conv_id, messageId: r.id, createdAt: r.created_at });
+          return this.sendAs(me, c, r.body, parent, this.files.forMessage(r.id).map((f) => f.id), `fork-${stamp}-${r.id}`, { forwarded, skipFileCheck: true });
+        };
+        const head = copy(src, undefined);
+        for (const r of replies) if (!isSealed(r.body)) copy(r, head.id);
+        return this.view(this.memberConv(conv.id, me.id), me.id) satisfies Ops["conv.fork"]["res"];
       }
 
       case 'conv.create': {
@@ -850,7 +888,7 @@ export class Messaging {
         const raw = Array.isArray(d.fields) ? d.fields as Array<Record<string, unknown>> : [];
         if (!raw.length) throw new MsgError('Add at least one question.');
         if (raw.length > 30) throw new MsgError('A form can have up to 30 questions.');
-        const types = ['text', 'long', 'choice', 'multi', 'number', 'date'];
+        const types = ['text', 'long', 'choice', 'multi', 'number', 'date', 'file', 'scan'];
         const fields: FormField[] = raw.map((f, i) => {
           const label = str(f.label, 200);
           if (!label) throw new MsgError(`Question ${i + 1} needs a label.`);
@@ -881,6 +919,13 @@ export class Messaging {
           if (q.type === 'multi') {
             const picks = Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && (q.options ?? []).includes(x)))] : [];
             if (picks.length) answers[q.id] = picks;
+          } else if (q.type === 'file') {
+            if (typeof v === 'string' && v) {
+              const info = this.files.info(v);
+              if (!info || info.uploaderId !== me.id) throw new MsgError(`Attach the file for "${q.label}" again.`);
+              this.db.prepare('INSERT OR IGNORE INTO form_files (form_id, file_id) VALUES (?, ?)').run(f.id, v);
+              answers[q.id] = v;
+            }
           } else {
             let t = typeof v === 'string' ? v.trim().slice(0, q.type === 'long' ? 4000 : 500) : '';
             if (t && q.type === 'choice' && !(q.options ?? []).includes(t)) throw new MsgError(`Choose one of the options for "${q.label}".`);
@@ -990,14 +1035,31 @@ export class Messaging {
           const n = (this.db.prepare('SELECT COUNT(*) AS n FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0').get(msg.conv_id) as { n: number }).n;
           if (n >= 50) throw new MsgError('A conversation can have up to 50 pinned messages.');
         }
-        this.db.prepare('UPDATE messages SET pinned = ? WHERE id = ?').run(d.pinned === true ? 1 : 0, msg.id);
+        let until: number | null = null;
+        if (d.pinned === true && d.until !== undefined && d.until !== null) {
+          if (typeof d.until !== 'number' || !Number.isFinite(d.until) || d.until < Date.now() + 60_000 || d.until > Date.now() + 366 * 86400_000) throw new MsgError('Choose how long to pin it: from a minute to a year.');
+          until = Math.floor(d.until);
+        }
+        this.db.prepare('UPDATE messages SET pinned = ?, pin_until = ? WHERE id = ?').run(d.pinned === true ? 1 : 0, until, msg.id);
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         return this.messageView(row);
       }
 
+      case 'tags.top': {
+        const prefix = typeof d.prefix === 'string' ? d.prefix.replace(/^#/, '').toLowerCase().slice(0, 48) : '';
+        const scope = typeof d.convId === 'string' ? d.convId : null;
+        const rows = this.db.prepare(`SELECT g.tag, COUNT(*) AS n FROM message_tags g JOIN conv_members cm ON cm.conv_id = g.conv_id AND cm.user_id = ?
+          WHERE g.created_at > ? ${prefix ? 'AND g.tag LIKE ?' : ''} ${scope ? 'AND g.conv_id = ?' : ''} GROUP BY g.tag ORDER BY n DESC, g.tag LIMIT 20`)
+          .all(me.id, Date.now() - 180 * 86400_000, ...(prefix ? [`${prefix.replace(/[%_]/g, '')}%`] : []), ...(scope ? [scope] : [])) as Array<{ tag: string; n: number }>;
+        return rows.map((r) => ({ tag: r.tag, count: r.n })) satisfies Ops['tags.top']['res'];
+      }
+
       case 'search': {
-        const q = typeof d.q === 'string' ? d.q.slice(0, 200) : '';
+        const rawQ = typeof d.q === 'string' ? d.q.slice(0, 200) : '';
+        // #tags match exactly; the other words go to the full-text index
+        const tags = hashtags(rawQ);
+        const q = rawQ.replace(/(^|\s)#[\p{L}][\p{L}\p{N}_-]*/gu, ' ');
         const terms = q.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_.\-]*/gu)?.slice(0, 8) ?? [];
         const from = typeof d.from === 'string' ? d.from : null;
         const kind = d.kind === 'direct' || d.kind === 'space' ? d.kind : null;
@@ -1006,14 +1068,15 @@ export class Messaging {
         const hasFile = d.hasFile === true;
         const olderThan = typeof d.olderThan === 'string' ? d.olderThan.slice(0, 40) : null;
         const scope = typeof d.convId === 'string' ? d.convId : null;
-        const filtered = !!(from || kind || after !== null || before !== null || hasFile || scope);
+        const filtered = !!(from || kind || after !== null || before !== null || hasFile || scope || tags.length);
         // with no words, filters alone can list messages ("everything Priya sent last week")
-        if (!terms.length && !(filtered && (from || hasFile || scope || after !== null))) return { messages: [], files: [] } satisfies Ops['search']['res'];
+        if (!terms.length && !(filtered && (from || hasFile || scope || after !== null || tags.length))) return { messages: [], files: [] } satisfies Ops['search']['res'];
         const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(d.limit))) : 20;
         const where: string[] = ['m.deleted = 0', 'm.system IS NULL'];
         const args: Array<string | number> = [me.id];
         if (terms.length) { where.push('messages_fts MATCH ?'); args.push(terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(' ')); }
         if (scope) { where.push('m.conv_id = ?'); args.push(scope); }
+        for (const t of tags) { where.push('EXISTS (SELECT 1 FROM message_tags g WHERE g.message_id = m.id AND g.tag = ?)'); args.push(t); }
         if (from) { where.push('m.author_id = ?'); args.push(from); }
         if (kind) { where.push('c.kind = ?'); args.push(kind); }
         if (after !== null) { where.push('m.created_at >= ?'); args.push(after); }

@@ -110,8 +110,11 @@ export class FileStore {
     if (own) return true;
     return !!this.db.prepare(`SELECT 1 FROM message_files mf JOIN messages m ON m.id = mf.message_id
       JOIN conv_members cm ON cm.conv_id = mf.conv_id
-      WHERE mf.file_id = ? AND cm.user_id = ? AND m.deleted = 0 LIMIT 1`).get(fileId, userId);
+      WHERE mf.file_id = ? AND cm.user_id = ? AND m.deleted = 0 LIMIT 1`).get(fileId, userId) || this.extraRead(userId, fileId);
   }
+
+  /** Other ways a file is shared (an answer to a form: its author can open it). */
+  extraRead: (userId: string, fileId: string) => boolean = () => false;
 
   /** Stream an upload to disk. Resolves with the stored file, or rejects with an HTTP-ready error. */
   async receive(req: IncomingMessage, uploaderId: string, rawName: string, rawMime: string | undefined): Promise<FileInfo> {

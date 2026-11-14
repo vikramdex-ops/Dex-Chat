@@ -6,7 +6,7 @@ import type { Conversation, FormField, FormFieldType, FormResponse, FormView, Me
 import { Avatar, Dialog, Icon, useToast } from '../ui.tsx';
 import { downloadText } from '../work/store.ts';
 
-const TYPE_LABEL: Record<FormFieldType, string> = { text: 'Short answer', long: 'Paragraph', choice: 'One choice', multi: 'Several choices', number: 'Number', date: 'Date' };
+const TYPE_LABEL: Record<FormFieldType, string> = { text: 'Short answer', long: 'Paragraph', choice: 'One choice', multi: 'Several choices', number: 'Number', date: 'Date', file: 'File or photo', scan: 'Scan a code' };
 
 type Draft = { label: string; type: FormFieldType; options: string; required: boolean };
 

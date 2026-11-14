@@ -157,6 +157,10 @@ export interface IceConfig {
 /** An office emoji added by an administrator, used as :name:. */
 export interface CustomEmoji { name: string; fileId: string; createdBy: string; createdAt: number }
 
+/** A sticker: a larger image sent on its own, grouped in packs. Sent as the message body [[sticker:ID]]. */
+export interface Sticker { id: string; name: string; pack: string; fileId: string; createdBy: string; createdAt: number }
+export const STICKER_RE = /^\[\[sticker:([0-9A-Za-z]{10,40})\]\]$/;
+
 /** Office rules set by an administrator. */
 export interface OfficePolicy {
   /** Minutes after sending that people can edit or delete their own messages; null = any time. */
@@ -170,6 +174,8 @@ export interface OfficePolicy {
   defaultSpaces?: string[];
   /** People may add their own phones and laptops with a pairing code (no approval needed). */
   personalDevices?: boolean;
+  /** Everyone (not only administrators) may add office emoji and stickers. */
+  memberEmoji?: boolean;
   /** Data-loss prevention: sensitive numbers and words stopped or masked in messages. */
   dlp?: import('./dlp.ts').DlpRule[];
   /** File types (extensions without the dot) that cannot be shared. */
@@ -324,6 +330,8 @@ export interface Message {
   editedAt: number | null;
   deleted: boolean;
   pinned: boolean;
+  /** A pin that ends by itself. */
+  pinnedUntil?: number | null;
   /** emoji -> user ids */
   reactions: Record<string, string[]>;
   /** user ids mentioned with <@id>; "all" for <@all> */
@@ -404,7 +412,8 @@ export interface AttendanceDay {
 }
 
 // ---------------------------------------------------------------- forms, notes, whiteboards
-export type FormFieldType = 'text' | 'long' | 'choice' | 'multi' | 'number' | 'date';
+/** file: the answer is a file the person uploads (its id); scan: text read from a QR code or barcode (or typed). */
+export type FormFieldType = 'text' | 'long' | 'choice' | 'multi' | 'number' | 'date' | 'file' | 'scan';
 export interface FormField {
   id: string;
   label: string;
@@ -558,9 +567,14 @@ export interface ScheduledMessage {
   error: string | null;
 }
 
+/** What a kept (saved) message is for, on your Desk. */
+export type KeepKind = 'keep' | 'todo' | 'important' | 'follow-up' | 'reference';
+export const KEEP_KINDS: KeepKind[] = ['keep', 'todo', 'important', 'follow-up', 'reference'];
+
 export interface SavedMessage {
   message: Message;
   savedAt: number;
+  kind?: KeepKind;
 }
 
 /** Mention markup inside message bodies: <@USERID> or <@all>. */
@@ -701,6 +715,12 @@ export interface Ops {
   /** Text the uploader's PC read from an image, so search can find it (not Direct conversations). */
   'file.setText': { req: { fileId: string; text: string }; res: { ok: true } };
   'admin.emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
+  /** Anyone may add office emoji when the office allows it; people remove their own. */
+  'emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
+  'emoji.remove': { req: { name: string }; res: { ok: true } };
+  'sticker.list': { req: void; res: Sticker[] };
+  'sticker.add': { req: { name: string; pack?: string; fileId: string }; res: Sticker };
+  'sticker.remove': { req: { id: string }; res: { ok: true } };
   'admin.emoji.remove': { req: { name: string }; res: { ok: true } };
   'admin.policy.set': { req: Partial<OfficePolicy>; res: OfficePolicy };
   'admin.usage': { req: { days?: 7 | 30 | 90 }; res: UsageReport };
@@ -722,6 +742,8 @@ export interface Ops {
     req: { kind: 'space'; name: string; topic?: string; private?: boolean; members?: string[] } | { kind: 'direct'; members: string[] };
     res: Conversation;
   };
+  /** Start a new Space from a message: it and its side-track replies are copied in (with credit). */
+  'conv.fork': { req: { messageId: string; name: string; private?: boolean; members?: string[] }; res: Conversation };
   'conv.join': { req: { convId: string }; res: Conversation };
   'conv.leave': { req: { convId: string }; res: { ok: true } };
   /** Report a message to the administrators (quote: the text of an encrypted message, from the reporter's device). */
@@ -758,7 +780,8 @@ export interface Ops {
   'msg.edit': { req: { messageId: string; body: string }; res: Message };
   'msg.delete': { req: { messageId: string; /** a moderator's reason, shown in its place */ reason?: string }; res: Message };
   'msg.react': { req: { messageId: string; emoji: string; on: boolean }; res: Message };
-  'msg.pin': { req: { messageId: string; pinned: boolean }; res: Message };
+  /** until: unpin by itself then (at most a year ahead); null or absent = until someone unpins it. */
+  'msg.pin': { req: { messageId: string; pinned: boolean; until?: number | null }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
   'typing': { req: { convId: string; parentId?: string }; res: { ok: true } };
   'room.start': { req: { convId: string; video: boolean }; res: RoomInfo };
@@ -773,7 +796,7 @@ export interface Ops {
   'room.record': { req: { roomId: string; on: boolean }; res: { ok: true } };
   'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
   'msg.forward': { req: { messageId: string; convIds: string[]; note?: string; /** per target: the text to post (re-sealed by the app for encrypted Directs) */ bodies?: Record<string, string> }; res: Message[] };
-  'msg.star': { req: { messageId: string; on: boolean }; res: { ok: true } };
+  'msg.star': { req: { messageId: string; on: boolean; kind?: KeepKind }; res: { ok: true } };
   'poll.create': {
     req: { convId: string; question: string; options: string[]; multi?: boolean; anonymous?: boolean; closesAt?: number | null; parentId?: string; clientId: string };
     res: Message;
@@ -824,6 +847,8 @@ export interface Ops {
   'sched.update': { req: { id: string; body?: string; sendAt?: number }; res: ScheduledMessage };
   'sched.cancel': { req: { id: string }; res: { ok: true } };
   'sched.sendNow': { req: { id: string }; res: Message };
+  /** Hashtags people use, most used first (in conversations you are part of). */
+  'tags.top': { req: { prefix?: string; convId?: string } | void; res: Array<{ tag: string; count: number }> };
   'search': {
     req: {
       q: string; convId?: string; limit?: number;
@@ -837,6 +862,10 @@ export interface Ops {
 }
 export type OpName = keyof Ops;
 
+/** #tags in message text: a letter first, then letters, digits, _ or - (not inside words or links). */
+export const HASHTAG_RE = /(?<![\p{L}\p{N}&/#])#([\p{L}][\p{L}\p{N}_-]{1,48})/gu;
+export const hashtags = (body: string): string[] => [...new Set([...body.matchAll(HASHTAG_RE)].map((m) => m[1].toLowerCase()))].slice(0, 20);
+
 // Server-pushed events.
 export interface Events {
   'presence': { userId: string; online: boolean; away?: boolean };
@@ -845,6 +874,7 @@ export interface Events {
   'admin.pending': DeviceRecord;
   'policy.updated': OfficePolicy;
   'emoji.updated': CustomEmoji[];
+  'sticker.updated': Sticker[];
   'org.updated': OrgInfo;
   /** One of your devices was added with a pairing code. */
   'me.devicePaired': DeviceRecord;
