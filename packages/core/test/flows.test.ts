@@ -73,4 +73,7 @@ test('office hours, days, past midnight and "outside these hours"', () => {
   assert.ok(inTimeWindow(night, at('2026-11-20', '23:30'))); // Friday night
   assert.ok(inTimeWindow(night, at('2026-11-21', '02:00'))); // still Friday's shift
   assert.ok(!inTimeWindow(night, at('2026-11-22', '02:00'))); // Saturday's
+  const weekends = { kind: 'time' as const, days: [0, 6], from: '00:00', to: '00:00' };
+  assert.ok(inTimeWindow(weekends, at('2026-11-21', '23:59')));
+  assert.ok(!inTimeWindow(weekends, at('2026-11-20', '12:00')));
 });

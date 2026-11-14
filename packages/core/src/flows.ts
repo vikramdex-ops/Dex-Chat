@@ -25,7 +25,7 @@ export type FlowTrigger =
 export type FlowCondition =
   | { kind: 'conversation'; convIds: string[] }
   | { kind: 'author'; people: PersonRef[]; exclude?: boolean }
-  /** Days 0 (Sunday) to 6; from/to as HH:MM on the hub's clock. outside: only outside these hours. */
+  /** Days 0 (Sunday) to 6; from/to as HH:MM on the hub's clock (the same time for both: all day). outside: only outside these hours. */
   | { kind: 'time'; days: number[]; from: string; to: string; outside?: boolean }
   | { kind: 'file'; types?: string[]; namePattern?: string };
 
@@ -301,7 +301,8 @@ export function inTimeWindow(c: Extract<FlowCondition, { kind: 'time' }>, at: Da
   // a window past midnight (22:00–06:00) belongs to the day it started
   let day = at.getDay();
   let inside: boolean;
-  if (from <= to) inside = mins >= from && mins < to;
+  if (from === to) inside = true;
+  else if (from < to) inside = mins >= from && mins < to;
   else {
     inside = mins >= from || mins < to;
     if (mins < to) day = (day + 6) % 7;
@@ -390,7 +391,6 @@ function condition(raw: unknown, i: number): ConditionNode {
       const days = Array.isArray(c.days) ? [...new Set(c.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : [];
       if (!days.length) throw new FlowError('Time: choose at least one day.');
       if (!isClock(c.from) || !isClock(c.to)) throw new FlowError('Time: give the hours as HH:MM.');
-      if (c.from === c.to) throw new FlowError('Time: the start and end must differ.');
       return { id, kind: 'time', days, from: c.from, to: c.to, ...(c.outside === true ? { outside: true } : {}) };
     }
     case 'file': {
