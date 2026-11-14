@@ -4,12 +4,9 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PublicUser } from '@dex/core';
-import { Avatar, Dialog, Icon, useToast } from '../ui.tsx';
+import { Avatar, Icon, useToast } from '../ui.tsx';
 import { answer, clearNotice, clock, decline, setMinimized, toggleMute, useCall } from './engine.ts';
 import { Glyph, useDuration } from './parts.tsx';
-import { sendMessage } from '../chat/store.ts';
-import { clearRecording, useRecorder } from './recorder.ts';
-import { policyNow } from '../policy.ts';
 import './rooms.css';
 
 const Stage = lazy(() => import('./Stage.tsx'));
@@ -112,44 +109,5 @@ export function IncomingCall({ users, title }: { users: Map<string, PublicUser>;
   );
 }
 
-/** After a Room recording stops: save it on this PC or share it in the conversation. */
-export function RecordingReady() {
-  const r = useRecorder();
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  if (!r || r.recording || !r.done) return null;
-  const { blob, ms, convId } = r.done;
-  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '');
-  const name = `Room recording ${stamp}.webm`;
-  const length = ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))} s` : `${Math.round(ms / 60_000)} min`;
-  const limit = policyNow().maxUploadMb * 1024 * 1024;
-  const save = () => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  };
-  const share = async () => {
-    setBusy(true);
-    try {
-      const info = await window.dex.uploadFile!(`rec-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name, mime: 'video/webm' });
-      await sendMessage(convId, `Room recording · ${length}`, null, [info]);
-      toast('Shared in the conversation');
-      clearRecording();
-    } catch (e) { toast((e as Error).message, true); setBusy(false); }
-  };
-  return (
-    <Dialog title="Room recording ready" onClose={() => { if (confirm('Discard this recording? It has not been saved.')) clearRecording(); }}>
-      <dl className="rec-facts">
-        <div><dt className="label">Length</dt><dd className="mono">{length}</dd></div>
-        <div><dt className="label">Size</dt><dd className="mono">{(blob.size / 1024 / 1024).toFixed(1)} MB</dd></div>
-        <div><dt className="label">Kept</dt><dd>Only on this PC until you save or share it</dd></div>
-      </dl>
-      <div className="dialog-actions">
-        <button className="btn ghost danger" onClick={() => { if (confirm('Discard this recording?')) clearRecording(); }}>Discard</button>
-        {!/Android/i.test(navigator.userAgent) && <button className="btn" onClick={save}><Icon name="download" size={15} />Save to this PC</button>}
-        {window.dex.uploadFile && convId && blob.size <= limit && <button className="btn primary" disabled={busy} onClick={() => void share()}>{busy ? <span className="spinner" /> : <Icon name="send" size={15} />}Share in the conversation</button>}
-      </div>
-    </Dialog>
-  );
-}
+/** After a Room recording stops: kept on the hub, shared, or saved on this PC (meet/RecordingDone.tsx). */
+export { RecordingReady } from '../meet/RecordingDone.tsx';

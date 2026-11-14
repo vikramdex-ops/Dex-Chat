@@ -21,7 +21,10 @@
     "./flow-describe": "./src/flow-describe.ts",
     "./botflows": "./src/botflow-engine.ts",
     "./miniapp": "./src/miniapp.ts",
-    "./bots": "./src/bots.ts"
+    "./bots": "./src/bots.ts",
+    "./ics": "./src/ics.ts",
+    "./meet": "./src/meet.ts",
+    "./meet-csv": "./src/meet-csv.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

@@ -24,9 +24,15 @@ let leadTicks = 0;
 
 function emit(key: string): void { for (const f of subs.get(key) ?? []) f(); }
 
+/** Listeners to every tick: the loudest voice now, this PC's own included (for a recording's chapters). */
+const tickSubs = new Set<(loudest: string | null) => void>();
+export function onVoiceTick(f: (loudest: string | null) => void): () => void { tickSubs.add(f); return () => tickSubs.delete(f); }
+
 function tick(): void {
   let loudest: string | null = null;
   let top = 0;
+  let any: string | null = null;
+  let anyTop = 0;
   for (const [key, v] of voices) {
     v.an.getByteTimeDomainData(v.buf);
     let sum = 0;
@@ -38,7 +44,9 @@ function tick(): void {
     const speaking = loud || v.quiet < HOLD;
     if (speaking !== v.speaking) { v.speaking = speaking; emit(key); }
     if (loud && rms > top && !key.startsWith('self:')) { top = rms; loudest = key; }
+    if (loud && rms > anyTop) { anyTop = rms; any = key; }
   }
+  for (const f of tickSubs) f(any);
   // the active speaker changes once someone else has led for a moment
   if (loudest && loudest !== active) {
     if (loudest === leader) leadTicks++; else { leader = loudest; leadTicks = 1; }

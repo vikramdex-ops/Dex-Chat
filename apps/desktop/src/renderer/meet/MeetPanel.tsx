@@ -1,9 +1,12 @@
 // The meeting panel's tabs beside the Room: the meeting conversation's Chat, its Polls, its
 // whiteboards (Board) and its Files, without leaving the Room. Everything is the conversation's
 // own data from the chat store and hub, so what is said here is in the conversation afterwards.
+// When the Room has people who cannot read the conversation (guests from a browser, people let in
+// from outside), the Chat tab also has the meeting chat: everyone in the Room reads it, it is shared
+// by the breakout rooms, and it is not kept after the meeting.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Board, FileInfo, Message, PublicUser } from '@dex/core';
+import type { Board, FileInfo, Message, PublicUser, RoomChatLine, RoomInfo } from '@dex/core';
 import { Avatar, Icon } from '../ui.tsx';
 import { loadLatest, markRead, sendMessage, useChat } from '../chat/store.ts';
 import type { AnyMessage } from '../chat/store.ts';
@@ -13,13 +16,20 @@ import { BoardsList } from '../chat/boards.tsx';
 import { WhiteboardStage } from '../chat/Whiteboard.tsx';
 import { FilesPanel, Lightbox } from '../chat/files.tsx';
 import { capName, clock } from '../rooms/engine.ts';
+import { sendRoomChat, setChatOpen, useRoomChat } from './live.ts';
 
 type Tab = 'chat' | 'polls' | 'board' | 'files';
 
-export default function MeetPanel({ tab, convId, users, meId }: { tab: Tab; convId: string; users: Map<string, PublicUser>; meId: string }) {
+export default function MeetPanel({ tab, convId, users, meId, room }: { tab: Tab; convId: string; users: Map<string, PublicUser>; meId: string; room?: RoomInfo }) {
   const conv = useChat((s) => s.conversations.get(convId));
   const loaded = useChat((s) => s.timelines.get(convId)?.loaded ?? false);
+  const roomLines = useRoomChat(room?.id ?? null);
   useEffect(() => { if (conv && !loaded) void loadLatest(convId); }, [convId, !!conv, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // people in the Room who cannot read the conversation: the meeting chat is where they talk
+  const mixed = !!room && (!!room.visitors?.length || room.participants.some((p) => !!conv && !conv.members.includes(p.userId)));
+  if (tab === 'chat' && room && (!conv || mixed || roomLines.length > 0)) {
+    return <ChatSwitch room={room} conv={!!conv} convId={convId} users={users} meId={meId} lines={roomLines} />;
+  }
   if (!conv) {
     return (
       <div className="meet-visitor">
@@ -35,6 +45,71 @@ export default function MeetPanel({ tab, convId, users, meId }: { tab: Tab; conv
 }
 
 const visible = (m: AnyMessage) => !m.parentId && !m.deleted;
+
+/** The Chat tab with two sheets: the meeting chat (everyone here) and the conversation (members). */
+function ChatSwitch({ room, conv, convId, users, meId, lines }: { room: RoomInfo; conv: boolean; convId: string; users: Map<string, PublicUser>; meId: string; lines: RoomChatLine[] }) {
+  const [which, setWhich] = useState<'room' | 'conv'>('room');
+  const showing = conv ? which : 'room';
+  return (
+    <div className="meet-chat-switch">
+      {conv && (
+        <div className="meet-chat-tabs" role="tablist" aria-label="Which chat">
+          <button role="tab" aria-selected={showing === 'room'} onClick={() => setWhich('room')}>Everyone here<span className="mono">{lines.length}</span></button>
+          <button role="tab" aria-selected={showing === 'conv'} onClick={() => setWhich('conv')}>Conversation</button>
+        </div>
+      )}
+      {showing === 'room' ? <RoomChatTab room={room} meId={meId} lines={lines} /> : <ChatTab convId={convId} users={users} meId={meId} />}
+    </div>
+  );
+}
+
+/** The meeting chat: lines from everyone in the Room, guests included; not kept after the meeting. */
+function RoomChatTab({ room, meId, lines }: { room: RoomInfo; meId: string; lines: RoomChatLine[] }) {
+  const [text, setText] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const last = lines[lines.length - 1]?.id;
+  useLayoutEffect(() => { const el = list.current; if (el) el.scrollTop = el.scrollHeight; }, [last]);
+  useEffect(() => { setChatOpen(true); return () => setChatOpen(false); }, []);
+  const send = () => {
+    const body = text.trim();
+    if (!body) return;
+    setText('');
+    setProblem(null);
+    void sendRoomChat(room.id, body).catch((e: Error) => { setProblem(e.message); setText(body); });
+  };
+  return (
+    <div className="meet-chat room-chat">
+      <div ref={list} className="meet-chat-list" aria-live="polite">
+        {!lines.length && <p className="meet-empty">Everyone in the Room reads this chat, guests from outside too. It is not kept after the meeting.</p>}
+        {lines.map((l, i) => {
+          const prev = lines[i - 1];
+          const run = prev && prev.userId === l.userId && l.at - prev.at < 5 * 60_000;
+          const mine = l.userId === meId;
+          return (
+            <div key={l.id} className={`meet-chat-line${run ? ' run' : ''}${mine ? ' mine' : ''}`}>
+              {!run && (
+                <div className="meet-chat-head">
+                  <Avatar user={{ id: l.userId, displayName: l.name }} size="sm" />
+                  <span className="mono">{mine ? 'YOU' : capName(l.name)}</span>
+                  {l.guest && <span className="role-tag">GUEST</span>}
+                  <span className="mono faint">{clock(l.at)}</span>
+                </div>
+              )}
+              <div className="meet-chat-body selectable">{l.text}</div>
+            </div>
+          );
+        })}
+      </div>
+      {problem && <p className="field-error" style={{ margin: '0 12px' }}>{problem}</p>}
+      <form className="meet-compose" onSubmit={(e) => { e.preventDefault(); send(); }}>
+        <textarea className="input" rows={1} value={text} maxLength={2000} placeholder="Write to everyone here, guests too" aria-label="Message to everyone in the Room"
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+        <button className="icon-btn" disabled={!text.trim()} aria-label="Send to everyone here" title="Send (Enter)"><Icon name="send" size={16} /></button>
+      </form>
+    </div>
+  );
+}
 
 function ChatTab({ convId, users, meId }: { convId: string; users: Map<string, PublicUser>; meId: string }) {
   const messages = useChat((s) => s.timelines.get(convId)?.messages);

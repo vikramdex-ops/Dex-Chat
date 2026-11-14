@@ -23,6 +23,9 @@ import { addConversation, chatState, useChat } from '../chat/store.ts';
 import { recordSupported, startRecording, stopRecording, useRecorder } from './recorder.ts';
 import { usePolicy } from '../policy.ts';
 import { LobbySheet } from '../meet/Lobby.tsx';
+import { HostExtras, SoundMenu, useRoomUsers } from '../meet/RoomExtras.tsx';
+import { BreakoutBanner } from '../meet/Breakouts.tsx';
+import { useNoise } from './noise.ts';
 import '../meet/meet.css';
 
 const MeetPanel = lazy(() => import('../meet/MeetPanel.tsx'));
@@ -180,8 +183,11 @@ function LinkQuality({ roomId, alone }: { roomId: string; alone: boolean }) {
 // ------------------------------------------------------------------ the sheet
 interface Seat { deviceId: string; userId: string; me: boolean; p: RoomParticipant | undefined }
 
-function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: StageProps & { room: RoomInfo }) {
+function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, meId, room }: StageProps & { room: RoomInfo }) {
   const toast = useToast();
+  // browser guests have no office account: their names come with the Room
+  const users = useRoomUsers(officeUsers, room);
+  const noiseOn = useNoise().on;
   const screen = useCall((s) => s.screen);
   const muted = useCall((s) => s.muted);
   const camera = useCall((s) => s.camera);
@@ -195,7 +201,7 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
   const [tab, setTab] = useState<Tab>('people');
   const [picker, setPicker] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [pop, setPop] = useState<null | { kind: 'react' | 'background' | 'layout' | 'person'; anchor: HTMLElement; deviceId?: string }>(null);
+  const [pop, setPop] = useState<null | { kind: 'react' | 'background' | 'layout' | 'person' | 'sound'; anchor: HTMLElement; deviceId?: string }>(null);
   const [consent, setConsent] = useState(false);
   const [page, setPage] = useState(0);
   const [who, setWho] = useState('');
@@ -304,8 +310,9 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
   };
   const copyLink = () => { if (room.meetingId) void navigator.clipboard.writeText(meetingLink(room.meetingId)).then(() => toast('Meeting link copied')); };
 
-  const name = room.title || title(room.convId);
-  const kind = room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
+  // a breakout room is named for itself; its meeting's name is on the banner
+  const name = room.breakoutName ?? (room.title || title(room.convId));
+  const kind = room.parentId ? 'BREAKOUT' : room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
     : convKind === 'space' ? 'SPACE' : convMembers.length > 2 ? 'GROUP' : 'DIRECT';
   const canFloat = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
   const canRecord = recordSupported() && (policy.allowRecording || myRec);
@@ -323,6 +330,7 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
           </span>
         )}
         <section ref={fieldRef} className={`room-field layout-${layout}${shareStream && layout === 'presentation' ? ' sharing' : ''}`} aria-label="People in the Room">
+          <BreakoutBanner room={room} />
           {unmuteAsk && muted && (
             <div className="room-ask" role="alertdialog" aria-label="Asked to unmute">
               <Icon name="mic" size={16} />
@@ -367,14 +375,14 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
             <div className="room-panel-body" id="room-panel-body" role="tabpanel" aria-labelledby={`room-tab-${tab}`}>
               {tab === 'people'
                 ? <PeoplePanel room={room} seats={seats} zones={zones} users={users} meId={meId} muted={muted} camera={camera} isHost={isHost} isMainHost={isMainHost}
-                    handOrder={handOrder} onMenu={openMenu} run={run} host={host} />
-                : <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><MeetPanel tab={tab} convId={room.convId} users={users} meId={meId} /></Suspense>}
+                    handOrder={handOrder} onMenu={openMenu} run={run} host={host} meDevice={meDevice} />
+                : <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><MeetPanel tab={tab} convId={room.convId} users={users} meId={meId} room={room} /></Suspense>}
             </div>
           </div>
 
           <div className="room-block">
             <div className="tb-name">
-              <span className="label">{room.meetingKind && room.meetingKind !== 'conversation' ? 'Meeting' : 'Room'}</span>
+              <span className="label">{room.parentId ? `Breakout · ${room.title ?? 'meeting'}` : room.meetingKind && room.meetingKind !== 'conversation' ? 'Meeting' : 'Room'}</span>
               <h2 title={name}>{name}</h2>
               <span className="tb-kind mono">{kind}</span>
               {room.meetingId && (
@@ -396,6 +404,7 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
               <button className={camera ? 'on' : 'off'} aria-pressed={camera} onClick={cameraClick} title={camera ? 'Turn your camera off' : policy.cameraConsent ? 'Turn your camera on (you are asked first)' : 'Turn your camera on'}>
                 <Icon name={camera ? 'video' : 'video-off'} size={18} /><span>{camera ? 'Camera on' : 'Camera off'}</span>
               </button>
+
               {window.dex.listScreens && (
                 <button className={screen ? 'on' : ''} aria-pressed={!!screen} onClick={() => (screen ? void toggleScreen() : setPicker(true))} title={screen ? 'Stop sharing your screen' : 'Share a screen or window with the Room'}>
                   <Icon name="screen" size={18} /><span>{screen ? 'Stop sharing' : 'Share sheet'}</span>
@@ -423,6 +432,11 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
               )}
               <button ref={addBtn} aria-expanded={adding} title="Ring someone into the Room" onClick={() => setAdding(!adding)}>
                 <Glyph name="ring" /><span>Ring someone</span>
+              </button>
+              {/* the sound menu: a small tab on the mic's cell (kept last, so the grid's cells stay as they are) */}
+              <button className={`tb-sound${noiseOn ? ' on' : ''}`} aria-expanded={pop?.kind === 'sound'} aria-label={noiseOn ? 'Sound: noise suppression strong' : 'Sound: noise suppression off'}
+                title="Sound: strong noise suppression for your mic" onClick={(e) => setPop({ kind: 'sound', anchor: e.currentTarget })}>
+                <span className="mono">{noiseOn ? 'NS' : 'NS·OFF'}</span>
               </button>
             </div>
             <div className="tb-foot">
@@ -459,6 +473,7 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
         </Popover>
       )}
       {pop?.kind === 'background' && <BackgroundMenu anchor={pop.anchor} onClose={() => setPop(null)} />}
+      {pop?.kind === 'sound' && <SoundMenu anchor={pop.anchor} onClose={() => setPop(null)} />}
       {pop?.kind === 'layout' && (
         <Popover anchor={pop.anchor} onClose={() => setPop(null)} className="menu room-layout-menu" align="start">
           <div className="menu-label label">Layout · on this PC</div>
@@ -562,9 +577,9 @@ const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
   { value: 'outside', label: 'Guests and people from outside' }, { value: 'everyone', label: 'Everyone but the hosts' }, { value: 'off', label: 'Nobody: walk straight in' },
 ];
 
-function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, isMainHost, handOrder, onMenu, run, host }: {
+function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, isMainHost, handOrder, onMenu, run, host, meDevice }: {
   room: RoomInfo; seats: Seat[]; zones: Map<string, string>; users: Map<string, PublicUser>; meId: string; muted: boolean; camera: boolean;
-  isHost: boolean; isMainHost: boolean; handOrder: Map<string, number>; onMenu: MenuOpen; run: (p: Promise<unknown>) => void; host: HostOp;
+  isHost: boolean; isMainHost: boolean; handOrder: Map<string, number>; onMenu: MenuOpen; run: (p: Promise<unknown>) => void; host: HostOp; meDevice: string;
 }) {
   const nameOf = (id: string) => users.get(id)?.displayName ?? 'Someone';
   const waiting = room.lobby ?? [];
@@ -638,6 +653,7 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
             <button aria-pressed={!!room.locked} className={room.locked ? 'on' : ''} onClick={() => run(host('room.lock', { locked: !room.locked }))}><Icon name="lock" size={15} />{room.locked ? 'Unlock' : 'Lock meeting'}</button>
             {room.spotlight && <button onClick={() => run(host('room.spotlight', { deviceId: null }))}><Glyph name="spotlight" size={15} />End spotlight</button>}
           </div>
+          <HostExtras room={room} users={users} meDevice={meDevice} />
           {meeting && room.settings && (
             <details className="room-host-settings">
               <summary className="label">Meeting settings · {room.settings.lobby === 'off' ? 'no lobby' : room.settings.lobby === 'everyone' ? 'everyone waits' : 'outsiders wait'}</summary>

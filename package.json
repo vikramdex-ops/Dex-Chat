@@ -12,7 +12,7 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "test": "node --test \"packages/*/test/*.test.ts\" \"apps/hub/test/*.test.ts\" \"apps/desktop/test/*.test.ts\"",
+    "test": "node --test \"packages/*/test/*.test.ts\" \"apps/hub/test/*.test.ts\" \"apps/desktop/test/*.test.ts\" \"apps/gateway/test/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json",
     "hub": "node apps/hub/src/main.ts",
     "hub:build": "npm run build -w @dex/hub",

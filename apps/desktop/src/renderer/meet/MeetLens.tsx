@@ -1,10 +1,12 @@
 // The Meet lens: start a meeting now, join one by its ID or link, schedule one on the Calendar,
 // open your personal room, and see what is on now, what is coming up and the meetings you were in.
 // Laid out as a drawing register: ruled title-block cards, mono reference numbers, no pictures.
+// M2: the Recordings shelf and its viewer, a report for each past meeting, and the personal
+// room's guest link.
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { formatMeetingId, meetingLink, parseMeetingId } from '@dex/core';
-import type { LobbyRule, MeetingInfo, MeetingRecord, Occurrence, PublicUser, Session } from '@dex/core';
+import { formatMeetingId, isWebGuest, meetingLink, parseMeetingId } from '@dex/core';
+import type { LobbyRule, MeetingInfo, MeetingRecord, Occurrence, PublicUser, RecordingInfo, Session } from '@dex/core';
 import { Avatar, Icon, presenceFor, useToast } from '../ui.tsx';
 import { joinMeeting, useCall } from '../rooms/engine.ts';
 import { Glyph } from '../rooms/parts.tsx';
@@ -13,6 +15,10 @@ import { convTitle } from '../chat/Switchboard.tsx';
 import { EventDialog } from '../calendar/CalendarView.tsx';
 import { DAY, addDays, hm, startOfDay, useCal } from '../calendar/store.ts';
 import { usePolicy } from '../policy.ts';
+import { RecordingPlayer, RecordingShelf } from './Recordings.tsx';
+import { MeetingReportSheet } from './Report.tsx';
+import { GuestLinkControls } from './GuestLink.tsx';
+import { clearMeetTarget, useMeetTarget } from './shelf.ts';
 import './meet.css';
 
 const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
@@ -41,7 +47,17 @@ export default function MeetLens({ session, openConv }: { session: Session; open
   const inRoom = useCall((s) => s.room);
   const joining = useCall((s) => s.joining);
   const [scheduling, setScheduling] = useState(false);
+  const [playing, setPlaying] = useState<RecordingInfo | null>(null);
+  const [report, setReport] = useState<string | null>(null);
   const go = (id: string, video: boolean) => void joinMeeting(id, video).catch((e: Error) => toast(e.message, true));
+  // something asked for a recording (its link) or a report
+  const target = useMeetTarget();
+  useEffect(() => {
+    if (!target) return;
+    clearMeetTarget();
+    if (target.kind === 'report') { setReport(target.roomId); return; }
+    void window.dex.request('rec.get', target.token ? { token: target.token } : { id: target.id }).then(setPlaying).catch((e: Error) => toast(e.message, true));
+  }, [target, toast]);
 
   return (
     <div className="view meet">
@@ -60,14 +76,17 @@ export default function MeetLens({ session, openConv }: { session: Session; open
           {canHost && <StartCard users={session.users} meId={meId} onStart={go} busy={!!joining || !!inRoom} />}
           <JoinCard onJoin={go} busy={!!joining || !!inRoom} users={users} />
           <OnNow users={users} meId={meId} onJoin={go} busy={!!inRoom} />
+          <RecordingShelf onOpen={setPlaying} />
         </div>
         <div className="meet-col">
           {canHost && <PersonalRoom onJoin={go} busy={!!joining || !!inRoom} />}
           <ComingUp meId={meId} onJoin={go} busy={!!inRoom} />
-          <Recent users={users} meId={meId} onJoin={go} openConv={openConv} busy={!!inRoom} />
+          <Recent users={users} meId={meId} onJoin={go} openConv={openConv} busy={!!inRoom} onReport={setReport} />
         </div>
       </div>
       {scheduling && <EventDialog session={session} onClose={() => setScheduling(false)} />}
+      {report && <MeetingReportSheet roomId={report} onClose={() => setReport(null)} onWatch={(r) => { setReport(null); setPlaying(r); }} />}
+      {playing && <RecordingPlayer rec={playing} onClose={() => setPlaying(null)} />}
     </div>
   );
 }
@@ -190,6 +209,12 @@ function PersonalRoom({ onJoin, busy }: { onJoin: (id: string, video: boolean) =
           <label className="meet-opt check"><input type="checkbox" checked={m.settings.joinBeforeHost} onChange={(e) => save({ joinBeforeHost: e.target.checked })} />People can come in before you</label>
         </div>
       )}
+      {m && (
+        <details className="meet-guests">
+          <summary className="label">Guests from outside</summary>
+          <GuestLinkControls meetingId={m.id} compact />
+        </details>
+      )}
       <div className="meet-block-foot">
         <button className="btn ghost" disabled={!m} onClick={() => m && void navigator.clipboard.writeText(m.link).then(() => toast('Link to your room copied'))}><Glyph name="copy" size={15} />Copy link</button>
         <button className="btn" disabled={!m || busy} onClick={() => m && onJoin(m.id, false)}><Glyph name="door" size={15} />Open your room</button>
@@ -259,7 +284,7 @@ function ComingUp({ meId, onJoin, busy }: { meId: string; onJoin: (id: string, v
   );
 }
 
-function Recent({ users, meId, onJoin, openConv, busy }: { users: Map<string, PublicUser>; meId: string; onJoin: (id: string, video: boolean) => void; openConv: (convId: string) => void; busy: boolean }) {
+function Recent({ users, meId, onJoin, openConv, busy, onReport }: { users: Map<string, PublicUser>; meId: string; onJoin: (id: string, video: boolean) => void; openConv: (convId: string) => void; busy: boolean; onReport: (roomId: string) => void }) {
   const [list, setList] = useState<MeetingRecord[] | null>(null);
   const conversations = useChat((s) => s.conversations);
   const roomGone = useCall((s) => s.room === null);
@@ -278,8 +303,9 @@ function Recent({ users, meId, onJoin, openConv, busy }: { users: Map<string, Pu
                 <tr key={r.roomId}>
                   <td className="mono meet-when">{dayWord(r.startedAt).toUpperCase()}<br /><span>{hm(r.startedAt)}</span></td>
                   <td className="meet-what"><b title={title}>{title}</b><span className="faint">{lengthOf(r.durationMs)} · {r.people.length} {r.people.length === 1 ? 'person' : 'people'}</span></td>
-                  <td className="meet-who"><span className="stack">{r.people.slice(0, 4).map((u) => <Avatar key={u} user={users.get(u) ?? { id: u, displayName: '?' }} size="sm" />)}</span></td>
+                  <td className="meet-who"><span className="stack">{r.people.filter((u) => !isWebGuest(u)).slice(0, 4).map((u) => <Avatar key={u} user={users.get(u) ?? { id: u, displayName: '?' }} size="sm" />)}</span></td>
                   <td className="meet-act">
+                    <button className="btn sm ghost" onClick={() => onReport(r.roomId)} title="Who came, for how long, hands, reactions and polls">Report</button>
                     {r.meetingId && r.kind !== 'conversation'
                       ? <button className="btn sm ghost" disabled={busy} onClick={() => onJoin(r.meetingId!, false)}>Rejoin</button>
                       : c ? <button className="btn sm ghost" onClick={() => openConv(c.id)}>Open</button> : null}

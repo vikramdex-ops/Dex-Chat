@@ -92,11 +92,39 @@ function flowModelAssets(): Plugin {
   };
 }
 
+/** Strong noise suppression in Rooms: RNNoise (BSD-3-Clause) built to WebAssembly with its audio
+ * worklet (@sapphi-red/web-noise-suppressor, MIT), copied beside the app like the segmenter. */
+function noiseAssets(): Plugin {
+  const dist = path.dirname(require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js'));
+  const files: Array<[string, string]> = [
+    [path.join(dist, 'workletProcessor.js'), 'rnnoiseWorklet.js'],
+    [path.join(dist, '..', 'rnnoise.wasm'), 'rnnoise.wasm'],
+    [path.join(dist, '..', 'rnnoise_simd.wasm'), 'rnnoise_simd.wasm'],
+  ];
+  let outDir = '';
+  return {
+    name: 'dex-noise-assets',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    writeBundle() {
+      fs.mkdirSync(path.join(outDir, 'noise'), { recursive: true });
+      for (const [from, to] of files) fs.copyFileSync(from, path.join(outDir, 'noise', to));
+    },
+    configureServer(server) {
+      server.middlewares.use('/noise/', (req, res, next) => {
+        const hit = files.find(([, to]) => req.url === `/${to}`);
+        if (!hit) return next();
+        res.setHeader('content-type', hit[1].endsWith('.js') ? 'text/javascript' : 'application/wasm');
+        fs.createReadStream(hit[0]).pipe(res);
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: 'src/renderer',
   base: './',
   // the interface's JSX runtime translates literal text into the chosen language (src/renderer/i18n)
-  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets(), flowModelAssets()],
+  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets(), flowModelAssets(), noiseAssets()],
   resolve: {
     alias: {
       '@dex/i18n/jsx-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-runtime.ts'),

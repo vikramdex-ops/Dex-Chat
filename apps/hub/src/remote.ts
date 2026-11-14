@@ -3,6 +3,10 @@
 // handshake with its certificate key, then replays the device's traffic into its own local
 // endpoint, exactly as if the device were on the office network: sign-in, approval, messages,
 // calls' signalling, everything. HTTP inside the channel is limited to files and updates.
+//
+// Guests joining a meeting from a browser (M2) are not devices: the gateway serves them a page
+// and passes their JSON frames here as "guest" control frames on the same connection, which the
+// hub hands to meet-guests.ts. They never reach the hub's local endpoint.
 import crypto, { X509Certificate } from 'node:crypto';
 import https from 'node:https';
 import WebSocket from 'ws';
@@ -28,6 +32,17 @@ interface Options {
   secret: string;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
   onStatus: (s: RemoteStatus) => void;
+  /** Browser guests on the gateway's meeting pages. */
+  guests?: GuestSink;
+}
+
+/** Where guest frames go (meet-guests.ts). */
+export interface GuestSink {
+  open(gid: number, ip: string, meetingId: string): void;
+  frame(gid: number, text: string): void;
+  closed(gid: number): void;
+  /** The gateway connection dropped: every guest is gone. */
+  dropAll(): void;
 }
 
 /** What a device may fetch over HTTP through the gateway: files and update downloads, nothing else. */
@@ -81,6 +96,7 @@ export class RemoteGateway {
     // tell the gateway to close every device's socket, then leave cleanly
     for (const [sid, st] of this.streams) { this.closeStream(sid, 4403, 'Access from outside the office was turned off'); st.end(); }
     this.streams.clear();
+    this.opts.guests?.dropAll();
     this.ws = null;
     if (ws) {
       ws.removeAllListeners();
@@ -117,6 +133,7 @@ export class RemoteGateway {
       this.ws = null;
       for (const s of this.streams.values()) s.end();
       this.streams.clear();
+      this.opts.guests?.dropAll();
       const delay = Math.min(60_000, 2000 * 2 ** Math.min(this.attempts++, 5));
       this.setStatus({ connected: false, since: null, error: reason });
       this.opts.log('warn', 'gateway disconnected', { reason, retryInMs: delay });
@@ -127,7 +144,7 @@ export class RemoteGateway {
   }
 
   private control(ws: WebSocket, raw: string): void {
-    let m: { t?: string; n?: string; s?: number; ip?: string; country?: string | null; fp?: string; pinned?: boolean };
+    let m: { t?: string; n?: string; s?: number; g?: number; m?: string; d?: string; ip?: string; country?: string | null; fp?: string; pinned?: boolean };
     try { m = JSON.parse(raw); } catch { return; }
     if (m.t === 'challenge' && typeof m.n === 'string') {
       const sig = crypto.sign('sha256', Buffer.from(`dexconnect-gw-hub-v1|${this.opts.hubId}|${m.n}`), this.opts.keyPem);
@@ -143,7 +160,25 @@ export class RemoteGateway {
       this.setStatus({});
     } else if (m.t === 'closed' && typeof m.s === 'number') {
       this.streams.get(m.s)?.end();
+    } else if (m.t === 'g-open' && typeof m.g === 'number') {
+      const g = this.opts.guests;
+      if (!g) { this.closeGuest(m.g, 4404, 'Guests cannot join meetings on this hub.'); return; }
+      g.open(m.g, `${m.ip ?? 'unknown'}${m.country ? ` (${m.country})` : ''}`, String(m.m ?? ''));
+    } else if (m.t === 'g' && typeof m.g === 'number' && typeof m.d === 'string') {
+      this.opts.guests?.frame(m.g, m.d);
+    } else if (m.t === 'g-closed' && typeof m.g === 'number') {
+      this.opts.guests?.closed(m.g);
     }
+  }
+
+  /** A frame to a browser guest (through the gateway). */
+  sendGuest(gid: number, frame: unknown): void {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: 'g', g: gid, d: JSON.stringify(frame) }));
+  }
+
+  /** Close a browser guest's connection; code 4403 tells the gateway the passcode was wrong. */
+  closeGuest(gid: number, code: number, reason: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: 'g-close', g: gid, code, reason: reason.slice(0, 120) }));
   }
 
   // ---------------------------------------------------------------- used by streams
