@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PublicUser } from '@dex/core';
-import { Avatar, Dialog, Icon, colorFor, useToast } from '../ui.tsx';
+import { Avatar, Dialog, Icon, Popover, colorFor, presenceFor, useToast } from '../ui.tsx';
 import {
-  answer, decline, joinRoom, leave, levelMeter, setMinimized, startCall, toggleCamera, toggleMute, toggleScreen, useCall,
+  answer, callQuality, decline, joinRoom, leave, levelMeter, setMinimized, startCall, toggleCamera, toggleMute, toggleScreen, useCall,
 } from './engine.ts';
+import { addConversation, chatState, sendMessage } from '../chat/store.ts';
 import { clearRecording, recordSupported, startRecording, stopRecording, useRecorder } from './recorder.ts';
 import { policyNow, usePolicy } from '../policy.ts';
-import { sendMessage } from '../chat/store.ts';
 
 function useDuration(since: number | undefined): string {
   const [now, setNow] = useState(Date.now());
@@ -77,6 +77,15 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
   const camera = useCall((s) => s.camera);
   const minimized = useCall((s) => s.minimized);
   const [picker, setPicker] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [who, setWho] = useState('');
+  const addBtn = useRef<HTMLButtonElement>(null);
+  const [quality, setQuality] = useState<Awaited<ReturnType<typeof callQuality>> | null>(null);
+  useEffect(() => {
+    if (!room) return;
+    const t = setInterval(() => { void callQuality().then(setQuality); }, 3000);
+    return () => clearInterval(t);
+  }, [room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const duration = useDuration(room?.startedAt);
   const policy = usePolicy();
   const recState = useRecorder();
@@ -84,6 +93,27 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
   const toast = useToast();
   if (!room) return null;
   const recorders = [...new Set(room.participants.filter((p) => p.recording).map((p) => p.userId))];
+  const conv = chatState().conversations.get(room.convId);
+  const convMembers = conv?.members ?? [];
+  const convKind = conv?.kind ?? 'space';
+  const addToCall = async (userId: string) => {
+    try {
+      if (convMembers.includes(userId)) { await window.dex.request('room.invite', { roomId: room.id, userIds: [userId] }); toast('Ringing'); return; }
+      // a Direct call grows into a group conversation and a new call there
+      const others = convMembers.filter((u) => u !== meId);
+      const c = await window.dex.request('conv.create', { kind: 'direct', members: [...others, userId] });
+      addConversation(c);
+      leave();
+      await startCall(c.id, room.video);
+      toast('Moved to a group call');
+    } catch (e) { toast((e as Error).message, true); }
+  };
+  const popOut = async () => {
+    const v = [...document.querySelectorAll<HTMLVideoElement>('.room-share video, .room-grid video')].find((x) => x.videoWidth && !x.style.transform.includes('scaleX(-1)'))
+      ?? document.querySelector<HTMLVideoElement>('.room-grid video');
+    if (!v) { toast('No one has video on yet.', true); return; }
+    try { setMinimized(true); await v.requestPictureInPicture(); } catch (e) { toast((e as Error).message, true); }
+  };
   const others = room.participants.filter((p) => p.deviceId !== meDevice);
   const shared = others.find((p) => p.screen);
   const sharedStream = shared ? peers.get(shared.deviceId)?.streams.find((s, i) => i > 0 && s.getVideoTracks().length) ?? null : null;
@@ -109,6 +139,11 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
         <span className="room-live" /><span className="label">Room</span>
         <h2>{name}</h2>
         <span className="mono faint">{duration}</span>
+        {quality && quality.label !== 'unknown' && others.length > 0 && (
+          <span className={`chip q-${quality.label}`} title={`Round trip ${quality.rttMs ?? '?'} ms · loss ${quality.loss === null ? '?' : `${(quality.loss * 100).toFixed(1)}%`}${quality.relayed ? ' · through a relay' : ''}`}>
+            <span className="q-bars"><i /><i /><i /></span>{quality.label === 'good' ? 'Good connection' : quality.label === 'fair' ? 'Fair connection' : 'Poor connection'}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {recorders.length > 0 && <span className="chip rec-chip" role="status"><span className="rec-dot" />{recorders.includes(meId) ? 'You are recording' : `${users.get(recorders[0])?.displayName ?? 'Someone'} is recording`}</span>}
         {room.ringing.length > 0 && <span className="chip warn">Ringing {room.ringing.map((u) => users.get(u)?.displayName.split(' ')[0]).join(', ')}</span>}
@@ -144,25 +179,42 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
             <Icon name="record" size={20} /><span>{myRec ? 'Stop' : 'Record'}</span>
           </button>
         )}
+        <button ref={addBtn} className="round" title="Add people to the call" onClick={() => setAdding(!adding)}><Icon name="people" size={20} /><span>Add</span></button>
+        {typeof document !== 'undefined' && 'pictureInPictureEnabled' in document && (
+          <button className="round" title="Keep the video on top in a small window" onClick={() => void popOut()}><Icon name="expand" size={20} /><span>Pop out</span></button>
+        )}
         <button className="round leave" onClick={leave} title="Leave the Room"><Icon name="phone-off" size={20} /><span>Leave</span></button>
       </footer>
-      {picker && <ScreenPicker onPick={(id) => { setPicker(false); void toggleScreen(id); }} onClose={() => setPicker(false)} />}
+      {picker && <ScreenPicker onPick={(id, sound) => { setPicker(false); void toggleScreen(id, sound); }} onClose={() => setPicker(false)} />}
+      {adding && (
+        <Popover anchor={addBtn.current} onClose={() => setAdding(false)} className="menu add-people" align="start">
+          <div className="menu-label">Ring into the call</div>
+          <input className="input" autoFocus placeholder="Find someone" value={who} onChange={(e) => setWho(e.target.value)} />
+          {[...users.values()].filter((u) => u.role !== 'bot' && u.id !== meId && !room.participants.some((p) => p.userId === u.id) && !room.ringing.includes(u.id)
+            && (convMembers.includes(u.id) || convKind === 'direct') && u.displayName.toLowerCase().includes(who.toLowerCase())).slice(0, 8).map((u) => (
+            <button key={u.id} role="menuitem" onClick={() => { setAdding(false); void addToCall(u.id); }}><Avatar user={u} presence={presenceFor(u.id)} size="sm" />{u.displayName}</button>
+          ))}
+        </Popover>
+      )}
     </div>,
     document.body,
   );
 }
 
-export function ScreenPicker({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
+export function ScreenPicker({ onPick, onClose, offerSound = true }: { onPick: (id: string, sound: boolean) => void; onClose: () => void; offerSound?: boolean }) {
   const [sources, setSources] = useState<Array<{ id: string; name: string; thumbnail: string }> | null>(null);
+  const [sound, setSound] = useState(false);
+  const canSound = offerSound && document.documentElement.dataset.platform === 'win32';
   useEffect(() => { void window.dex.listScreens?.().then(setSources).catch(() => setSources([])); }, []);
   return (
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="dialog wide screen-picker" role="dialog" aria-label="Share your screen">
         <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}><h2 style={{ flex: 1 }}>Share your screen</h2><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button></div>
+        {canSound && <label className="check-line"><input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} />Share the computer's sound too (a video, a presentation)</label>}
         {sources === null && <div className="tl-more"><span className="spinner" /></div>}
         <div className="screen-grid">
           {sources?.map((s) => (
-            <button key={s.id} className="screen-option" onClick={() => onPick(s.id)}>
+            <button key={s.id} className="screen-option" onClick={() => onPick(s.id, canSound && sound)}>
               <img src={s.thumbnail} alt="" /><span>{s.name}</span>
             </button>
           ))}

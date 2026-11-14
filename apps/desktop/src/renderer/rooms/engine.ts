@@ -210,18 +210,19 @@ export async function toggleCamera(): Promise<void> {
   void announceMedia();
 }
 
-export async function toggleScreen(sourceId?: string): Promise<void> {
+export async function toggleScreen(sourceId?: string, withSound = false): Promise<void> {
   if (state.screen) {
     stopScreen();
     return;
   }
   try {
     if (sourceId) await window.dex.chooseScreen?.(sourceId);
-    const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15 } }, audio: false });
+    const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15 } }, audio: withSound });
     const track = screen.getVideoTracks()[0];
     track.contentHint = 'detail';
     track.onended = () => stopScreen();
-    for (const l of links.values()) l.senders.push(l.pc.addTrack(track, screen));
+    // the computer's sound (Windows) travels with the screen
+    for (const l of links.values()) for (const t of screen.getTracks()) l.senders.push(l.pc.addTrack(t, screen));
     set({ screen });
     void announceMedia();
   } catch { /* the person cancelled the picker */ }
@@ -239,6 +240,35 @@ function stopScreen(): void {
 }
 
 export function setMinimized(minimized: boolean): void { set({ minimized }); }
+
+/** How the call's connections are doing: worst round-trip time and packet loss across peers. */
+export async function callQuality(): Promise<{ rttMs: number | null; loss: number | null; relayed: boolean; label: 'good' | 'fair' | 'poor' | 'unknown' }> {
+  let rtt: number | null = null;
+  let lost = 0;
+  let got = 0;
+  let relayed = false;
+  for (const l of links.values()) {
+    try {
+      const stats = await l.pc.getStats();
+      const local = new Map<string, string>();
+      stats.forEach((r) => { if (r.type === 'local-candidate') local.set(r.id, (r as { candidateType?: string }).candidateType ?? ''); });
+      stats.forEach((r) => {
+        if (r.type === 'candidate-pair' && (r as { nominated?: boolean }).nominated && (r as { state?: string }).state === 'succeeded') {
+          const t = (r as { currentRoundTripTime?: number }).currentRoundTripTime;
+          if (typeof t === 'number') rtt = Math.max(rtt ?? 0, t * 1000);
+          if (local.get((r as { localCandidateId?: string }).localCandidateId ?? '') === 'relay') relayed = true;
+        }
+        if (r.type === 'inbound-rtp') {
+          lost += (r as { packetsLost?: number }).packetsLost ?? 0;
+          got += (r as { packetsReceived?: number }).packetsReceived ?? 0;
+        }
+      });
+    } catch { /* closing */ }
+  }
+  const loss = got + lost > 0 ? lost / (got + lost) : null;
+  const label = rtt === null && loss === null ? 'unknown' : (rtt ?? 0) > 400 || (loss ?? 0) > 0.08 ? 'poor' : (rtt ?? 0) > 150 || (loss ?? 0) > 0.02 ? 'fair' : 'good';
+  return { rttMs: rtt === null ? null : Math.round(rtt), loss, relayed, label };
+}
 export function clearError(): void { set({ error: null }); }
 
 async function announceMedia(): Promise<void> {

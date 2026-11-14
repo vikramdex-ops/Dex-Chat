@@ -103,7 +103,7 @@ export function ClipRecorder({ mode, convId, parentId, onClose }: { mode: 'camer
     } catch (e) { toast((e as Error).message, true); setBusy(false); }
   };
 
-  if (phase === 'pick') return <ScreenPicker onPick={(id) => void open(id)} onClose={onClose} />;
+  if (phase === 'pick') return <ScreenPicker offerSound={false} onPick={(id) => void open(id)} onClose={onClose} />;
   return (
     <Dialog title={mode === 'camera' ? 'Video message' : 'Screen recording'} onClose={() => { if (phase !== 'recording' || confirm('Stop and discard this recording?')) { rec.current?.r.state === 'recording' && rec.current.r.stop(); stopAll(); onClose(); } }}>
       <div className={`clip-stage${mode === 'camera' ? ' camera' : ''}`}>

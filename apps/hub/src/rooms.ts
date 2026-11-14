@@ -130,6 +130,21 @@ export class Rooms {
         return { ok: true };
       }
 
+      case 'room.invite': {
+        const r = this.get(d.roomId, me);
+        if (!r.participants.some((p) => p.userId === me.id)) throw new RoomError('Join the call first.');
+        const members = this.host.members(r.convId);
+        const ids = (Array.isArray(d.userIds) ? d.userIds.map(String) : [])
+          .filter((u) => members.includes(u) && !r.participants.some((p) => p.userId === u) && !r.ringing.includes(u)).slice(0, MAX_PARTICIPANTS);
+        if (!ids.length) throw new RoomError('Everyone you chose is already in the call or being rung.');
+        if (r.participants.length + ids.length > MAX_PARTICIPANTS) throw new RoomError(`A Room holds up to ${MAX_PARTICIPANTS} people.`);
+        r.ringing.push(...ids);
+        const stop = setTimeout(() => { r.ringing = r.ringing.filter((u) => !ids.includes(u)); if (this.rooms.has(r.id)) this.publish(r); }, RING_TIMEOUT_MS);
+        stop.unref?.();
+        this.host.deliverToUsers(ids, 'room.ring', { room: this.view(r), from: me.id });
+        this.publish(r);
+        return this.view(r);
+      }
       case 'room.record': {
         const r = this.get(d.roomId, me);
         const p = r.participants.find((x) => x.deviceId === deviceId);

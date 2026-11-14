@@ -260,11 +260,13 @@ function wireIpc(c: Controller): void {
     return sources.filter((s) => !/Dexterity Connect/.test(s.name)).map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }));
   });
   ipcMain.handle('screen:choose', (_e, id: string) => { chosenScreen = typeof id === 'string' ? id : null; });
-  session.defaultSession.setDisplayMediaRequestHandler((_req, callback) => {
+  session.defaultSession.setDisplayMediaRequestHandler((req, callback) => {
     void desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
       const pick = sources.find((s) => s.id === chosenScreen) ?? sources.find((s) => s.id.startsWith('screen:'));
       chosenScreen = null;
-      if (pick) callback({ video: pick }); else callback({});
+      // the computer's own sound, when asked for (Windows can capture it)
+      if (pick) callback({ video: pick, ...(req.audioRequested && process.platform === 'win32' ? { audio: 'loopback' as const } : {}) });
+      else callback({});
     });
   });
   // reports exported from the app (timesheets, attendance): ask where, starting in Downloads

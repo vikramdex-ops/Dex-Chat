@@ -714,6 +714,8 @@ export interface Ops {
   'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
   'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
+  /** Ring more of the conversation's members into a running call. */
+  'room.invite': { req: { roomId: string; userIds: string[] }; res: RoomInfo };
   'room.record': { req: { roomId: string; on: boolean }; res: { ok: true } };
   'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
   'msg.forward': { req: { messageId: string; convIds: string[]; note?: string; /** per target: the text to post (re-sealed by the app for encrypted Directs) */ bodies?: Record<string, string> }; res: Message[] };

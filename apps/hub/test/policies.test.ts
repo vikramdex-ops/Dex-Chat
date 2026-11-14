@@ -70,3 +70,16 @@ test('recording a call shows to everyone in it and follows the office policy', a
   await priya.request('room.record', { roomId: room.id, on: false });
   await priya.request('room.leave', { roomId: room.id });
 });
+
+test('ringing more people into a running call', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Call', members: [me(priya), me(ravi)] });
+  const room = await owner.request('room.start', { convId: space.id, video: false });
+  await ravi.request('room.decline', { roomId: room.id });
+  const rung = nextEvent<{ room: { id: string } }>(ravi, 'room.ring', (x) => x.room.id === room.id);
+  const after = await owner.request('room.invite', { roomId: room.id, userIds: [me(ravi)] });
+  assert.ok(after.ringing.includes(me(ravi)));
+  assert.equal((await rung).room.id, room.id);
+  await assert.rejects(owner.request('room.invite', { roomId: room.id, userIds: [me(ravi)] }), /already/);
+  await owner.request('room.leave', { roomId: room.id });
+});
