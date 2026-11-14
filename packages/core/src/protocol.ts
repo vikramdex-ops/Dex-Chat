@@ -679,7 +679,13 @@ export interface Ops {
   'sched.cancel': { req: { id: string }; res: { ok: true } };
   'sched.sendNow': { req: { id: string }; res: Message };
   'search': {
-    req: { q: string; convId?: string; limit?: number };
+    req: {
+      q: string; convId?: string; limit?: number;
+      /** Filters: who wrote it, Direct or Spaces, a date range (ms), only messages with files. */
+      from?: string; kind?: 'direct' | 'space'; after?: number; before?: number; hasFile?: boolean;
+      /** Page further back: only results older than this message id. */
+      olderThan?: string;
+    };
     res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string }> };
   };
 }

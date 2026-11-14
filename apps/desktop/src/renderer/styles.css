@@ -1497,3 +1497,24 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 [data-density='compact'] .sb-row { padding-top: 5px; padding-bottom: 5px; min-height: 0; }
 [data-density='compact'] .sb-preview { display: none; }
 [data-density='compact'] .day-mark { margin: 8px 0 4px; }
+
+/* search */
+.search-view { display: grid; gap: 12px; align-content: start; }
+.search-box { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 44px; border-radius: 12px; border: 1px solid var(--stroke-strong); background: var(--layer-solid); }
+.search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-box input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font: 15px var(--font-body); color: var(--text); }
+.search-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid var(--stroke-strong); background: var(--layer-solid); font-size: 12.5px; color: var(--text-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-btn:hover { background: var(--subtle); }
+.chip-btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.chip-x { display: grid; place-items: center; width: 22px; height: 22px; margin-left: -4px; border-radius: 11px; border: 0; background: var(--subtle); color: var(--text-2); }
+.pick-menu { width: 260px; max-height: 340px; overflow: auto; }
+.pick-menu .input { margin: 4px 4px 6px; width: calc(100% - 8px); }
+.search-results { display: grid; gap: 2px; }
+.search-hit { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: none; text-align: left; color: var(--text); }
+.search-hit:hover { background: var(--subtle); }
+.search-hit .file-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.search-meta { display: flex; gap: 6px; align-items: baseline; font-size: 13px; min-width: 0; }
+.search-meta .mono { margin-left: auto; font-size: 11px; flex: none; }
+.search-snippet { display: block; font-size: 13px; line-height: 1.45; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.search-snippet mark { background: var(--amber-soft); color: inherit; border-radius: 3px; padding: 0 2px; }

@@ -114,3 +114,37 @@ test('images display inline, identical files are stored once, limits are enforce
   const weird = await upload(hub, owner, '../../etc/passwd', Buffer.from('x'));
   assert.equal(weird.info.name, '.._.._etc_passwd');
 });
+
+test('search filters: person, Direct or Spaces, dates, files, paging', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  const pid = priya.session!.me.id;
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Filters', members: [pid, ravi.session!.me.id] });
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [pid] });
+  let n = 0;
+  const say = (c: HubClient, convId: string, body: string, files?: string[]) => c.request('msg.send', { convId, body, clientId: `s${n++}`, files });
+  await say(owner, space.id, 'valve schedule draft');
+  await say(priya, space.id, 'valve schedule checked');
+  await say(owner, dm.id, 'valve schedule private copy');
+  const { info } = await upload(hub, ravi, 'Valve list.xlsx', Buffer.from('xlsx'));
+  await say(ravi, space.id, 'list attached', [info.id]);
+
+  assert.equal((await priya.request('search', { q: 'valve' })).messages.length, 3);
+  assert.deepEqual((await priya.request('search', { q: 'valve', from: pid })).messages.map((m) => m.message.body), ['valve schedule checked']);
+  assert.equal((await priya.request('search', { q: 'valve', kind: 'direct' })).messages.length, 1);
+  assert.equal((await priya.request('search', { q: 'valve', kind: 'space' })).messages.length, 2);
+  assert.equal((await priya.request('search', { q: 'valve', after: Date.now() + 60_000 })).messages.length, 0);
+  assert.equal((await priya.request('search', { q: 'valve', before: Date.now() + 60_000 })).messages.length, 3);
+  // filters alone: every message with a file, everything in one conversation
+  const withFiles = await priya.request('search', { q: '', hasFile: true });
+  assert.deepEqual(withFiles.messages.map((m) => m.message.body), ['list attached']);
+  assert.equal(withFiles.files[0].name, 'Valve list.xlsx');
+  assert.equal((await priya.request('search', { q: '', convId: dm.id })).messages.length, 1);
+  assert.equal((await priya.request('search', { q: '', kind: 'space' })).messages.length, 0, 'a kind alone is too broad');
+  // paging back
+  const first = await priya.request('search', { q: 'valve', limit: 2 });
+  const more = await priya.request('search', { q: 'valve', limit: 2, olderThan: first.messages[1].message.id });
+  assert.equal(more.messages.length, 1);
+  // never someone else's Direct conversation
+  assert.equal((await ravi.request('search', { q: 'valve', kind: 'direct' })).messages.length, 0);
+  assert.equal((await ravi.request('search', { q: '', convId: dm.id })).messages.length, 0);
+});

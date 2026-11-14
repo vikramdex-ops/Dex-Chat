@@ -14,7 +14,7 @@ function Snippet({ text }: { text: string }) {
   return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}</>;
 }
 
-export function CommandPalette({ users, online, commands, onClose, onPerson, convName, onMessage }: {
+export function CommandPalette({ users, online, commands, onClose, onPerson, convName, onMessage, onSearch }: {
   users: PublicUser[];
   online: Set<string>;
   commands: Command[];
@@ -22,6 +22,7 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
   onPerson: (id: string) => void;
   convName?: (convId: string) => string;
   onMessage?: (m: Message) => void;
+  onSearch?: (q: string) => void;
 }) {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
@@ -51,9 +52,10 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
       .filter((c) => !s || c.label.toLowerCase().includes(s))
       .map((c) => ({ kind: 'command' as const, id: c.id, command: c }));
     const msgs = hits.map((h) => ({ kind: 'message' as const, id: `m-${h.message.id}`, hit: h }));
-    return s ? [...cmds.filter((c) => c.command.hint).slice(0, 5), ...people.slice(0, 5), ...msgs, ...cmds.filter((c) => !c.command.hint)].slice(0, 24)
+    const all = s.length >= 2 && onSearch ? [{ kind: 'command' as const, id: 'search-all', command: { id: 'search-all', label: `Search everything for “${q.trim()}” with filters`, icon: 'search' as IconName, hint: 'Search', run: () => onSearch(q.trim()) } }] : [];
+    return s ? [...cmds.filter((c) => c.command.hint).slice(0, 5), ...people.slice(0, 5), ...msgs, ...all, ...cmds.filter((c) => !c.command.hint)].slice(0, 24)
       : [...cmds.filter((c) => !c.command.hint), ...people.slice(0, 5)];
-  }, [q, users, online, commands, hits]);
+  }, [q, users, online, commands, hits, onSearch]);
 
   useEffect(() => { setIndex(0); }, [q]);
 

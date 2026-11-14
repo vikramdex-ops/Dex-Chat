@@ -4,6 +4,7 @@ import { Dialog } from '../ui.tsx';
 const GROUPS: Array<{ title: string; keys: Array<[string[], string]> }> = [
   { title: 'Getting around', keys: [
     [['Ctrl', 'K'], 'Find people, conversations and commands'],
+    [['Ctrl', 'Shift', 'F'], 'Search messages and files, with filters'],
     [['Ctrl', '1…6'], 'Pulse, Direct, Spaces, Desk, Calendar, Directory'],
     [['Alt', '↑'], 'Previous conversation in the list'],
     [['Alt', '↓'], 'Next conversation in the list'],

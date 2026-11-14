@@ -734,20 +734,48 @@ export class Messaging {
       case 'search': {
         const q = typeof d.q === 'string' ? d.q.slice(0, 200) : '';
         const terms = q.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_.\-]*/gu)?.slice(0, 8) ?? [];
-        if (!terms.length) return { messages: [], files: [] } satisfies Ops['search']['res'];
-        const match = terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(' ');
-        const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(d.limit))) : 20;
+        const from = typeof d.from === 'string' ? d.from : null;
+        const kind = d.kind === 'direct' || d.kind === 'space' ? d.kind : null;
+        const after = typeof d.after === 'number' && Number.isFinite(d.after) ? d.after : null;
+        const before = typeof d.before === 'number' && Number.isFinite(d.before) ? d.before : null;
+        const hasFile = d.hasFile === true;
+        const olderThan = typeof d.olderThan === 'string' ? d.olderThan.slice(0, 40) : null;
         const scope = typeof d.convId === 'string' ? d.convId : null;
-        const rows = this.db.prepare(`SELECT f.message_id, snippet(messages_fts, 0, '[[', ']]', '…', 12) AS snip
-          FROM messages_fts f JOIN conv_members cm ON cm.conv_id = f.conv_id AND cm.user_id = ?
-          WHERE messages_fts MATCH ? ${scope ? 'AND f.conv_id = ?' : ''} ORDER BY f.message_id DESC LIMIT ?`)
-          .all(...(scope ? [me.id, match, scope, limit] : [me.id, match, limit])) as Array<{ message_id: string; snip: string }>;
+        const filtered = !!(from || kind || after !== null || before !== null || hasFile || scope);
+        // with no words, filters alone can list messages ("everything Priya sent last week")
+        if (!terms.length && !(filtered && (from || hasFile || scope || after !== null))) return { messages: [], files: [] } satisfies Ops['search']['res'];
+        const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(d.limit))) : 20;
+        const where: string[] = ['m.deleted = 0'];
+        const args: Array<string | number> = [me.id];
+        if (terms.length) { where.push('messages_fts MATCH ?'); args.push(terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(' ')); }
+        if (scope) { where.push('m.conv_id = ?'); args.push(scope); }
+        if (from) { where.push('m.author_id = ?'); args.push(from); }
+        if (kind) { where.push('c.kind = ?'); args.push(kind); }
+        if (after !== null) { where.push('m.created_at >= ?'); args.push(after); }
+        if (before !== null) { where.push('m.created_at < ?'); args.push(before); }
+        if (hasFile) where.push('EXISTS (SELECT 1 FROM message_files x WHERE x.message_id = m.id)');
+        if (olderThan) { where.push('m.id < ?'); args.push(olderThan); }
+        const rows = this.db.prepare(`SELECT m.id AS message_id, ${terms.length ? "snippet(messages_fts, 0, '[[', ']]', '…', 12)" : "''"} AS snip
+          FROM ${terms.length ? 'messages_fts f JOIN messages m ON m.id = f.message_id' : 'messages m'}
+          JOIN conv_members cm ON cm.conv_id = m.conv_id AND cm.user_id = ?
+          JOIN conversations c ON c.id = m.conv_id
+          WHERE ${where.join(' AND ')} ORDER BY m.id DESC LIMIT ?`)
+          .all(...args, limit) as Array<{ message_id: string; snip: string }>;
         const messages = rows.map((r) => ({ message: this.messageView(this.message(r.message_id)!, me.id), snippet: r.snip })).filter((x) => !x.message.deleted);
-        const like = `%${terms.join('%')}%`;
+        const fWhere: string[] = ['m.deleted = 0'];
+        const fArgs: Array<string | number> = [me.id];
+        if (terms.length) { fWhere.push('lower(f.name) LIKE ?'); fArgs.push(`%${terms.join('%')}%`); }
+        if (scope) { fWhere.push('mf.conv_id = ?'); fArgs.push(scope); }
+        if (from) { fWhere.push('m.author_id = ?'); fArgs.push(from); }
+        if (kind) { fWhere.push('c.kind = ?'); fArgs.push(kind); }
+        if (after !== null) { fWhere.push('m.created_at >= ?'); fArgs.push(after); }
+        if (before !== null) { fWhere.push('m.created_at < ?'); fArgs.push(before); }
+        if (olderThan) { fWhere.push('mf.message_id < ?'); fArgs.push(olderThan); }
         const files = this.db.prepare(`SELECT f.*, mf.message_id, mf.conv_id FROM files f JOIN message_files mf ON mf.file_id = f.id
           JOIN conv_members cm ON cm.conv_id = mf.conv_id AND cm.user_id = ? JOIN messages m ON m.id = mf.message_id
-          WHERE m.deleted = 0 AND lower(f.name) LIKE ? ${scope ? 'AND mf.conv_id = ?' : ''} ORDER BY mf.message_id DESC LIMIT 10`)
-          .all(...(scope ? [me.id, like, scope] : [me.id, like])) as Array<{ id: string; name: string; mime: string; size: number; uploader_id: string; created_at: number; message_id: string; conv_id: string }>;
+          JOIN conversations c ON c.id = mf.conv_id
+          WHERE ${fWhere.join(' AND ')} ORDER BY mf.message_id DESC LIMIT ?`)
+          .all(...fArgs, terms.length ? 10 : limit) as Array<{ id: string; name: string; mime: string; size: number; uploader_id: string; created_at: number; message_id: string; conv_id: string }>;
         return {
           messages,
           files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size, uploaderId: f.uploader_id, createdAt: f.created_at, messageId: f.message_id, convId: f.conv_id })),

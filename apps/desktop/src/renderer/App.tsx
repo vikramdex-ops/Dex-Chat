@@ -27,6 +27,7 @@ import { WorkClock } from './work/WorkUi.tsx';
 import { startCalendar } from './calendar/store.ts';
 import { ShareDialog, parseShare } from './views/ShareDialog.tsx';
 import { ShortcutsSheet } from './views/Shortcuts.tsx';
+import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
@@ -35,7 +36,7 @@ import { setSelfUser, startCalls } from './rooms/engine.ts';
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory';
-export type SheetName = 'preferences' | 'control' | null;
+export type SheetName = 'preferences' | 'control' | 'search' | null;
 /** Kept for older call sites: a section is a lens or a sheet. */
 export type Section = Lens | 'admin' | 'settings' | 'home' | 'people';
 
@@ -152,6 +153,8 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
+  const [searchInit, setSearchInit] = useState<SearchInit>({});
+  const openSearch = (init: SearchInit) => { setSearchInit(init); setSheet('search'); setPalette(false); };
   const [menu, setMenu] = useState(false);
   const [query, setQuery] = useState('');
   const [focusUser, setFocusUser] = useState<string | null>(null);
@@ -187,6 +190,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     openConversation(c.id, c.kind);
     if (messageId) setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId, messageId, parentId: parentId ?? null } })), 120);
   };
+  // the conversation header's search button
+  useEffect(() => {
+    const onSearch = (e: Event) => openSearch({ convId: String((e as CustomEvent).detail) });
+    window.addEventListener('dex-search', onSearch);
+    return () => window.removeEventListener('dex-search', onSearch);
+  }, []);
   // other parts of the app open a conversation by id (Reply privately, links)
   useEffect(() => {
     const onOpen = (e: Event) => { const c = chatState().conversations.get(String((e as CustomEvent).detail)); if (c) openConversation(c.id, c.kind); };
@@ -245,6 +254,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         void window.dex.setSettings({ textSize: next });
       }
       else if (k === '/') { e.preventDefault(); setShortcuts(true); }
+      else if (k === 'f' && e.shiftKey) { e.preventDefault(); openSearch({}); }
       else if (k === ',') { e.preventDefault(); setSheet('preferences'); }
       else {
         const n = Number(e.key);
@@ -295,6 +305,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       hint: c.kind === 'space' ? 'Space' : 'Direct', run: () => openConversation(c.id, c.kind),
     })),
     { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
+    { id: 'search', label: 'Search messages and files', icon: 'search' as IconName, hint: 'Ctrl+Shift+F', run: () => openSearch({}) },
     { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'info' as IconName, hint: 'Ctrl+/', run: () => setShortcuts(true) },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
     { id: 'go-desk', label: 'Go to Desk: reminders, saved, scheduled', icon: 'desk' as IconName, run: () => setLens('desk') },
@@ -390,10 +401,17 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
       {sheet && (
         <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
-          <aside className={`sheet${sheet === 'control' ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={sheet === 'control' ? 'Control room' : 'Preferences'}>
+          <aside className={`sheet${sheet === 'control' ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={sheet === 'control' ? 'Control room' : sheet === 'search' ? 'Search' : 'Preferences'}>
             <button className="sheet-close" onClick={() => setSheet(null)} aria-label="Close" title="Close (Esc)"><Icon name="x" size={18} /></button>
             <div className="sheet-body">
               {sheet === 'preferences' && <SettingsView state={state} session={session} />}
+              {sheet === 'search' && (
+                <div className="view">
+                  <div className="view-head"><div><h1>Search</h1></div></div>
+                  <SearchView key={JSON.stringify(searchInit)} init={searchInit} users={session.users} meId={session.me.id} conversations={conversations}
+                    onOpen={(convId, messageId, parentId) => jump(convId, messageId, parentId)} />
+                </div>
+              )}
               {sheet === 'control' && isAdmin && <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><Admin state={state} session={session} /></Suspense>}
             </div>
           </aside>
@@ -410,6 +428,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           onPerson={(id) => { if (id === session.me.id) { setLens('directory'); setFocusUser(id); } else void messagePerson(id); }}
           convName={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }}
           onMessage={(m) => jump(m.convId, m.id, m.parentId)}
+          onSearch={(q) => openSearch({ q })}
         />
       )}
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
