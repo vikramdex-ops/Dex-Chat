@@ -11,7 +11,7 @@ test('saved messages are private to each person and follow edits and deletes', a
   const b = await send(owner, space.id, 'Site visit on Friday');
   const starred = nextEvent<{ messageId: string; on: boolean }>(priya, 'star.updated');
   await priya.request('msg.star', { messageId: a.id, on: true });
-  assert.deepEqual(await starred, { messageId: a.id, on: true });
+  assert.deepEqual(await starred, { messageId: a.id, on: true, kind: 'keep' });
   await priya.request('msg.star', { messageId: b.id, on: true });
   assert.deepEqual((await priya.request('desk.saved')).map((s) => s.message.id), [b.id, a.id]);
   assert.equal((await owner.request('desk.saved')).length, 0);
