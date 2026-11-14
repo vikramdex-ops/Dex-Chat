@@ -95,8 +95,10 @@ body.resizing { user-select: none; cursor: col-resize; }
 
 /* tiles for Spaces and small groups */
 .space-tile { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.14) 0 1.5px, transparent 1.5px 6px) !important; }
-.avatar.group-tile { box-shadow: 3px -3px 0 -1px var(--layer-solid), 3px -3px 0 0 var(--stroke-strong); }
-.avatar.group-tile small { position: absolute; right: 2px; bottom: 2px; font: 700 8px/1 var(--font-mono); opacity: .85; }
+/* a small group: a stack of sheets, the head count in the corner of the top one */
+.avatar.group-tile { box-shadow: 4px -4px 0 -1.5px var(--layer-solid), 4px -4px 0 0 var(--text-3); }
+.avatar.group-tile small { position: absolute; right: 3px; bottom: 3px; font: 700 8.5px/1 var(--font-mono); opacity: .9; }
+.avatar.group-tile.lg small { font-size: 11px; right: 6px; bottom: 5px; }
 
 /* ------------------------------------------------------------------ a Pane */
 .pane-wrap { position: relative; display: flex; min-width: 0; min-height: 0; }
@@ -118,10 +120,10 @@ body.resizing { user-select: none; cursor: col-resize; }
 .pane-head .icon-btn { flex: none; }
 
 /* the title block: two ruled rows of mono facts */
-.title-block { flex: none; display: grid; margin: 0; min-width: 150px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); font: 10.5px/1 var(--font-mono); }
-.title-block > div { display: grid; grid-template-columns: 64px auto; }
-.title-block > div + div { border-top: 1px solid var(--stroke); }
-.title-block dt { padding: 5px 8px; border-right: 1px solid var(--stroke); color: var(--text-3); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; }
+.title-block { flex: none; display: grid; grid-template-columns: auto minmax(84px, auto); margin: 0; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); font: 10.5px/1 var(--font-mono); }
+.title-block > div { display: contents; }
+.title-block > div + div > * { border-top: 1px solid var(--stroke); }
+.title-block dt { padding: 5px 8px; border-right: 1px solid var(--stroke); color: var(--text-3); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
 .title-block dd { margin: 0; padding: 5px 9px; color: var(--text); font-weight: 600; white-space: nowrap; }
 
 /* one Room button, amber outline */
@@ -344,7 +346,8 @@ body.resizing { user-select: none; cursor: col-resize; }
 .dock.has-text .send, .dock.has-text .send-more { color: var(--accent-text); }
 .dock.has-text .send-more { border-left-color: color-mix(in srgb, var(--accent-text) 30%, transparent); }
 .dock.has-text .send:hover, .dock.has-text .send-more:hover:not(:disabled) { background: var(--accent-hover); }
-.send-menu { width: 220px; }
+.send-menu { width: 260px; }
+.menu .kbd { white-space: nowrap; }
 .add-menu { width: 230px; }
 .dock-hint { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 5px 14px 0; font-size: 11px; opacity: 0; transition: opacity var(--fast); }
 .dock-wrap:focus-within .dock-hint, .dock-hint:has(.sched-note) { opacity: 1; }
@@ -431,3 +434,5 @@ body.resizing { user-select: none; cursor: col-resize; }
 /* a run paints only inside itself (content-visibility); while its tools are out it paints over its neighbours */
 .run:hover, .run:focus-within, .run:has(.spine-tools.open) { content-visibility: visible; }
 .dock textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* names take their tile's colour; on dark sheets that colour is lifted so it reads */
+:root[data-theme='dark'] .run-name[style] { filter: brightness(1.75) saturate(.85); }

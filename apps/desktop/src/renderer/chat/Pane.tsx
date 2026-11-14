@@ -1180,7 +1180,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       )}
       <div className="dock-hint faint">
         {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 waiting to go out · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} waiting to go out`} · see Desk</span>}
-        <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>Ctrl+↑</b> edit last · <button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
+        <span>{parentId ? <><b>Enter</b> send · </> : <><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>Ctrl+↑</b> edit last · </>}<button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
         {mdHelp && (
           <Popover anchor={mdBtn.current} onClose={() => setMdHelp(false)} className="menu md-help" align="end">
             <div className="menu-label label">Formatting</div>

@@ -147,7 +147,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
 
         <section>
           <h3>Notifications</h3>
-          <div className="setting">
+          <div className="setting wide-choice">
             <Icon name="bell" className="lead" />
             <div className="txt"><div>Ping me for</div><div className="faint">Reminders and meetings always ping you.</div></div>
             <Segmented<Settings['notifyFor']> label="Ping me for" value={state.settings.notifyFor} onChange={(notifyFor) => set({ notifyFor })} options={[

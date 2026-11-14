@@ -1570,3 +1570,7 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .scan-foot p { margin: 0; font-size: 14px; }
 .menu .avail-for .when-chip { width: auto; display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--stroke-strong); border-radius: 4px; background: var(--layer-solid); color: var(--text-2); font: 500 11px/1 var(--font-body); }
 .menu .avail-for .when-chip:hover { border-color: var(--accent); color: var(--text); }
+.setting.wide-choice { flex-wrap: wrap; row-gap: 10px; }
+.setting.wide-choice .seg { flex-basis: 100%; margin-left: 40px; }
+.setting.wide-choice .seg button { flex: 1; justify-content: center; }
+@media (max-width: 720px) { .setting.wide-choice .seg { margin-left: 0; } .setting.wide-choice .seg button { flex: none; } }
