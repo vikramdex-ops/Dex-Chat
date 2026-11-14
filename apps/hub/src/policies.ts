@@ -3,6 +3,7 @@
 // calls may be recorded) and the usage report: activity per day, busiest Spaces, storage, calls.
 import type { DatabaseSync } from 'node:sqlite';
 import type { OfficePolicy, Ops, PublicUser, UsageReport } from '@dex/core';
+import { validCidr, validDlpRules } from '@dex/core/dlp';
 import type { FileStore } from './files.ts';
 import type { Store } from './store.ts';
 
@@ -58,8 +59,15 @@ export class Policies {
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
       personalDevices: this.meta('policy_personal_devices') !== '0',
+      dlp: this.json('policy_dlp', []),
+      blockedFileTypes: this.json('policy_blocked_types', []),
+      outsideNetworks: this.json('policy_outside_networks', []),
       defaultSpaces: (() => { try { return JSON.parse(this.meta('policy_default_spaces') ?? '[]') as string[]; } catch { return []; } })(),
     };
+  }
+
+  private json<T>(key: string, fallback: T): T {
+    try { const v = this.meta(key); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
   }
 
   /** The upload limit in bytes: the administrator's choice, or what the hub was started with. */
@@ -149,6 +157,19 @@ export class Policies {
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
         if (typeof d.personalDevices === 'boolean') this.setMeta('policy_personal_devices', d.personalDevices ? '1' : '0');
+        if (d.dlp !== undefined) this.setMeta('policy_dlp', JSON.stringify(validDlpRules(d.dlp)));
+        if (d.blockedFileTypes !== undefined) {
+          if (!Array.isArray(d.blockedFileTypes)) throw new PolicyError('List file types like exe, bat, ps1.');
+          const types = [...new Set(d.blockedFileTypes.map((t) => String(t).trim().toLowerCase().replace(/^\./, '')).filter((t) => /^[a-z0-9]{1,10}$/.test(t)))].slice(0, 100);
+          this.setMeta('policy_blocked_types', JSON.stringify(types));
+        }
+        if (d.outsideNetworks !== undefined) {
+          if (!Array.isArray(d.outsideNetworks)) throw new PolicyError('List networks like 203.0.113.0/24.');
+          const nets = d.outsideNetworks.map((n) => String(n).trim()).filter(Boolean).slice(0, 100);
+          const bad = nets.find((n) => !validCidr(n));
+          if (bad) throw new PolicyError(`"${bad.slice(0, 60)}" is not an address or network. Write it like 203.0.113.0/24.`);
+          this.setMeta('policy_outside_networks', JSON.stringify(nets));
+        }
         if (Array.isArray(d.defaultSpaces)) this.setMeta('policy_default_spaces', JSON.stringify(d.defaultSpaces.filter((x): x is string => typeof x === 'string').slice(0, 30)));
         const p = this.get();
         this.files.maxBytes = this.uploadBytes();

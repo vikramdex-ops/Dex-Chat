@@ -1,0 +1,10 @@
+/* Control room ▸ Policies ▸ Data protection */
+.dlp-rules { display: grid; gap: 6px; }
+.dlp-rule { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.dlp-rule .txt { flex: 1; min-width: 0; display: grid; }
+.dlp-rule .txt .faint { font-size: 12px; }
+.dlp-act { font: 600 10.5px/1 var(--mono, monospace); letter-spacing: .08em; padding: 5px 7px; border-radius: 4px; border: 1px solid currentColor; }
+.dlp-act.block { color: var(--danger); }
+.dlp-act.mask { color: var(--amber-ink, var(--accent)); }
+.dlp-form { display: grid; gap: 10px; margin-top: 10px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; }
+.error-text { color: var(--danger); }

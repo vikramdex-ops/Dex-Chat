@@ -170,6 +170,12 @@ export interface OfficePolicy {
   defaultSpaces?: string[];
   /** People may add their own phones and laptops with a pairing code (no approval needed). */
   personalDevices?: boolean;
+  /** Data-loss prevention: sensitive numbers and words stopped or masked in messages. */
+  dlp?: import('./dlp.ts').DlpRule[];
+  /** File types (extensions without the dot) that cannot be shared. */
+  blockedFileTypes?: string[];
+  /** Internet addresses (CIDR) that may connect from outside the office; empty = any. */
+  outsideNetworks?: string[];
 }
 
 /** A message someone reported to the administrators. */

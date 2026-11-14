@@ -55,6 +55,18 @@ What the gateway (and Cloudflare) *can* see:
 
 They never see message text, file contents, names, keys or call media.
 
+## Data protection and allowed networks
+
+In **Control room → Policies → Data protection** an administrator can:
+
+- stop or mask (as ••••) payment card numbers (Luhn-checked), Aadhaar numbers (Verhoeff-checked), PAN
+  numbers, bank account and IFSC details, and chosen words and phrases, everywhere or only where guests
+  can see. The hub checks everything it can read; for encrypted Direct messages, the sender's own
+  device checks before sealing.
+- list file types that can't be shared (for example `exe, bat, ps1`).
+- allow outside access only from listed networks (for example the office's other branches). Devices
+  on other networks are refused, and signed out at once when the list changes.
+
 ## Pairing codes (personal devices)
 
 - A pairing code (`DXP1-…`) carries the hub's id and certificate fingerprint, its office addresses,

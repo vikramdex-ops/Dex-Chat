@@ -82,3 +82,23 @@ test('a Direct conversation with someone on an old app stays readable (not seale
   assert.equal(sent.e2e, undefined);
   assert.equal((await priya.request('msg.list', { convId: dm.id })).messages[0].body, 'hello');
 });
+
+test("the office's data-loss rules run on the sender's device before a Direct message is sealed", async () => {
+  const { hub, owner } = await office();
+  await owner.request('admin.policy.set', { dlp: [
+    { id: 'c', name: 'Card numbers', detector: 'card', action: 'mask', scope: 'everywhere' },
+    { id: 'w', name: 'Project Falcon', detector: 'words', words: 'Project Falcon', action: 'block', scope: 'everywhere' },
+  ] });
+  const a = await person(hub, owner, 'asha');
+  const b = await person(hub, owner, 'bala');
+  const dm = await a.c.request('conv.create', { kind: 'direct', members: [me(b.c)] });
+  await a.e2e.ready(me(a.c), []);
+  assert.equal((await a.e2e.status(dm.id)).encrypted, true);
+  await assert.rejects(a.req('msg.send', { convId: dm.id, body: 'Project Falcon numbers', clientId: 'f1' }), /doesn't allow project falcon/);
+  const sent = await a.req('msg.send', { convId: dm.id, body: 'Pay with 4111 1111 1111 1111', clientId: 'f2' }) as Message;
+  assert.equal(sent.body, 'Pay with ••••');
+  const raw = hub.messaging['db'].prepare('SELECT body FROM messages WHERE id = ?').get(sent.id) as { body: string };
+  assert.ok(isSealed(raw.body), 'sealed after masking');
+  const list = await b.req('msg.list', { convId: dm.id }) as { messages: Message[] };
+  assert.equal(list.messages[0].body, 'Pay with ••••');
+});

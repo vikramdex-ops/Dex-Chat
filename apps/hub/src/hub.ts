@@ -24,6 +24,7 @@ import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
 import { Pairing, lanAddresses } from './pairing.ts';
+import { ipAllowed } from '@dex/core/dlp';
 import { pairCode, pairLink } from '@dex/core/remote';
 import { Emoji, EmojiError } from './emoji.ts';
 import { RemoteGateway } from './remote.ts';
@@ -151,9 +152,16 @@ export class Hub {
       }
     });
     this.compliance = new Compliance(this.store, this.messaging, this.files);
-    this.policies = new Policies(this.store, this.files, (p) => this.emit('policy.updated', p));
+    this.policies = new Policies(this.store, this.files, (p) => {
+      this.emit('policy.updated', p);
+      // a narrower list of outside networks applies at once
+      for (const c of [...this.conns]) {
+        if (c.remote && !this.outsideAllowed(c)) { this.send(c, { t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }); c.ws.close(); }
+      }
+    });
     this.pairing = new Pairing(this.store);
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
+    this.messaging.dlpRules = () => this.policies.get().dlp ?? [];
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
     this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
@@ -419,6 +427,8 @@ export class Hub {
 
     if (req.method === 'POST' && url.pathname === '/files') {
       if (user.role === 'guest') { req.resume(); sendJson(403, { error: 'Guests cannot upload files.' }); return; }
+      const ext = (url.searchParams.get('name') ?? '').toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
+      if (ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) { req.resume(); sendJson(403, { error: `Your office doesn't allow .${ext} files to be shared.` }); return; }
       try {
         const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined);
         this.log('info', 'file uploaded', { user: user.account, size: info.size });
@@ -451,6 +461,12 @@ export class Hub {
       conn.remote = true;
       conn.ip = `internet ${String(req.headers['x-dex-remote-ip'] ?? '').slice(0, 80)}`;
       if (!this.remoteConfig().enabled) { ws.send(JSON.stringify({ t: 'rejected', reason: 'Access from outside the office is turned off.' })); ws.close(); return; }
+      if (!this.outsideAllowed(conn)) {
+        this.log('info', 'outside connection refused by network policy', { ip: conn.ip });
+        ws.send(JSON.stringify({ t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }));
+        ws.close();
+        return;
+      }
     }
     this.conns.add(conn);
     ws.on('pong', () => { conn.alive = true; });
@@ -463,6 +479,14 @@ export class Hub {
     ws.on('close', () => this.onClose(conn));
     ws.on('error', () => { /* close follows */ });
     this.send(conn, { t: 'hello', hub: this.info, nonce: conn.nonce });
+  }
+
+  /** The office may limit outside access to some internet addresses (Control room ▸ Policies). */
+  private outsideAllowed(conn: Conn): boolean {
+    const nets = this.policies.get().outsideNetworks;
+    if (!nets?.length) return true;
+    const addr = conn.ip.replace(/^internet /, '').split(' ')[0];
+    return ipAllowed(addr, nets);
   }
 
   private send(conn: Conn, frame: ServerFrame): void {

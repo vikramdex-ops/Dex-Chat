@@ -154,6 +154,12 @@ test('from outside the office: join, approval, messages both ways, files, and th
   assert.equal(me(phone), me(asha.c), 'the phone is Asha');
   assert.equal(phone.viaGateway, true);
 
+  // outside access only from approved networks: a device elsewhere is signed out at once
+  await owner.request('admin.policy.set', { outsideNetworks: ['198.51.100.0/24'] });
+  await until(phone, (s) => s.kind === 'rejected', 8000);
+  assert.match(phone.state.kind === 'rejected' ? phone.state.reason : '', /approved networks/);
+  await owner.request('admin.policy.set', { outsideNetworks: [] });
+
   // turning remote access off disconnects everyone outside at once
   await owner.request('admin.remote.set', { enabled: false });
 

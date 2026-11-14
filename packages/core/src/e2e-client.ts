@@ -3,7 +3,9 @@
 // opened on the way in, so the UI only ever sees text and the hub only ever sees envelopes.
 import { isSealed, open, rawEd25519FromSpki, rewrap, safetyCode, seal, sealedFor, verifyDeviceKey, encKeyStatement } from './e2e.ts';
 import type { DeviceKey } from './e2e.ts';
-import type { Conversation, Message } from './protocol.ts';
+import type { Conversation, Message, OfficePolicy, PublicUser } from './protocol.ts';
+import { applyDlp, dlpBlockedMessage } from './dlp.ts';
+import type { DlpRule } from './dlp.ts';
 
 export interface E2EHost {
   deviceId: string;
@@ -51,6 +53,11 @@ export class E2EClient {
       const list = await this.host.request('conv.list') as Conversation[];
       for (const c of list) this.convs.set(c.id, { kind: c.kind, members: c.members });
     } catch { /* not fatal */ }
+    // the office's data-loss rules apply to sealed messages here, before the hub sees them
+    try {
+      this.dlp = ((await this.host.request('policy.get')) as OfficePolicy).dlp ?? [];
+      if (this.dlp.length) this.guests = new Set(((await this.host.request('directory.list')) as { users: PublicUser[] }).users.filter((u) => u.role === 'guest').map((u) => u.id));
+    } catch { /* not fatal: the hub applies the rules to everything it can read */ }
     void this.shareHistory().catch((err) => this.host.log?.('history sharing failed', { error: (err as Error).message }));
   }
 
@@ -120,10 +127,19 @@ export class E2EClient {
     return { encrypted: !missing.length && !c.members.some((m) => this.bots.has(m)), code: missing.length ? null : safetyCode(all), missing };
   }
 
+  private dlp: DlpRule[] = [];
+  private guests = new Set<string>();
+
   private async sealFor(convId: string, text: string): Promise<string> {
     if (!text || isSealed(text)) return text;
     const rec = await this.recipients(convId);
     if (!rec) return text;
+    if (this.dlp.length) {
+      const members = this.convs.get(convId)?.members ?? [];
+      const r = applyDlp(text, this.dlp, { withGuests: members.some((m) => this.guests.has(m)) });
+      if (r.blockedBy) throw new Error(dlpBlockedMessage(r.blockedBy));
+      text = r.text;
+    }
     return seal({ convId, text, senderDeviceId: this.host.deviceId, sign: this.host.sign, recipients: rec });
   }
 
@@ -212,6 +228,12 @@ export class E2EClient {
 
   /** A hub event about keys: forget cached keys; share history with a new device of mine. */
   async onEvent(name: string, data: unknown): Promise<void> {
+    if (name === 'policy.updated') { this.dlp = (data as OfficePolicy).dlp ?? []; return; }
+    if ((name === 'user.added' || name === 'user.updated') && (data as PublicUser).role) {
+      const u = data as PublicUser;
+      if (u.role === 'guest') this.guests.add(u.id); else this.guests.delete(u.id);
+      return;
+    }
     if (name !== 'e2e.keysChanged') return;
     const { userId } = data as { userId: string; deviceId: string };
     this.keys.delete(userId);

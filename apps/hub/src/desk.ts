@@ -260,6 +260,7 @@ export class Desk {
         for (const f of files) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
         if (!body && !files.length) throw new MsgError('Write something first.');
         if (body.length > (isSealed(body) ? 96_000 : 8000)) throw new MsgError('Messages can be up to 8000 characters.');
+        this.messaging.guardText(body, c.id);
         const open = (this.db.prepare('SELECT COUNT(*) AS n FROM scheduled WHERE user_id = ?').get(me.id) as { n: number }).n;
         if (open >= MAX_SCHEDULED) throw new MsgError('You have too many scheduled messages.');
         let parentId: string | null = null;

@@ -3,6 +3,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, ulid } from '@dex/core';
 import { addWraps, isSealed } from '@dex/core/e2e';
+import { applyDlp, dlpBlockedMessage } from '@dex/core/dlp';
+import type { DlpRule } from '@dex/core/dlp';
 import type { Conversation, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
 import type { FileStore } from './files.ts';
 
@@ -133,6 +135,18 @@ export class Messaging {
   beforeChange: ((msg: MsgRow, change: 'edit' | 'delete', actorId: string) => void) | null = null;
   /** The office policy: how long after sending an author may edit or delete (null: any time). */
   editWindowMs: () => number | null = () => null;
+  dlpRules: () => DlpRule[] = () => [];
+
+  /** Office data-loss rules on a message the hub can read: throws when blocked, returns it masked otherwise. */
+  guardText(body: string, convId: string): string {
+    if (!body || isSealed(body)) return body;
+    const rules = this.dlpRules();
+    if (!rules.length) return body;
+    const withGuests = !!this.db.prepare(`SELECT 1 FROM conv_members m JOIN users u ON u.id = m.user_id WHERE m.conv_id = ? AND u.role = 'guest' LIMIT 1`).get(convId);
+    const r = applyDlp(body, rules, { withGuests });
+    if (r.blockedBy) throw new MsgError(dlpBlockedMessage(r.blockedBy));
+    return r.text;
+  }
   /** Does this office emoji exist (for :name: reactions)? */
   customEmoji: (name: string) => boolean = () => false;
   private checkWindow(msg: MsgRow, what: 'edited' | 'deleted'): void {
@@ -915,9 +929,10 @@ export class Messaging {
         this.requireMember(msg.conv_id, me.id);
         if (msg.author_id !== me.id) throw new MsgError('You can only edit your own messages.');
         this.checkWindow(msg, 'edited');
-        const body = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
-        if (!body) throw new MsgError('A message cannot be empty. Delete it instead.');
-        if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+        const raw = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
+        if (!raw) throw new MsgError('A message cannot be empty. Delete it instead.');
+        if (raw.length > (isSealed(raw) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+        const body = this.guardText(raw, msg.conv_id);
         this.beforeChange?.(msg, 'edit', me.id);
         this.db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, Date.now(), msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
@@ -1061,6 +1076,7 @@ export class Messaging {
     if (!extra.skipFileCheck) for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
     if (!body && !fileIds.length) throw new MsgError('Write something first.');
     if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+    body = this.guardText(body, c.id);
     if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
     if (c.archived) throw new MsgError('This Space is archived. Restore it to post again.');
     // announcement Spaces: only moderators start new messages (everyone can still reply in side-tracks)

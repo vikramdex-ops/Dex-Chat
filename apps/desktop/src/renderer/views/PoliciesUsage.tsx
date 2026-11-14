@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmojiImg, useCustomEmoji } from '../emoji.tsx';
 import type { OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
+import { DLP_DETECTORS, validCidr } from '@dex/core/dlp';
+import type { DlpDetector, DlpRule } from '@dex/core/dlp';
 import { useChat } from '../chat/store.ts';
 import { Avatar, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 import { formatSize } from '../chat/files.tsx';
+import './policies.css';
 
 const EDIT: Array<[number | null, string]> = [[null, 'Any time'], [5, '5 minutes'], [15, '15 minutes'], [60, '1 hour'], [1440, '1 day'], [10080, '7 days'], [43200, '30 days'], [525600, '1 year'], [1051200, '2 years']];
 const UPLOAD: Array<[number, string]> = [[25, '25 MB'], [100, '100 MB'], [250, '250 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']];
@@ -40,6 +43,7 @@ export function PoliciesAdmin() {
           <Toggle label="Direct messages pass straight between PCs" checked={p.peerFallback} onChange={(v) => save({ peerFallback: v })} />
         </div>
       </section>
+      <DataProtection p={p} save={save} />
       <DefaultSpaces p={p} save={save} />
       <EmojiAdmin />
       <section className="card">
@@ -275,3 +279,69 @@ export function ReportsAdmin({ users, onOpen }: { users: PublicUser[]; onOpen: (
   );
 }
 const relativeTimeOf = (t: number) => relativeTime(t);
+
+/** Control room ▸ Policies ▸ Data protection: sensitive numbers and words, file types, outside networks. */
+function DataProtection({ p, save }: { p: OfficePolicy; save: (patch: Partial<OfficePolicy>) => void }) {
+  const rules = p.dlp ?? [];
+  const [adding, setAdding] = useState<{ detector: DlpDetector; words: string; name: string; action: DlpRule['action']; scope: DlpRule['scope'] } | null>(null);
+  const [types, setTypes] = useState((p.blockedFileTypes ?? []).join(', '));
+  const [nets, setNets] = useState((p.outsideNetworks ?? []).join('\n'));
+  useEffect(() => { setTypes((p.blockedFileTypes ?? []).join(', ')); setNets((p.outsideNetworks ?? []).join('\n')); }, [p.blockedFileTypes, p.outsideNetworks]);
+  const badNet = nets.split(/\n/).map((x) => x.trim()).filter(Boolean).find((x) => !validCidr(x));
+  const describe = (r: DlpRule) => `${r.action === 'block' ? 'Stopped' : 'Masked as ••••'} · ${r.scope === 'with-guests' ? 'where guests can see' : 'everywhere'}`;
+  return (
+    <section className="card">
+      <div className="eyebrow">Data protection</div>
+      <p className="faint" style={{ fontSize: 12.5, margin: '4px 0 10px' }}>Checked on the hub for everything it can read, and on the sender's own device before an encrypted Direct message is sealed.</p>
+      <div className="dlp-rules">
+        {rules.length === 0 && <div className="faint" style={{ fontSize: 13 }}>No rules yet: any text can be sent.</div>}
+        {rules.map((r) => (
+          <div key={r.id} className="dlp-rule">
+            <span className={`dlp-act ${r.action}`}>{r.action === 'block' ? 'STOP' : 'MASK'}</span>
+            <span className="txt"><b>{r.name}</b><span className="faint">{describe(r)}{r.detector === 'words' && r.words ? (() => { const n = r.words.split(/[,\n]/).filter((w) => w.trim()).length; return ` · ${n} ${n === 1 ? 'word or phrase' : 'words and phrases'}`; })() : ''}</span></span>
+            <button className="icon-btn" title={`Remove ${r.name}`} aria-label={`Remove ${r.name}`} onClick={() => save({ dlp: rules.filter((x) => x.id !== r.id) })}><Icon name="trash" size={15} /></button>
+          </div>
+        ))}
+      </div>
+      {adding ? (
+        <form className="dlp-form" onSubmit={(e) => { e.preventDefault(); save({ dlp: [...rules, { id: Math.random().toString(36).slice(2, 10), ...adding, name: adding.name.trim() || DLP_DETECTORS[adding.detector] }] }); setAdding(null); }}>
+          <div className="form-row">
+            <div className="field"><label htmlFor="dlp-what">Look for</label>
+              <select id="dlp-what" className="input" value={adding.detector} onChange={(e) => setAdding({ ...adding, detector: e.target.value as DlpDetector })}>
+                {(Object.keys(DLP_DETECTORS) as DlpDetector[]).map((k) => <option key={k} value={k}>{DLP_DETECTORS[k]}</option>)}
+              </select></div>
+            <div className="field"><label htmlFor="dlp-name">Name people see</label>
+              <input id="dlp-name" className="input" placeholder={DLP_DETECTORS[adding.detector]} value={adding.name} maxLength={60} onChange={(e) => setAdding({ ...adding, name: e.target.value })} /></div>
+          </div>
+          {adding.detector === 'words' && (
+            <div className="field"><label htmlFor="dlp-words">Words and phrases (comma or one per line)</label>
+              <textarea id="dlp-words" className="input" rows={3} value={adding.words} onChange={(e) => setAdding({ ...adding, words: e.target.value })} placeholder="Project Falcon, tender price" /></div>
+          )}
+          <div className="form-row">
+            <div className="field"><label>When found</label>
+              <Segmented label="When found" value={adding.action} onChange={(v) => setAdding({ ...adding, action: v as DlpRule['action'] })} options={[{ value: 'block', label: 'Stop the message' }, { value: 'mask', label: 'Mask it as ••••' }]} /></div>
+            <div className="field"><label>Where</label>
+              <Segmented label="Where" value={adding.scope} onChange={(v) => setAdding({ ...adding, scope: v as DlpRule['scope'] })} options={[{ value: 'everywhere', label: 'Everywhere' }, { value: 'with-guests', label: 'Where guests can see' }]} /></div>
+          </div>
+          <div className="dialog-actions">
+            <button type="button" className="btn ghost" onClick={() => setAdding(null)}>Cancel</button>
+            <button className="btn primary" disabled={adding.detector === 'words' && !adding.words.trim()}>Add rule</button>
+          </div>
+        </form>
+      ) : (
+        <div><button className="btn" onClick={() => setAdding({ detector: 'card', words: '', name: '', action: 'mask', scope: 'everywhere' })}><Icon name="plus" size={15} />Add a rule</button></div>
+      )}
+      <div className="form-row" style={{ marginTop: 16, alignItems: 'start' }}>
+        <div className="field"><label htmlFor="p-types">File types that can't be shared</label>
+          <input id="p-types" className="input mono" placeholder="exe, bat, ps1" value={types} onChange={(e) => setTypes(e.target.value)}
+            onBlur={() => { const list = types.split(/[\s,]+/).filter(Boolean); if (list.join(',') !== (p.blockedFileTypes ?? []).join(',')) save({ blockedFileTypes: list }); }} /></div>
+        <div className="field"><label htmlFor="p-nets">Outside the office, only from these networks</label>
+          <textarea id="p-nets" className="input mono" rows={3} placeholder={'Any network\n(one per line, e.g. 203.0.113.0/24)'} value={nets} onChange={(e) => setNets(e.target.value)} />
+          <span className={badNet ? 'error-text' : 'faint'} style={{ fontSize: 12 }}>{badNet ? `"${badNet}" is not an address or network.` : 'Leave empty for any network. Devices on other networks are signed out at once.'}</span>
+          <div><button className="btn sm" disabled={!!badNet || nets.split(/\n/).map((x) => x.trim()).filter(Boolean).join('|') === (p.outsideNetworks ?? []).join('|')}
+            onClick={() => save({ outsideNetworks: nets.split(/\n/).map((x) => x.trim()).filter(Boolean) })}>Save networks</button></div>
+        </div>
+      </div>
+    </section>
+  );
+}
