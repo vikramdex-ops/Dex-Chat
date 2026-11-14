@@ -40,6 +40,7 @@ import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 import { timeOpts } from './time.ts';
+import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 
 // the Control room is used by a few people now and then: load it when opened
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
@@ -173,19 +174,20 @@ function useInk(current: string): { refs: React.RefObject<Map<string, HTMLButton
 
 function LensBar({ lens, setLens, onGoTo }: { lens: Lens; setLens: (l: Lens) => void; onGoTo: () => void }) {
   const badges = useLensBadges();
+  useKeys();
   const { refs, ink } = useInk(lens);
   return (
     <nav className="lens-bar" aria-label="Sections">
       {LENSES.map((l, i) => (
         <button key={l.id} ref={(el) => { if (el) refs.current.set(l.id, el); }} className="lens"
-          aria-current={lens === l.id ? 'page' : undefined} title={`${l.label} (Ctrl+${i + 1})`} onClick={() => setLens(l.id)}>
+          aria-current={lens === l.id ? 'page' : undefined} title={keyFor(`lens:${l.id}`, lensFallback(i)) ? `${l.label} (${keyText(keyFor(`lens:${l.id}`, lensFallback(i)))})` : l.label} onClick={() => setLens(l.id)}>
           <Icon name={l.icon} size={17} /><span className="lens-label">{l.label}</span>
           {badges[l.id].mentions > 0 ? <span className="badge">{badges[l.id].mentions}</span> : badges[l.id].unread ? <span className="lens-tick" aria-label="unread" /> : null}
         </button>
       ))}
       <span className="lens-ink" style={{ transform: `translateX(${ink.left}px)`, width: ink.width }} />
-      <button className="goto" onClick={onGoTo} aria-label="Go to a person, conversation or command (Ctrl+G)" title="Go to a person, conversation or command">
-        <span className="goto-label">Go to</span><span className="goto-caret" aria-hidden="true">▸</span><span className="goto-hint">Ctrl G</span>
+      <button className="goto" onClick={onGoTo} aria-label={`Go to a person, conversation or command${keyFor('goto') ? ` (${keyText(keyFor('goto'))})` : ''}`} title="Go to a person, conversation or command">
+        <span className="goto-label">Go to</span><span className="goto-caret" aria-hidden="true">▸</span>{keyFor('goto') && <span className="goto-hint">{keyHint(keyFor('goto'))}</span>}
       </button>
     </nav>
   );
@@ -293,7 +295,8 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   });
   // the conversation header's search button
   useEffect(() => {
-    const onSearch = (e: Event) => openSearch({ convId: String((e as CustomEvent).detail) });
+    // a conversation id (its header's search), or a query (a #tag clicked in a message)
+    const onSearch = (e: Event) => { const d = (e as CustomEvent).detail as string | SearchInit; openSearch(typeof d === 'string' ? { convId: d } : d); };
     window.addEventListener('dex-search', onSearch);
     return () => window.removeEventListener('dex-search', onSearch);
   }, []);
@@ -333,7 +336,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
   const soundRef = useRef(state.settings.sound);
   useEffect(() => { soundRef.current = state.settings.sound; }, [state.settings.sound]);
-  // keyboard: Ctrl+G go to, Ctrl+1..n lenses, Ctrl+, preferences, Esc closes
+  // keyboard: the keys people chose (Shortcuts sheet) for Go to, Search, Preferences, sounds and the
+  // lenses; G then a letter outside text fields; Ctrl+/ shortcuts; text size; Esc closes
+  const gAt = useRef(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return; // the Dock and dialogs keep their own keys
@@ -347,19 +352,22 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         next.click(); next.scrollIntoView({ block: 'nearest' });
         return;
       }
-      if (!e.ctrlKey || e.altKey) return;
-      const k = e.key.toLowerCase();
-      if (k === 'g' && !e.shiftKey) { e.preventDefault(); setPalette(true); }
-      else if (k === '=' || k === '+' || k === '-' || k === '0') {
-        e.preventDefault();
-        const sizes = [90, 100, 110, 125] as const;
-        const i = sizes.indexOf(state.settings.textSize ?? 100);
-        const next = k === '0' ? 100 : sizes[Math.max(0, Math.min(sizes.length - 1, (i < 0 ? 1 : i) + (k === '-' ? -1 : 1)))];
-        void window.dex.setSettings({ textSize: next });
+      // G then a letter: only where nobody is typing and no dialog is open
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && !typingIn(e.target) && !palette && !document.querySelector('.scrim')) {
+        const letter = e.key.toUpperCase();
+        if (gAt.current && Date.now() - gAt.current < 1500) {
+          gAt.current = 0;
+          const to = G_KEYS.find((g) => g.letter === letter)?.lens;
+          const l = to ? LENSES.find((x) => x.id === to) : undefined;
+          if (l) { e.preventDefault(); setLens(l.id); setSheet(null); }
+          return;
+        }
+        if (letter === 'G' && !e.shiftKey) { gAt.current = Date.now(); return; }
       }
-      else if (k === '/') { e.preventDefault(); setShortcuts(true); }
-      else if (k === 'f' && e.shiftKey) { e.preventDefault(); openSearch({}); }
-      else if (k === 'q' && e.shiftKey) {
+      if (pressed(e, keyFor('goto'))) { e.preventDefault(); setPalette(true); return; }
+      if (pressed(e, keyFor('search'))) { e.preventDefault(); openSearch({}); return; }
+      if (pressed(e, keyFor('prefs'))) { e.preventDefault(); setSheet('preferences'); return; }
+      if (pressed(e, keyFor('mute'))) {
         // quiet or bring back notification sounds (read the latest, a quick second press must undo the first)
         e.preventDefault();
         const cur = soundRef.current;
@@ -368,13 +376,21 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         if (cur !== 'none') { try { localStorage.setItem('dex-sound-before-mute', cur); } catch { /* storage off */ } }
         soundRef.current = cur === 'none' ? back : 'none';
         void window.dex.setSettings({ sound: soundRef.current });
-        toast(cur === 'none' ? 'Sounds back on' : 'Sounds quiet · Ctrl+Shift+Q brings them back');
+        toast(cur === 'none' ? 'Sounds back on' : `Sounds quiet · ${keyText(keyFor('mute'))} brings them back`);
+        return;
       }
-      else if (k === ',') { e.preventDefault(); setSheet('preferences'); }
-      else {
-        const n = Number(e.key);
-        if (n >= 1 && n <= LENSES.length) { e.preventDefault(); setLens(LENSES[n - 1].id); setSheet(null); }
+      const lensAt = LENSES.findIndex((l, i) => pressed(e, keyFor(`lens:${l.id}`, lensFallback(i))));
+      if (lensAt >= 0) { e.preventDefault(); setLens(LENSES[lensAt].id); setSheet(null); return; }
+      if (!e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === '=' || k === '+' || k === '-' || k === '0') {
+        e.preventDefault();
+        const sizes = [90, 100, 110, 125] as const;
+        const i = sizes.indexOf(state.settings.textSize ?? 100);
+        const next = k === '0' ? 100 : sizes[Math.max(0, Math.min(sizes.length - 1, (i < 0 ? 1 : i) + (k === '-' ? -1 : 1)))];
+        void window.dex.setSettings({ textSize: next });
       }
+      else if (k === '/') { e.preventDefault(); setShortcuts(true); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -427,7 +443,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       hint: c.kind === 'space' ? 'Space' : 'Direct', run: () => openConversation(c.id, c.kind),
     })),
     { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
-    { id: 'search', label: 'Search messages and files', icon: 'search' as IconName, hint: 'Ctrl+Shift+F', run: () => openSearch({}) },
+    { id: 'search', label: 'Search messages and files', icon: 'search' as IconName, hint: keyText(keyFor('search')) || 'Search', run: () => openSearch({}) },
     { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'info' as IconName, hint: 'Ctrl+/', run: () => setShortcuts(true) },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
     { id: 'go-desk', label: 'Go to Desk: reminders, kept messages, sends waiting', icon: 'desk' as IconName, run: () => setLens('desk') },
@@ -485,7 +501,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 )}
                 <button role="menuitem" disabled={!live} onClick={() => { setMenu(false); setOoo(true); }}><Icon name="calendar" size={16} />{session.me.ooo ? `Away from the office until ${new Date(session.me.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Away from the office…'}</button>
                 <div className="menu-sep" />
-                <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences<span className="kbd">Ctrl ,</span></button>
+                <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences{keyFor('prefs') && <span className="kbd">{keyHint(keyFor('prefs'))}</span>}</button>
                 <button role="menuitem" onClick={() => { setShortcuts(true); setMenu(false); }}><Icon name="info" size={16} />Keyboard shortcuts<span className="kbd">Ctrl /</span></button>
                 {isAdmin && (
                   <button role="menuitem" onClick={() => { setSheet('control'); setMenu(false); }}>
@@ -541,7 +557,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       )}
 
-      {shortcuts && <ShortcutsSheet onClose={() => setShortcuts(false)} />}
+      {shortcuts && <ShortcutsSheet lenses={LENSES} onClose={() => setShortcuts(false)} />}
       {palette && (
         <CommandPalette
           users={session.users}

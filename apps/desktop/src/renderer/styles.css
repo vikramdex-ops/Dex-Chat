@@ -862,7 +862,7 @@ select.input { appearance: auto; }
 .dock-hint:has(.sched-note) { opacity: 1; }
 /* menus and pickers float above everything, anchored to the button that opened them */
 .popover { position: fixed; z-index: 40; animation: drop 140ms var(--ease); }
-.popover.menu { position: fixed; right: auto; }
+.popover.menu { position: fixed; right: auto; max-height: calc(100vh - 16px); overflow-y: auto; scrollbar-width: thin; }
 .popover.emoji-pop { position: fixed; top: auto; right: auto; }
 
 /* ------------------------------------------------------------------ Directory & organisation */
@@ -1336,3 +1336,16 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .setting.wide-choice .seg { flex-basis: 100%; margin-left: 40px; }
 .setting.wide-choice .seg button { flex: 1; justify-content: center; }
 @media (max-width: 720px) { .setting.wide-choice .seg { margin-left: 0; } .setting.wide-choice .seg button { flex: none; } }
+
+/* keys people choose (the Shortcuts sheet) */
+.shortcut.editable { flex-wrap: wrap; }
+.key-set { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 5px; border: 1px dashed transparent; border-radius: 4px; background: none; color: inherit; }
+.key-set:hover, .key-set:focus-visible { border-color: var(--stroke-strong); }
+.shortcut.recording .key-set { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+.key-wait { padding: 0 4px; font: 600 10px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); }
+.key-reset { width: 26px; height: 26px; color: var(--text-3); }
+.key-problem { flex-basis: 100%; font-size: 12px; color: var(--danger); }
+.keys-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; font-size: 12px; }
+.shortcut .then { align-self: center; padding: 0 2px; font-size: 11px; color: var(--text-3); }
+.shortcuts h4 .faint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.lang-pick { width: auto; min-width: 190px; flex: none; }
