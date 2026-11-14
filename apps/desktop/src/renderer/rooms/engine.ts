@@ -3,11 +3,15 @@
 // shares can be switched on and off mid-call without glare. No STUN/TURN: host candidates
 // on the office network are enough, and nothing leaves the building.
 import { RelayClient } from './relay.ts';
-import { blurTrack } from './blur.ts';
-import type { Blurred } from './blur.ts';
+import { backdropTrack } from './blur.ts';
+import type { BackdropSpec, Blurred } from './blur.ts';
+import { customBackground, officeBackground } from './backgrounds.ts';
+import type { BackgroundId } from './backgrounds.ts';
+import { stopVoices } from './speech.ts';
 import { useSyncExternalStore } from 'react';
-import type { RelayProducer, RoomInfo } from '@dex/core';
+import type { MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
 import { timeOpts } from '../time.ts';
+import { policyNow } from '../policy.ts';
 
 export interface RemotePeer {
   deviceId: string;
@@ -25,20 +29,54 @@ export interface CallState {
   camera: boolean;
   /** The camera's background is blurred (on this PC, before it is sent). */
   blur: boolean;
+  /** What is behind you on camera: as it is, blurred, an office background or your own picture. */
+  background: BackgroundId;
   minimized: boolean;
   error: string | null;
   /** Rooms running in my conversations (to offer "Join"). */
   active: Map<string, RoomInfo>;
+  /** Waiting to be let into a meeting (or for its host to arrive). */
+  lobby: { meeting: MeetingInfo; reason: 'admit' | 'host'; video: boolean } | null;
+  /** A host asked you to turn your microphone on. */
+  unmuteAsk: { by: string; at: number } | null;
+  /** Something to tell the person (a host muted you, the meeting ended). */
+  notice: { text: string; at: number } | null;
+  /** How the Room is laid out on this PC, and the tile pinned for yourself. */
+  layout: Layout;
+  pinned: string | null;
+  /** The ID of the meeting someone asked to join from outside the Room UI (a link, the Meet lens). */
+  joining: string | null;
 }
+export type Layout = 'gallery' | 'speaker' | 'presentation';
 
-const BLUR_KEY = 'dex.room.blur';
-const blurPref = () => { try { return localStorage.getItem(BLUR_KEY) === '1'; } catch { return false; } };
-let state: CallState = { room: null, incoming: null, local: null, screen: null, peers: new Map(), muted: false, camera: false, blur: blurPref(), minimized: false, error: null, active: new Map() };
+const BG_KEY = 'dex.room.background';
+const LAYOUT_KEY = 'dex.room.layout';
+const BACKGROUNDS: BackgroundId[] = ['none', 'blur', 'drafting', 'blueprint', 'studio', 'custom'];
+const bgPref = (): BackgroundId => {
+  try {
+    const v = localStorage.getItem(BG_KEY) as BackgroundId | null;
+    if (v && BACKGROUNDS.includes(v)) return v;
+    return localStorage.getItem('dex.room.blur') === '1' ? 'blur' : 'none';
+  } catch { return 'none'; }
+};
+const layoutPref = (): Layout => { try { const v = localStorage.getItem(LAYOUT_KEY); return v === 'speaker' ? 'speaker' : 'gallery'; } catch { return 'gallery'; } };
+const startBg = bgPref();
+let state: CallState = {
+  room: null, incoming: null, local: null, screen: null, peers: new Map(), muted: false, camera: false, blur: startBg === 'blur', background: startBg,
+  minimized: false, error: null, active: new Map(), lobby: null, unmuteAsk: null, notice: null, layout: layoutPref(), pinned: null, joining: null,
+};
 
-// ------------------------------------------------------------------ background blur
-/** The camera as it comes from the device, while a blurred copy is what is shown and sent. */
+// ------------------------------------------------------------------ backgrounds (blur, office backgrounds, your own picture)
+/** The camera as it comes from the device, while a composited copy is what is shown and sent. */
 let rawCamera: MediaStreamTrack | null = null;
 let blurred: Blurred | null = null;
+
+async function backdropFor(id: BackgroundId): Promise<BackdropSpec | null> {
+  if (id === 'blur') return { kind: 'blur' };
+  if (id === 'drafting' || id === 'blueprint' || id === 'studio') return { kind: 'image', image: officeBackground(id) };
+  if (id === 'custom') { const img = await customBackground(); return img ? { kind: 'image', image: img } : null; }
+  return null;
+}
 
 /** Put a track in place of another in the local stream and on every connection. */
 function swapVideo(local: MediaStream, from: MediaStreamTrack, to: MediaStreamTrack): void {
@@ -48,15 +86,17 @@ function swapVideo(local: MediaStream, from: MediaStreamTrack, to: MediaStreamTr
   void relay?.replace(from, to).catch(() => {});
 }
 
-/** Blur (or stop blurring) the camera track in this stream. */
-async function applyBlur(local: MediaStream, on: boolean): Promise<void> {
+/** Put a background behind the camera picture in this stream (or take it away). */
+async function applyBackground(local: MediaStream, id: BackgroundId): Promise<void> {
   const cur = local.getVideoTracks()[0];
   if (!cur) return;
-  if (on && !blurred) {
+  const spec = await backdropFor(id);
+  if (spec && blurred) blurred.set(spec);
+  else if (spec) {
     rawCamera = cur;
-    blurred = await blurTrack(cur);
+    blurred = await backdropTrack(cur, spec);
     swapVideo(local, cur, blurred.track);
-  } else if (!on && blurred && rawCamera) {
+  } else if (blurred && rawCamera) {
     swapVideo(local, blurred.track, rawCamera);
     blurred.stop();
     blurred = null;
@@ -70,18 +110,39 @@ function stopCameraTracks(local: MediaStream): void {
   rawCamera?.stop(); rawCamera = null;
 }
 
-export async function toggleBlur(): Promise<void> {
-  const on = !state.blur;
-  try { localStorage.setItem(BLUR_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+/** Choose what is behind you on camera; remembered for the next Room. */
+export async function setBackground(id: BackgroundId): Promise<void> {
+  try { localStorage.setItem(BG_KEY, id); } catch { /* private mode */ }
   if (state.local && state.camera) {
-    try { await applyBlur(state.local, on); } catch { set({ error: 'The background could not be blurred on this PC.' }); return; }
-    set({ blur: on, local: new MediaStream(state.local.getTracks()) });
-  } else set({ blur: on });
+    try { await applyBackground(state.local, id); } catch { set({ error: 'The background could not be changed on this PC.' }); return; }
+    set({ blur: id === 'blur', background: id, local: new MediaStream(state.local.getTracks()) });
+  } else set({ blur: id === 'blur', background: id });
 }
+export const toggleBlur = (): Promise<void> => setBackground(state.background === 'blur' ? 'none' : 'blur');
+
+export function setLayout(layout: Layout): void {
+  if (layout !== 'presentation') { try { localStorage.setItem(LAYOUT_KEY, layout); } catch { /* private mode */ } }
+  set({ layout });
+}
+/** Pin a tile large for yourself (null to unpin). */
+export function setPinned(deviceId: string | null): void { set({ pinned: deviceId, layout: deviceId && state.layout === 'gallery' ? 'speaker' : state.layout }); }
+
 const listeners = new Set<() => void>();
 const set = (patch: Partial<CallState>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
+const tell = (text: string) => set({ notice: { text, at: Date.now() } });
 export const useCall = <T,>(sel: (s: CallState) => T): T => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => sel(state));
 export const callState = () => state;
+
+// ------------------------------------------------------------------ reactions (to the tiles that show them)
+type ReactionListener = (emoji: string, at: number) => void;
+const reactionSubs = new Map<string, Set<ReactionListener>>();
+/** Follow the reactions someone sends (by device). Returns a function that stops following. */
+export function onReaction(deviceId: string, f: ReactionListener): () => void {
+  const s = reactionSubs.get(deviceId) ?? new Set();
+  s.add(f);
+  reactionSubs.set(deviceId, s);
+  return () => { s.delete(f); if (!s.size) reactionSubs.delete(deviceId); };
+}
 
 interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; userId: string; senders: RTCRtpSender[] }
 const links = new Map<string, Link>();
@@ -149,20 +210,56 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
         for (const [dev] of links) if (!r.participants.some((p) => p.deviceId === dev)) dropLink(dev);
         relay?.keepOnly(new Set(r.participants.map((p) => p.deviceId)));
         if (r.participants.length > 1 || r.ringing.length === 0) stopRingIfOutgoing(r);
-        set({ room: r, active });
+        // someone starts sharing a sheet: it takes the stage; when they stop, the layout comes back
+        const wasSharing = state.room.participants.some((p) => p.screen && p.deviceId !== myDevice);
+        const sharing = r.participants.some((p) => p.screen && p.deviceId !== myDevice);
+        const layout = sharing && !wasSharing ? 'presentation' : !sharing && wasSharing && state.layout === 'presentation' && !state.screen ? layoutPref() : state.layout;
+        const pinned = state.pinned && r.participants.some((p) => p.deviceId === state.pinned) ? state.pinned : null;
+        set({ room: r, active, layout, pinned });
       } else if (state.incoming?.room.id === r.id && !r.ringing.includes(selfUser())) {
         stopRing();
         set({ incoming: null, active });
       } else set({ active });
     } else if (name === 'room.ended') {
-      const d = data as { roomId: string; convId: string; missed: boolean; startedBy: string };
+      const d = data as { roomId: string; convId: string; missed: boolean; startedBy: string; endedBy?: string };
       const active = new Map(state.active); active.delete(d.convId);
       if (state.incoming?.room.id === d.roomId) {
         stopRing();
         if (d.missed && !document.hasFocus()) notify(`You missed ${nameOf(d.startedBy)}'s Room · ${clock(state.incoming.room.startedAt)}`, 'Open the conversation to ring back');
         set({ incoming: null, active });
-      } else if (state.room?.id === d.roomId) { cleanup(); set({ active }); }
-      else set({ active });
+      } else if (state.room?.id === d.roomId) {
+        cleanup();
+        set({ active });
+        if (d.endedBy && d.endedBy !== selfUser()) tell(`${nameOf(d.endedBy)} ended the meeting for everyone`);
+      } else set({ active });
+    } else if (name === 'meet.lobby') {
+      const d = data as { meetingId: string; state: 'admitted' | 'denied' | 'waiting'; reason?: 'admit' | 'host' };
+      const lobby = state.lobby;
+      if (!lobby || lobby.meeting.id !== d.meetingId) return;
+      if (d.state === 'admitted') void joinMeeting(d.meetingId, lobby.video).catch((err: Error) => set({ error: err.message }));
+      else if (d.state === 'denied') { leaveLobby(false); tell(`You were not let into ${lobby.meeting.title || 'the meeting'}`); }
+      else set({ lobby: { ...lobby, reason: d.reason ?? lobby.reason } });
+    } else if (name === 'room.muted') {
+      const d = data as { roomId: string; by: string };
+      if (state.room?.id !== d.roomId) return;
+      if (!state.muted) {
+        state.local?.getAudioTracks().forEach((t) => { t.enabled = false; });
+        set({ muted: true });
+      }
+      void announceMedia();
+      if (d.by !== selfUser()) tell(`${nameOf(d.by)} muted you`);
+    } else if (name === 'room.unmuteAsk') {
+      const d = data as { roomId: string; by: string };
+      if (state.room?.id === d.roomId && state.muted) set({ unmuteAsk: { by: d.by, at: Date.now() } });
+    } else if (name === 'room.removed') {
+      const d = data as { roomId: string; by: string };
+      if (state.room?.id !== d.roomId) return;
+      cleanup();
+      tell(`${nameOf(d.by)} took you out of the meeting`);
+    } else if (name === 'room.reaction') {
+      const d = data as { roomId: string; deviceId: string; emoji: string; at: number };
+      if (state.room?.id !== d.roomId) return;
+      for (const f of reactionSubs.get(d.deviceId) ?? []) f(d.emoji, d.at);
     } else if (name === 'relay.producer') {
       const d = data as RelayProducer & { roomId: string };
       if (relay && relay.roomId === d.roomId) void relay.consume(d).catch(() => {});
@@ -231,17 +328,40 @@ async function refreshIce(): Promise<void> {
   } catch { /* a hub without relays: LAN-only calls */ }
 }
 
+/** The office may ask that people join with the camera off (and the app asks before turning it on). */
+const cameraAllowed = (video: boolean) => video && policyNow().cameraConsent !== true;
+
+/** Media for a Room: the microphone, the camera when asked for, and the chosen background. */
+async function prepareMedia(video: boolean): Promise<MediaStream> {
+  const [local] = await Promise.all([getMedia(cameraAllowed(video)), refreshIce()]);
+  if (state.background !== 'none' && local.getVideoTracks().length) await applyBackground(local, state.background).catch(() => {});
+  return local;
+}
+
+/** In the Room: show it and connect to everyone already there. */
+function enter(room: RoomInfo, local: MediaStream): void {
+  joinedAt = performance.now();
+  // a mic turned off while waiting in the lobby stays off
+  const muted = !!state.lobby && state.local === local && state.muted;
+  local.getAudioTracks().forEach((t) => { t.enabled = !muted; });
+  set({ room, local, incoming: null, lobby: null, joining: null, unmuteAsk: null, camera: local.getVideoTracks().length > 0, muted, minimized: false, error: null, peers: new Map(), pinned: null });
+  if (room.mode === 'relay') { startRelay(room); if (room.participants.length <= 1 && room.ringing.length) startRing(true); }
+  else if (room.participants.length > 1) connectAll(room); // the newcomer reaches out to everyone already there
+  else if (room.ringing.length) startRing(true);
+  void announceMedia();
+}
+/** When this PC came into its current Room (for measuring how fast the first picture arrives). */
+let joinedAt = 0;
+export const roomJoinedAt = () => joinedAt;
+
 export async function startCall(convId: string, video: boolean): Promise<void> {
   if (state.room) return;
+  let local: MediaStream | null = null;
   try {
-    const [local] = await Promise.all([getMedia(video), refreshIce()]);
-    if (state.blur) await applyBlur(local, true).catch(() => {});
-    const room = await window.dex.request('room.start', { convId, video });
-    set({ room, local, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
-    if (room.mode === 'relay') { startRelay(room); if (room.participants.length <= 1) startRing(true); }
-    else if (room.participants.length > 1) connectAll(room); else startRing(true);
-    void announceMedia();
-  } catch (err) { set({ error: (err as Error).message }); throw err; }
+    local = await prepareMedia(video);
+    const room = await window.dex.request('room.start', { convId, video: cameraAllowed(video) });
+    enter(room, local);
+  } catch (err) { dropMedia(local); set({ error: (err as Error).message }); throw err; }
 }
 
 export async function answer(video: boolean): Promise<void> {
@@ -253,15 +373,80 @@ export async function answer(video: boolean): Promise<void> {
 
 export async function joinRoom(roomId: string, video: boolean): Promise<void> {
   if (state.room) return;
+  // a Room held under a meeting is joined by the meeting's ID, so its lobby and lock apply
+  const known = [...state.active.values()].find((r) => r.id === roomId) ?? (state.incoming?.room.id === roomId ? state.incoming.room : undefined);
+  if (known?.meetingId) { set({ incoming: null }); await joinMeeting(known.meetingId, video); return; }
+  let local: MediaStream | null = null;
   try {
-    const [local] = await Promise.all([getMedia(video), refreshIce()]);
-    if (state.blur) await applyBlur(local, true).catch(() => {});
+    local = await prepareMedia(video);
     const room = await window.dex.request('room.join', { roomId });
-    set({ room, local, incoming: null, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
-    connectRoom(room); // the newcomer reaches out to everyone already there
-    void announceMedia();
-  } catch (err) { set({ incoming: null, error: (err as Error).message }); throw err; }
+    enter(room, local);
+  } catch (err) { dropMedia(local); set({ incoming: null, error: (err as Error).message }); throw err; }
 }
+
+/** Join a meeting by its ID: straight into the Room, or into its lobby to wait. */
+export async function joinMeeting(meetingId: string, video: boolean): Promise<void> {
+  if (state.room) {
+    if (state.room.meetingId === meetingId) { set({ minimized: false }); return; }
+    throw new Error('You are in another Room. Leave it first.');
+  }
+  // waiting for another meeting: stop waiting there first
+  if (state.lobby && state.lobby.meeting.id !== meetingId) leaveLobby();
+  // the lobby keeps its camera preview: the same media is used once let in
+  const kept = state.lobby?.meeting.id === meetingId ? state.local : null;
+  // the media and the hub's answer are fetched together: joining waits for whichever is slower
+  const media = kept ? Promise.resolve(kept) : prepareMedia(video);
+  try {
+    set({ joining: meetingId, error: null });
+    const [local, res] = await Promise.all([media, window.dex.request('meet.join', { id: meetingId })]);
+    if (res.waiting) {
+      set({ lobby: { meeting: res.meeting, reason: res.waiting, video }, local, camera: local.getVideoTracks().length > 0, joining: null, incoming: null });
+      return;
+    }
+    enter(res.room, local);
+  } catch (err) {
+    void media.then(dropMedia, () => {});
+    set({ joining: null, lobby: null, local: state.room ? state.local : null, camera: state.room ? state.camera : false, error: (err as Error).message });
+    throw err;
+  }
+}
+
+/** Stop waiting in a meeting's lobby. */
+export function leaveLobby(tellHub = true): void {
+  const l = state.lobby;
+  if (!l) return;
+  if (tellHub) void window.dex.request('meet.leaveLobby', { id: l.meeting.id }).catch(() => {});
+  if (!state.room) dropMedia(state.local);
+  set({ lobby: null, local: state.room ? state.local : null, camera: state.room ? state.camera : false });
+}
+
+function dropMedia(local: MediaStream | null): void {
+  if (!local || (local === state.local && state.room)) return;
+  stopCameraTracks(local);
+  local.getTracks().forEach((t) => t.stop());
+}
+
+/** Raise or lower your hand. */
+export async function raiseHand(up: boolean): Promise<void> {
+  const r = state.room;
+  if (r) await window.dex.request('room.hand', { roomId: r.id, up });
+}
+
+let lastReaction = 0;
+/** Send a reaction to everyone in the Room (it floats up your tile). */
+export async function react(emoji: string): Promise<void> {
+  const r = state.room;
+  if (!r || performance.now() - lastReaction < 250) return;
+  lastReaction = performance.now();
+  await window.dex.request('room.react', { roomId: r.id, emoji });
+}
+
+/** Accept a host's request to unmute (or dismiss it). */
+export function answerUnmute(accept: boolean): void {
+  set({ unmuteAsk: null });
+  if (accept && state.muted) toggleMute();
+}
+export const clearNotice = () => set({ notice: null });
 
 export function decline(): void {
   const inc = state.incoming;
@@ -284,13 +469,14 @@ function cleanup(): void {
   if (state.local) stopCameraTracks(state.local);
   state.local?.getTracks().forEach((t) => t.stop());
   state.screen?.getTracks().forEach((t) => t.stop());
-  set({ room: null, local: null, screen: null, peers: new Map(), camera: false, muted: false, minimized: false });
+  stopVoices();
+  set({ room: null, local: null, screen: null, peers: new Map(), camera: false, muted: false, minimized: false, unmuteAsk: null, pinned: null, layout: state.layout === 'presentation' ? layoutPref() : state.layout });
 }
 
 export function toggleMute(): void {
   const muted = !state.muted;
   state.local?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
-  set({ muted });
+  set({ muted, unmuteAsk: muted ? state.unmuteAsk : null });
   void announceMedia();
 }
 
@@ -310,8 +496,9 @@ export async function toggleCamera(): Promise<void> {
     try {
       const cam = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
       let track = cam.getVideoTracks()[0];
-      if (state.blur) {
-        try { rawCamera = track; blurred = await blurTrack(track); track = blurred.track; } catch { rawCamera = null; blurred = null; }
+      const spec = await backdropFor(state.background).catch(() => null);
+      if (spec) {
+        try { rawCamera = track; blurred = await backdropTrack(track, spec); track = blurred.track; } catch { rawCamera = null; blurred = null; }
       }
       local.addTrack(track);
       for (const l of links.values()) l.senders.push(l.pc.addTrack(track, local));
@@ -469,21 +656,4 @@ function dropLink(deviceId: string): void {
   const peers = new Map(state.peers);
   peers.delete(deviceId);
   set({ peers });
-}
-
-/** Speaking detection for a stream (0..1), polled by the UI. */
-export function levelMeter(stream: MediaStream): { read: () => number; stop: () => void } | null {
-  if (!stream.getAudioTracks().length) return null;
-  try {
-    const ctx = new AudioContext();
-    const src = ctx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
-    const an = ctx.createAnalyser();
-    an.fftSize = 512;
-    src.connect(an);
-    const buf = new Uint8Array(an.fftSize);
-    return {
-      read: () => { an.getByteTimeDomainData(buf); let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v - 128)); return peak / 128; },
-      stop: () => { void ctx.close(); },
-    };
-  } catch { return null; }
 }

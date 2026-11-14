@@ -191,6 +191,8 @@ export interface OfficePolicy {
   blockedFileTypes?: string[];
   /** Internet addresses (CIDR) that may connect from outside the office; empty = any. */
   outsideNetworks?: string[];
+  /** Meetings and Rooms start with the camera off, and the app asks before turning it on. */
+  cameraConsent?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -614,6 +616,67 @@ export interface RoomInfo {
   mode?: 'mesh' | 'relay';
   /** How many people the Room can hold. */
   capacity?: number;
+  /** The meeting this Room holds (every Room has one: its short ID and link). */
+  meetingId?: string;
+  /** The meeting's title (a scheduled meeting, an instant meeting, a personal room). */
+  title?: string;
+  meetingKind?: MeetingKind;
+  /** Who runs the meeting; co-hosts have every host control. */
+  hostId?: string;
+  coHosts?: string[];
+  /** No one new can come in. */
+  locked?: boolean;
+  /** People waiting to be let in (sent to the host and co-hosts only). */
+  lobby?: LobbyEntry[];
+  /** Raised hands, oldest first. */
+  hands?: RaisedHand[];
+  /** The device everyone sees large (set by a host), or null. */
+  spotlight?: string | null;
+  settings?: MeetingSettings;
+}
+
+// ---------------------------------------------------------------- meetings
+/** instant: started from anywhere, with a Space of its own; personal: someone's standing room; conversation: a Room in a conversation; event: a Calendar meeting held as a call. */
+export type MeetingKind = 'instant' | 'personal' | 'conversation' | 'event';
+/** Who waits in the lobby until a host lets them in: nobody, guests and people from outside the meeting's conversation and invitation, or everyone but the hosts. */
+export type LobbyRule = 'off' | 'outside' | 'everyone';
+export interface MeetingSettings {
+  lobby: LobbyRule;
+  /** People can come in before the host (or a co-host) arrives. */
+  joinBeforeHost: boolean;
+}
+export interface MeetingInfo {
+  /** Nine digits; shown as 482-913-207. */
+  id: string;
+  kind: MeetingKind;
+  title: string;
+  hostId: string;
+  convId: string | null;
+  eventId: string | null;
+  coHosts: string[];
+  settings: MeetingSettings;
+  /** dexconnect://meet/482-913-207 */
+  link: string;
+  /** The meeting's Room while it runs. */
+  live: { roomId: string; participants: number; startedAt: number } | null;
+}
+export interface LobbyEntry { userId: string; deviceId: string; at: number; reason: 'admit' | 'host' }
+export interface RaisedHand { userId: string; deviceId: string; at: number }
+/** A finished meeting or call, for "Recent meetings". */
+export interface MeetingRecord { roomId: string; meetingId: string | null; title: string; kind: MeetingKind; convId: string; hostId: string; startedAt: number; endedAt: number; durationMs: number; people: string[] }
+/** Reactions that float up a tile. */
+export const MEETING_REACTIONS = ['👍', '👏', '😂', '😮', '❤️', '🎉'] as const;
+export const MEETING_ID_RE = /^\d{9}$/;
+/** 482913207 -> "482-913-207" */
+export const formatMeetingId = (id: string): string => (MEETING_ID_RE.test(id) ? `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}` : id);
+export const meetingLink = (id: string): string => `dexconnect://meet/${formatMeetingId(id)}`;
+/** A meeting ID from what someone typed or pasted: "482-913-207", "482 913 207", or a dexconnect://meet/ link. */
+export function parseMeetingId(text: string): string | null {
+  const t = String(text ?? '').trim();
+  const m = t.match(/^(?:dexconnect:\/\/meet\/)?([\d\s-]{9,20})\/?$/i);
+  if (!m) return null;
+  const digits = m[1].replace(/[\s-]/g, '');
+  return MEETING_ID_RE.test(digits) ? digits : null;
 }
 
 /** A track someone sends to the hub's relay. */
@@ -829,6 +892,35 @@ export interface Ops {
   /** Ring more of the conversation's members into a running call. */
   'room.invite': { req: { roomId: string; userIds: string[] }; res: RoomInfo };
   'room.record': { req: { roomId: string; on: boolean }; res: { ok: true } };
+  /** Meetings: an instant meeting (a new Space of its own, people invited are rung), or a conversation's meeting. */
+  'meet.create': { req: { title?: string; convId?: string; invite?: string[]; settings?: Partial<MeetingSettings> }; res: MeetingInfo };
+  /** The meeting a Calendar event is held in. */
+  'meet.event': { req: { eventId: string }; res: MeetingInfo };
+  /** Your personal room: your standing meeting ID. */
+  'meet.personal': { req: void; res: MeetingInfo };
+  /** What a meeting ID is (before joining). */
+  'meet.get': { req: { id: string }; res: MeetingInfo };
+  'meet.settings': { req: { id: string; title?: string; lobby?: LobbyRule; joinBeforeHost?: boolean }; res: MeetingInfo };
+  /** Join by ID: straight in, or wait in the lobby (until admitted, or until the host arrives). */
+  'meet.join': { req: { id: string }; res: { room: RoomInfo; waiting?: undefined } | { room?: undefined; waiting: 'admit' | 'host'; meeting: MeetingInfo } };
+  'meet.leaveLobby': { req: { id: string }; res: { ok: true } };
+  /** Meetings and calls you were in, newest first. */
+  'meet.recent': { req: { limit?: number } | void; res: MeetingRecord[] };
+  /** Host controls (the host and co-hosts). */
+  'room.admit': { req: { roomId: string; deviceIds?: string[]; all?: boolean; allow: boolean }; res: { ok: true } };
+  'room.lock': { req: { roomId: string; locked: boolean }; res: { ok: true } };
+  'room.cohost': { req: { roomId: string; userId: string; on: boolean }; res: { ok: true } };
+  /** Mute one device or everyone else; the app on that device turns its microphone off. */
+  'room.mute': { req: { roomId: string; deviceId?: string; all?: boolean }; res: { ok: true } };
+  /** Ask someone to turn their microphone on (they choose). */
+  'room.askUnmute': { req: { roomId: string; deviceId: string }; res: { ok: true } };
+  'room.remove': { req: { roomId: string; deviceId: string }; res: { ok: true } };
+  'room.spotlight': { req: { roomId: string; deviceId: string | null }; res: { ok: true } };
+  /** End the meeting for everyone. */
+  'room.end': { req: { roomId: string }; res: { ok: true } };
+  /** Raise or lower your hand; hosts lower someone's (deviceId) or everyone's (all). */
+  'room.hand': { req: { roomId: string; up: boolean; deviceId?: string; all?: boolean }; res: { ok: true } };
+  'room.react': { req: { roomId: string; emoji: string }; res: { ok: true } };
   'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
   'msg.forward': { req: { messageId: string; convIds: string[]; note?: string; /** per target: the text to post (re-sealed by the app for encrypted Directs) */ bodies?: Record<string, string> }; res: Message[] };
   'msg.star': { req: { messageId: string; on: boolean; kind?: KeepKind }; res: { ok: true } };
@@ -927,9 +1019,18 @@ export interface Events {
   'read': { convId: string; userId: string; messageId: string };
   'room.ring': { room: RoomInfo; from: string };
   'room.updated': RoomInfo;
-  'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number };
+  'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number; /** a host ended it for everyone */ endedBy?: string };
   'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
   'room.busy': { userId: string; inRoom: boolean };
+  /** To a device waiting in a meeting's lobby: let in (join now), turned away, or still waiting. */
+  'meet.lobby': { meetingId: string; state: 'admitted' | 'denied' | 'waiting'; reason?: 'admit' | 'host' };
+  /** To one device: a host muted you (the app turns the microphone off). */
+  'room.muted': { roomId: string; by: string };
+  /** To one device: a host asks you to unmute. */
+  'room.unmuteAsk': { roomId: string; by: string };
+  /** To one device: a host took you out of the meeting. */
+  'room.removed': { roomId: string; by: string };
+  'room.reaction': { roomId: string; deviceId: string; userId: string; emoji: string; at: number };
   /** Administrators: how many reports wait. */
   'admin.reports': { open: number };
   /** Someone's calendar says they are in a meeting now (or no longer). */

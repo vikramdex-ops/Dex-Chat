@@ -38,13 +38,16 @@ import { MdPreview } from './chat/MdPreview.tsx';
 import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
-import { setSelfUser, startCalls } from './rooms/engine.ts';
+import { joinMeeting, setSelfUser, startCalls } from './rooms/engine.ts';
+import { parseMeetingId } from '@dex/core';
 import { timeOpts } from './time.ts';
 
 // the Control room is used by a few people now and then: load it when opened
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
+// the Meet lens loads when it is first opened
+const MeetLens = lazy(() => import('./meet/MeetLens.tsx'));
 
-export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory';
+export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory' | 'meet';
 export type SheetName = 'preferences' | 'control' | 'search' | null;
 /** Kept for older call sites: a section is a lens or a sheet. */
 export type Section = Lens | 'admin' | 'settings' | 'home' | 'people';
@@ -129,6 +132,7 @@ const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'desk', label: 'Desk', icon: 'desk' },
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'directory', label: 'Directory', icon: 'card' },
+  { id: 'meet', label: 'Meet', icon: 'video' },
 ];
 
 /** The phone's lens strip: at most five, with Direct and Spaces sharing one Switchboard. */
@@ -147,7 +151,7 @@ function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
   const due = useDesk((s) => s.ringing.length);
   const out: Record<Lens, { mentions: number; unread: boolean }> = {
     pulse: { mentions: 0, unread: false }, direct: { mentions: 0, unread: false }, spaces: { mentions: 0, unread: false },
-    desk: { mentions: due, unread: false }, calendar: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false },
+    desk: { mentions: due, unread: false }, calendar: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false }, meet: { mentions: 0, unread: false },
   };
   for (const c of conversations.values()) {
     const k: Lens = c.kind === 'space' ? 'spaces' : 'direct';
@@ -405,13 +409,18 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
     else if (target === 'desk') { setLens('desk'); setSheet(null); }
     else if (target === 'calendar') { setLens('calendar'); setSheet(null); }
+    else if (target === 'meet') {
+      setLens('meet'); setSheet(null);
+      const id = parseMeetingId(m[2] ?? '');
+      if (id) void joinMeeting(id, false).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
+    }
     else setLens('pulse');
   }), [isAdmin, conversations]);
 
   const go = (s: Section) => {
     if (s === 'admin') setSheet('control');
     else if (s === 'settings') setSheet('preferences');
-    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' || s === 'calendar' ? s : 'pulse');
+    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' || s === 'calendar' || s === 'meet' ? s : 'pulse');
   };
 
   const conn = state.phase === 'ready'
@@ -433,6 +442,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     { id: 'go-desk', label: 'Go to Desk: reminders, kept messages, sends waiting', icon: 'desk' as IconName, run: () => setLens('desk') },
     { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'card' as IconName, run: () => setLens('directory') },
+    { id: 'go-meet', label: 'Go to Meet: start or join a meeting', icon: 'video' as IconName, run: () => setLens('meet') },
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
     { id: 'updates', label: 'Check for updates', icon: 'refresh' as IconName, run: () => void window.dex.checkForUpdates() },
@@ -516,6 +526,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         {isTalk(lens) && <ChatView chip={chip} setChip={setChip} state={state} session={session} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}
         {lens === 'calendar' && <CalendarView session={session} openConv={(id) => jump(id)} />}
+        {lens === 'meet' && <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><MeetLens session={session} openConv={(id) => jump(id)} /></Suspense>}
         {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} onMessage={(id) => void messagePerson(id)} />}
       </main>
 

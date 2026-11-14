@@ -37,6 +37,7 @@ import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
+import { Meetings } from './meetings.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
@@ -201,6 +202,10 @@ export class Hub {
       relayAvailable: () => this.opts.relay !== false && this.relay.available(),
       deviceLeft: (_roomId, deviceId) => this.relay.leave(deviceId),
       roomClosed: (roomId) => this.relay.closeRoom(roomId),
+      meetings: new Meetings(this.store.db, this.messaging, (uid) => {
+        const u = this.store.userById(uid);
+        return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
+      }),
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -1067,7 +1072,7 @@ export class Hub {
             throw new OpError(err instanceof RelayError ? err.message : `The relay could not do that (${(err as Error).message}).`);
           }
         }
-        if (typeof op === 'string' && op.startsWith('room.')) {
+        if (typeof op === 'string' && (op.startsWith('room.') || op.startsWith('meet.'))) {
           const me = this.store.userById(conn.userId!)!;
           try {
             // a device outside the office cannot reach the relay: it gets PC-to-PC Rooms

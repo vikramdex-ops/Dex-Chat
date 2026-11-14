@@ -28,21 +28,21 @@ the rest of the app.
 | Area | Feature | Today | Plan |
 | --- | --- | --- | --- |
 | Meetings | HD audio, video, screen and app sharing | ✅ Rooms | Simulcast layers on the relay so slow PCs get lighter video |
-| | Instant meeting with a link to share | Partly (Room in a conversation) | **M1**: every meeting has a short ID and a link (`dexconnect://meet/ID`, plus a web link for guests) |
-| | Scheduled meetings, invitations, RSVP, reminders | ✅ Calendar | **M1**: "Meeting" type with ID, passcode, lobby, co-hosts; .ics invitations for people outside |
-| | Personal room | — | **M1**: each person's standing meeting ID |
-| | Join before host, lobby, lock meeting | — | **M1**: lobby with admit or deny (one at a time or all), lock, join-before-host setting |
-| | Co-hosts | — | **M1**: the host gives and takes co-host rights; co-hosts have every host control |
-| | Mute one or all, remove, lower hands | — | **M1**: host controls in the people table; "Ask to unmute" (never forced on) |
-| | Raise hand, emoji reactions | — | **M1**: hand in the people table and on the tile, queued in order; reactions float up the tile |
-| | Gallery, speaker view, pin, spotlight | Gallery only | **M1**: three layouts (gallery, speaker strip, presentation); pin for yourself, spotlight for everyone (host) |
-| | In-meeting chat, files, polls, whiteboard | In the conversation | **M1**: a meeting panel with sheet tabs (Chat, People, Polls, Board, Files) without leaving the Room |
+| | Instant meeting with a link to share | ✅ **M1**: every Room is held under a meeting with a nine-digit ID (482-913-207) and a `dexconnect://meet/ID` link; instant meetings get a private Space of their own | **M2**: a web link for guests |
+| | Scheduled meetings, invitations, RSVP, reminders | ✅ Calendar; ✅ **M1**: a Calendar event held as a call is a meeting with its own ID, lobby and co-hosts (the organiser hosts) | **M2**: passcodes for guest links, .ics invitations for people outside |
+| | Personal room | ✅ **M1**: each person's standing ID, with its own Space made the first time it is used | |
+| | Join before host, lobby, lock meeting | ✅ **M1**: lobby (nobody, outsiders and guests, or everyone waits) with admit or deny one or all; lock; join before host | |
+| | Co-hosts | ✅ **M1**: the host gives and takes co-host rights; when every host leaves, the longest-present member runs the meeting | |
+| | Mute one or all, remove, lower hands | ✅ **M1**: in the People tab and each tile's menu; muting is enforced on the PC, unmuting is "Ask to unmute" (never forced on); removed people wait in the lobby to come back; end for everyone | |
+| | Raise hand, emoji reactions | ✅ **M1**: hands queued in order (people table and tile); six reactions float up the sender's tile, rate-limited on the hub | |
+| | Gallery, speaker view, pin, spotlight | ✅ **M1**: gallery (numbered sheets past 25 tiles), speaker with a strip, presentation; pin for yourself, spotlight for everyone (host) | |
+| | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation | |
 | | Breakout rooms | — | **M2**: the host splits people into rooms (by hand or at random) with a timer, broadcasts a note, and calls everyone back |
 | | Annotation on a shared screen | — | **M2**: viewers draw on the presenter's screen (strokes go over the data channel, fade, can be cleared) |
 | | Remote control | — | **M3**: the presenter grants control; keyboard and mouse events through a native helper on Windows |
-| | Virtual backgrounds | Blur ✅ | **M1**: office backgrounds (drawn in code) and your own image, with the same segmenter |
+| | Virtual backgrounds | ✅ Blur; ✅ **M1**: drafting sheet, blueprint and plain studio drawn in code, and your own picture (kept on the PC) | |
 | | Noise suppression | Browser filters | **M2**: a stronger suppressor (RNNoise, BSD) as an audio worklet, on by default |
-| | Consent before video | — | **M1**: an office setting: join with the camera off, and ask before turning it on |
+| | Consent before video | ✅ **M1**: Control room → Policies → Calls: join with the camera off, and ask before turning it on | |
 | | Recording, storage, playback, sharing | Local file ✅ | **M2**: recordings uploaded to the hub, a Recordings shelf, playback with chapters (who spoke when), shared by link |
 | | Guests join from a browser (no install) | — | **M2**: the gateway serves a join page; guests wait in the lobby; media through TURN or Cloudflare's SFU |
 | | Dial-in by phone | — | Out of scope (needs a telephony provider) |
@@ -72,6 +72,17 @@ the rest of the app.
 co-hosts, host controls, raise hand and reactions, layouts with pin and spotlight, the in-meeting
 panel, virtual backgrounds, consent before video, and a **Meet** lens to start, join and schedule
 meetings and see upcoming ones and past recordings.
+
+*Delivered (November 2026):* everything above, with the Meet lens listing recent meetings from the
+hub's meeting log (who, when, how long); the recordings shelf is M2. The hub keeps meetings in
+`apps/hub/src/meetings.ts` and the live rules in `rooms.ts` (`meet.*` and the `room.*` host
+controls, tested in `apps/hub/test/meetings.test.ts`). The Room sheet (`rooms/Stage.tsx`), its
+panel and lobby (`meet/`) and the Meet lens load only when used. On phones the lens strip already
+holds five lenses, so Meet is a card on Pulse. Media is unchanged: PC to PC up to 8, the hub's
+relay above that (a Calendar meeting with more than 8 invited opens on the relay). Measured on the
+e2e harness (three app instances with fake cameras on one shared Linux machine, software
+rendering): about 0.53 s from clicking Join to the first frame of a colleague's camera, and 10 to
+20% of one core for the renderer in a three-person gallery with three cameras (median 13%).
 
 **M2: meetings that include the outside.** Guests join from a browser through the gateway. Also:
 recordings stored on the hub with playback and sharing, breakout rooms, annotation, stronger noise

@@ -61,6 +61,10 @@ export function PoliciesAdmin() {
           <div className="txt"><div>People can record calls</div><div className="faint">Everyone in the call sees that it is being recorded. The recording is saved on the PC of the person who recorded it.</div></div>
           <Toggle label="People can record calls" checked={p.allowRecording} onChange={(v) => save({ allowRecording: v })} />
         </div>
+        <div className="setting">
+          <div className="txt"><div>Join meetings with the camera off and ask before turning it on</div><div className="faint">Everyone comes into Rooms and meetings with the camera off. Turning it on asks first, so no one appears on screen by surprise.</div></div>
+          <Toggle label="Join meetings with the camera off and ask before turning it on" checked={p.cameraConsent === true} onChange={(v) => save({ cameraConsent: v })} />
+        </div>
       </section>
       <section className="card">
         <div className="eyebrow">Personal devices</div>
