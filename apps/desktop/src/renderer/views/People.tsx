@@ -8,8 +8,10 @@ import { Avatar, Dialog, Icon, ROLE_LABEL, Segmented, presenceFor, useToast } fr
 import { formatBirthday, formatJoined, managersOf, reportsOf, teamSize, useOrg } from '../org/store.ts';
 import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
+import { useWork, workLine } from '../work/store.ts';
+import { TeamAttendance } from '../work/WorkUi.tsx';
 
-type View = 'people' | 'chart' | 'departments';
+type View = 'people' | 'chart' | 'departments' | 'attendance';
 type Filter = 'all' | 'online';
 
 export function People({ state, session, query, setQuery, focusUser, onMessage }: {
@@ -27,6 +29,8 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
   const departments = useMemo(() => new Map(org.departments.map((d) => [d.id, d] as const)), [org.departments]);
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
   const live = state.phase === 'ready';
+  const work = useWork();
+  const managesSomeone = everyone.some((u) => u.profile.managerId === session.me.id);
 
   useEffect(() => { if (focusUser) { setSelected(focusUser); setView('people'); } }, [focusUser]);
 
@@ -59,6 +63,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
             { value: 'people', label: 'People', icon: 'people' },
             { value: 'chart', label: 'Org chart', icon: 'list' },
             { value: 'departments', label: 'Departments', icon: 'grid' },
+            ...(isAdmin || managesSomeone ? [{ value: 'attendance' as View, label: 'Attendance', icon: 'clock' as const }] : []),
           ]} />
         </div>
 
@@ -90,6 +95,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
                       </div>
                       <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
                       <div className="line faint">{[departments.get(u.profile.departmentId ?? '')?.name, u.profile.extension && `Ext ${u.profile.extension}`].filter(Boolean).join(' · ') || u.account}</div>
+                      {workLine(work.get(u.id)) && <div className={`work-line ${work.get(u.id)?.status}`}><span className="work-dot" />{workLine(work.get(u.id))}</div>}
                       {u.statusText && <div className="status">{u.statusText}</div>}
                     </div>
                   </button>
@@ -100,6 +106,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
         )}
 
         {view === 'chart' && <OrgChart people={everyone} users={users} meId={session.me.id} focus={selected} onFocus={setSelected} departments={departments} />}
+        {view === 'attendance' && <TeamAttendance users={everyone} meId={session.me.id} isAdmin={isAdmin} />}
         {view === 'departments' && <Departments people={everyone} departments={org.departments} users={users} onOpen={(id) => { setDept(id); setView('people'); }} />}
       </div>
 
@@ -149,6 +156,7 @@ function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onCl
         <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
         <h2>{u.displayName}</h2>
         <p className="muted">{u.title ?? ROLE_LABEL[u.role]}</p>
+        <WorkChip userId={u.id} />
         {u.statusText && <div className="status">{u.statusText}</div>}
         {u.id !== meId && (
           <div className="row-actions">
@@ -336,4 +344,10 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
       </div>
     </Dialog>
   );
+}
+
+function WorkChip({ userId }: { userId: string }) {
+  const s = useWork().get(userId);
+  const line = workLine(s);
+  return line ? <div className={`work-line ${s?.status}`}><span className="work-dot" />{line}</div> : null;
 }

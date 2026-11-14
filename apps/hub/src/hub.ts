@@ -18,6 +18,7 @@ import { UpdateMirror } from './update-mirror.ts';
 import { Messaging, MsgError } from './messaging.ts';
 import { Desk } from './desk.ts';
 import { Org, OrgError } from './org.ts';
+import { Work, WorkError } from './work.ts';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import type { MirrorOptions } from './update-mirror.ts';
@@ -85,6 +86,7 @@ export class Hub {
   readonly rooms: Rooms;
   readonly desk: Desk;
   readonly org: Org;
+  readonly work: Work;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
   private readonly fileTokens = new Map<string, string>();
@@ -105,6 +107,12 @@ export class Hub {
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
     this.files = new FileStore(this.store.db, path.join(opts.dataDir, 'files'), opts.maxFileBytes);
     this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers(), this.files);
+    this.work = new Work(this.store.db, () => this.store.activeUsers(), (uid) => {
+      // a connected device counts as seen now
+      if ([...this.conns].some((c) => c.ready && c.userId === uid)) return Date.now();
+      const r = this.store.db.prepare('SELECT MAX(last_seen) AS t FROM devices WHERE user_id = ?').get(uid) as { t: number | null };
+      return r.t;
+    }, (state) => this.emit('work.updated', state));
     this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
     this.desk = new Desk(this.store.db, this.messaging, this.files, (userIds, name, data) => this.deliver(userIds, name, data), (uid) => {
       const u = this.store.userById(uid);
@@ -155,7 +163,10 @@ export class Hub {
     }
     this.mirror?.start();
     // reminders and scheduled messages (also catches up on anything due while the hub was off)
-    const tick = () => { try { this.desk.tick(); } catch (err) { this.log('error', 'desk timer failed', { error: (err as Error).message }); } };
+    const tick = () => {
+      try { this.desk.tick(); } catch (err) { this.log('error', 'desk timer failed', { error: (err as Error).message }); }
+      try { this.work.tick(); } catch (err) { this.log('error', 'attendance timer failed', { error: (err as Error).message }); }
+    };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
     this.heartbeat = setInterval(() => {
@@ -649,6 +660,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('work.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.work.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof WorkError) throw new OpError(err.message);
             throw err;
           }
         }

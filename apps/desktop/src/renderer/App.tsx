@@ -22,6 +22,8 @@ import { IncomingCall, RoomStage } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
 import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
 import { startOrg } from './org/store.ts';
+import { startWork } from './work/store.ts';
+import { WorkClock } from './work/WorkUi.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'directory';
@@ -149,6 +151,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
     void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
     void startOrg();
+    void startWork();
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
   }, [state.phase, session.me.id, session.deviceId]);
@@ -261,6 +264,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
         <div className="titlebar-right">
           <UpdatePill state={state} />
+          <WorkClock meId={session.me.id} live={live} role={session.me.role} />
           <span className={`conn${conn.warn ? ' warn' : ''}`} title={state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
             <span className="pip" /><span className="conn-text">{conn.text}</span>
           </span>
@@ -302,7 +306,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
       <main className={`stage${lens === 'direct' || lens === 'spaces' ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
-        {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} />}
+        {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} onPerson={(id) => { setLens('directory'); setFocusUser(id); }} />}
         {lens === 'direct' && <ChatView kind="direct" state={state} session={session} openId={openDirect} setOpenId={setOpenDirect} />}
         {lens === 'spaces' && <ChatView kind="space" state={state} session={session} openId={openSpace} setOpenId={setOpenSpace} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}

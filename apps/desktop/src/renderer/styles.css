@@ -1188,3 +1188,52 @@ button.card.person { text-align: left; color: inherit; font: inherit; width: 100
 .import-preview { display: grid; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--stroke-strong); }
 .import-summary { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; }
 label.btn { cursor: pointer; }
+
+/* ------------------------------------------------------------------ remote work */
+.work-pill { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--stroke-strong); background: var(--card); color: var(--text-2); font-size: 12.5px; font-weight: 600; transition: background var(--fast), border-color var(--fast); }
+.work-pill:hover { background: var(--card-hover); color: var(--text); }
+.work-pill.in { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--text); }
+.work-pill.break { border-color: var(--amber); }
+.work-pill .mono { font-size: 12px; }
+.work-mode { color: var(--text-3); font-weight: 500; }
+.work-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); flex: none; }
+.break .work-dot, .work-line.break .work-dot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.work-menu { width: 260px; }
+.work-summary { padding: 8px 10px 6px; display: grid; gap: 2px; }
+.work-big { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+.work-summary .faint { font-size: 12px; }
+.work-line { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 12px; color: var(--text-2); }
+.team-today .team-bars { display: grid; gap: 7px; }
+.team-bar { display: grid; grid-template-columns: 76px 1fr 24px; align-items: center; gap: 10px; font-size: 12.5px; }
+.team-bar-label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
+.team-bar-track { height: 6px; border-radius: 3px; background: var(--subtle-2); overflow: hidden; }
+.team-bar-track span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 400ms var(--ease); }
+.team-bar-n { text-align: right; font-size: 12px; }
+.team-faces { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.team-face { border: 0; background: none; padding: 0; }
+.att-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius-l); overflow: hidden; }
+.att-table th { text-align: left; font: 600 11px/1.4 var(--font-body); text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); padding: 10px 12px; border-bottom: 1px solid var(--stroke-strong); background: var(--subtle); }
+.att-table td { padding: 9px 12px; border-bottom: 1px dashed var(--stroke); }
+.att-table tr:last-child td { border-bottom: 0; }
+.att-table .num { text-align: right; }
+.att-table td.num { position: relative; }
+.att-table .chip { margin-left: 6px; height: 18px; font-size: 10.5px; }
+.att-bar { position: absolute; right: 0; top: 6px; bottom: 6px; background: var(--accent-soft); border-radius: 3px 0 0 3px; z-index: 0; }
+.att-val { position: relative; }
+.att-grid-wrap { overflow: auto; border-radius: var(--radius-l); }
+.att-grid th, .att-grid td { padding: 7px 8px; white-space: nowrap; }
+.att-person { display: inline-flex; align-items: center; gap: 8px; }
+.att-cell { font: 600 12px var(--font-mono); }
+.att-cell.m-office { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.att-cell.m-home { background: color-mix(in srgb, #6a4c93 16%, transparent); }
+.att-cell.m-site { background: color-mix(in srgb, var(--amber) 22%, transparent); }
+.att-cell.m-client { background: color-mix(in srgb, #2f5d8a 16%, transparent); }
+.att-cell.auto { text-decoration: underline dotted; }
+.att-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; align-items: center; }
+.att-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+.att-legend i.m-office { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.att-legend i.m-home { background: color-mix(in srgb, #6a4c93 30%, transparent); }
+.att-legend i.m-site { background: color-mix(in srgb, var(--amber) 40%, transparent); }
+.att-legend i.m-client { background: color-mix(in srgb, #2f5d8a 30%, transparent); }
+.timesheet .toolbar .faint b { color: var(--text); }
+@media (max-width: 720px) { .work-pill .work-mode { display: none; } }

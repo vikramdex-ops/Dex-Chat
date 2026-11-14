@@ -210,6 +210,48 @@ export interface PollView {
   mine: number[];
 }
 
+// ---------------------------------------------------------------- remote work / attendance
+export type WorkMode = 'office' | 'home' | 'site' | 'client';
+
+/** Where someone is in their working day right now. */
+export interface WorkState {
+  userId: string;
+  status: 'in' | 'break' | 'out';
+  mode: WorkMode | null;
+  /** When the current status began. */
+  since: number | null;
+  /** Checked in at (start of the day's first session still counted today). */
+  checkedInAt: number | null;
+  note: string | null;
+  /** Time worked today so far (excluding breaks). */
+  workedTodayMs: number;
+}
+
+export interface WorkSegment {
+  id: string;
+  userId: string;
+  kind: 'work' | 'break';
+  mode: WorkMode | null;
+  startAt: number;
+  endAt: number | null;
+  note: string | null;
+  /** Closed automatically because the person forgot to check out. */
+  auto: boolean;
+}
+
+/** One person's day in a report. */
+export interface AttendanceDay {
+  userId: string;
+  /** YYYY-MM-DD, the hub's local date */
+  date: string;
+  firstIn: number;
+  lastOut: number | null;
+  workedMs: number;
+  breakMs: number;
+  modes: WorkMode[];
+  autoClosed: boolean;
+}
+
 // ---------------------------------------------------------------- desk (personal productivity)
 export type RepeatRule = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly';
 
@@ -383,6 +425,14 @@ export interface Ops {
   'poll.vote': { req: { messageId: string; options: number[] }; res: Message };
   'poll.close': { req: { messageId: string }; res: Message };
   'desk.saved': { req: void; res: SavedMessage[] };
+  'work.checkIn': { req: { mode: WorkMode; note?: string }; res: WorkState };
+  'work.checkOut': { req: void; res: WorkState };
+  'work.break': { req: { on: boolean }; res: WorkState };
+  'work.setMode': { req: { mode: WorkMode; note?: string | null }; res: WorkState };
+  /** Everyone's state now (what colleagues see). */
+  'work.team': { req: void; res: WorkState[] };
+  /** Days between two dates (inclusive, YYYY-MM-DD). Yourself, your reports (managers) or anyone (admins). */
+  'work.report': { req: { from: string; to: string; userIds?: string[] }; res: { days: AttendanceDay[]; segments: WorkSegment[] } };
   'remind.create': { req: { text?: string; messageId?: string; dueAt: number; repeat?: RepeatRule; forUserId?: string }; res: Reminder };
   'remind.list': { req: { includeDone?: boolean } | void; res: Reminder[] };
   'remind.update': { req: { id: string; text?: string; dueAt?: number; repeat?: RepeatRule; done?: boolean }; res: Reminder };
@@ -420,6 +470,7 @@ export interface Events {
   'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
   'room.busy': { userId: string; inRoom: boolean };
   'star.updated': { messageId: string; on: boolean };
+  'work.updated': WorkState;
   /** A reminder went off (to the person reminded). */
   'reminder.due': Reminder;
   'reminder.updated': Reminder;

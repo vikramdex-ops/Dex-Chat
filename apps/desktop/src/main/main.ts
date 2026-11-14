@@ -235,6 +235,10 @@ function wireIpc(c: Controller): void {
       if (pick) callback({ video: pick }); else callback({});
     });
   });
+  // reports exported from the app (timesheets, attendance): ask where, starting in Downloads
+  session.defaultSession.on('will-download', (_e, item) => {
+    item.setSaveDialogOptions({ title: 'Save', defaultPath: path.join(app.getPath('downloads'), item.getFilename()) });
+  });
   // camera, microphone and screen capture are allowed for the app itself only
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => {
     const own = wc.getURL().startsWith('file://') || (!!devUrl && wc.getURL().startsWith(devUrl));

@@ -22,6 +22,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Messaging | Spaces (open / private), Direct (1:1 and groups), side-tracks, @mentions and @everyone, reactions, pins, edit / delete, Seen receipts, typing, drafts, formatting, line-number references |
 | Desk | Saved messages, reminders (on a message or standalone, for yourself or a colleague, repeating, snooze), messages scheduled to send later (sent by the hub even with your PC off), forwarding with credit, mark unread, polls (single or multiple choice, anonymous, closing time) |
 | Organisation | Departments (nested, with heads), designations, reporting lines, extension, phone, seat, joining date, birthday and custom fields; an org chart; profiles beside the Directory; CSV import from Excel or Dexterity Sheets that also covers people who have not joined yet |
+| Remote work | Check in from the title bar (office, home, site or client), breaks, change place during the day, live "who's working" on Pulse and on profiles, your timesheet on the Desk, team attendance for managers and administrators, CSV export; forgotten check-outs close at the last activity |
 | Files | Drag, drop, paste or attach up to 1 GB; stored once on the hub; inline images with a viewer; Open / Save; Files panel |
 | Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
 | Search | Ctrl+K across people, conversations, commands and message text (FTS5), jump to the message |
@@ -32,7 +33,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
-**Next:** direct PC-to-PC fallback when the hub is off, end-to-end encryption of Direct messages, forms and notes, calendar and remote-work check-in, guest invites, retention and legal
+**Next:** direct PC-to-PC fallback when the hub is off, end-to-end encryption of Direct messages, forms and notes, calendar and meetings, guest invites, retention and legal
 hold, file viewing on phones, and the Sheets, Slate, Sleuth, Project Opener and Datum integrations.
 
 ## How it fits together
