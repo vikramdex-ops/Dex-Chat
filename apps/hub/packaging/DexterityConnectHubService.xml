@@ -1,0 +1,20 @@
+<!-- Windows service definition for the Dexterity Connect Hub (run by WinSW). -->
+<service>
+  <id>DexterityConnectHub</id>
+  <name>Dexterity Connect Hub</name>
+  <description>Office hub for Dexterity Connect: people, messages, files and calls on the local network. Works without internet.</description>
+  <executable>%BASE%\DexterityConnectHub.exe</executable>
+  <env name="DEXCONNECT_DATA_DIR" value="%BASE%\hub-data" />
+  <workingdirectory>%BASE%</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>false</delayedAutoStart>
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="20 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

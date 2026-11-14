@@ -1,140 +1,97 @@
-# Lattice
+<p align="center">
+  <a href="https://dexterity-admin.github.io/dexterity-connect/">
+    <img src="https://raw.githubusercontent.com/dexterity-admin/dexterity-connect/gh-pages/assets/readme-hero.svg" alt="Dexterity Connect" width="100%" />
+  </a>
+</p>
 
-An offline-first messenger for an office LAN. Messages and files travel only between machines on
-your own network — there is no cloud, no account service, and no internet requirement.
+# Dexterity Connect
 
-Built with Node.js built-ins only (HTTP, `node:sqlite`, UDP, crypto). No dependencies to install.
+Dexterity Design Services' workplace messenger. It runs entirely on the office network, works with the
+internet unplugged, and uses its own design language ("Drafting Table", see
+[`docs/DESIGN-LANGUAGE.md`](docs/DESIGN-LANGUAGE.md)).
 
-## Requirements
+- **Product page:** https://dexterity-admin.github.io/dexterity-connect/
+- **Installers and update feed:** https://github.com/dexterity-admin/dexterity-connect/releases
+- **Plan, decisions, ratings:** [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) · Cliq research: [`docs/CLIQ-FEATURE-INVENTORY.md`](docs/CLIQ-FEATURE-INVENTORY.md)
 
-- Node.js **22.5 or newer** on the machine that hosts the server (Windows, macOS or Linux).
-- Every colleague needs only a modern browser — nothing to install on their PC.
+## What works today
 
-## Quick start (Windows, everything on D:)
+| Area | Built |
+| --- | --- |
+| Sign-in | Windows account, per-device Ed25519 keys (DPAPI-sealed), admin approval with matching device codes, pinned TLS |
+| Messaging | Spaces (open / private), Direct (1:1 and groups), side-tracks, @mentions and @everyone, reactions (with office emoji), pins, edit / delete, quote, reply privately, copy a link to a message (shown as a preview card), select several to forward (up to 25 conversations), copy, save or delete, read receipts with Read by…, last seen, typing, drafts, Markdown formatting with a live preview and code highlighting, an emoji picker with skin tones, quick reactions you choose, notices when people join, leave or rename, jump to a date, an Activity feed of replies and mentions, line-number references |
+| Desk | Saved messages, reminders (on a message or standalone, for yourself or a colleague, repeating, snooze), messages scheduled to send later (sent by the hub even with your PC off), forwarding with credit, mark unread, polls (single or multiple choice, anonymous, closing time) |
+| Organisation | Departments (nested, with heads), designations, reporting lines, extension, phone, seat, joining date, birthday and custom fields; an org chart; profiles beside the Directory; CSV import from Excel or Dexterity Sheets that also covers people who have not joined yet |
+| Remote work | Check in from the title bar (office, home, site or client), breaks, change place during the day, live "who's working" on Pulse and on profiles, your timesheet on the Desk, team attendance for managers and administrators, CSV export; forgotten check-outs close at the last activity |
+| Calendar | Week grid and agenda, meetings with invitations and Going / Maybe / Not going, repeating meetings, reminders with a Join card, conference rooms that cannot be double-booked, free/busy while planning, meetings tied to a conversation and announced there, one-click Join into a call |
+| Guests | Invite codes for people outside the company, limited to chosen Spaces and their people, approved at once, with access that ends on its own (extend or end it any time) |
+| Compliance | Retention for Space and Direct messages, legal holds that keep every version of edited or deleted messages, exports to HTML, CSV or JSON (Direct message text is never exported) |
+| Commands | Slash commands in the composer (/remind, /poll, /meet, /call, /status, /checkin, /dnd, /shrug, /help…) and integration commands that call a tool's signed webhook |
+| Notes, forms, whiteboards | Shared notes per conversation and personal notes on the Desk (save as you type, never overwrite a colleague, edit in Slate), forms with answers and CSV export, live whiteboards that can be posted as an image, voice notes |
+| Privacy | Direct messages are end-to-end encrypted (X25519 + AES-256-GCM, signed by each device's Ed25519 key); the hub only stores sealed envelopes; safety codes to compare in person; your other devices hand history to a new one |
+| Outside the office | Phones and home laptops on any network or mobile data reach the hub through the office's own gateway on Cloudflare (no port opened at the office, end-to-end encrypted to the hub, pinned to its certificate); setup codes and QR codes; calls across networks with STUN/TURN (see [`docs/REMOTE-ACCESS.md`](docs/REMOTE-ACCESS.md)) |
+| Hub-off mode | If the hub PC is down, PCs find each other on the network and pass encrypted Direct messages straight across; everything written meanwhile is added to the hub's history when it is back |
+| Files and media | Drag, drop, paste or attach up to the office limit (1 GB by default); stored once on the hub; inline images with a viewer; voice notes, video messages and screen recordings that play inline; Open / Save; Files panel |
+| Rooms (calls) | Voice and video, up to 8 people, add people during a call, screen sharing with a picker, picture-in-picture, a call-quality indicator, recording (everyone is told; saved on the PC or shared in the conversation), mini-Room, ringing, missed calls, call history on each profile; media peer-to-peer on the LAN and through STUN/TURN from outside |
+| Search | Ctrl+K across people, conversations, commands and message text; a Search screen (Ctrl+Shift+F or a conversation's header) with filters for person, conversation, Direct or Spaces, dates and files; text in images found by OCR on the sender's PC (Spaces only) |
+| Presence | Available, Busy, Do not disturb, Invisible, In a meeting (from the Calendar); status emoji; out-of-office with a delegate and an automatic reply; automatic Away on idle or screen lock; last seen; beacon rings |
+| Notifications | Native toasts that open the conversation (Android too, with a background connection), taskbar / dock badge, mute per conversation, notify about everything / Direct and mentions / nothing, quiet hours, a choice of generated sounds, hide message text |
+| Admin | Control room: approvals, devices, roles, organisation, guests, compliance, policies (edit window, upload limit, PC-to-PC fallback, call recording, office emoji), default Spaces for new people, reported messages, removing with a reason, turning a group into a Space, usage report, integrations and webhooks, outside-the-office gateway, audit log, update mirror status |
+| Integrations | Bot API, incoming webhooks that accept Slack-style payloads, slash commands with signed webhooks, `dexconnect://share` links; Hopper notices, Slate notes, and Share to Dexterity Connect in Project Opener, Sleuth, Datum and Dexterity Sheets, whose links open back in the tool (see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)) |
+| Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
+| Phones | The same app on Android, in the office or anywhere on mobile data: images and voice notes inline, open files in another app, save to Downloads, attach from the phone, a layout made for small screens |
+| Comfort | Pop a conversation out into its own window, a global shortcut to bring the app forward (Ctrl+Alt+D), Preferences for compact density and text size (also Ctrl+= / Ctrl+-), 12- or 24-hour time, sidebar sorting and a resizable sidebar, a keyboard shortcuts sheet (Ctrl+/), Alt+↑/↓ between conversations, light and dark themes |
+| Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
-1. Copy this folder to `D:\lattice`.
-2. Double-click `start.bat` (or run `node server\index.js` in that folder).
-3. It prints two addresses. Share the **Network** one, e.g. `http://192.168.1.24:3000`.
-4. Each colleague opens that address, types their name, and is in.
+**Next:** the remaining parity items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) (OCR, call recording, video messages, custom emoji).
 
-Nothing is written outside the folder you copied. Keep the folder on `D:` and no other disk is touched.
+## How it fits together
 
-### Windows Firewall
-
-Allow Node.js on **private** networks when prompted, or add the rules once in an admin PowerShell:
-
-```powershell
-New-NetFirewallRule -DisplayName "Lattice TCP" -Direction Inbound -Protocol TCP -LocalPort 3000 -Profile Private -Action Allow
-New-NetFirewallRule -DisplayName "Lattice Discovery" -Direction Inbound -Protocol UDP -LocalPort 47823 -Profile Private -Action Allow
-```
-
-## Configuration
-
-All settings are environment variables; every one is optional.
-
-| Variable | Default | Purpose |
+| Part | What it is | Where it runs |
 | --- | --- | --- |
-| `PORT` | `3000` | HTTP port |
-| `WORKSPACE_NAME` | `Office` | Name shown in the sidebar |
-| `DATA_DIR` | `./data` | Where the database and uploads live |
-| `MAX_UPLOAD_BYTES` | `536870912` | Largest single file (512 MB) |
-| `DISCOVERY_PORT` | `47823` | UDP port used to find other Lattice servers |
-| `LATTICE_NO_DISCOVERY` | unset | Set to `1` to disable the UDP beacon |
-| `LOG_LEVEL` | `info` | `error`, `warn`, `info` or `debug` |
+| **Hub** (`apps/hub`) | Always-on service that holds the directory and approvals, and in later phases history, files and call relay | One office PC, as a Windows service |
+| **Desktop app** (`apps/desktop`) | Electron + React app people use every day | Every Windows PC (macOS builds too) |
+| **Phone app** (`apps/mobile`) | The same React UI in a Capacitor shell with a native LAN plugin | Android phones, on the office Wi-Fi or anywhere |
+| **Core** (`packages/core`) | Shared protocol, device identity, LAN discovery and hub client | Used by both |
 
-Example:
+Apps find the hub on their own with a LAN broadcast probe. Every PC has its own Ed25519 device key, sealed with Windows DPAPI. The first device to join becomes the owner, and every later device waits until an admin approves it. Both sides see the same 8-character device code, so the admin can confirm who they are approving. Each sign-in proof is tied to that particular connection and to the hub's certificate, so a stolen or replayed proof is useless. The connection itself is TLS, pinned to the hub's certificate fingerprint.
 
-```powershell
-$env:PORT = "8080"; $env:WORKSPACE_NAME = "Dex Engineering"; $env:DATA_DIR = "D:\lattice\data"
-node server\index.js
-```
+## Getting the installers
 
-## What it does
+Every push runs GitHub Actions (**Actions → build**). It tests everything, builds the Windows installer,
+both macOS DMGs, the Android APK and the hub package, and publishes them to the
+[public release repository](https://github.com/dexterity-admin/dexterity-connect/releases):
+pushes to `main` publish to the **stable** channel, other branches to **beta**. Installed apps update from there,
+or from the hub's mirror when they have no internet.
 
-- Channels, direct messages and group conversations
-- Replies and threads, reactions, pins, forwarding, edit and delete
-- Full-text search scoped to conversations you belong to
-- File sharing with drag and drop, progress, inline image preview, and disk deduplication
-- Presence, typing indicators, unread counts and read state
-- LAN discovery: other Lattice servers on the same subnet appear under "People on this network"
-- Admin tools: workspace overview, JSON export, role management, channel deletion
+### Setting up the office
 
-## Data, backup and restore
+1. **Hub PC:** extract the hub zip to where it should live (for example `D:\Dexterity Connect Hub`) and double-click `Install-Hub.cmd`. It installs the service, opens its two firewall ports and starts it.
+2. **Your PC:** install Dexterity Connect, open it, and click **Request access**. As the first person, you become the owner.
+3. **Everyone else:** they install and open the app, then approve them from **Admin → Approvals**.
 
-Everything lives under `DATA_DIR`:
+## Development
 
-- `lattice.db` — SQLite database (WAL mode)
-- `files/` — uploaded file content
-
-To back up, stop the server and copy the whole folder. To move it, copy the folder anywhere and point
-`DATA_DIR` at it. Admins can also download a JSON export from **Settings → Admin**.
-
-`data/` is git-ignored and is never created outside the folder you run from.
-
-## Day-to-day operation
-
-- **Start at boot:** create a Task Scheduler task (Windows) or a systemd unit (Linux) that runs
-  `node server/index.js` in this folder. `SIGINT`/`SIGTERM` shut it down cleanly.
-- **First user is the admin.** Promote others in Settings → Admin.
-- **Health check:** `GET /api/health` returns workspace, counts and uptime — point your monitoring at it.
-- **Logs:** one JSON object per line on stdout, so they can be piped into a file or a log collector.
-
-## Desktop app and installers
-
-The same server also ships as a desktop application built with Electron, which adds the tray icon,
-launch-at-sign-in, native notifications, `lattice://` links and download handling. The app starts the
-LAN server itself on port **47825** and stores data beside the executable when that location is
-writable (for example `D:\lattice\data`), so a `D:` install never writes to `C:`.
+Requires Node.js 22.18 or newer.
 
 ```bash
-npm ci          # installs Electron and electron-builder
-npm run desktop # run the app against the current folder
-npm run dist:win    # NSIS installer + portable .exe
-npm run dist:linux  # AppImage + .deb
-npm run dist:mac    # .dmg
+npm install
+npm test               # core + hub test suites
+npm run typecheck
+npm run hub            # run a hub from source (data in ./hub-data)
+npm run desktop:dev    # build and launch the desktop app
 ```
 
-Installers are produced automatically by `.github/workflows/build.yml` on **every push and pull
-request** (Windows, Linux and macOS in parallel, uploaded as build artifacts). Pushing a tag such as
-`v1.0.0` also publishes a GitHub release with the installers attached. The workflow runs the full test
-suite first and will not package if tests fail.
+## Repository layout
 
-Desktop builds are unsigned. Windows SmartScreen will warn on first run until you add a code-signing
-certificate; see the `CSC_*` secrets electron-builder reads.
-
-## Feature parity
-
-`PARITY.md` tracks every Zoho Cliq capability against Lattice, including what the reverse engineering
-established about the Cliq desktop package and what is deliberately out of scope for an air-gapped
-office.
-
-## Tests
-
-```bash
-node --test tests/
+```
+apps/hub        hub service, its tests, Windows service packaging
+apps/desktop    Electron main process, preload bridge, React UI
+apps/gateway    the internet gateway: a Cloudflare Worker that relays encrypted traffic to the hub
+apps/mobile     Android app (Capacitor) and its native LAN, file and notification plugin
+packages/core   protocol, identity, discovery, hub client, end-to-end encryption (+ tests)
+brand/          Dexterity International logo files and colour tokens
+docs/           blueprint, design language, Cliq feature inventory, integrations, third-party licences
 ```
 
-The suite starts a real server in a temporary data directory and covers authentication, membership
-authorization, messaging, threads, forwarding, pagination, uploads and dedupe, search scoping,
-read state, channel lifecycle, admin boundaries and live event delivery.
-
-## Security notes
-
-- Each user gets a random 48-character token; the browser stores it and sends it as a bearer token.
-- Every message, file and search is authorized against channel membership on the server.
-- Responses carry a strict Content-Security-Policy, and uploads are served as attachments unless they
-  are images explicitly requested for inline preview.
-- Traffic is plain HTTP. On a trusted office LAN that is normally acceptable; if you need encryption,
-  put the server behind a reverse proxy with TLS, or run it over WireGuard.
-- There are no passwords. Anyone who can reach the port can create an identity. Restrict access with
-  the firewall or the reverse proxy if the network is not trusted.
-
-## Limits and roadmap
-
-Media calls, screen sharing, message translation and third-party integrations are intentionally out of
-scope: each needs either an on-premise media server or internet access. Self-hosted Jitsi or LiveKit on
-the same machine is the standard way to add calls.
-
-## License
-
-Internal use. No third-party code is bundled: every dependency is a Node.js built-in.
+Internal software. © Dexterity Design Services Pvt. Ltd. All rights reserved.

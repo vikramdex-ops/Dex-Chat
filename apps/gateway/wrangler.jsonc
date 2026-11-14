@@ -1,0 +1,14 @@
+{
+  // Dexterity Connect gateway. Deploy once to the office's Cloudflare account:
+  //   npx wrangler deploy            (from apps/gateway)
+  // Optional but recommended: pin the hub so only it can take the hub side of the relay:
+  //   npx wrangler secret put HUB_FINGERPRINT    (paste the fingerprint shown in Control room > Remote access)
+  "name": "dexconnect-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "durable_objects": { "bindings": [{ "name": "RELAY", "class_name": "Relay" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Relay"] }]
+}

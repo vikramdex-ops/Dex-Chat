@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared with other apps through FileProvider: downloaded updates (for Android's installer)
+     and files from conversations (to open them in a viewer). -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="updates" path="updates/" />
+    <cache-path name="files" path="files/" />
+</paths>

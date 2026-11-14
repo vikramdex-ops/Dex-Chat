@@ -1,0 +1,129 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import type { Conversation, Message } from '@dex/core';
+import { office, nextEvent, me, send } from './office.ts';
+
+test('join, leave, add, remove and rename notices; they are not unread and not previews', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Notices', members: [me(priya)] });
+  await send(owner, space.id, 'hello');
+  const added = nextEvent<Message>(priya, 'msg.new', (m) => !!m.system);
+  await owner.request('conv.addMembers', { convId: space.id, userIds: [me(ravi)] });
+  assert.deepEqual((await added).system, { kind: 'added', users: [me(ravi)] });
+  await ravi.request('conv.leave', { convId: space.id });
+  await ravi.request('conv.join', { convId: space.id });
+  await assert.rejects(priya.request('conv.removeMember', { convId: space.id, userId: me(ravi) }), /moderators/);
+  await owner.request('conv.removeMember', { convId: space.id, userId: me(ravi) });
+  await owner.request('conv.update', { convId: space.id, name: 'Notices 2' });
+  const list = (await priya.request('msg.list', { convId: space.id })).messages.filter((m) => m.system).map((m) => [m.system!.kind, m.authorId]);
+  assert.deepEqual(list, [['added', me(owner)], ['left', me(ravi)], ['joined', me(ravi)], ['removed', me(owner)], ['renamed', me(owner)]]);
+  const conv = (await priya.request('conv.list')).find((c: Conversation) => c.id === space.id)!;
+  assert.equal(conv.unread, 1, 'only the real message counts');
+  assert.equal(conv.lastMessage?.body, 'hello');
+  assert.equal((await priya.request('search', { q: '', convId: space.id })).messages.length, 1);
+});
+
+test('read receipts can be switched off, both ways; last seen is shared, not while invisible', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Receipts', members: [me(priya), me(ravi)] });
+  const m = await send(owner, space.id, 'please read');
+  await priya.request('conv.read', { convId: space.id, messageId: m.id });
+  let v = (await owner.request('conv.list')).find((c: Conversation) => c.id === space.id)!;
+  assert.equal(v.reads[me(priya)], m.id);
+  await priya.request('me.update', { readReceipts: false });
+  v = (await owner.request('conv.list')).find((c: Conversation) => c.id === space.id)!;
+  assert.equal(me(priya) in v.reads, false, 'her reads are hidden from others');
+  const pv = (await priya.request('conv.list')).find((c: Conversation) => c.id === space.id)!;
+  assert.deepEqual(Object.keys(pv.reads), [me(priya)], 'and she sees only her own');
+  // no read event reaches others for her
+  let leaked = false;
+  owner.on('event', (n: string, d: { userId?: string }) => { if (n === 'read' && d.userId === me(priya)) leaked = true; });
+  const m2 = await send(owner, space.id, 'again');
+  await priya.request('conv.read', { convId: space.id, messageId: m2.id });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(leaked, false);
+  await priya.request('me.update', { readReceipts: true });
+
+  const users = (await owner.request('directory.list')).users;
+  assert.ok((users.find((u) => u.id === me(ravi))!.lastSeen ?? 0) > Date.now() - 60_000);
+  await ravi.request('me.update', { availability: 'invisible' });
+  assert.equal((await owner.request('directory.list')).users.find((u) => u.id === me(ravi))!.lastSeen, null);
+  await priya.request('me.update', { statusEmoji: '🏗️', statusText: 'On site' });
+  assert.equal((await owner.request('directory.list')).users.find((u) => u.id === me(priya))!.statusEmoji, '🏗️');
+  await assert.rejects(priya.request('me.update', { statusEmoji: 'not an emoji' }), /emoji/);
+});
+
+test('a side-track reply can also go to the conversation, pointing back to the side-track', async () => {
+  const { owner, priya } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Tracks', members: [me(priya)] });
+  const q = await send(owner, space.id, 'Which rating for line 12?');
+  const reply = await priya.request('msg.send', { convId: space.id, body: '300# per spec', parentId: q.id, clientId: 'a1', alsoToConv: true });
+  assert.equal(reply.parentId, q.id);
+  // a retry does not post a second copy
+  await priya.request('msg.send', { convId: space.id, body: '300# per spec', parentId: q.id, clientId: 'a1', alsoToConv: true });
+  const top = (await owner.request('msg.list', { convId: space.id })).messages;
+  const copies = top.filter((m) => m.body === '300# per spec');
+  assert.equal(copies.length, 1);
+  assert.deepEqual(copies[0].inReplyTo, { messageId: q.id, authorId: me(owner) });
+  assert.equal(copies[0].parentId, null);
+});
+
+test('activity: mentions of me and replies in my side-tracks; tracks I follow; jump to a date', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Activity', members: [me(priya), me(ravi)] });
+  const mine = await send(priya, space.id, 'Who checks line 7?');
+  await send(owner, space.id, `<@${me(priya)}> can you look at ISO-7?`);
+  await send(ravi, space.id, 'I can', mine.id);
+  const other = await send(owner, space.id, 'unrelated thread');
+  await send(priya, space.id, 'me too', other.id);
+  await send(ravi, space.id, 'following up', other.id);
+  await send(owner, space.id, 'nothing for priya');
+  const all = await priya.request('activity.list', {});
+  assert.deepEqual(all.items.map((i) => [i.kind, i.message.body]), [['reply', 'following up'], ['reply', 'I can'], ['mention', `<@${me(priya)}> can you look at ISO-7?`]]);
+  assert.equal((await priya.request('activity.list', { kind: 'mentions' })).items.length, 1);
+  const tracks = await priya.request('activity.tracks');
+  assert.deepEqual(tracks.map((t) => [t.parent.body, t.replyCount]), [['unrelated thread', 2], ['Who checks line 7?', 1]]);
+  assert.equal((await ravi.request('activity.list', {})).items.length, 0, 'ravi was not mentioned and started no side-track');
+  const at = await priya.request('msg.at', { convId: space.id, at: 0 });
+  assert.equal(at.messageId, mine.id);
+});
+
+test('out of office: a notice for whoever writes or mentions, once per conversation; in a meeting from the calendar', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  await priya.request('me.update', { ooo: { until: Date.now() + 3 * 86400_000, message: 'At the Jamnagar site', delegateId: me(ravi) } });
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [me(priya)] });
+  await send(owner, dm.id, 'Can you send the MTO?');
+  await send(owner, dm.id, 'And the BOM?');
+  const notes = (await owner.request('msg.list', { convId: dm.id })).messages.filter((m) => m.system?.kind === 'away');
+  assert.equal(notes.length, 1, 'once, not for every message');
+  assert.equal(notes[0].authorId, me(priya));
+  assert.deepEqual(notes[0].system!.users, [me(priya), me(ravi)]);
+  assert.equal(notes[0].system!.name, 'At the Jamnagar site');
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Away', members: [me(priya), me(ravi)] });
+  await send(ravi, space.id, 'no mention here');
+  await send(ravi, space.id, `<@${me(priya)}> when you are back`);
+  const sn = (await owner.request('msg.list', { convId: space.id })).messages.filter((m) => m.system?.kind === 'away');
+  assert.equal(sn.length, 1);
+
+  // in a meeting
+  const ev = await owner.request('cal.create', { title: 'Design review', startAt: Date.now() - 60_000, endAt: Date.now() + 3600_000, attendees: [me(ravi)] });
+  await ravi.request('cal.respond', { eventId: ev.id, response: 'yes' });
+  (hub as unknown as { presenceTick(): void }).presenceTick();
+  await new Promise((r) => setTimeout(r, 200));
+  assert.deepEqual([...(priya.session!.inMeeting ?? [])].sort(), [me(owner), me(ravi)].sort());
+});
+
+test('a message by id for link previews; Spaces and calls in common', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  const a = await owner.request('conv.create', { kind: 'space', name: 'Alpha', members: [me(priya)] });
+  await owner.request('conv.create', { kind: 'space', name: 'Beta', members: [me(ravi)] });
+  const m = await send(owner, a.id, 'see this');
+  assert.equal((await priya.request('msg.get', { messageId: m.id })).body, 'see this');
+  await assert.rejects(ravi.request('msg.get', { messageId: m.id }), /not found/);
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [me(priya)] });
+  hub.policies.logCall('c1', dm.id, me(owner), true, false, 120_000);
+  const common = await priya.request('people.common', { userId: me(owner) });
+  assert.deepEqual(common.spaces.map((s) => s.name), ['Alpha']);
+  assert.equal(common.calls.length, 1);
+  assert.equal(common.calls[0].video, true);
+});
