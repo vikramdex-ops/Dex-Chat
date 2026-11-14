@@ -6,11 +6,11 @@ import { OfflineBanner } from '../App.tsx';
 import { Integrations } from './Integrations.tsx';
 import { OrgAdmin } from './OrgAdmin.tsx';
 import { ComplianceAdmin, GuestsAdmin } from './GuestsCompliance.tsx';
-import { PoliciesAdmin, UsageAdmin } from './PoliciesUsage.tsx';
+import { PoliciesAdmin, ReportsAdmin, UsageAdmin } from './PoliciesUsage.tsx';
 import { RemoteAdmin } from './Remote.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'policies' | 'remote' | 'usage' | 'integrations' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -50,6 +50,11 @@ const AUDIT_TEXT: Record<string, string> = {
 export function Admin({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('approvals');
+  const [openReports, setOpenReports] = useState(0);
+  useEffect(() => {
+    void window.dex.request('admin.reports.list', {}).then((r) => setOpenReports(new Set(r.map((x) => x.messageId)).size)).catch(() => {});
+    return window.dex.onHubEvent((n, d) => { if (n === 'admin.reports') setOpenReports((d as { open: number }).open); });
+  }, []);
   const [devices, setDevices] = useState<DeviceRecord[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -96,6 +101,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'organisation', label: 'Organisation', icon: 'list' },
           { value: 'guests', label: 'Guests', icon: 'user' },
           { value: 'compliance', label: 'Compliance', icon: 'archive' },
+          { value: 'reports', label: 'Reports', icon: 'warning', badge: openReports },
           { value: 'policies', label: 'Policies', icon: 'shield' },
           { value: 'remote', label: 'Outside the office', icon: 'globe' },
           { value: 'usage', label: 'Usage', icon: 'pulse' },
@@ -185,6 +191,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'guests' && <GuestsAdmin users={session.users} />}
       {tab === 'compliance' && <ComplianceAdmin users={session.users} />}
       {tab === 'policies' && <PoliciesAdmin />}
+      {tab === 'reports' && <ReportsAdmin users={session.users} onOpen={(convId, messageId) => window.dispatchEvent(new CustomEvent('dex-open-message', { detail: { convId, messageId } }))} />}
       {tab === 'remote' && <RemoteAdmin />}
       {tab === 'usage' && <UsageAdmin users={session.users} />}
       {tab === 'integrations' && <Integrations state={state} />}

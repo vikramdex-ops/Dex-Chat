@@ -1680,3 +1680,9 @@ body.resizing { user-select: none; cursor: col-resize; }
 .quiet-hours { display: flex; align-items: center; gap: 6px; } .quiet-hours .input { width: 110px; }
 .avatar[data-presence='meeting'] { --ring: #8a6be0; }
 .notice-line.away { margin: 8px 0 8px 76px; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--text-2); justify-content: flex-start; }
+.report { display: grid; gap: 8px; }
+.report-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.report-msg { padding: 8px 10px; border-left: 3px solid var(--stroke-strong); background: var(--subtle); border-radius: 0 8px 8px 0; font-size: 13px; display: grid; gap: 4px; }
+.reason-list { display: grid; gap: 6px; width: 100%; }
+.default-spaces { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+.to-space { display: grid; gap: 6px; margin-top: 16px; }

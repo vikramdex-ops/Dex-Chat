@@ -3,12 +3,19 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, ulid } from '@dex/core';
 import { addWraps, isSealed } from '@dex/core/e2e';
-import type { Conversation, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser } from '@dex/core';
+import type { Conversation, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
 import type { FileStore } from './files.ts';
 
 export class MsgError extends Error {}
 
 const cleanBody = (v: unknown) => (typeof v === 'string' ? v.replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim() : '');
+
+interface ReportRow { id: string; message_id: string; conv_id: string; conv_name: string | null; conv_kind: string; author_id: string; reporter_id: string; reason: string; text: string; quoted: number; created_at: number; status: string; resolved_by: string | null; resolved_at: number | null }
+const toReport = (r: ReportRow): ReportItem => ({
+  id: r.id, messageId: r.message_id, convId: r.conv_id, convName: r.conv_kind === 'space' ? r.conv_name ?? 'Space' : 'Direct conversation',
+  authorId: r.author_id, reporterId: r.reporter_id, reason: r.reason, text: r.text, quoted: !!r.quoted, createdAt: r.created_at,
+  status: r.status === 'removed' || r.status === 'dismissed' ? r.status : 'open', resolvedBy: r.resolved_by, resolvedAt: r.resolved_at,
+});
 
 function parseSystem(raw: string): Message['system'] {
   try {
@@ -109,7 +116,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNIN
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number; archived: number; post_policy: 'everyone' | 'moderators' }
-export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null; system?: string | null; reply_to?: string | null }
+export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null }
 
 const MAX_BODY = 8000;
 /** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
@@ -148,6 +155,11 @@ export class Messaging {
     // join/leave/rename notices are messages with a system field
     if (!cols.includes('system')) db.exec('ALTER TABLE messages ADD COLUMN system TEXT');
     if (!cols.includes('reply_to')) db.exec('ALTER TABLE messages ADD COLUMN reply_to TEXT');
+    if (!cols.includes('removed_by')) { db.exec('ALTER TABLE messages ADD COLUMN removed_by TEXT'); db.exec('ALTER TABLE messages ADD COLUMN removed_reason TEXT'); }
+    db.exec(`CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY, message_id TEXT NOT NULL, conv_id TEXT NOT NULL, author_id TEXT NOT NULL, reporter_id TEXT NOT NULL,
+      reason TEXT NOT NULL, text TEXT NOT NULL, quoted INTEGER NOT NULL, created_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open', resolved_by TEXT, resolved_at INTEGER, UNIQUE (message_id, reporter_id))`);
     // sidebar organisation, timed mute, archive, moderation (hubs from before these existed)
     const add = (table: string, col: string, def: string) => {
       const have = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
@@ -299,6 +311,7 @@ export class Messaging {
       files: r.deleted ? [] : this.files.forMessage(r.id),
       forwardedFrom: r.forwarded && !r.deleted ? parseForward(r.forwarded) : null,
       system: r.system ? parseSystem(r.system) : null,
+      removed: r.deleted && r.removed_by && r.removed_by !== r.author_id ? { by: r.removed_by, reason: r.removed_reason ?? null } : null,
       inReplyTo: r.reply_to ? (() => { const p = this.message(r.reply_to!); return p ? { messageId: p.id, authorId: p.author_id } : null; })() : null,
       poll: r.deleted ? null : this.pollView(r.id, viewer),
       form: r.deleted ? null : this.formView(r.id, viewer),
@@ -403,6 +416,21 @@ export class Messaging {
   }
 
   /** Called when a person's first device is approved. */
+  /** Called when a report is made or settled (the hub tells administrators). */
+  onReport: (() => void) | null = null;
+  openReports(): number { return (this.db.prepare("SELECT COUNT(DISTINCT message_id) AS n FROM reports WHERE status = 'open'").get() as { n: number }).n; }
+
+  /** A newly approved person joins the office's default Spaces. */
+  joinDefaults(userId: string, spaceIds: string[]): void {
+    if (this.users().find((u) => u.id === userId)?.role === 'guest') return;
+    for (const id of spaceIds) {
+      const c = this.conv(id);
+      if (!c || c.kind !== 'space' || c.archived || this.isMember(id, userId)) continue;
+      this.addMember(id, userId);
+      this.pushConv(id);
+    }
+  }
+
   welcome(userId: string): void {
     // guests never join the office-wide space
     if (this.users().find((u) => u.id === userId)?.role === 'guest') return;
@@ -484,6 +512,64 @@ export class Messaging {
         this.pushConv(c.id, before.filter((u) => u !== me.id));
         this.notice(c.id, me.id, 'left', [me.id]);
         return { ok: true };
+      }
+
+      case 'msg.report': {
+        const msg = typeof d.messageId === 'string' ? this.message(d.messageId) : undefined;
+        if (!msg || msg.deleted) throw new MsgError('Message not found.');
+        this.requireMember(msg.conv_id, me.id);
+        if (msg.author_id === me.id) throw new MsgError('You cannot report your own message.');
+        const reason = str(d.reason, 300);
+        if (!reason) throw new MsgError('Say what is wrong with it.');
+        const sealed = isSealed(msg.body);
+        const quote = typeof d.quote === 'string' ? d.quote.slice(0, 4000) : '';
+        const text = sealed ? quote : msg.body.slice(0, 4000);
+        try {
+          this.db.prepare('INSERT INTO reports (id, message_id, conv_id, author_id, reporter_id, reason, text, quoted, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(ulid(), msg.id, msg.conv_id, msg.author_id, me.id, reason, text, sealed ? 1 : 0, Date.now());
+        } catch { throw new MsgError('You have already reported this message.'); }
+        this.onReport?.();
+        return { ok: true } satisfies Ops['msg.report']['res'];
+      }
+
+      case 'admin.reports.list': {
+        if (!isAdmin) throw new MsgError('Only administrators can do that.');
+        const rows = this.db.prepare(`SELECT r.*, c.name AS conv_name, c.kind AS conv_kind FROM reports r JOIN conversations c ON c.id = r.conv_id ${d.status === 'all' ? '' : "WHERE r.status = 'open'"} ORDER BY r.created_at DESC LIMIT 200`).all() as unknown as ReportRow[];
+        return rows.map(toReport) satisfies Ops['admin.reports.list']['res'];
+      }
+
+      case 'admin.reports.resolve': {
+        if (!isAdmin) throw new MsgError('Only administrators can do that.');
+        const r = this.db.prepare(`SELECT r.*, c.name AS conv_name, c.kind AS conv_kind FROM reports r JOIN conversations c ON c.id = r.conv_id WHERE r.id = ?`).get(String(d.id ?? '')) as ReportRow | undefined;
+        if (!r) throw new MsgError('Report not found.');
+        const status = d.action === 'remove' ? 'removed' : 'dismissed';
+        if (status === 'removed') {
+          const msg = this.message(r.message_id);
+          if (msg && !msg.deleted) {
+            this.beforeChange?.(msg, 'delete', me.id);
+            this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ?, removed_by = ?, removed_reason = ? WHERE id = ?').run(Date.now(), me.id, str(d.reason, 200) || r.reason, msg.id);
+            for (const t of ['reactions', 'mentions', 'messages_fts']) this.db.prepare(`DELETE FROM ${t} WHERE message_id = ?`).run(msg.id);
+            const row = this.message(msg.id)!;
+            this.pushMessage('msg.updated', row);
+            if (!row.parent_id) this.pushConv(row.conv_id);
+          }
+        }
+        // every report of the same message is settled together
+        this.db.prepare(`UPDATE reports SET status = ?, resolved_by = ?, resolved_at = ? WHERE message_id = ? AND status = 'open'`).run(status, me.id, Date.now(), r.message_id);
+        this.onReport?.();
+        return toReport({ ...r, status, resolved_by: me.id, resolved_at: Date.now() }) satisfies Ops['admin.reports.resolve']['res'];
+      }
+
+      case 'conv.toSpace': {
+        const c = this.requireMember(String(d.convId), me.id);
+        if (c.kind !== 'direct' || this.members(c.id).length < 3) throw new MsgError('Only group conversations can become a Space.');
+        if (me.role === 'guest') throw new MsgError('Guests cannot create Spaces.');
+        const name = str(d.name, 60);
+        if (!name) throw new MsgError('Give the Space a name.');
+        this.db.prepare("UPDATE conversations SET kind = 'space', private = 1, name = ?, created_by = ? WHERE id = ?").run(name, me.id, c.id);
+        this.pushConv(c.id);
+        this.notice(c.id, me.id, 'renamed', [], name);
+        return this.view(this.conv(c.id)!, me.id);
       }
 
       case 'conv.removeMember': {
@@ -667,7 +753,7 @@ export class Messaging {
         const src = this.visibleMessage(d.messageId, me.id);
         const targets = Array.isArray(d.convIds) ? [...new Set(d.convIds.filter((x): x is string => typeof x === 'string'))] : [];
         if (!targets.length) throw new MsgError('Choose where to forward it.');
-        if (targets.length > 10) throw new MsgError('Forward to up to 10 conversations at a time.');
+        if (targets.length > 25) throw new MsgError('Forward to up to 25 conversations at a time.');
         const convs = targets.map((id) => this.requireMember(id, me.id));
         const bodies = d.bodies && typeof d.bodies === 'object' ? d.bodies as Record<string, unknown> : {};
         // a sealed message cannot be copied as it is: the app must re-seal it (or give the text) for each target
@@ -831,7 +917,8 @@ export class Messaging {
         if (msg.author_id !== me.id && !moderating) throw new MsgError('You can only delete your own messages.');
         if (!moderating) this.checkWindow(msg, 'deleted');
         this.beforeChange?.(msg, 'delete', me.id);
-        this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ? WHERE id = ?').run(Date.now(), msg.id);
+        const why = typeof d.reason === 'string' ? d.reason.replace(/\s+/g, ' ').trim().slice(0, 200) || null : null;
+        this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ?, removed_by = ?, removed_reason = ? WHERE id = ?').run(Date.now(), me.id, msg.author_id === me.id ? null : why, msg.id);
         this.db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
         this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(msg.id);

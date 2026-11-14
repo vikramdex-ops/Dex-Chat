@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Conversation, Message, PublicUser, RepeatRule } from '@dex/core';
 import { Dialog, Icon, ToggleRow, colorFor, useToast } from '../ui.tsx';
 import { REPEAT_LABEL, describeWhen, toLocalInput, whenPresets } from '../desk/store.ts';
-import { renderBody } from './format.tsx';
+import { plainPreview, renderBody } from './format.tsx';
 import { holdUnread, useChat } from './store.ts';
 import { ConvTile, convTitle } from './Switchboard.tsx';
 
@@ -61,6 +61,17 @@ export function PollCard({ m, meId, users }: { m: Message; meId: string; users: 
         {!showResults && <> · vote to see results</>}
         {!poll.closed && m.authorId === meId && (
           <button className="link" onClick={() => void window.dex.request('poll.close', { messageId: m.id }).catch((e: Error) => toast(e.message, true))}>Close poll</button>
+        )}
+        {m.authorId === meId && showResults && (
+          <button className="link" onClick={() => {
+            const rows: string[][] = [['Option', 'Votes', ...(poll.anonymous ? [] : ['Voters'])], ...poll.options.map((o) => [o.text, String(o.votes), ...(poll.anonymous ? [] : [o.voters.map((v) => users.get(v)?.displayName ?? 'Someone').join('; ')])])];
+            const csv = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\r\n');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv' }));
+            a.download = `Poll results - ${plainPreview(poll.question, users).slice(0, 40).replace(/[\\/:*?"<>|]/g, '')}.csv`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+          }}>Export results</button>
         )}
       </div>
     </div>

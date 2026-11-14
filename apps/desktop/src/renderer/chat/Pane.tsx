@@ -481,7 +481,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   const [more, setMore] = useState(false);
   const moreBtn = useRef<HTMLButtonElement>(null);
   const pickBtn = useRef<HTMLButtonElement>(null);
-  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | null>(null);
+  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | null>(null);
   const saved = useDesk((s) => s.saved.has(m.id));
   const pending = 'pending' in m;
   const failed = pending ? (m as PendingMessage).failed : undefined;
@@ -510,7 +510,11 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
     void act(window.dex.request('msg.react', { messageId: m.id, emoji, on }));
   };
 
-  if (m.deleted) return <div className="msg deleted"><span className="faint">Message deleted</span></div>;
+  if (m.deleted) return (
+    <div className="msg deleted"><span className="faint">{m.removed
+      ? `Removed by ${m.removed.by === ctx.meId ? 'you' : ctx.users.get(m.removed.by)?.displayName ?? 'a moderator'}${m.removed.reason ? `: ${m.removed.reason}` : ''}`
+      : 'Message deleted'}</span></div>
+  );
 
   return (
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
@@ -603,7 +607,12 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
               <button role="menuitem" onClick={() => { setMore(false); void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned for everyone here'); }}><Icon name="pin" size={16} />{m.pinned ? 'Unpin' : 'Pin'}</button>
               {!inTrack && !m.parentId && <button role="menuitem" onClick={() => { setMore(false); void act(markUnreadFrom(m), 'Marked as unread from here'); }}><Icon name="unread" size={16} />Mark unread from here</button>}
               {m.body && <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(m.body); toast('Copied'); }}><Icon name="copy" size={16} />Copy text</button>}
-              {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => { setMore(false); if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id })); }}><Icon name="trash" size={16} />Delete</button></>}
+              {!mine && ctx.users.get(m.authorId)?.role !== 'bot' && <button role="menuitem" onClick={() => { setMore(false); setDialog('report'); }}><Icon name="warning" size={16} />Report to administrators…</button>}
+              {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => {
+                setMore(false);
+                if (!mine) { setDialog('remove'); return; }
+                if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id }));
+              }}><Icon name="trash" size={16} />{mine ? 'Delete' : 'Remove…'}</button></>}
             </Popover>
           )}
           {picker && (
@@ -620,6 +629,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
       )}
       {dialog === 'remind' && <RemindDialog message={m} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
       {dialog === 'readers' && <ReadersDialog m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
+      {(dialog === 'report' || dialog === 'remove') && <ReasonDialog kind={dialog} m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
       {dialog === 'forward' && <ForwardDialog message={m} users={ctx.users} meId={ctx.meId} online={ctx.online} onClose={() => setDialog(null)} />}
     </div>
   );
@@ -1056,6 +1066,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const members = c.members.map((id) => ctx.users.get(id)).filter(Boolean) as PublicUser[];
   const candidates = [...ctx.users.values()].filter((u) => !c.members.includes(u.id) && u.role !== 'bot');
   const canModerate = ctx.isAdmin || c.createdBy === ctx.meId || c.moderators.includes(ctx.meId);
+  const [spaceName, setSpaceName] = useState<string | null>(null);
   return (
     <aside className="side-panel" aria-label="People">
       <header className="side-head"><span className="label">People · {members.length}</span><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button></header>
@@ -1078,6 +1089,22 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
           </div>
         ))}
         {c.kind === 'space' && (ctx.isAdmin || c.createdBy === ctx.meId || c.moderators.includes(ctx.meId)) && <SpaceSettings c={c} users={members} />}
+        {c.kind === 'direct' && c.members.length > 2 && ctx.users.get(ctx.meId)?.role !== 'guest' && (
+          spaceName === null
+            ? <button className="btn" style={{ marginTop: 16 }} onClick={() => setSpaceName('')}><Icon name="grid" size={15} />Make it a Space</button>
+            : (
+              <form className="to-space" onSubmit={(e) => {
+                e.preventDefault();
+                if (!spaceName.trim()) return;
+                void window.dex.request('conv.toSpace', { convId: c.id, name: spaceName.trim() }).then((nc) => { setSpaceName(null); window.dispatchEvent(new CustomEvent('dex-open', { detail: nc.id })); toast('It is a Space now'); }).catch((err: Error) => toast(err.message, true));
+              }}>
+                <label className="label" htmlFor="to-space">Name the Space</label>
+                <input id="to-space" className="input" autoFocus maxLength={60} value={spaceName} onChange={(e) => setSpaceName(e.target.value)} placeholder="e.g. Project Falcon" />
+                <span className="faint" style={{ fontSize: 12 }}>Everyone here stays in it, with the history. New messages are no longer end-to-end encrypted.</span>
+                <div className="row-actions"><button type="button" className="btn ghost sm" onClick={() => setSpaceName(null)}>Cancel</button><button className="btn primary sm" disabled={!spaceName.trim()}>Make it a Space</button></div>
+              </form>
+            )
+        )}
         {c.kind === 'space' && !c.everyone && (
           <button className="btn ghost danger" style={{ marginTop: 16 }} onClick={() => { if (confirm(`Leave ${c.name}?`)) void window.dex.request('conv.leave', { convId: c.id }).catch((e: Error) => toast(e.message, true)); }}>Leave this Space</button>
         )}
@@ -1170,6 +1197,48 @@ function ReadersDialog({ m, ctx, onClose }: { m: Message; ctx: Ctx; onClose: () 
         <div className="label">Read · {read.length}</div>{read.map(row)}
         {unread.length > 0 && <><div className="label">Not yet · {unread.length}</div>{unread.map(row)}</>}
         {hidden.length > 0 && <p className="faint" style={{ fontSize: 12 }}>{hidden.length === 1 ? 'One person does' : `${hidden.length} people do`} not share read receipts.</p>}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Report a message to the administrators, or (moderators) remove someone else's with a reason. */
+function ReasonDialog({ kind, m, ctx, onClose }: { kind: 'report' | 'remove'; m: Message; ctx: Ctx; onClose: () => void }) {
+  const toast = useToast();
+  const options = kind === 'report'
+    ? ['Offensive or inappropriate', 'Harassment', 'Confidential information shared wrongly', 'Spam or off topic']
+    : ['Off topic here', 'Shared in the wrong place', 'Against the office policy', 'Duplicate'];
+  const [reason, setReason] = useState(options[0]);
+  const [other, setOther] = useState('');
+  const [busy, setBusy] = useState(false);
+  const text = reason === 'Other' ? other.trim() : reason;
+  const go = async () => {
+    setBusy(true);
+    try {
+      if (kind === 'report') {
+        // an encrypted Direct message's text only exists on devices: the reporter quotes it
+        await window.dex.request('msg.report', { messageId: m.id, reason: text, ...(ctx.conv.kind === 'direct' ? { quote: m.body } : {}) });
+        toast('Reported. An administrator will look at it.');
+      } else {
+        await window.dex.request('msg.delete', { messageId: m.id, reason: text });
+        toast('Removed');
+      }
+      onClose();
+    } catch (e) { toast((e as Error).message, true); setBusy(false); }
+  };
+  return (
+    <Dialog title={kind === 'report' ? 'Report to administrators' : 'Remove this message'} onClose={onClose}>
+      <p className="muted" style={{ margin: 0 }}>{kind === 'report'
+        ? `Only administrators see the report and who made it.${ctx.conv.kind === 'direct' ? ' The message text goes with it, since the hub cannot read Direct messages.' : ''}`
+        : 'Everyone in the Space sees that it was removed, by you, and why.'}</p>
+      <div className="reason-list" role="radiogroup">
+        {[...options, 'Other'].map((o) => <label key={o} className="check-line"><input type="radio" name="reason" checked={reason === o} onChange={() => setReason(o)} />{o}</label>)}
+        {reason === 'Other' && <input className="input" autoFocus maxLength={200} placeholder="Say why" value={other} onChange={(e) => setOther(e.target.value)} />}
+      </div>
+      <div className="dialog-actions">
+        <span />
+        <button className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className={`btn ${kind === 'remove' ? 'danger' : 'primary'}`} disabled={busy || !text} onClick={() => void go()}>{kind === 'report' ? 'Report' : 'Remove'}</button>
       </div>
     </Dialog>
   );

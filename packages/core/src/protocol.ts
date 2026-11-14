@@ -166,6 +166,26 @@ export interface OfficePolicy {
   peerFallback: boolean;
   /** Calls may be recorded (everyone in the call is told). */
   allowRecording: boolean;
+  /** Spaces every newly approved person joins (besides the Office space). */
+  defaultSpaces?: string[];
+}
+
+/** A message someone reported to the administrators. */
+export interface ReportItem {
+  id: string;
+  messageId: string;
+  convId: string;
+  convName: string;
+  authorId: string;
+  reporterId: string;
+  reason: string;
+  /** The message text (or, for an encrypted Direct message, what the reporter quoted). */
+  text: string;
+  quoted: boolean;
+  createdAt: number;
+  status: 'open' | 'removed' | 'dismissed';
+  resolvedBy: string | null;
+  resolvedAt: number | null;
 }
 
 export interface UsageReport {
@@ -306,6 +326,8 @@ export interface Message {
   files: FileInfo[];
   /** Set when this message was forwarded from another conversation. */
   forwardedFrom: { authorId: string; convId: string; messageId: string; createdAt: number } | null;
+  /** Removed by a moderator or administrator (not its author), with their reason. */
+  removed?: { by: string; reason: string | null } | null;
   /** A side-track reply also shown in the conversation: the message it answers. */
   inReplyTo?: { messageId: string; authorId: string } | null;
   /** A notice rather than something someone wrote: people joining, leaving, a rename. */
@@ -682,6 +704,12 @@ export interface Ops {
   };
   'conv.join': { req: { convId: string }; res: Conversation };
   'conv.leave': { req: { convId: string }; res: { ok: true } };
+  /** Report a message to the administrators (quote: the text of an encrypted message, from the reporter's device). */
+  'msg.report': { req: { messageId: string; reason: string; quote?: string }; res: { ok: true } };
+  'admin.reports.list': { req: { status?: 'open' | 'all' }; res: ReportItem[] };
+  'admin.reports.resolve': { req: { id: string; action: 'remove' | 'dismiss'; reason?: string }; res: ReportItem };
+  /** A group Direct conversation becomes a private Space (history stays). */
+  'conv.toSpace': { req: { convId: string; name: string }; res: Conversation };
   /** A Space's moderator takes someone out of it. */
   'conv.removeMember': { req: { convId: string; userId: string }; res: Conversation };
   'conv.addMembers': { req: { convId: string; userIds: string[] }; res: Conversation };
@@ -704,7 +732,7 @@ export interface Ops {
   'msg.send': { req: { /** a side-track reply that also appears in the conversation */ alsoToConv?: boolean; convId: string; body: string; parentId?: string; clientId: string; files?: string[] }; res: Message };
   'file.list': { req: { convId: string; before?: string; limit?: number }; res: Array<FileInfo & { messageId: string; authorId: string }> };
   'msg.edit': { req: { messageId: string; body: string }; res: Message };
-  'msg.delete': { req: { messageId: string }; res: Message };
+  'msg.delete': { req: { messageId: string; /** a moderator's reason, shown in its place */ reason?: string }; res: Message };
   'msg.react': { req: { messageId: string; emoji: string; on: boolean }; res: Message };
   'msg.pin': { req: { messageId: string; pinned: boolean }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
@@ -809,6 +837,8 @@ export interface Events {
   'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number };
   'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
   'room.busy': { userId: string; inRoom: boolean };
+  /** Administrators: how many reports wait. */
+  'admin.reports': { open: number };
   /** Someone's calendar says they are in a meeting now (or no longer). */
   'meeting.busy': { userId: string; inMeeting: boolean };
   'star.updated': { messageId: string; on: boolean };

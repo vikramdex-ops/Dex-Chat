@@ -198,6 +198,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     openConversation(c.id, c.kind);
     if (messageId) setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId, messageId, parentId: parentId ?? null } })), 120);
   };
+  // the Control room's Reports opens the reported message
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent).detail as { convId: string; messageId: string }; if (chatState().conversations.has(d.convId)) jump(d.convId, d.messageId); else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'You are not in that conversation' })); };
+    window.addEventListener('dex-open-message', on);
+    return () => window.removeEventListener('dex-open-message', on);
+  });
   // the conversation header's search button
   useEffect(() => {
     const onSearch = (e: Event) => openSearch({ convId: String((e as CustomEvent).detail) });

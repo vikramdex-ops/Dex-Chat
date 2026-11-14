@@ -2,11 +2,12 @@
 // ▸ Usage (activity per day, busiest Spaces and people, storage, calls).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmojiImg, useCustomEmoji } from '../emoji.tsx';
-import type { OfficePolicy, PublicUser, UsageReport } from '@dex/core';
-import { Avatar, Icon, Segmented, Toggle, useToast } from '../ui.tsx';
+import type { OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
+import { useChat } from '../chat/store.ts';
+import { Avatar, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 import { formatSize } from '../chat/files.tsx';
 
-const EDIT: Array<[number | null, string]> = [[null, 'Any time'], [5, '5 minutes'], [15, '15 minutes'], [60, '1 hour'], [1440, '1 day'], [10080, '7 days']];
+const EDIT: Array<[number | null, string]> = [[null, 'Any time'], [5, '5 minutes'], [15, '15 minutes'], [60, '1 hour'], [1440, '1 day'], [10080, '7 days'], [43200, '30 days'], [525600, '1 year'], [1051200, '2 years']];
 const UPLOAD: Array<[number, string]> = [[25, '25 MB'], [100, '100 MB'], [250, '250 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']];
 
 export function PoliciesAdmin() {
@@ -39,6 +40,7 @@ export function PoliciesAdmin() {
           <Toggle label="Direct messages pass straight between PCs" checked={p.peerFallback} onChange={(v) => save({ peerFallback: v })} />
         </div>
       </section>
+      <DefaultSpaces p={p} save={save} />
       <EmojiAdmin />
       <section className="card">
         <div className="eyebrow">Calls</div>
@@ -206,3 +208,63 @@ function EmojiAdmin() {
     </section>
   );
 }
+
+/** Spaces every newly approved person joins. */
+function DefaultSpaces({ p, save }: { p: OfficePolicy; save: (patch: Partial<OfficePolicy>) => void }) {
+  const conversations = useChat((s) => s.conversations);
+  const spaces = [...conversations.values()].filter((c) => c.kind === 'space' && !c.everyone && !c.archived).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+  const chosen = new Set(p.defaultSpaces ?? []);
+  return (
+    <section className="card">
+      <div className="eyebrow">New people join</div>
+      <p className="muted" style={{ marginTop: 0 }}>Besides the Office space, everyone approved from now on joins these Spaces. Guests never do.</p>
+      {spaces.length === 0 ? <p className="faint">Create a Space first (for example Induction or Announcements).</p> : (
+        <div className="default-spaces">
+          {spaces.map((c) => (
+            <label key={c.id} className="check-line">
+              <input type="checkbox" checked={chosen.has(c.id)} onChange={(e) => { const next = new Set(chosen); if (e.target.checked) next.add(c.id); else next.delete(c.id); save({ defaultSpaces: [...next] }); }} />
+              {c.name}{c.private ? ' (private)' : ''}
+            </label>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Control room ▸ Reports: messages people reported, to remove or dismiss. */
+export function ReportsAdmin({ users, onOpen }: { users: PublicUser[]; onOpen: (convId: string, messageId: string) => void }) {
+  const toast = useToast();
+  const [all, setAll] = useState(false);
+  const [list, setList] = useState<ReportItem[] | null>(null);
+  const byId = useMemo(() => new Map(users.map((u) => [u.id, u] as const)), [users]);
+  const load = () => void window.dex.request('admin.reports.list', { status: all ? 'all' : 'open' }).then(setList).catch(() => setList([]));
+  useEffect(() => { load(); return window.dex.onHubEvent((n) => { if (n === 'admin.reports') load(); }); }, [all]); // eslint-disable-line react-hooks/exhaustive-deps
+  const act = (r: ReportItem, action: 'remove' | 'dismiss') => void window.dex.request('admin.reports.resolve', { id: r.id, action }).then(() => { toast(action === 'remove' ? 'Message removed' : 'Report dismissed'); load(); }).catch((e: Error) => toast(e.message, true));
+  const name = (id: string | null) => (id ? byId.get(id)?.displayName ?? 'Someone' : '');
+  return (
+    <div className="org-admin">
+      <div className="toolbar"><Segmented<'open' | 'all'> label="Show" value={all ? 'all' : 'open'} onChange={(v) => setAll(v === 'all')} options={[{ value: 'open', label: 'Waiting' }, { value: 'all', label: 'All' }]} /></div>
+      {list === null && <div className="tl-more"><span className="spinner" /></div>}
+      {list?.length === 0 && <div className="empty"><Icon name="check" size={32} /><span>{all ? 'No reports yet.' : 'Nothing waiting.'}</span></div>}
+      {list?.map((r) => (
+        <section key={r.id} className="card report">
+          <div className="report-head">
+            <span className={`chip ${r.status === 'open' ? 'warn' : ''}`}>{r.status === 'open' ? 'Waiting' : r.status === 'removed' ? 'Removed' : 'Dismissed'}</span>
+            <b>{r.reason}</b>
+            <span className="faint">reported by {name(r.reporterId)} · {relativeTimeOf(r.createdAt)}</span>
+          </div>
+          <div className="report-msg"><span className="faint">{name(r.authorId)} in {r.convName}{r.quoted ? ' (quoted by the reporter; the hub cannot read Direct messages)' : ''}</span><div>{r.text || <span className="faint">No text</span>}</div></div>
+          {r.status === 'open' ? (
+            <div className="row-actions">
+              <button className="btn ghost sm" onClick={() => onOpen(r.convId, r.messageId)}>Open</button>
+              <button className="btn ghost sm" onClick={() => act(r, 'dismiss')}>Dismiss</button>
+              <button className="btn danger sm" onClick={() => act(r, 'remove')}>Remove the message</button>
+            </div>
+          ) : <div className="faint" style={{ fontSize: 12 }}>{r.status === 'removed' ? 'Removed' : 'Dismissed'} by {name(r.resolvedBy)}</div>}
+        </section>
+      ))}
+    </div>
+  );
+}
+const relativeTimeOf = (t: number) => relativeTime(t);

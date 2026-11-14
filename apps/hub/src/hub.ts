@@ -149,6 +149,7 @@ export class Hub {
     this.compliance = new Compliance(this.store, this.messaging, this.files);
     this.policies = new Policies(this.store, this.files, (p) => this.emit('policy.updated', p));
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
+    this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
     this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
     this.messaging.customEmoji = (name) => this.emoji.exists(name);
@@ -758,6 +759,7 @@ export class Hub {
           const user = this.store.userById(device.userId);
           if (user) this.emit('user.added', user);
           this.messaging.welcome(device.userId);
+          this.messaging.joinDefaults(device.userId, this.policies.get().defaultSpaces ?? []);
           // people who were imported as reporting to this person now resolve to them
           if (user) this.org.announceReportsOf(user.account);
         }
@@ -1042,7 +1044,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|typing$|search$)/.test(op)) {
+        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|typing$|search$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);

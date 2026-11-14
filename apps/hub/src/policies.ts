@@ -57,6 +57,7 @@ export class Policies {
       maxUploadMb: Number.isFinite(up) && up >= 1 ? up : Math.max(1, Math.ceil(this.defaultBytes / 1024 / 1024)),
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
+      defaultSpaces: (() => { try { return JSON.parse(this.meta('policy_default_spaces') ?? '[]') as string[]; } catch { return []; } })(),
     };
   }
 
@@ -136,8 +137,8 @@ export class Policies {
         if (d.editWindowMinutes !== undefined) {
           const v = d.editWindowMinutes;
           if (v === null) this.setMeta('policy_edit_minutes', 'none');
-          else if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10080) this.setMeta('policy_edit_minutes', String(v));
-          else throw new PolicyError('Choose an edit window between 1 minute and 7 days, or no limit.');
+          else if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 730 * 1440) this.setMeta('policy_edit_minutes', String(v));
+          else throw new PolicyError('Choose an edit window between 1 minute and 2 years, or no limit.');
         }
         if (d.maxUploadMb !== undefined) {
           const v = d.maxUploadMb;
@@ -146,6 +147,7 @@ export class Policies {
         }
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
+        if (Array.isArray(d.defaultSpaces)) this.setMeta('policy_default_spaces', JSON.stringify(d.defaultSpaces.filter((x): x is string => typeof x === 'string').slice(0, 30)));
         const p = this.get();
         this.files.maxBytes = this.uploadBytes();
         this.store.audit(me.id, 'policy.set', null, p);
