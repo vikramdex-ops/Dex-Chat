@@ -29,6 +29,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Commands | Slash commands in the composer (/remind, /poll, /meet, /call, /status, /checkin, /dnd, /shrug, /help…) and integration commands that call a tool's signed webhook |
 | Notes, forms, whiteboards | Shared notes per conversation and personal notes on the Desk (save as you type, never overwrite a colleague, edit in Slate), forms with answers and CSV export, live whiteboards that can be posted as an image, voice notes |
 | Privacy | Direct messages are end-to-end encrypted (X25519 + AES-256-GCM, signed by each device's Ed25519 key); the hub only stores sealed envelopes; safety codes to compare in person; your other devices hand history to a new one |
+| Outside the office | Phones and home laptops on any network or mobile data reach the hub through the office's own gateway on Cloudflare (no port opened at the office, end-to-end encrypted to the hub, pinned to its certificate); setup codes and QR codes; calls across networks with STUN/TURN (see [`docs/REMOTE-ACCESS.md`](docs/REMOTE-ACCESS.md)) |
 | Hub-off mode | If the hub PC is down, PCs find each other on the network and pass encrypted Direct messages straight across; everything written meanwhile is added to the hub's history when it is back |
 | Files and media | Drag, drop, paste or attach up to the office limit (1 GB by default); stored once on the hub; inline images with a viewer; voice notes, video messages and screen recordings that play inline; Open / Save; Files panel |
 | Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, recording (everyone is told; saved on the PC or shared in the conversation), mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
@@ -86,6 +87,7 @@ npm run desktop:dev    # build and launch the desktop app
 ```
 apps/hub        hub service, its tests, Windows service packaging
 apps/desktop    Electron main process, preload bridge, React UI
+apps/gateway    the internet gateway: a Cloudflare Worker that relays encrypted traffic to the hub
 apps/mobile     Android app (Capacitor) and its native LAN, file and notification plugin
 packages/core   protocol, identity, discovery, hub client, end-to-end encryption (+ tests)
 brand/          Dexterity International logo files and colour tokens

@@ -17,6 +17,8 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | Tesseract English model (`eng.traineddata`, via @tesseract.js-data/eng) | Reading text in images | Apache-2.0 (model), MIT (package) |
 | wasm-feature-detect | Choosing the OCR engine build | Apache-2.0 |
 | Outfit (variable font, via Fontsource) | Headings | OFL-1.1 |
+| qrcode-generator | QR codes for setting up phones | MIT |
+| Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
 | WinSW | Running the hub as a Windows service | MIT |
 
 Everything else (the design language, icons, sounds, illustrations and the 3D landing page) is

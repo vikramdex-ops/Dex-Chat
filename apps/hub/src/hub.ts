@@ -89,6 +89,8 @@ export class Hub {
   readonly gateway: RemoteGateway;
   /** Marks the hub's own loopback connections for devices on the internet gateway. */
   private readonly gatewaySecret = crypto.randomBytes(24).toString('base64url');
+  /** When devices outside the office last asked to join (at most 10 an hour). */
+  private remoteJoins: number[] = [];
   readonly fingerprint: string;
   private readonly opts: HubOptions;
   private readonly server: https.Server;
@@ -514,6 +516,17 @@ export class Hub {
       this.send(conn, { t: 'rejected', reason: 'New devices join from the office network. Ask your administrator if you need to join from outside.' });
       conn.ws.close();
       return;
+    }
+    if (conn.remote && !this.store.device(String(frame.deviceId ?? ''))) {
+      // a setup code is not a secret: keep strangers from flooding the approval queue
+      const hour = Date.now() - 3600_000;
+      this.remoteJoins = this.remoteJoins.filter((t) => t > hour);
+      if (this.remoteJoins.length >= 10) {
+        this.send(conn, { t: 'rejected', reason: 'Too many new devices asked to join from outside in the last hour. Try again later.' });
+        conn.ws.close();
+        return;
+      }
+      this.remoteJoins.push(Date.now());
     }
     const account = validAccount(frame.account);
     if (!account || typeof frame.publicKey !== 'string' || deviceIdFor(frame.publicKey) !== frame.deviceId) {
