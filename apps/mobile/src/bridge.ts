@@ -84,6 +84,7 @@ function parseOfficeAccount(input: string | undefined): { domain: string; userna
 
 // ------------------------------------------------------------------ the app
 class MobileApp {
+  private invite = '';
   private session!: HubSession;
   private config!: MobileConfig;
   private identity!: MobileIdentity;
@@ -153,6 +154,7 @@ class MobileApp {
       publicKey: this.identity.publicKey,
       sign: (payload) => b64(ed25519.sign(payload, secret)),
       account: this.account,
+      invite: this.invite,
       open: (target, h) => {
         const id = `ws${++this.sockSeq}`;
         this.sockets.set(id, h);
@@ -315,6 +317,8 @@ class MobileApp {
         if (req.officeAccount?.trim() && !office) throw new Error('Write your office sign-in as DOMAIN\\name, for example DEXTERITY\\priya.raman.');
         this.config.displayName = name || null;
         this.config.officeAccount = office;
+        this.invite = req.invite?.trim().toUpperCase() ?? '';
+        this.session.setInvite(this.invite);
         this.account = {
           ...this.account,
           displayName: name || this.account.username,

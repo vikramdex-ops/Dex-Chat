@@ -85,7 +85,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNIN
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number }
-interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null }
+export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null }
 
 const MAX_BODY = 8000;
 const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Component}‍️]{1,16}$/u;
@@ -96,6 +96,8 @@ export class Messaging {
   private readonly deliver: (userIds: string[], name: string, data: (userId: string) => unknown) => void;
   private readonly users: () => PublicUser[];
   private readonly files: FileStore;
+  /** Called before a message is edited or deleted (compliance keeps earlier versions). */
+  beforeChange: ((msg: MsgRow, change: 'edit' | 'delete', actorId: string) => void) | null = null;
 
   constructor(db: DatabaseSync, deliver: Messaging['deliver'], users: () => PublicUser[], files: FileStore) {
     this.db = db;
@@ -272,6 +274,8 @@ export class Messaging {
 
   /** Called when a person's first device is approved. */
   welcome(userId: string): void {
+    // guests never join the office-wide space
+    if (this.users().find((u) => u.id === userId)?.role === 'guest') return;
     const everyone = this.db.prepare('SELECT id FROM conversations WHERE everyone = 1').get() as { id: string } | undefined;
     if (!everyone) return;
     this.addMember(everyone.id, userId);
@@ -291,14 +295,20 @@ export class Messaging {
       }
 
       case 'conv.browse': {
+        if (me.role === 'guest') return [];
         const rows = this.db.prepare(`SELECT * FROM conversations c WHERE c.kind = 'space' AND c.private = 0
           AND NOT EXISTS (SELECT 1 FROM conv_members m WHERE m.conv_id = c.id AND m.user_id = ?) ORDER BY c.name COLLATE NOCASE`).all(me.id) as unknown as ConvRow[];
         return rows.map((c) => this.view(c, me.id));
       }
 
       case 'conv.create': {
-        if (me.role === 'guest') throw new MsgError('Guests cannot start conversations.');
         const others = Array.isArray(d.members) ? [...new Set(d.members.filter(knownUser) as string[])].filter((x) => x !== me.id) : [];
+        if (me.role === 'guest') {
+          // guests can message people they already share a Space with, but not create Spaces
+          if (d.kind !== 'direct') throw new MsgError('Guests cannot create Spaces.');
+          const shared = new Set((this.db.prepare('SELECT DISTINCT b.user_id FROM conv_members a JOIN conv_members b ON a.conv_id = b.conv_id WHERE a.user_id = ?').all(me.id) as Array<{ user_id: string }>).map((r) => r.user_id));
+          if (others.some((u) => !shared.has(u))) throw new MsgError('Guests can message people from their Spaces only.');
+        }
         if (d.kind === 'direct') {
           if (!others.length) throw new MsgError('Choose at least one person.');
           if (others.length > 49) throw new MsgError('A Direct conversation can have up to 50 people. Create a Space instead.');
@@ -324,6 +334,7 @@ export class Messaging {
       }
 
       case 'conv.join': {
+        if (me.role === 'guest') throw new MsgError('Guests can only use the Spaces they were invited to.');
         const c = typeof d.convId === 'string' ? this.conv(d.convId) : undefined;
         if (!c || c.kind !== 'space' || (c.private && !this.isMember(c.id, me.id))) throw new MsgError('Space not found.');
         this.addMember(c.id, me.id);
@@ -345,6 +356,7 @@ export class Messaging {
       case 'conv.addMembers': {
         const c = this.requireMember(String(d.convId), me.id);
         if (c.everyone) throw new MsgError('Everyone is already in the Office space.');
+        if (me.role === 'guest') throw new MsgError('Guests cannot add people.');
         if (c.kind === 'direct') throw new MsgError('Start a new Direct conversation or a Space to include more people.');
         const ids = Array.isArray(d.userIds) ? (d.userIds.filter(knownUser) as string[]) : [];
         for (const u of ids) this.addMember(c.id, u);
@@ -487,6 +499,7 @@ export class Messaging {
         const body = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
         if (!body) throw new MsgError('A message cannot be empty. Delete it instead.');
         if (body.length > MAX_BODY) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+        this.beforeChange?.(msg, 'edit', me.id);
         this.db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, Date.now(), msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
         this.recordMentions(msg.id, msg.conv_id, body);
@@ -502,6 +515,7 @@ export class Messaging {
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
         const c = this.requireMember(msg.conv_id, me.id);
         if (msg.author_id !== me.id && !(isAdmin && c.kind === 'space')) throw new MsgError('You can only delete your own messages.');
+        this.beforeChange?.(msg, 'delete', me.id);
         this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ? WHERE id = ?').run(Date.now(), msg.id);
         this.db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
@@ -612,6 +626,21 @@ export class Messaging {
     this.pushMessage('msg.new', row);
     if (!parentId) this.pushConv(c.id);
     return this.messageView(row, me.id);
+  }
+
+  /** Remove a message and its side-track for good (retention). Returns how many messages went. */
+  purge(messageId: string): number {
+    const msg = this.message(messageId);
+    if (!msg) return 0;
+    const ids = [msg.id, ...(this.db.prepare('SELECT id FROM messages WHERE parent_id = ?').all(msg.id) as Array<{ id: string }>).map((r) => r.id)];
+    for (const id of ids) {
+      for (const t of ['reactions', 'mentions', 'polls', 'poll_votes', 'message_files', 'stars']) this.db.prepare(`DELETE FROM ${t} WHERE message_id = ?`).run(id);
+      this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
+      this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
+    }
+    this.deliver(this.members(msg.conv_id), 'msg.removed', () => ({ convId: msg.conv_id, messageIds: ids }));
+    this.pushConv(msg.conv_id);
+    return ids.length;
   }
 
   /** The conversation row for a member (throws otherwise). */

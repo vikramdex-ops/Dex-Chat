@@ -29,6 +29,8 @@ function Welcome({ state }: { state: AppState }) {
   const [address, setAddress] = useState('');
   const isPhone = state.platform === 'android';
   const [office, setOffice] = useState('');
+  const [guest, setGuest] = useState(false);
+  const [invite, setInvite] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +44,7 @@ function Welcome({ state }: { state: AppState }) {
     setBusy(true);
     setError(null);
     try {
-      const extra = isPhone && office.trim() ? { officeAccount: office } : {};
+      const extra = { ...(isPhone && office.trim() ? { officeAccount: office } : {}), ...(guest && invite.trim() ? { invite } : {}) };
       await window.dex.join(manual ? { address, displayName: name, ...extra } : { hubId: selected!, displayName: name, ...extra });
     } catch (e) {
       setError((e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
@@ -114,11 +116,21 @@ function Welcome({ state }: { state: AppState }) {
         </div>
       </div>
 
+      {guest ? (
+        <div className="field">
+          <label htmlFor="invite">Guest invite code</label>
+          <input id="invite" className="input mono" placeholder="DEX-XXXXX-XXXXX" value={invite} maxLength={20} autoCapitalize="characters" autoCorrect="off" onChange={(e) => setInvite(e.target.value.toUpperCase())} />
+          <span className="faint" style={{ fontSize: 12 }}>From the Dexterity colleague who invited you. You will see only the Spaces it is for.</span>
+        </div>
+      ) : (
+        <div><button type="button" className="link" onClick={() => setGuest(true)}>I'm a guest with an invite code</button></div>
+      )}
+
       {error && <div className="error-box">{error}</div>}
 
-      <button className="btn primary lg" type="submit" disabled={!canJoin}>
+      <button className="btn primary lg" type="submit" disabled={!canJoin || (guest && !/^DEX-?[A-Z2-9]{5}-?[A-Z2-9]{5}$/.test(invite.trim()))}>
         {busy ? <span className="spinner" /> : null}
-        Request access
+        {guest ? 'Join as a guest' : 'Request access'}
       </button>
     </form>
   );

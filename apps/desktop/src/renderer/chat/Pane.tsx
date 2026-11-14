@@ -17,6 +17,9 @@ import { CallButtons } from '../rooms/RoomUi.tsx';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
 import { describeWhen, toggleSaved, useDesk } from '../desk/store.ts';
 import { EventDialog } from '../calendar/CalendarView.tsx';
+import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
+import type { CommandInfo } from './commands.ts';
+import { Dialog } from '../ui.tsx';
 
 const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
 const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
@@ -52,6 +55,11 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
+  useEffect(() => {
+    const onPlan = (e: Event) => { if ((e as CustomEvent).detail === convId) setPlanning(true); };
+    window.addEventListener('dex-plan', onPlan);
+    return () => window.removeEventListener('dex-plan', onPlan);
+  }, [convId]);
 
   // jump to a message (from search): open its side-track, or scroll to it and flash it
   useEffect(() => {
@@ -435,7 +443,12 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | null>(null);
+  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | null>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [botCmds, setBotCmds] = useState<CommandInfo[]>([]);
+  const slashQuery = /^\/([\w-]*)$/.exec(text)?.[1]?.toLowerCase() ?? null;
+  const slashList = slashQuery === null ? [] : [...BUILT_INS, ...botCmds].filter((c) => c.command.startsWith(slashQuery)).slice(0, 8);
+  useEffect(() => { if (slashQuery !== null) void loadBotCommands().then(setBotCmds); }, [slashQuery !== null]); // eslint-disable-line react-hooks/exhaustive-deps
   const scheduledAll = useDesk((s) => s.scheduled);
   const scheduledHere = useMemo(() => [...scheduledAll.values()].filter((x) => x.convId === convId && (x.parentId ?? null) === parentId).sort((a, b) => a.sendAt - b.sendAt), [scheduledAll, convId, parentId]);
   const toast = useToast();
@@ -502,9 +515,23 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + mark.length, b + mark.length); });
   };
 
+  const clear = () => { setText(''); setDraft(key, ''); setMention(null); };
   const send = () => {
     const body = toWire(text, ctx.users, ctx.conv);
     if ((!body && !ready.length) || !live || uploading) return;
+    if (text.startsWith('/') && !ready.length) {
+      const typed = text;
+      void runSlash(body, {
+        convId, parentId, meId: ctx.meId, displayName: ctx.users.get(ctx.meId)?.displayName ?? 'Someone', toast,
+        send: (b) => void sendMessage(convId, b, parentId),
+        open: (d) => { if (d === 'meet') window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); else setDockDialog(d); },
+      }).then((handled) => {
+        if (!handled) { void sendMessage(convId, body.replace(/^\/\//, '/'), parentId); clear(); return; }
+        // keep the text if a dialog needs it (for example /schedule), otherwise clear it
+        if (!/^\/schedule\b/i.test(typed)) clear();
+      });
+      return;
+    }
     void sendMessage(convId, body, parentId, ready.map((a) => a.info!));
     for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
     setAttachments([]);
@@ -527,6 +554,17 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
   };
 
   const onKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashList.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % slashList.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + slashList.length) % slashList.length); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && slashList[slashIndex] && slashList[slashIndex].command !== slashQuery)) {
+        e.preventDefault();
+        const v = `/${slashList[Math.min(slashIndex, slashList.length - 1)].command} `;
+        setText(v); setDraft(key, v); setSlashIndex(0);
+        return;
+      }
+      if (e.key === 'Escape') { e.preventDefault(); clear(); return; }
+    }
     if (mention && candidates.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMIndex((i) => (i + 1) % candidates.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setMIndex((i) => (i - 1 + candidates.length) % candidates.length); return; }
@@ -545,6 +583,18 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
 
   return (
     <div className="dock-wrap">
+      {slashList.length > 0 && (
+        <ul className="mention-pop slash-pop" role="listbox" aria-label="Commands">
+          {slashList.map((c, i) => (
+            <li key={c.command} role="option" aria-selected={i === Math.min(slashIndex, slashList.length - 1)} onMouseEnter={() => setSlashIndex(i)}
+              onMouseDown={(e) => { e.preventDefault(); const v = `/${c.command} `; setText(v); setDraft(key, v); ref.current?.focus(); }}>
+              <span className="slash-name mono">/{c.command}</span>
+              <span className="slash-desc">{c.description}</span>
+              {c.bot ? <span className="chip accent">Integration</span> : c.hint ? <span className="faint mono slash-hint">{c.hint}</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
       {mention && candidates.length > 0 && (
         <ul className="mention-pop" role="listbox">
           {candidates.map((c, i) => (
@@ -592,10 +642,21 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
         </button>
       </div>
       {dockDialog === 'poll' && <PollDialog conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
+      {dockDialog === 'remind' && <RemindDialog users={ctx.users} meId={ctx.meId} onClose={() => setDockDialog(null)} />}
+      {dockDialog === 'help' && (
+        <Dialog title="Slash commands" onClose={() => setDockDialog(null)}>
+          <div className="slash-help">
+            {[...BUILT_INS, ...botCmds].map((c) => (
+              <div key={c.command}><span className="mono">/{c.command}</span>{c.hint && <span className="faint mono"> {c.hint}</span>}<span className="muted">{c.description}</span></div>
+            ))}
+          </div>
+          <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>Start a message with // to send a line that begins with a slash.</p>
+        </Dialog>
+      )}
       {dockDialog === 'schedule' && <ScheduleDialog preview={toWire(text, ctx.users, ctx.conv)} users={ctx.users} meId={ctx.meId} onPick={schedule} onClose={() => setDockDialog(null)} />}
       <div className="dock-hint faint">
         {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 message scheduled · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} messages scheduled`} · see Desk</span>}
-        <span><b>Enter</b> send · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <b>**bold**</b> <i>*italic*</i> <code>`code`</code></span>
+        <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <b>**bold**</b> <i>*italic*</i> <code>`code`</code></span>
       </div>
     </div>
   );

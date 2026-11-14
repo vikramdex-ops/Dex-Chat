@@ -11,6 +11,8 @@ type Inline = { re: RegExp; render: (m: RegExpExecArray, key: string, ctx: Ctx) 
 interface Ctx { users: Map<string, PublicUser>; meId: string }
 
 const INLINE: Inline[] = [
+  // \* \_ \` \~ \\ show the character itself
+  { re: /\\([\\`*_~<>])/y, render: (m) => m[1] },
   { re: /`([^`\n]+)`/y, render: (m, k) => <code key={k} className="md-code">{m[1]}</code> },
   { re: /<@([0-9A-Z]{26}|all)>/y, render: (m, k, ctx) => {
     if (m[1] === 'all') return <span key={k} className="mention all">@everyone</span>;
@@ -26,7 +28,7 @@ const INLINE: Inline[] = [
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_h0-9]/;
+const TRIGGER = /[`<*~_h0-9\\]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];
@@ -35,7 +37,7 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   let n = 0;
   while (i < text.length) {
     let matched = false;
-    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '<' || text[i] === '*' || text[i] === '~')) {
+    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~')) {
       for (const rule of INLINE) {
         rule.re.lastIndex = i;
         const m = rule.re.exec(text);
@@ -123,7 +125,10 @@ export function plainPreview(body: string, users: Map<string, PublicUser>): stri
     .replace(/<@all>/g, '@everyone')
     .replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(/```[\s\S]*?```/g, '[code]')
-    .replace(/[*_~`>]/g, '')
+    // escaped characters stay, markup goes
+    .replace(/\\([\\`*_~<>])/g, (_, c: string) => `\u0000${c}`)
+    .replace(/(^|[^\u0000])[*_~`>]+/g, '$1')
+    .replace(/\u0000/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

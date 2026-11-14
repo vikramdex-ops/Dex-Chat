@@ -136,6 +136,38 @@ export class FileStore {
     }
   }
 
+  /** Store generated content (an export) as a file the given person can download. */
+  storeBuffer(uploaderId: string, rawName: string, rawMime: string, data: Buffer): FileInfo {
+    if (data.length > this.max) throw Object.assign(new Error('That export is too large. Choose a shorter period.'), { status: 413 });
+    const sha = crypto.createHash('sha256').update(data).digest('hex');
+    const blob = this.blobPath(sha);
+    if (!fs.existsSync(blob)) {
+      fs.mkdirSync(path.dirname(blob), { recursive: true });
+      fs.writeFileSync(blob, data);
+    }
+    const id = ulid();
+    const name = cleanName(rawName);
+    this.db.prepare('INSERT INTO files (id, name, mime, size, sha256, uploader_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, cleanMime(rawMime, name), data.length, sha, uploaderId, Date.now());
+    return this.info(id)!;
+  }
+
+  /**
+   * Remove files no message uses any more (deleted or purged messages, abandoned uploads,
+   * old exports), keeping anything waiting in a scheduled message. Blobs go when no file uses them.
+   */
+  gc(olderThan: number): number {
+    const rows = this.db.prepare(`SELECT f.id, f.sha256 FROM files f WHERE f.created_at < ?
+      AND NOT EXISTS (SELECT 1 FROM message_files mf JOIN messages m ON m.id = mf.message_id WHERE mf.file_id = f.id AND m.deleted = 0)
+      AND NOT EXISTS (SELECT 1 FROM scheduled s WHERE s.files LIKE '%' || f.id || '%') LIMIT 1000`).all(olderThan) as Array<{ id: string; sha256: string }>;
+    for (const r of rows) {
+      this.db.prepare('DELETE FROM message_files WHERE file_id = ?').run(r.id);
+      this.db.prepare('DELETE FROM files WHERE id = ?').run(r.id);
+      if (!this.db.prepare('SELECT 1 FROM files WHERE sha256 = ? LIMIT 1').get(r.sha256)) fs.rmSync(this.blobPath(r.sha256), { force: true });
+    }
+    return rows.length;
+  }
+
   /** Serve a file with range support. Images can be shown inline; everything else downloads. */
   serve(req: IncomingMessage, res: ServerResponse, fileId: string, asDownload: boolean): void {
     const r = this.db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as FileRow | undefined;

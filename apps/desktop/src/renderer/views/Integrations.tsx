@@ -12,6 +12,23 @@ export function Integrations({ state }: { state: AppState }) {
   const [bots, setBots] = useState<Bots | null>(null);
   const [name, setName] = useState('');
   const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
+  const [cmdFor, setCmdFor] = useState<string | null>(null);
+  const [cmdForm, setCmdForm] = useState({ url: '', lines: '' });
+  const [secret, setSecret] = useState<{ name: string; secret: string } | null>(null);
+  const [commands, setCommands] = useState<Ops['cmd.list']['res']>([]);
+  useEffect(() => { void window.dex.request('cmd.list').then(setCommands).catch(() => {}); }, [bots]);
+  const saveCommands = async (botId: string, name: string) => {
+    const list = cmdForm.lines.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+      const m = l.match(/^\/?([\w-]+)\s*(?:[-–—:]\s*)?(.*)$/);
+      return { command: m?.[1] ?? l, description: m?.[2] ?? '' };
+    });
+    try {
+      const r = await window.dex.request('admin.bots.commands', { userId: botId, webhookUrl: cmdForm.url, commands: list });
+      setSecret({ name, secret: r.secret });
+      setCmdFor(null);
+      void load();
+    } catch (e) { toast((e as Error).message, true); }
+  };
   const live = state.phase === 'ready';
   const load = useCallback(() => window.dex.request('admin.bots').then(setBots).catch(() => setBots([])), []);
   useEffect(() => { void load(); }, [load]);
@@ -59,7 +76,10 @@ export function Integrations({ state }: { state: AppState }) {
             <Avatar user={b.bot} size="sm" />
             <div><div style={{ fontWeight: 600 }}>{b.bot.displayName}</div><div className="faint" style={{ fontSize: 12 }}>created {relativeTime(b.createdAt)} · last used {relativeTime(b.lastUsed)}</div></div>
             <span><span className={`chip ${b.active ? 'ok' : 'bad'}`}>{b.active ? 'Active' : 'Revoked'}</span></span>
-            <span>
+            <span className="row-actions">
+              {b.active && <button className="btn ghost" disabled={!live} onClick={() => { setCmdFor(cmdFor === b.bot.id ? null : b.bot.id); setCmdForm({ url: '', lines: commands.filter((c) => c.botId === b.bot.id).map((c) => `/${c.command} - ${c.description}`).join('\n') }); }}>
+                Commands{commands.some((c) => c.botId === b.bot.id) ? ` · ${commands.filter((c) => c.botId === b.bot.id).length}` : ''}
+              </button>}
               {b.active && (
                 <button className="btn ghost danger" disabled={!live} onClick={() => {
                   if (!confirm(`Revoke ${b.bot.displayName}'s token? It stops posting immediately.`)) return;
@@ -70,6 +90,37 @@ export function Integrations({ state }: { state: AppState }) {
           </div>
         ))}
       </div>
+      {cmdFor && (() => {
+        const b = bots?.find((x) => x.bot.id === cmdFor);
+        if (!b) return null;
+        return (
+          <div className="card token-card">
+            <div className="eyebrow">Slash commands for {b.bot.displayName}</div>
+            <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>When someone types one of these, the hub sends it to the address below and posts the reply in the conversation. Requests are signed with a secret (shown once after saving) in the <code>X-Dex-Signature</code> header.</p>
+            <div className="field"><label htmlFor="cmd-url">Webhook address on the office network</label>
+              <input id="cmd-url" className="input mono" placeholder="http://hopper-pc:8710/dexconnect" value={cmdForm.url} onChange={(e) => setCmdForm({ ...cmdForm, url: e.target.value })} /></div>
+            <div className="field"><label htmlFor="cmd-lines">Commands, one per line</label>
+              <textarea id="cmd-lines" className="input mono" rows={4} placeholder={'/open - Open a project folder\n/transmittal - Start a transmittal'} value={cmdForm.lines} onChange={(e) => setCmdForm({ ...cmdForm, lines: e.target.value })} /></div>
+            <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn ghost" onClick={() => setCmdFor(null)}>Cancel</button>
+              <button className="btn primary" disabled={!cmdForm.url.trim()} onClick={() => void saveCommands(b.bot.id, b.bot.displayName)}>Save commands</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {secret && (
+        <div className="card token-card">
+          <div className="eyebrow">Signing secret for {secret.name} · shown once</div>
+          <p className="muted" style={{ fontSize: 13 }}>The tool checks each request: HMAC-SHA256 of <code>timestamp.body</code> with this secret must equal the <code>X-Dex-Signature</code> header (after <code>sha256=</code>).</p>
+          <pre className="md-pre selectable">{secret.secret}</pre>
+          <div className="row-actions">
+            <button className="btn primary" onClick={() => { void navigator.clipboard.writeText(secret.secret); toast('Secret copied'); }}><Icon name="copy" size={15} />Copy secret</button>
+            <button className="btn ghost" onClick={() => setSecret(null)}>Done</button>
+          </div>
+        </div>
+      )}
+
       <details className="api-help">
         <summary>For tool builders: the Bot API</summary>
         <pre className="md-pre selectable">{`POST https://${state.hub?.host}:${state.hub?.port}/api/bot/message

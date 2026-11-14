@@ -26,6 +26,8 @@ const toDiscovered = (f: FoundHub): DiscoveredHub => ({
 });
 
 export class Controller extends EventEmitter {
+  /** Guest invite typed on the join screen (used for the first registration only). */
+  private invite = '';
   private client: HubClient | null = null;
   private readonly finder = new HubFinder();
   private account: WindowsAccount;
@@ -105,6 +107,7 @@ export class Controller extends EventEmitter {
     this.client?.removeAllListeners();
     this.client?.disconnect();
     const client = new HubClient({ identity: this.identity, account: this.account });
+    if (this.invite) client.setInvite(this.invite);
     this.client = client;
     client.on('state', (s: ClientState) => {
       if (s.kind === 'ready') {
@@ -167,6 +170,7 @@ export class Controller extends EventEmitter {
     }
     if (!target) throw new Error('That hub could not be found. Check the address and try again.');
     this.config.hub = target;
+    this.invite = req.invite?.trim().toUpperCase() ?? '';
     this.persist();
     this.connect(target);
   }

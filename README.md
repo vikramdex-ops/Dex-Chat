@@ -24,6 +24,9 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Organisation | Departments (nested, with heads), designations, reporting lines, extension, phone, seat, joining date, birthday and custom fields; an org chart; profiles beside the Directory; CSV import from Excel or Dexterity Sheets that also covers people who have not joined yet |
 | Remote work | Check in from the title bar (office, home, site or client), breaks, change place during the day, live "who's working" on Pulse and on profiles, your timesheet on the Desk, team attendance for managers and administrators, CSV export; forgotten check-outs close at the last activity |
 | Calendar | Week grid and agenda, meetings with invitations and Going / Maybe / Not going, repeating meetings, reminders with a Join card, conference rooms that cannot be double-booked, free/busy while planning, meetings tied to a conversation and announced there, one-click Join into a call |
+| Guests | Invite codes for people outside the company, limited to chosen Spaces and their people, approved at once, with access that ends on its own (extend or end it any time) |
+| Compliance | Retention for Space and Direct messages, legal holds that keep every version of edited or deleted messages, exports to HTML, CSV or JSON (Direct message text is never exported) |
+| Commands | Slash commands in the composer (/remind, /poll, /meet, /call, /status, /checkin, /dnd, /shrug, /help…) and integration commands that call a tool's signed webhook |
 | Files | Drag, drop, paste or attach up to 1 GB; stored once on the hub; inline images with a viewer; Open / Save; Files panel |
 | Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
 | Search | Ctrl+K across people, conversations, commands and message text (FTS5), jump to the message |
@@ -34,8 +37,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
-**Next:** direct PC-to-PC fallback when the hub is off, end-to-end encryption of Direct messages, forms and notes, guest invites, retention and legal
-hold, file viewing on phones, and the Sheets, Slate, Sleuth, Project Opener and Datum integrations.
+**Next:** direct PC-to-PC fallback when the hub is off, end-to-end encryption of Direct messages, forms and notes, file viewing on phones, and the Sheets, Slate, Sleuth, Project Opener and Datum integrations.
 
 ## How it fits together
 

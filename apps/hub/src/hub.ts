@@ -20,6 +20,9 @@ import { Desk } from './desk.ts';
 import { Org, OrgError } from './org.ts';
 import { Work, WorkError } from './work.ts';
 import { Calendar, CalError } from './calendar.ts';
+import { Guests, GuestError } from './guests.ts';
+import { Compliance, ComplianceError } from './compliance.ts';
+import { Commands, CommandError } from './commands.ts';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import type { MirrorOptions } from './update-mirror.ts';
@@ -89,6 +92,10 @@ export class Hub {
   readonly org: Org;
   readonly work: Work;
   readonly calendar: Calendar;
+  readonly guests: Guests;
+  readonly compliance: Compliance;
+  readonly commands: Commands;
+  private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
   private readonly fileTokens = new Map<string, string>();
@@ -116,6 +123,15 @@ export class Hub {
       return r.t;
     }, (state) => this.emit('work.updated', state));
     this.calendar = new Calendar(this.store.db, this.messaging, () => this.store.activeUsers(), (userIds, name, data) => this.deliver(userIds, name, data), (name, data) => this.emit(name, data));
+    this.guests = new Guests(this.store, this.messaging, (uid) => {
+      for (const c of this.conns) {
+        if (c.userId !== uid) continue;
+        this.send(c, { t: 'rejected', reason: 'Your guest access has ended.' });
+        c.ws.close();
+      }
+    });
+    this.compliance = new Compliance(this.store, this.messaging, this.files);
+    this.commands = new Commands(this.store, this.messaging);
     this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
     this.desk = new Desk(this.store.db, this.messaging, this.files, (userIds, name, data) => this.deliver(userIds, name, data), (uid) => {
       const u = this.store.userById(uid);
@@ -169,6 +185,12 @@ export class Hub {
     const tick = () => {
       try { this.desk.tick(); } catch (err) { this.log('error', 'desk timer failed', { error: (err as Error).message }); }
       try { this.work.tick(); } catch (err) { this.log('error', 'attendance timer failed', { error: (err as Error).message }); }
+      // retention runs hourly (and on start)
+      if (Date.now() - this.lastPurge > 3600_000) {
+        this.lastPurge = Date.now();
+        try { this.compliance.purge(); } catch (err) { this.log('error', 'retention failed', { error: (err as Error).message }); }
+      }
+      try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
     };
     tick();
@@ -441,8 +463,22 @@ export class Hub {
     const key = accountKey(account);
     const first = this.store.userCount() === 0;
     let user = this.store.userByAccount(key);
-    if (!user) user = this.store.createUser(key, account.displayName, first ? 'owner' : 'member');
-    const device = this.store.createDevice(frame.deviceId, user.id, frame.publicKey, account.hostname, first ? 'approved' : 'pending');
+    // a guest invite approves a new person straight away, as a guest
+    let invite: ReturnType<Guests['check']> | null = null;
+    if (!first && typeof frame.invite === 'string' && frame.invite.trim() && (!user || user.role === 'guest')) {
+      invite = this.guests.check(frame.invite.slice(0, 40));
+      if ('error' in invite) {
+        this.send(conn, { t: 'rejected', reason: invite.error });
+        conn.ws.close();
+        return;
+      }
+    }
+    if (!user) user = this.store.createUser(key, account.displayName, first ? 'owner' : invite ? 'guest' : 'member');
+    const device = this.store.createDevice(frame.deviceId, user.id, frame.publicKey, account.hostname, first || invite ? 'approved' : 'pending');
+    if (invite && 'invite' in invite) {
+      this.guests.admit(user.id, invite.invite);
+      this.emit('user.added', user);
+    }
     if (first) {
       this.messaging.ensureEveryoneSpace(user.id);
       this.messaging.welcome(user.id);
@@ -489,7 +525,7 @@ export class Hub {
       hub: this.info,
       me: this.store.userById(conn.userId!)!,
       deviceId: conn.deviceId!,
-      users: this.store.activeUsers(),
+      users: this.guests.visibleTo(this.store.userById(conn.userId!)!, this.store.activeUsers()),
       online: this.onlineUserIds(conn.userId!),
       away: [...new Set(this.onlineUserIds(conn.userId!).filter((id) => this.isAway(id)))],
       inRoom: this.rooms.inRoomUsers(),
@@ -524,7 +560,7 @@ export class Hub {
         return { at: Date.now() } satisfies Ops['ping']['res'];
 
       case 'directory.list':
-        return { users: this.store.activeUsers(), online: this.onlineUserIds(conn.userId!) } satisfies Ops['directory.list']['res'];
+        return { users: this.guests.visibleTo(this.store.userById(conn.userId!)!, this.store.activeUsers()), online: this.onlineUserIds(conn.userId!) } satisfies Ops['directory.list']['res'];
 
       case 'me.update': {
         const patch: { displayName?: string; title?: string | null; statusText?: string | null } = {};
@@ -664,6 +700,37 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(cmd\.|admin\.bots\.commands$)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.commands.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof CommandError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('admin.compliance.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.compliance.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof ComplianceError) throw new OpError(err.message);
+            if ((err as { status?: number }).status) throw new OpError((err as Error).message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('admin.guests.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.guests.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof GuestError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }

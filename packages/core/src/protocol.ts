@@ -68,6 +68,47 @@ export interface Department {
   createdAt: number;
 }
 
+export interface SlashCommand {
+  command: string;
+  description: string;
+  /** The integration that answers it. */
+  botId: string;
+}
+
+export interface GuestInvite {
+  id: string;
+  /** Last four characters, to tell codes apart (the full code is shown once). */
+  hint: string;
+  spaceIds: string[];
+  /** How long guests who use it keep access. */
+  accessDays: number;
+  expiresAt: number;
+  uses: number;
+  maxUses: number;
+  note: string | null;
+  createdBy: string;
+  createdAt: number;
+  revoked: boolean;
+}
+
+export interface CompliancePolicy {
+  /** Delete Space messages after this many days (null keeps them forever). */
+  spaceRetentionDays: number | null;
+  directRetentionDays: number | null;
+  /** Keep every version of edited or deleted messages for people or conversations on hold. */
+  lastPurgeAt: number | null;
+  lastPurged: number;
+}
+
+export interface LegalHold {
+  id: string;
+  kind: 'user' | 'conv';
+  targetId: string;
+  note: string | null;
+  createdBy: string;
+  createdAt: number;
+}
+
 export interface ProfileField {
   id: string;
   label: string;
@@ -404,7 +445,7 @@ export type ServerFrame =
 // ---- client -> hub
 export type ClientFrame =
   | { t: 'auth'; deviceId: string; sig: string }
-  | { t: 'register'; deviceId: string; publicKey: string; account: WindowsAccount; sig: string }
+  | { t: 'register'; deviceId: string; publicKey: string; account: WindowsAccount; sig: string; /** guest invite code */ invite?: string }
   | { t: 'req'; id: string; op: string; data?: unknown };
 
 /**
@@ -433,6 +474,27 @@ export interface Ops {
   'admin.bots': { req: void; res: Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> };
   'admin.bots.create': { req: { name: string }; res: { bot: PublicUser; token: string } };
   'admin.bots.revoke': { req: { userId: string }; res: { ok: true } };
+  /** Give an integration slash commands that call its webhook. Returns the signing secret once. */
+  'admin.bots.commands': { req: { userId: string; webhookUrl: string; commands: Array<{ command: string; description: string }> }; res: { secret: string } };
+  'cmd.list': { req: void; res: SlashCommand[] };
+  /** Run an integration's command; its reply is posted (or, if it asks, shown only to you). */
+  'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean } };
+  'admin.guests.invites': { req: void; res: GuestInvite[] };
+  'admin.guests.invite': { req: { spaceIds: string[]; accessDays: number; validDays: number; uses: number; note?: string }; res: GuestInvite & { code: string } };
+  'admin.guests.revokeInvite': { req: { id: string }; res: { ok: true } };
+  'admin.guests.list': { req: void; res: Array<{ user: PublicUser; until: number | null }> };
+  'admin.guests.extend': { req: { userId: string; days: number }; res: { until: number } };
+  'admin.guests.end': { req: { userId: string }; res: { ok: true } };
+  'admin.compliance.get': { req: void; res: { policy: CompliancePolicy; holds: LegalHold[] } };
+  'admin.compliance.setPolicy': { req: { spaceRetentionDays: number | null; directRetentionDays: number | null }; res: CompliancePolicy };
+  'admin.compliance.hold': { req: { kind: 'user' | 'conv'; targetId: string; note?: string }; res: LegalHold };
+  'admin.compliance.release': { req: { id: string }; res: { ok: true } };
+  /** Every conversation, for choosing what to export (admins see names, not contents). */
+  'admin.compliance.conversations': { req: void; res: Array<{ id: string; kind: 'space' | 'direct'; name: string; members: string[]; messages: number }> };
+  'admin.compliance.export': {
+    req: { convIds?: string[]; userIds?: string[]; from: number; to: number; format: 'json' | 'csv' | 'html'; includeHistory?: boolean };
+    res: { file: FileInfo; messages: number };
+  };
   'ping': { req: void; res: { at: number } };
   'org.get': { req: void; res: OrgInfo };
   /** Contact details anyone can keep up to date themselves. */
@@ -533,6 +595,8 @@ export interface Events {
   'conv.removed': { convId: string };
   'msg.new': Message;
   'msg.updated': Message;
+  /** Messages removed for good (retention). */
+  'msg.removed': { convId: string; messageIds: string[] };
   'typing': { convId: string; userId: string; parentId: string | null };
   'read': { convId: string; userId: string; messageId: string };
   'room.ring': { room: RoomInfo; from: string };

@@ -46,6 +46,8 @@ export interface SessionOptions {
   open: OpenSocket;
   requestTimeoutMs?: number;
   maxBackoffMs?: number;
+  /** Guest invite code sent with the first registration. */
+  invite?: string;
 }
 
 interface Pending {
@@ -69,7 +71,7 @@ export class HubSession extends Emitter {
 
   constructor(opts: SessionOptions) {
     super();
-    this.opts = { ...opts, requestTimeoutMs: opts.requestTimeoutMs ?? 15000, maxBackoffMs: opts.maxBackoffMs ?? 15000 };
+    this.opts = { ...opts, requestTimeoutMs: opts.requestTimeoutMs ?? 15000, maxBackoffMs: opts.maxBackoffMs ?? 15000, invite: opts.invite ?? '' };
   }
 
   get session(): Session | null {
@@ -78,6 +80,10 @@ export class HubSession extends Emitter {
 
   setAccount(account: WindowsAccount): void {
     this.opts.account = account;
+  }
+
+  setInvite(code: string): void {
+    this.opts.invite = code;
   }
 
   connect(target: HubTarget): void {
@@ -190,7 +196,7 @@ export class HubSession extends Emitter {
         this.send({ t: 'auth', deviceId: this.opts.deviceId, sig: await this.proof() });
         break;
       case 'unknown':
-        this.send({ t: 'register', deviceId: this.opts.deviceId, publicKey: this.opts.publicKey, account: this.opts.account, sig: await this.proof() });
+        this.send({ t: 'register', deviceId: this.opts.deviceId, publicKey: this.opts.publicKey, account: this.opts.account, sig: await this.proof(), ...(this.opts.invite ? { invite: this.opts.invite } : {}) });
         break;
       case 'pending':
         this.setState({ kind: 'pending', target, position: frame.position });

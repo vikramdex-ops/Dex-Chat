@@ -51,7 +51,7 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
   online: Set<string>;
   activeId: string | null;
   onOpen: (id: string) => void;
-  onNew: () => void;
+  onNew?: () => void;
   onBrowse?: () => void;
 }) {
   const conversations = useChat((s) => s.conversations);
@@ -75,7 +75,7 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
         <span className="label">{kind === 'space' ? 'Spaces' : 'Direct'} · {list.length}</span>
         <div className="row-actions">
           {onBrowse && <button className="icon-btn" title="Find Spaces to join" onClick={onBrowse}><Icon name="search" size={16} /></button>}
-          <button className="icon-btn accent" title={kind === 'space' ? 'New Space' : 'New Direct conversation'} onClick={onNew}><Icon name="plus" size={16} /></button>
+          {onNew && <button className="icon-btn accent" title={kind === 'space' ? 'New Space' : 'New Direct conversation'} onClick={onNew}><Icon name="plus" size={16} /></button>}
         </div>
       </div>
       <div className="sb-filter">
@@ -86,7 +86,7 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
         {ready && list.length === 0 && (
           <div className="sb-empty">
             <span>{filter ? 'Nothing matches.' : kind === 'space' ? 'No Spaces yet.' : 'No Direct conversations yet.'}</span>
-            {!filter && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{kind === 'space' ? 'Create a Space' : 'Message someone'}</button>}
+            {!filter && onNew && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{kind === 'space' ? 'Create a Space' : 'Message someone'}</button>}
           </div>
         )}
         {list.map((c) => {

@@ -12,6 +12,8 @@ let wired = false;
 export const useWork = (): Map<string, LiveWork> => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => team);
 const emit = () => { for (const l of listeners) l(); };
 
+export const workOf = (userId: string): LiveWork | undefined => team.get(userId);
+
 export function setWork(s: WorkState): void {
   team = new Map(team).set(s.userId, { ...s, at: Date.now() });
   emit();

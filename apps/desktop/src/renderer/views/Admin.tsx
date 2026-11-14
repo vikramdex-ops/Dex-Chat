@@ -5,9 +5,10 @@ import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
 import { Integrations } from './Integrations.tsx';
 import { OrgAdmin } from './OrgAdmin.tsx';
+import { ComplianceAdmin, GuestsAdmin } from './GuestsCompliance.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'integrations' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'integrations' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -30,6 +31,18 @@ const AUDIT_TEXT: Record<string, string> = {
   'org.fields': 'changed the profile fields',
   'org.profile': "changed someone's details",
   'org.import': 'imported people from a spreadsheet',
+  'guest.invite': 'created a guest invite',
+  'guest.inviteRevoked': 'withdrew a guest invite',
+  'guest.joined': 'joined as a guest',
+  'guest.extended': "extended a guest's access",
+  'guest.ended': "ended a guest's access",
+  'guest.expired': 'guest access expired',
+  'compliance.policy': 'changed message retention',
+  'compliance.hold': 'placed a legal hold',
+  'compliance.release': 'released a legal hold',
+  'compliance.export': 'exported messages',
+  'compliance.purged': 'removed messages past retention',
+  'bot.commands': "changed an integration's commands",
 };
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
@@ -79,6 +92,8 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'devices', label: 'Devices', icon: 'laptop' },
           { value: 'roles', label: 'People & roles', icon: 'people' },
           { value: 'organisation', label: 'Organisation', icon: 'list' },
+          { value: 'guests', label: 'Guests', icon: 'user' },
+          { value: 'compliance', label: 'Compliance', icon: 'archive' },
           { value: 'integrations', label: 'Integrations', icon: 'grid' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
@@ -162,6 +177,8 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       )}
 
       {tab === 'organisation' && <OrgAdmin users={session.users} />}
+      {tab === 'guests' && <GuestsAdmin users={session.users} />}
+      {tab === 'compliance' && <ComplianceAdmin users={session.users} />}
       {tab === 'integrations' && <Integrations state={state} />}
 
       {tab === 'audit' && (audit.length === 0 ? (

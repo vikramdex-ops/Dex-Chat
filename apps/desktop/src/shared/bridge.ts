@@ -76,6 +76,8 @@ export interface JoinRequest {
   displayName: string;
   /** Phones only: "DOMAIN\\username" to link the phone to the person's PC account. */
   officeAccount?: string;
+  /** Guest invite code from an administrator (people outside the company). */
+  invite?: string;
 }
 
 export interface DexBridge {
