@@ -7,6 +7,6 @@ Thumbs.db
 dist/
 dist-electron/
 dist-renderer/
-release/
+apps/desktop/release/
 hub-data/
 *.tsbuildinfo

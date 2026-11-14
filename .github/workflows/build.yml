@@ -82,7 +82,7 @@ jobs:
             files: apps/desktop/release/*.exe
           - name: macos
             os: macos-latest
-            args: --mac dmg
+            args: --mac dmg --arm64 --x64
             files: apps/desktop/release/*.dmg
     env:
       GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
