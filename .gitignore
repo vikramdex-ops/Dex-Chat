@@ -4,3 +4,9 @@ artifacts/
 *.log
 .DS_Store
 Thumbs.db
+dist/
+dist-electron/
+dist-renderer/
+release/
+hub-data/
+*.tsbuildinfo

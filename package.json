@@ -1,94 +1,30 @@
 {
-  "name": "lattice",
-  "version": "1.0.0",
+  "name": "dexterity-connect",
+  "version": "0.1.0",
   "private": true,
-  "description": "Offline-first LAN messenger for internal office use",
+  "description": "Dexterity Connect: offline-first office messenger for the Dexterity LAN",
   "type": "module",
-  "main": "desktop/main.cjs",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.18.0"
   },
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "test": "node --test tests/",
-    "desktop": "electron .",
-    "dist": "electron-builder --publish never",
-    "dist:win": "electron-builder --win nsis portable --publish never",
-    "dist:linux": "electron-builder --linux AppImage deb --publish never",
-    "dist:mac": "electron-builder --mac dmg --publish never"
+    "test": "node --test \"packages/*/test/*.test.ts\" \"apps/hub/test/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "hub": "node apps/hub/src/main.ts",
+    "hub:build": "npm run build -w @dex/hub",
+    "desktop:dev": "npm run dev -w @dex/desktop",
+    "desktop:build": "npm run build -w @dex/desktop",
+    "desktop:dist": "npm run dist -w @dex/desktop"
   },
+  "license": "UNLICENSED",
   "devDependencies": {
-    "electron": "^45.0.0",
-    "electron-builder": "^26.18.0"
-  },
-  "build": {
-    "appId": "com.dexengineering.lattice",
-    "productName": "Lattice",
-    "asar": true,
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "desktop/**/*",
-      "server/**/*",
-      "public/**/*",
-      "package.json",
-      "README.md"
-    ],
-    "protocols": [
-      {
-        "name": "Lattice",
-        "schemes": [
-          "lattice"
-        ]
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Lattice"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Network;InstantMessaging",
-      "maintainer": "Dex Engineering"
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.business"
-    }
-  },
-  "keywords": [
-    "lan",
-    "messenger",
-    "offline",
-    "chat",
-    "files"
-  ],
-  "license": "UNLICENSED"
+    "@types/node": "^22.20.5",
+    "@types/node-forge": "^1.3.14",
+    "@types/ws": "^8.18.2",
+    "typescript": "^5.9.3"
+  }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@dex/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/hub-client.ts",
+    "./discovery": "./src/discovery.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
