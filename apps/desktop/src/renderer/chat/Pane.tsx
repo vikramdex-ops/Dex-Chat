@@ -18,6 +18,7 @@ import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, HushItems, convTitle } from './Switchboard.tsx';
 import { joinRoom, setMinimized, startCall, useCall } from '../rooms/engine.ts';
 import { FormBuilder, FormCard } from './forms.tsx';
+import { BotCard, isBotCard } from '../bots/BotCard.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
@@ -290,6 +291,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           {headMenu && (
             <Popover anchor={moreBtn.current} onClose={() => setHeadMenu(false)} className="menu head-menu">
               {canPlan && <button role="menuitem" onClick={() => { setHeadMenu(false); setPlanning(true); }}><Icon name="calendar" size={16} />Plan a meeting</button>}
+              {live && session?.me.role !== 'guest' && <button role="menuitem" onClick={() => { setHeadMenu(false); window.dispatchEvent(new CustomEvent('dex-add-tool', { detail: conv.id })); }}><Icon name="grid" size={16} />Add a tool…</button>}
               <button role="menuitem" onClick={() => { setHeadMenu(false); window.dispatchEvent(new CustomEvent('dex-search', { detail: conv.id })); }}><Icon name="search" size={16} />Search this conversation</button>
               <button role="menuitem" onClick={() => { setHeadMenu(false); setDatePick(true); }}><Icon name="history" size={16} />Jump to a date…</button>
               <button role="menuitem" onClick={() => { setHeadMenu(false); window.dispatchEvent(new CustomEvent('dex-automations', { detail: conv.id })); }}><Icon name="repeat" size={16} />Automations…</button>
@@ -733,7 +735,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
       )}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
-      ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : sticker ? (
+      ) : isBotCard(m) ? <BotCard m={m} conv={ctx.conv} meId={ctx.meId} users={ctx.users} />
+        : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : sticker ? (
         <div className="sticker-body"><StickerImg id={sticker} size={ctx.cards ? 112 : 132} /></div>
       ) : editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />

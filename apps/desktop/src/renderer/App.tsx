@@ -40,6 +40,7 @@ import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { joinMeeting, setSelfUser, startCalls } from './rooms/engine.ts';
 import { parseMeetingId } from '@dex/core';
+import { AddToolHost } from './bots/AddTool.tsx';
 import { timeOpts } from './time.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 
@@ -585,6 +586,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       )}
       <RecordingReady />
       <MdPreview users={users} meId={session.me.id} />
+      <AddToolHost />
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
@@ -668,6 +670,7 @@ export function PopoutApp({ convId }: { convId: string }) {
       <div className="popout">
         <Pane convId={convId} users={users} meId={session.me.id} isAdmin={session.me.role === 'owner' || session.me.role === 'admin'} online={new Set(session.online)}
           live={ready} onBack={() => void window.dex.showMain?.(convId)} session={session} />
+        <AddToolHost />
       </div>
       <AutomationsHost session={session} />
     </ToastHost>

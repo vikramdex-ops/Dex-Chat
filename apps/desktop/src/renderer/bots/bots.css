@@ -1,0 +1,75 @@
+/* Integration cards (flows) and tools in the timeline, drawn as sheets: a hairline frame, a
+   title strip of mono captions, ruled rows. Teal for structure, amber only where someone acts. */
+
+/* ------------------------------------------------------------ flow cards */
+.flow-card { margin: 4px 0 2px; max-width: 520px; border: 1px solid var(--stroke-strong); border-radius: 4px; background: var(--layer-solid); overflow: hidden; }
+.flow-card.step.active, .flow-card.resume.active { border-color: color-mix(in srgb, var(--accent) 55%, var(--stroke-strong)); box-shadow: inset 3px 0 0 var(--accent); }
+.flow-card.moved, .flow-card.cancelled, .flow-card.expired { opacity: .72; }
+.flow-tb { display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-bottom: 1px solid var(--stroke); background: var(--subtle); }
+.flow-title { flex: 1; min-width: 0; font: 600 10px/1.4 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-step { display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--text-3); letter-spacing: .06em; white-space: nowrap; }
+.flow-scale { display: inline-flex; gap: 2px; }
+.flow-scale i { width: 7px; height: 5px; border: 1px solid var(--stroke-strong); border-radius: 1px; }
+.flow-scale i.done { background: var(--accent); border-color: var(--accent); }
+.flow-scale i.here { border-color: var(--accent); background: var(--accent-soft); }
+.flow-q { padding: 10px 12px 4px; font-size: 14px; user-select: text; }
+.flow-q p { margin: 0 0 4px; }
+.flow-meta { padding: 0 12px 8px; font-size: 11px; }
+.flow-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 12px 10px; }
+.flow-opt { height: 30px; padding: 0 12px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); color: var(--text); font-weight: 600; font-size: 12.5px; cursor: pointer; transition: background var(--fast), border-color var(--fast); }
+.flow-opt:hover { border-color: var(--accent); background: var(--accent-soft); }
+.flow-opt.was { border-color: var(--accent); }
+.flow-opt:disabled { opacity: .55; pointer-events: none; }
+.flow-text { display: flex; gap: 6px; align-items: flex-start; padding: 6px 12px 10px; }
+.flow-text .input { flex: 1; min-width: 0; }
+.flow-text textarea.input { height: auto; padding: 6px 10px; resize: vertical; }
+.flow-person { padding: 6px 12px 8px; display: grid; gap: 6px; }
+.flow-people { display: grid; border-top: 1px solid var(--stroke); }
+.flow-person-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border: 0; border-bottom: 1px solid var(--stroke); background: none; text-align: left; cursor: pointer; font-size: 13px; }
+.flow-person-row:hover { background: var(--accent-soft); }
+.flow-none { padding: 6px 4px; font-size: 12.5px; }
+.flow-answer { display: flex; align-items: center; gap: 7px; margin: 2px 12px 10px; padding: 4px 9px; border-left: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; font-size: 13px; width: fit-content; max-width: calc(100% - 24px); white-space: pre-wrap; }
+.flow-foot { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid var(--stroke); font-size: 12px; }
+.flow-foot.faint { padding: 6px 12px; }
+.flow-err { margin: 0 12px 8px; padding: 5px 9px; border-left: 2px solid var(--danger); background: var(--danger-soft); color: var(--danger); font-size: 12.5px; }
+.flow-list { display: grid; }
+.flow-list-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-top: 1px solid var(--stroke); font-size: 13px; }
+.flow-from { display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px; font-size: 13.5px; }
+.flow-lines { display: grid; grid-template-columns: max-content 1fr; margin: 6px 12px 10px; border: 1px solid var(--stroke); border-radius: 3px; font-size: 12.5px; }
+.flow-lines > div { display: contents; }
+.flow-lines dt { padding: 4px 9px; border-right: 1px solid var(--stroke); color: var(--text-3); font: 600 9.5px/1.9 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.flow-lines dd { margin: 0; padding: 4px 9px; white-space: pre-wrap; }
+.flow-lines > div + div > * { border-top: 1px solid var(--stroke); }
+.flow-notes { margin: 0 12px 10px; padding: 0 0 0 14px; font-size: 11.5px; color: var(--text-2); }
+.flow-json { min-height: 280px; font-size: 12px; line-height: 1.45; padding: 8px 10px; height: auto; white-space: pre; }
+
+/* ------------------------------------------------------------ tools */
+.mapp-card { margin: 4px 0 2px; max-width: 720px; border: 1px solid var(--stroke-strong); border-radius: 4px; background: var(--layer-solid); overflow: hidden; }
+.mapp-tb { display: flex; align-items: stretch; border-bottom: 1px solid var(--stroke-strong); }
+.mapp-mark { flex: none; width: 26px; display: grid; place-items: center; color: var(--accent-ink); border-right: 1px solid var(--stroke); }
+.mapp-tb .mapp-mark { height: auto; }
+.mapp-name { flex: 1; min-width: 0; padding: 5px 10px; font: 600 13px/1.35 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mapp-cells { display: flex; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
+.mapp-cells span { padding: 6px 9px; border-left: 1px solid var(--stroke); white-space: nowrap; }
+.mapp-frame { display: block; width: 100%; border: 0; background: var(--layer-solid); color-scheme: normal; }
+.mapp-away { display: flex; align-items: center; gap: 8px; padding: 16px 14px; font-size: 13px; color: var(--text-2);
+  background-image: linear-gradient(var(--stroke) 1px, transparent 1px), linear-gradient(90deg, var(--stroke) 1px, transparent 1px); background-size: 16px 16px; }
+.mapp-foot { display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; border-top: 1px solid var(--stroke); font-size: 11.5px; }
+.mapp-foot .faint { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mapp-card.off .mapp-name { color: var(--text-3); }
+.mapp-big { width: min(1100px, 86vw); border: 1px solid var(--stroke-strong); border-radius: 4px; overflow: hidden; }
+.mapp-preview { max-height: 40vh; overflow: auto; white-space: pre-wrap; }
+.mapp-source { max-height: 320px; overflow: auto; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+.mapp-pick { display: grid; width: 100%; max-height: 60vh; overflow: auto; border-top: 1px solid var(--stroke); }
+.mapp-pick-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--stroke); }
+.mapp-pick-row .mapp-mark { border: 1px solid var(--stroke-strong); border-radius: 3px; height: 26px; }
+.mapp-pick-row .grow { display: grid; gap: 3px; min-width: 0; }
+.mapp-pick-desc { font-size: 12.5px; color: var(--text-2); }
+.mapp-perms { display: flex; flex-wrap: wrap; gap: 4px; }
+.mapp-perms .chip { height: 20px; font-size: 11px; font-weight: 500; }
+
+/* ------------------------------------------------------------ Control room */
+.bots-row { display: flex !important; align-items: center; gap: 12px; }
+.bots-row .mapp-mark { border: 1px solid var(--stroke-strong); border-radius: 3px; height: 26px; }
+.bots-admin label.btn.disabled { opacity: .5; pointer-events: none; }
+.flow-card .grow, .mapp-card .grow, .mapp-pick .grow, .bots-admin .grow { flex: 1; min-width: 0; }

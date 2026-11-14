@@ -4,6 +4,7 @@ import type { AuditEntry, DeviceRecord, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
 import { Integrations } from './Integrations.tsx';
+import { BotsAdmin } from '../bots/BotsAdmin.tsx';
 import { OrgAdmin } from './OrgAdmin.tsx';
 import { ComplianceAdmin, GuestsAdmin } from './GuestsCompliance.tsx';
 import { PoliciesAdmin, ReportsAdmin, UsageAdmin } from './PoliciesUsage.tsx';
@@ -11,7 +12,7 @@ import { RemoteAdmin } from './Remote.tsx';
 import { AutomationsAdmin } from '../flows/FlowsPanel.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -114,6 +115,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'usage', label: 'Usage', icon: 'pulse' },
           { value: 'integrations', label: 'Integrations', icon: 'grid' },
           { value: 'automations', label: 'Automations', icon: 'repeat' },
+          { value: 'bots', label: 'Bots & tools', icon: 'branch' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
       </div>
@@ -204,6 +206,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'usage' && <UsageAdmin users={session.users} />}
       {tab === 'integrations' && <Integrations state={state} />}
       {tab === 'automations' && <AutomationsAdmin session={session} />}
+      {tab === 'bots' && <BotsAdmin users={session.users} />}
 
       {tab === 'audit' && (audit.length === 0 ? (
         <div className="card empty"><Icon name="list" size={36} /><span>Nothing recorded yet.</span></div>

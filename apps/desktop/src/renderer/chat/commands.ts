@@ -151,6 +151,7 @@ export async function runSlash(input: string, ctx: RunContext): Promise<boolean>
     if (bots.some((b) => b.command === cmd)) {
       const r = await req('cmd.run', { convId: ctx.convId, command: cmd, text: arg, parentId: ctx.parentId ?? undefined });
       if (r.ephemeral && r.text) ctx.toast(r.text);
+      if (r.open) window.dispatchEvent(new CustomEvent('dex-open', { detail: r.open }));
       return true;
     }
     ctx.toast(`There is no /${cmd} command. Type /help to see them, or start with // to send a slash.`, true);
