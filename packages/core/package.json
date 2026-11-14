@@ -15,7 +15,8 @@
     "./e2e": "./src/e2e.ts",
     "./e2e-client": "./src/e2e-client.ts",
     "./remote": "./src/remote.ts",
-    "./dlp": "./src/dlp.ts"
+    "./dlp": "./src/dlp.ts",
+    "./restyle": "./src/restyle.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",
