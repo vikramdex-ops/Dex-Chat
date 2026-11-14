@@ -43,6 +43,29 @@ Content-Type: application/json
 Trust the hub by its certificate fingerprint (shown on the same page) rather than a certificate
 authority. Hopper's notices use this.
 
+### Incoming webhooks (Slack-style)
+
+Tools and services that already know how to post to a Slack "incoming webhook" can post to
+Dexterity Connect without changes. In **Control room → Integrations → Webhooks**, choose a Space
+and **Create webhook**. You get an address like `https://<hub>:47900/api/hooks/<secret>`; anyone
+who has it can post into that Space, so treat it as a password and **Revoke** it if it leaks.
+
+```
+POST https://<hub>:47900/api/hooks/<secret>
+Content-Type: application/json
+
+{ "text": "*Build 7* passed <https://ci/7|details>" }
+```
+
+- Slack's `text`, `blocks` (header, section, fields, context, divider) and `attachments` (title,
+  text, fields) are understood. Slack's `*bold*`, `_italic_`, `~strike~` and `<url|label>` links
+  become Dexterity Connect formatting.
+- A form post with a `payload` field also works.
+- Up to 60 posts a minute per webhook and 256 KB per post. Answers: `200 ok`, `400`, `404`
+  (unknown or revoked), `413`, `429`.
+- Webhooks reach the hub on the office network only. They are not exposed through the internet
+  gateway.
+
 ## 3. Slash commands (the tool answers)
 
 An administrator gives an integration commands and a webhook address on the office network in
@@ -65,6 +88,7 @@ Reply within 8 seconds with `{ "text": "…" }` to post into the conversation as
 | Link | Opens |
 | --- | --- |
 | `dexconnect://conversation/<id>` | A conversation |
+| `dexconnect://message/<conversation id>/<message id>` | One message (shown as a preview card in messages; *Copy link* on a message makes one) |
 | `dexconnect://people/<user id>` | Someone's profile in the Directory |
 | `dexconnect://desk`, `dexconnect://calendar`, `dexconnect://settings` | Those screens |
 
@@ -82,3 +106,10 @@ Reply within 8 seconds with `{ "text": "…" }` to post into the conversation as
 Links for a tool show as a chip with the tool's name. Dexterity Connect opens only these schemes,
 and only when the tool is installed on that PC. The tool-side changes are on each repository's
 `claude/epic-fermi-h7zdk1` branch.
+
+## Outside the office
+
+Everything on this page works on the office network. Through the internet gateway
+([`REMOTE-ACCESS.md`](REMOTE-ACCESS.md)) people can share, open links and use slash commands as
+usual, but the Bot API and webhooks stay office-only: the hub refuses them with `403` when they
+arrive through the gateway.

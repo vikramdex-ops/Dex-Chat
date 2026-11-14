@@ -167,11 +167,12 @@ Live Events (deferred), Office-document inline preview, and Deluge scripting (re
 | --- | --- |
 | P0 Foundation | ✅ Done |
 | P1 Messaging core | ✅ Done, including end-to-end encrypted Direct messages and the hub-off PC-to-PC mode |
-| P2 Files & search | ✅ Files, viewer, Files panel, full-text search, voice notes, files on phones. OCR and video messages are next |
-| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), screen share, mini-Room, Join from meetings. Recording is next |
+| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, Files panel, full-text search with filters, OCR of images, voice notes, video messages and screen recordings, files on phones |
+| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks. Background effects and an SFU for larger calls are not built |
 | P4 Productivity | ✅ Saved messages, reminders, scheduled messages, polls, forms, notes (with Slate), calendar and conference rooms, remote work, organisation and org chart |
 | P5 Platform & governance | ✅ Bot API, slash commands with signed webhooks, share links for office tools, whiteboards, guests, retention, legal hold, exports, Control room, audit |
-| P6 Mobile & polish | ✅ Android app with updater, files and a phone layout. Parity sweep (see below) in progress |
+| P6 Mobile & polish | ✅ Android app with updater, files and a phone layout; pop-out windows, global shortcut, quiet hours, 12/24-hour time |
+| Outside the office | ✅ Internet gateway on Cloudflare: devices on any network or mobile data reach the hub through an end-to-end encrypted channel pinned to the hub's certificate; the office opens no ports (see [`REMOTE-ACCESS.md`](REMOTE-ACCESS.md)) |
 
 Each phase ends with installers built by CI, a test pass, and a short demo note.
 
@@ -244,6 +245,7 @@ replacement for Hopper's Cliq bot), and a launcher panel in Connect that shows w
 | An admin user | At hub install | The first person to sign in becomes admin; they approve everyone else. |
 | A department/designation CSV (optional) | P4 | Name, Windows username, department, designation, manager. Seeds the org chart. |
 | Code-signing certificate (optional) | Before rollout | Removes the Windows SmartScreen warning. Without one, users click "Run anyway" once. |
+| A Cloudflare account (free plan) | For use outside the office | Hosts the gateway. Add an API token and account ID as repository secrets; the workflow deploys it. See [`REMOTE-ACCESS.md`](REMOTE-ACCESS.md). |
 
 Everything else (builds, installers, firewall rules, certificates, the hub setup) is automated.
 
