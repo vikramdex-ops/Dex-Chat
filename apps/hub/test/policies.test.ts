@@ -54,3 +54,19 @@ test('usage report counts messages, people, Spaces and calls per day', async () 
   assert.equal(r.topSpaces[0].name, 'Busy');
   assert.equal(r.topPeople[0].userId, me(priya));
 });
+
+test('recording a call shows to everyone in it and follows the office policy', async () => {
+  const { owner, priya } = await office();
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [me(priya)] });
+  const room = await owner.request('room.start', { convId: dm.id, video: false });
+  await priya.request('room.join', { roomId: room.id });
+  const seen = new Promise<boolean>((resolve) => owner.on('event', (n: string, r: { id: string; participants: Array<{ userId: string; recording?: boolean }> }) => {
+    if (n === 'room.updated' && r.id === room.id && r.participants.some((p) => p.userId === me(priya) && p.recording)) resolve(true);
+  }));
+  await priya.request('room.record', { roomId: room.id, on: true });
+  assert.equal(await seen, true);
+  await owner.request('admin.policy.set', { allowRecording: false });
+  await assert.rejects(owner.request('room.record', { roomId: room.id, on: true }), /turned off/);
+  await priya.request('room.record', { roomId: room.id, on: false });
+  await priya.request('room.leave', { roomId: room.id });
+});

@@ -499,6 +499,8 @@ export interface RoomParticipant {
   muted: boolean;
   camera: boolean;
   screen: boolean;
+  /** This person is recording the call (everyone is shown that). */
+  recording?: boolean;
 }
 
 export interface RoomInfo {
@@ -648,6 +650,7 @@ export interface Ops {
   'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
   'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
+  'room.record': { req: { roomId: string; on: boolean }; res: { ok: true } };
   'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
   'msg.forward': { req: { messageId: string; convIds: string[]; note?: string; /** per target: the text to post (re-sealed by the app for encrypted Directs) */ bodies?: Record<string, string> }; res: Message[] };
   'msg.star': { req: { messageId: string; on: boolean }; res: { ok: true } };

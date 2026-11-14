@@ -19,7 +19,7 @@ import { SettingsView } from './views/Settings.tsx';
 import { ChatView } from './chat/ChatView.tsx';
 import { addConversation, chatState, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
-import { IncomingCall, RoomStage } from './rooms/RoomUi.tsx';
+import { IncomingCall, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
 import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
 import { startOrg } from './org/store.ts';
@@ -433,6 +433,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           onSearch={(q) => openSearch({ q })}
         />
       )}
+      <RecordingReady />
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />

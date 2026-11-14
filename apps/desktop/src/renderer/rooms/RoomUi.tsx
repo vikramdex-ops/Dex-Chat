@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PublicUser } from '@dex/core';
-import { Avatar, Icon, colorFor, useToast } from '../ui.tsx';
+import { Avatar, Dialog, Icon, colorFor, useToast } from '../ui.tsx';
 import {
   answer, decline, joinRoom, leave, levelMeter, setMinimized, startCall, toggleCamera, toggleMute, toggleScreen, useCall,
 } from './engine.ts';
+import { clearRecording, recordSupported, startRecording, stopRecording, useRecorder } from './recorder.ts';
+import { policyNow, usePolicy } from '../policy.ts';
+import { sendMessage } from '../chat/store.ts';
 
 function useDuration(since: number | undefined): string {
   const [now, setNow] = useState(Date.now());
@@ -75,7 +78,12 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
   const minimized = useCall((s) => s.minimized);
   const [picker, setPicker] = useState(false);
   const duration = useDuration(room?.startedAt);
+  const policy = usePolicy();
+  const recState = useRecorder();
+  const myRec = !!recState?.recording;
+  const toast = useToast();
   if (!room) return null;
+  const recorders = [...new Set(room.participants.filter((p) => p.recording).map((p) => p.userId))];
   const others = room.participants.filter((p) => p.deviceId !== meDevice);
   const shared = others.find((p) => p.screen);
   const sharedStream = shared ? peers.get(shared.deviceId)?.streams.find((s, i) => i > 0 && s.getVideoTracks().length) ?? null : null;
@@ -102,6 +110,7 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
         <h2>{name}</h2>
         <span className="mono faint">{duration}</span>
         <span style={{ flex: 1 }} />
+        {recorders.length > 0 && <span className="chip rec-chip" role="status"><span className="rec-dot" />{recorders.includes(meId) ? 'You are recording' : `${users.get(recorders[0])?.displayName ?? 'Someone'} is recording`}</span>}
         {room.ringing.length > 0 && <span className="chip warn">Ringing {room.ringing.map((u) => users.get(u)?.displayName.split(' ')[0]).join(', ')}</span>}
         <button className="icon-btn" onClick={() => { onOpenConversation(room.convId); setMinimized(true); }} title="Open the conversation"><Icon name="chat" size={18} /></button>
         <button className="icon-btn" onClick={() => setMinimized(true)} title="Minimise (keep talking)"><Icon name="minimize" size={18} /></button>
@@ -128,6 +137,12 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
         <button className={`round${camera ? '' : ' off'}`} onClick={() => void toggleCamera()} title={camera ? 'Stop camera' : 'Start camera'}><Icon name={camera ? 'video' : 'video-off'} size={20} /><span>Camera</span></button>
         {window.dex.listScreens && (
           <button className={`round${screen ? ' active' : ''}`} onClick={() => (screen ? void toggleScreen() : setPicker(true))} title={screen ? 'Stop sharing' : 'Share your screen'}><Icon name="screen" size={20} /><span>{screen ? 'Stop' : 'Share'}</span></button>
+        )}
+        {recordSupported() && (policy.allowRecording || myRec) && (
+          <button className={`round${myRec ? ' active rec' : ''}`} title={myRec ? 'Stop recording' : 'Record the call (everyone is told)'}
+            onClick={() => (myRec ? stopRecording() : void startRecording((id) => users.get(id)?.displayName ?? 'Someone', meId).catch((e: Error) => toast(e.message, true)))}>
+            <Icon name="record" size={20} /><span>{myRec ? 'Stop' : 'Record'}</span>
+          </button>
         )}
         <button className="round leave" onClick={leave} title="Leave the Room"><Icon name="phone-off" size={20} /><span>Leave</span></button>
       </footer>
@@ -201,5 +216,43 @@ export function CallButtons({ convId, live }: { convId: string; live: boolean })
       <button className="icon-btn" disabled={!live || !!inCall} onClick={() => call(false)} title="Voice call"><Icon name="phone" size={17} /></button>
       <button className="icon-btn" disabled={!live || !!inCall} onClick={() => call(true)} title="Video call"><Icon name="video" size={17} /></button>
     </>
+  );
+}
+
+/** After a call recording stops: save it on this PC or share it in the conversation. */
+export function RecordingReady() {
+  const r = useRecorder();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  if (!r || r.recording || !r.done) return null;
+  const { blob, ms, convId } = r.done;
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '');
+  const name = `Call recording ${stamp}.webm`;
+  const mins = Math.max(1, Math.round(ms / 60_000));
+  const limit = policyNow().maxUploadMb * 1024 * 1024;
+  const save = () => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+  const share = async () => {
+    setBusy(true);
+    try {
+      const info = await window.dex.uploadFile!(`rec-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name, mime: 'video/webm' });
+      await sendMessage(convId, `Recording of the call (${mins} min)`, null, [info]);
+      toast('Shared in the conversation');
+      clearRecording();
+    } catch (e) { toast((e as Error).message, true); setBusy(false); }
+  };
+  return (
+    <Dialog title="Call recording ready" onClose={() => { if (confirm('Discard this recording? It has not been saved.')) clearRecording(); }}>
+      <p className="muted" style={{ margin: 0 }}>{mins} min · {(blob.size / 1024 / 1024).toFixed(1)} MB. It is only on this PC until you save or share it.</p>
+      <div className="dialog-actions">
+        <button className="btn ghost danger" onClick={() => { if (confirm('Discard this recording?')) clearRecording(); }}>Discard</button>
+        {!/Android/i.test(navigator.userAgent) && <button className="btn" onClick={save}><Icon name="download" size={15} />Save to this PC</button>}
+        {window.dex.uploadFile && convId && blob.size <= limit && <button className="btn primary" disabled={busy} onClick={() => void share()}>{busy ? <span className="spinner" /> : <Icon name="send" size={15} />}Share in the conversation</button>}
+      </div>
+    </Dialog>
   );
 }

@@ -150,6 +150,7 @@ export class Hub {
       deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
       deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
       broadcast: (name, data) => this.emit(name, data),
+      allowRecording: () => this.policies.get().allowRecording,
       ended: (room, missed, durationMs) => this.policies.logCall(room.id, room.convId, room.startedBy, room.video, missed, durationMs),
     });
     // databases from before messaging existed: create the Office space and add everyone

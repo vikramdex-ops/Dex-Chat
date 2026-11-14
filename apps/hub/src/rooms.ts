@@ -17,6 +17,8 @@ export interface RoomHost {
   broadcast(name: string, data: unknown): void;
   /** A call ended: e.g. record it in the conversation. */
   ended?(room: RoomInfo, missed: boolean, durationMs: number): void;
+  /** The office policy lets people record calls. */
+  allowRecording?(): boolean;
 }
 
 export class Rooms {
@@ -128,6 +130,15 @@ export class Rooms {
         return { ok: true };
       }
 
+      case 'room.record': {
+        const r = this.get(d.roomId, me);
+        const p = r.participants.find((x) => x.deviceId === deviceId);
+        if (!p) throw new RoomError('Not in this call.');
+        if (d.on === true && this.host.allowRecording && !this.host.allowRecording()) throw new RoomError('Recording calls is turned off for this office.');
+        p.recording = d.on === true;
+        this.publish(r);
+        return { ok: true };
+      }
       case 'room.media': {
         const r = this.get(d.roomId, me);
         const p = r.participants.find((x) => x.deviceId === deviceId);
