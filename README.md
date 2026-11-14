@@ -36,12 +36,12 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Presence | Available, Busy, Do not disturb, Invisible; automatic Away on idle or screen lock; beacon rings |
 | Notifications | Native toasts that open the conversation, taskbar / dock badge, mute per conversation |
 | Admin | Control room: approvals, devices, roles, integrations (bot tokens), audit log, update mirror status |
-| Integrations | Bot API on the hub; Hopper sends its notices here instead of Zoho Cliq (Hopper branch `claude/epic-fermi-h7zdk1`) |
+| Integrations | Bot API, slash commands with signed webhooks, `dexconnect://share` links; Hopper notices, Slate notes, and Share to Dexterity Connect in Project Opener, Sleuth, Datum and Dexterity Sheets, whose links open back in the tool (see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)) |
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Phones | The same app on Android: images and voice notes inline, open files in another app, save to Downloads, attach from the phone, a layout made for small screens |
 | Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
-**Next:** the Sheets, Sleuth, Project Opener and Datum integrations.
+**Next:** the remaining parity items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) (OCR, call recording, video messages, custom emoji).
 
 ## How it fits together
 

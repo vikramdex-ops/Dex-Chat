@@ -73,5 +73,12 @@ Reply within 8 seconds with `{ "text": "…" }` to post into the conversation as
 | Tool | Into Dexterity Connect | From Dexterity Connect |
 | --- | --- | --- |
 | Hopper | File alerts and link notices through the Bot API | — |
-| Slate | — | Notes open in Slate and saves come back; text, CSV and log files open in Slate |
-| Project Opener, Sleuth, Datum, Dexterity Sheets | Share to Dexterity Connect (see each tool's notes) | Recognised references in messages open in the tool |
+| Slate | — | Notes open in Slate and its saves come back into the note; text, CSV and log attachments open in Slate |
+| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`) | `projectopener://` links in messages open the project |
+| Sleuth | Result menu → *Share to Dexterity Connect…* (the file and the text found) | Line numbers (`6"-P-1001-A1B`) and drawing numbers (`ISO-1001-01`) in messages run that search in Sleuth (`sleuth://search?q=`) |
+| Datum | Component page → *Share* (key figures, dimensions, `datum://c/<id>`) | `datum://` links open the component, calculator or module page |
+| Dexterity Sheets | Share → *Share to Dexterity Connect* (the shared spreadsheet's `dexterity://` link) | `dexterity://` links open the spreadsheet |
+
+Links for a tool show as a chip with the tool's name. Dexterity Connect opens only these schemes,
+and only when the tool is installed on that PC. The tool-side changes are on each repository's
+`claude/epic-fermi-h7zdk1` branch.
