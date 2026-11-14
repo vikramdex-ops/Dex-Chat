@@ -1,7 +1,7 @@
 // The Desk lens: your reminders, saved messages and scheduled messages in one place, and the
 // card that appears when a reminder goes off.
-import { useRef, useState } from 'react';
-import type { Message, PublicUser, Reminder, ScheduledMessage, Session } from '@dex/core';
+import { useEffect, useRef, useState } from 'react';
+import type { Message, Ops, PublicUser, Reminder, ScheduledMessage, Session } from '@dex/core';
 import { Avatar, Icon, Popover, Segmented, presenceFor, useToast } from '../ui.tsx';
 import { RemindDialog, ScheduleDialog } from '../chat/extras.tsx';
 import { plainPreview } from '../chat/format.tsx';
@@ -11,14 +11,15 @@ import { Timesheet } from '../work/WorkUi.tsx';
 import { NoteEditor, NotesList } from '../chat/notes.tsx';
 import { REPEAT_LABEL, describeWhen, dismissRinging, toggleSaved, useDesk } from '../desk/store.ts';
 
-type Tab = 'reminders' | 'saved' | 'scheduled' | 'notes' | 'timesheet';
+type Tab = 'reminders' | 'saved' | 'scheduled' | 'notes' | 'timesheet' | 'activity' | 'tracks';
 type Jump = (convId: string, messageId?: string, parentId?: string | null) => void;
 
 const snooze = (r: Reminder, ms: number) => window.dex.request('remind.update', { id: r.id, dueAt: Date.now() + ms });
 const tomorrowMorning = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 30, 0, 0); return d.getTime() - Date.now(); };
 
 export function Desk({ session, jump }: { session: Session; jump: Jump }) {
-  const [tab, setTab] = useState<Tab>('reminders');
+  const [tab, setTab] = useState<Tab>(() => (sessionStorage.getItem('dex-desk-tab') as Tab | null) ?? 'reminders');
+  useEffect(() => { try { sessionStorage.setItem('dex-desk-tab', tab); } catch { /* storage off */ } }, [tab]);
   const [creating, setCreating] = useState(false);
   const [note, setNote] = useState<string | null | 'new'>(null);
   const users = new Map(session.users.map((u) => [u.id, u] as const));
@@ -34,11 +35,13 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
       <div className="view-head">
         <div>
           <h1>Desk</h1>
-          <p className="muted">Your reminders, saved messages, what is scheduled to send, and your timesheet.</p>
+          <p className="muted">Mentions and replies, side-tracks you follow, reminders, saved messages, what is scheduled to send, and your timesheet.</p>
         </div>
         <button className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={15} />New reminder</button>
       </div>
       <Segmented<Tab> label="Desk section" value={tab} onChange={setTab} options={[
+        { value: 'activity', label: 'Mentions & replies' },
+        { value: 'tracks', label: 'Side-tracks' },
         { value: 'reminders', label: `Reminders${openMine ? ` · ${openMine}` : ''}` },
         { value: 'saved', label: `Saved${saved.size ? ` · ${saved.size}` : ''}` },
         { value: 'scheduled', label: `Scheduled${scheduled.size ? ` · ${scheduled.size}` : ''}` },
@@ -50,6 +53,8 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
         {loaded && tab === 'reminders' && <Reminders list={[...reminders.values()]} users={users} meId={meId} jump={jump} onNew={() => setCreating(true)} />}
         {loaded && tab === 'saved' && <Saved list={[...saved.values()].sort((a, b) => b.savedAt - a.savedAt)} users={users} meId={meId} jump={jump} />}
         {tab === 'timesheet' && <Timesheet me={session.me} />}
+        {tab === 'activity' && <Activity users={users} meId={meId} jump={jump} />}
+        {tab === 'tracks' && <Tracks users={users} meId={meId} jump={jump} />}
         {tab === 'notes' && (
           <div className="desk-notes card">
             {note === null
@@ -274,5 +279,63 @@ export function ReminderCards({ users, meId, jump }: { users: Map<string, Public
         </div>
       ))}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ mentions and replies
+function Activity({ users, meId, jump }: { users: Map<string, PublicUser>; meId: string; jump: Jump }) {
+  const [kind, setKind] = useState<'all' | 'mentions' | 'replies'>('all');
+  const [items, setItems] = useState<Ops['activity.list']['res']['items'] | null>(null);
+  const [more, setMore] = useState(false);
+  const load = (before?: string) => void window.dex.request('activity.list', { kind, before }).then((r) => {
+    setItems((cur) => (before && cur ? [...cur, ...r.items] : r.items));
+    setMore(r.hasMore);
+  }).catch(() => setItems([]));
+  useEffect(() => { setItems(null); load(); }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <section className="desk-group">
+      <Segmented<'all' | 'mentions' | 'replies'> label="Show" value={kind} onChange={setKind} options={[
+        { value: 'all', label: 'All' }, { value: 'mentions', label: 'Mentions' }, { value: 'replies', label: 'Replies' },
+      ]} />
+      {items === null && <div className="tl-more"><span className="spinner" /></div>}
+      {items?.length === 0 && <div className="empty desk-empty"><Icon name="at" size={36} /><span>When someone mentions you, or replies in a side-track you are part of, it shows here.</span></div>}
+      {items?.map(({ kind: k, message: m }) => {
+        const u = users.get(m.authorId);
+        return (
+          <div key={m.id} className="desk-row">
+            <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} presence={presenceFor(m.authorId)} size="sm" />
+            <button className="desk-main desk-open" onClick={() => jump(m.convId, m.id, m.parentId)}>
+              <QuoteLine m={m} users={users} meId={meId} />
+              <div className="desk-meta"><span className={`chip ${k === 'mention' ? 'accent' : ''}`}>{k === 'mention' ? '@ Mention' : 'Reply'}</span><span className="faint">{describeWhen(m.createdAt)}</span></div>
+            </button>
+          </div>
+        );
+      })}
+      {more && <div className="tl-more"><button className="btn sm" onClick={() => load(items?.at(-1)?.message.id)}>Show older</button></div>}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ side-tracks I follow
+function Tracks({ users, meId, jump }: { users: Map<string, PublicUser>; meId: string; jump: Jump }) {
+  const [list, setList] = useState<Ops['activity.tracks']['res'] | null>(null);
+  useEffect(() => { void window.dex.request('activity.tracks').then(setList).catch(() => setList([])); }, []);
+  if (list === null) return <div className="tl-more"><span className="spinner" /></div>;
+  if (!list.length) return <div className="empty desk-empty"><Icon name="reply" size={36} /><span>Side-tracks you start or reply in show here, newest first.</span></div>;
+  return (
+    <section className="desk-group">
+      {list.map(({ parent: m, lastReplyAt, replyCount }) => {
+        const u = users.get(m.authorId);
+        return (
+          <div key={m.id} className="desk-row">
+            <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} presence={presenceFor(m.authorId)} size="sm" />
+            <button className="desk-main desk-open" onClick={() => jump(m.convId, m.id, m.id)}>
+              <QuoteLine m={m} users={users} meId={meId} />
+              <div className="desk-meta"><span className="faint">{replyCount} {replyCount === 1 ? 'reply' : 'replies'} · last {describeWhen(lastReplyAt)}</span></div>
+            </button>
+          </div>
+        );
+      })}
+    </section>
   );
 }

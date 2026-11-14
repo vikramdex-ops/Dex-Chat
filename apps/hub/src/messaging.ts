@@ -593,6 +593,45 @@ export class Messaging {
         return (this.db.prepare('SELECT * FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0 ORDER BY id DESC LIMIT 50').all(c.id) as unknown as MsgRow[]).map((r) => this.messageView(r, me.id));
       }
 
+      case 'activity.list': {
+        const kind = d.kind === 'mentions' || d.kind === 'replies' ? d.kind : 'all';
+        const before = typeof d.before === 'string' ? d.before.slice(0, 40) : null;
+        const since = Date.now() - 60 * 86400_000;
+        const mentionCond = `(mn.user_id IS NOT NULL OR m.body LIKE '%<@all>%')`;
+        const replyCond = `(m.parent_id IS NOT NULL AND (EXISTS (SELECT 1 FROM messages p WHERE p.id = m.parent_id AND p.author_id = ?)
+          OR EXISTS (SELECT 1 FROM messages r WHERE r.parent_id = m.parent_id AND r.author_id = ? AND r.id < m.id)))`;
+        const cond = kind === 'mentions' ? mentionCond : kind === 'replies' ? replyCond : `(${mentionCond} OR ${replyCond})`;
+        const replyArgs = kind === 'mentions' ? [] : [me.id, me.id];
+        const rows = this.db.prepare(`SELECT m.id, mn.user_id AS mentioned FROM messages m
+          JOIN conv_members cm ON cm.conv_id = m.conv_id AND cm.user_id = ?
+          LEFT JOIN mentions mn ON mn.message_id = m.id AND mn.user_id = ?
+          WHERE m.deleted = 0 AND m.system IS NULL AND m.author_id != ? AND m.created_at > ? AND ${cond} ${before ? 'AND m.id < ?' : ''}
+          ORDER BY m.id DESC LIMIT 41`).all(me.id, me.id, me.id, since, ...replyArgs, ...(before ? [before] : [])) as Array<{ id: string; mentioned: string | null }>;
+        const items = rows.slice(0, 40).map((r) => {
+          const row = this.message(r.id)!;
+          const mention = !!r.mentioned || row.body.includes('<@all>');
+          return { kind: (mention ? 'mention' : 'reply') as 'mention' | 'reply', message: this.messageView(row, me.id) };
+        });
+        return { items, hasMore: rows.length > 40 } satisfies Ops['activity.list']['res'];
+      }
+
+      case 'activity.tracks': {
+        const rows = this.db.prepare(`SELECT p.id, MAX(r.created_at) AS last, COUNT(r.id) AS n FROM messages p
+          JOIN messages r ON r.parent_id = p.id AND r.deleted = 0
+          JOIN conv_members cm ON cm.conv_id = p.conv_id AND cm.user_id = ?
+          WHERE p.deleted = 0 AND (p.author_id = ? OR EXISTS (SELECT 1 FROM messages x WHERE x.parent_id = p.id AND x.author_id = ?))
+          GROUP BY p.id ORDER BY last DESC LIMIT 40`).all(me.id, me.id, me.id) as Array<{ id: string; last: number; n: number }>;
+        return rows.map((r) => ({ parent: this.messageView(this.message(r.id)!, me.id), lastReplyAt: r.last, replyCount: r.n })) satisfies Ops['activity.tracks']['res'];
+      }
+
+      case 'msg.at': {
+        const c = this.requireMember(String(d.convId), me.id);
+        const at = typeof d.at === 'number' && Number.isFinite(d.at) ? d.at : Date.now();
+        const r = this.db.prepare('SELECT id FROM messages WHERE conv_id = ? AND parent_id IS NULL AND deleted = 0 AND created_at >= ? ORDER BY created_at, id LIMIT 1').get(c.id, at) as { id: string } | undefined
+          ?? this.db.prepare('SELECT id FROM messages WHERE conv_id = ? AND parent_id IS NULL AND deleted = 0 ORDER BY id DESC LIMIT 1').get(c.id) as { id: string } | undefined;
+        return { messageId: r?.id ?? null } satisfies Ops['msg.at']['res'];
+      }
+
       case 'msg.send': {
         const c = this.requireMember(String(d.convId), me.id);
         const fileIds = Array.isArray(d.files) ? [...new Set(d.files.filter((f): f is string => typeof f === 'string'))].slice(0, 21) : [];

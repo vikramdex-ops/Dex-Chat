@@ -67,3 +67,23 @@ test('a side-track reply can also go to the conversation, pointing back to the s
   assert.deepEqual(copies[0].inReplyTo, { messageId: q.id, authorId: me(owner) });
   assert.equal(copies[0].parentId, null);
 });
+
+test('activity: mentions of me and replies in my side-tracks; tracks I follow; jump to a date', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Activity', members: [me(priya), me(ravi)] });
+  const mine = await send(priya, space.id, 'Who checks line 7?');
+  await send(owner, space.id, `<@${me(priya)}> can you look at ISO-7?`);
+  await send(ravi, space.id, 'I can', mine.id);
+  const other = await send(owner, space.id, 'unrelated thread');
+  await send(priya, space.id, 'me too', other.id);
+  await send(ravi, space.id, 'following up', other.id);
+  await send(owner, space.id, 'nothing for priya');
+  const all = await priya.request('activity.list', {});
+  assert.deepEqual(all.items.map((i) => [i.kind, i.message.body]), [['reply', 'following up'], ['reply', 'I can'], ['mention', `<@${me(priya)}> can you look at ISO-7?`]]);
+  assert.equal((await priya.request('activity.list', { kind: 'mentions' })).items.length, 1);
+  const tracks = await priya.request('activity.tracks');
+  assert.deepEqual(tracks.map((t) => [t.parent.body, t.replyCount]), [['unrelated thread', 2], ['Who checks line 7?', 1]]);
+  assert.equal((await ravi.request('activity.list', {})).items.length, 0, 'ravi was not mentioned and started no side-track');
+  const at = await priya.request('msg.at', { convId: space.id, at: 0 });
+  assert.equal(at.messageId, mine.id);
+});

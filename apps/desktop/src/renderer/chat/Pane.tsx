@@ -92,6 +92,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const [side, setSide] = useState<Side>(null);
   const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
   const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [datePick, setDatePick] = useState(false);
+  const dateBtn = useRef<HTMLButtonElement>(null);
   const [fwdMany, setFwdMany] = useState(false);
   useEffect(() => { setSelected(null); }, [convId]);
   useEffect(() => {
@@ -138,7 +140,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       const d = (e as CustomEvent).detail as { convId: string; messageId: string; parentId: string | null };
       if (d.convId !== convId) return;
       if (d.parentId) { setSide({ kind: 'track', parentId: d.parentId }); return; }
-      for (let i = 0; i < 8; i++) {
+      // far back (jump to a date, an old link) means loading older pages until it is there
+      for (let i = 0; i < 80; i++) {
         const el = document.querySelector(`[data-mid="${d.messageId}"]`);
         if (el) {
           el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -222,6 +225,24 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <button className={`icon-btn${side?.kind === 'notes' ? ' on' : ''}`} title="Notes" onClick={() => setSide(side?.kind === 'notes' ? null : { kind: 'notes', noteId: null })}><Icon name="doc" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'boards' ? ' on' : ''}`} title="Whiteboards" onClick={() => setSide(side?.kind === 'boards' ? null : { kind: 'boards' })}><Icon name="drawing" size={17} /></button>
             <button className="icon-btn" title="Search this conversation" onClick={() => window.dispatchEvent(new CustomEvent('dex-search', { detail: conv.id }))}><Icon name="search" size={17} /></button>
+            <button ref={dateBtn} className="icon-btn" title="Jump to a date" onClick={() => setDatePick(!datePick)}><Icon name="history" size={17} /></button>
+            {datePick && (
+              <Popover anchor={dateBtn.current} onClose={() => setDatePick(false)} className="menu jump-date">
+                <div className="menu-label">Jump to a date</div>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const v = (e.currentTarget.elements.namedItem('d') as HTMLInputElement).value;
+                  if (!v) return;
+                  setDatePick(false);
+                  void window.dex.request('msg.at', { convId: conv.id, at: new Date(`${v}T00:00:00`).getTime() }).then((r) => {
+                    if (r.messageId) window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId: conv.id, messageId: r.messageId, parentId: null } }));
+                  }).catch(() => {});
+                }}>
+                  <input name="d" type="date" className="input" autoFocus max={new Date().toISOString().slice(0, 10)} aria-label="Date" />
+                  <button className="btn primary sm">Go</button>
+                </form>
+              </Popover>
+            )}
             <button className={`icon-btn${side?.kind === 'files' ? ' on' : ''}`} title="Files" onClick={() => setSide(side?.kind === 'files' ? null : { kind: 'files' })}><Icon name="paperclip" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'pins' ? ' on' : ''}`} title="Pinned" onClick={() => setSide(side?.kind === 'pins' ? null : { kind: 'pins' })}><Icon name="pin" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'members' ? ' on' : ''}`} title="People" onClick={() => setSide(side?.kind === 'members' ? null : { kind: 'members' })}><Icon name="people" size={17} /></button>

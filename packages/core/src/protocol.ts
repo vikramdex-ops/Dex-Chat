@@ -692,6 +692,12 @@ export interface Ops {
   'conv.archive': { req: { convId: string; archived: boolean }; res: Conversation };
   /** Spaces: who may post, and moderators (they can pin, delete and change the Space). */
   'conv.settings': { req: { convId: string; postPolicy?: 'everyone' | 'moderators'; moderators?: string[] }; res: Conversation };
+  /** Mentions of you and replies in side-tracks you are part of (last 60 days), newest first. */
+  'activity.list': { req: { kind?: 'all' | 'mentions' | 'replies'; before?: string }; res: { items: Array<{ kind: 'mention' | 'reply'; message: Message }>; hasMore: boolean } };
+  /** Side-tracks you started or replied in, by latest reply. */
+  'activity.tracks': { req: void; res: Array<{ parent: Message; lastReplyAt: number; replyCount: number }> };
+  /** The first message on or after a moment, for "jump to date". */
+  'msg.at': { req: { convId: string; at: number }; res: { messageId: string | null } };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };
   'msg.send': { req: { /** a side-track reply that also appears in the conversation */ alsoToConv?: boolean; convId: string; body: string; parentId?: string; clientId: string; files?: string[] }; res: Message };
   'file.list': { req: { convId: string; before?: string; limit?: number }; res: Array<FileInfo & { messageId: string; authorId: string }> };

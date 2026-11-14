@@ -1,6 +1,6 @@
 // The Switchboard: one list of conversations for the current lens, newest activity first.
 // Unread = bold name + a teal tick on the left edge; only mentions get an (amber) count.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Conversation, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from '../ui.tsx';
 import { plainPreview } from './format.tsx';
@@ -44,6 +44,31 @@ export function shortTime(ts: number, now = Date.now()): string {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
+/** The conversation list's width: dragged by its edge, kept on this device. */
+const SB_KEY = 'dex-sb-width';
+function applyWidth(w: number): number {
+  const v = Math.max(220, Math.min(480, Math.round(w)));
+  document.documentElement.style.setProperty('--sb-w', `${v}px`);
+  return v;
+}
+try { const w = Number(localStorage.getItem(SB_KEY)); if (w) applyWidth(w); } catch { /* storage off */ }
+function startResize(e: React.PointerEvent<HTMLDivElement>): void {
+  const aside = (e.currentTarget.parentElement as HTMLElement);
+  const left = aside.getBoundingClientRect().left;
+  const el = e.currentTarget;
+  el.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing');
+  let w = aside.offsetWidth;
+  const move = (ev: PointerEvent) => { w = applyWidth(ev.clientX - left); };
+  const up = () => {
+    el.removeEventListener('pointermove', move);
+    document.body.classList.remove('resizing');
+    try { localStorage.setItem(SB_KEY, String(w)); } catch { /* storage off */ }
+  };
+  el.addEventListener('pointermove', move);
+  el.addEventListener('pointerup', up, { once: true });
+}
+
 export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew, onBrowse }: {
   kind: 'direct' | 'space';
   users: Map<string, PublicUser>;
@@ -58,6 +83,12 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
   const ready = useChat((s) => s.ready);
   const [filter, setFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  // how the list is ordered and narrowed (kept per device)
+  const [sort, setSort] = useState<'recent' | 'unread' | 'name'>(() => { try { return (localStorage.getItem('dex-sb-sort') as 'recent' | 'unread' | 'name' | null) ?? 'recent'; } catch { return 'recent'; } });
+  const [only, setOnly] = useState<'all' | 'unread'>('all');
+  const [sortMenu, setSortMenu] = useState(false);
+  const sortBtn = useRef<HTMLButtonElement>(null);
+  const chooseSort = (v: 'recent' | 'unread' | 'name') => { setSort(v); setSortMenu(false); try { localStorage.setItem('dex-sb-sort', v); } catch { /* storage off */ } };
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
 
   const all = useMemo(() => {
@@ -65,11 +96,14 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
     return [...conversations.values()]
       .filter((c) => c.kind === kind && c.joined)
       .filter((c) => !q || convTitle(c, users, meId).toLowerCase().includes(q) || (c.topic ?? '').toLowerCase().includes(q))
+      .filter((c) => only === 'all' || c.unread > 0 || c.mentions > 0 || c.id === activeId)
       .sort((a, b) => {
         if (a.everyone !== b.everyone) return a.everyone ? -1 : 1; // the Office space stays on top
+        if (sort === 'name') return convTitle(a, users, meId).localeCompare(convTitle(b, users, meId));
+        if (sort === 'unread') { const d = Number(b.mentions > 0) - Number(a.mentions > 0) || Number(b.unread > 0) - Number(a.unread > 0); if (d) return d; }
         return (b.lastMessage?.createdAt ?? b.createdAt) - (a.lastMessage?.createdAt ?? a.createdAt);
       });
-  }, [conversations, kind, filter, users, meId]);
+  }, [conversations, kind, filter, users, meId, sort, only, activeId]);
   const archived = all.filter((c) => c.archived);
   const live = all.filter((c) => !c.archived);
   // pinned first, then each person's own sections, then the rest
@@ -117,6 +151,7 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
 
   return (
     <aside className="switchboard" aria-label={kind === 'space' ? 'Spaces' : 'Direct conversations'}>
+      <div className="sb-resize" role="separator" aria-orientation="vertical" aria-label="Resize the list" title="Drag to resize" onPointerDown={startResize} />
       <div className="sb-head">
         <span className="label">{kind === 'space' ? 'Spaces' : 'Direct'} · {live.length}</span>
         <div className="row-actions">
@@ -126,12 +161,22 @@ export function Switchboard({ kind, users, meId, online, activeId, onOpen, onNew
       </div>
       <div className="sb-filter">
         <input className="input" placeholder={kind === 'space' ? 'Filter Spaces' : 'Filter people'} value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter conversations" />
+        <button className={`icon-btn sb-only${only === 'unread' ? ' on' : ''}`} title={only === 'unread' ? 'Show all' : 'Show unread only'} aria-pressed={only === 'unread'} onClick={() => setOnly(only === 'unread' ? 'all' : 'unread')}><Icon name="bell" size={15} /></button>
+        <button ref={sortBtn} className="icon-btn" title="Sort" aria-haspopup="menu" onClick={() => setSortMenu(!sortMenu)}><Icon name="rows" size={15} /></button>
+        {sortMenu && (
+          <Popover anchor={sortBtn.current} onClose={() => setSortMenu(false)} className="menu">
+            <div className="menu-label">Sort by</div>
+            {([['recent', 'Latest message'], ['unread', 'Unread first'], ['name', 'Name']] as const).map(([v, l]) => (
+              <button key={v} role="menuitemradio" aria-checked={sort === v} onClick={() => chooseSort(v)}>{sort === v ? <Icon name="check" size={15} /> : <span style={{ width: 15 }} />}{l}</button>
+            ))}
+          </Popover>
+        )}
       </div>
       <div className="sb-list" role="list">
         {!ready && <div className="sb-empty"><span className="spinner" /></div>}
         {ready && live.length === 0 && (
           <div className="sb-empty">
-            <span>{filter ? 'Nothing matches.' : kind === 'space' ? 'No Spaces yet.' : 'No Direct conversations yet.'}</span>
+            <span>{filter ? 'Nothing matches.' : only === 'unread' ? 'Nothing unread.' : kind === 'space' ? 'No Spaces yet.' : 'No Direct conversations yet.'}</span>
             {!filter && onNew && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{kind === 'space' ? 'Create a Space' : 'Message someone'}</button>}
           </div>
         )}
