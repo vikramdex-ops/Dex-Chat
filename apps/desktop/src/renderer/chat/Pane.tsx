@@ -284,6 +284,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
               {canPlan && <button role="menuitem" onClick={() => { setHeadMenu(false); setPlanning(true); }}><Icon name="calendar" size={16} />Plan a meeting</button>}
               <button role="menuitem" onClick={() => { setHeadMenu(false); window.dispatchEvent(new CustomEvent('dex-search', { detail: conv.id })); }}><Icon name="search" size={16} />Search this conversation</button>
               <button role="menuitem" onClick={() => { setHeadMenu(false); setDatePick(true); }}><Icon name="history" size={16} />Jump to a date…</button>
+              <button role="menuitem" onClick={() => { setHeadMenu(false); window.dispatchEvent(new CustomEvent('dex-automations', { detail: conv.id })); }}><Icon name="repeat" size={16} />Automations…</button>
               {window.dex.popOut && !location.hash.startsWith('#popout=') && <button role="menuitem" className="wide-only" onClick={() => { setHeadMenu(false); void window.dex.popOut!(conv.id, title); }}><Icon name="open" size={16} />Open in a new window</button>}
               {narrow && <>
                 <div className="menu-label label">Sheets</div>

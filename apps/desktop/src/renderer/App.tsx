@@ -46,6 +46,7 @@ import { timeOpts } from './time.ts';
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
 // the Meet lens loads when it is first opened
 const MeetLens = lazy(() => import('./meet/MeetLens.tsx'));
+const AutomationsSheet = lazy(() => import('./flows/FlowsPanel.tsx').then((m) => ({ default: m.AutomationsSheet })));
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory' | 'meet';
 export type SheetName = 'preferences' | 'control' | 'search' | null;
@@ -301,6 +302,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     window.addEventListener('dex-search', onSearch);
     return () => window.removeEventListener('dex-search', onSearch);
   }, []);
+  // a conversation's header menu opens its Automations
+  const [automations, setAutomations] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setAutomations(String((e as CustomEvent).detail));
+    window.addEventListener('dex-automations', on);
+    return () => window.removeEventListener('dex-automations', on);
+  }, []);
   // other parts of the app open a conversation by id (Take to Direct, links)
   useEffect(() => {
     const onOpen = (e: Event) => { const c = chatState().conversations.get(String((e as CustomEvent).detail)); if (c) openConversation(c.id, c.kind); };
@@ -552,6 +560,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       )}
 
+      {automations && <Suspense fallback={null}><AutomationsSheet convId={automations} session={session} onClose={() => setAutomations(null)} /></Suspense>}
       {shortcuts && <ShortcutsSheet onClose={() => setShortcuts(false)} />}
       {palette && (
         <CommandPalette

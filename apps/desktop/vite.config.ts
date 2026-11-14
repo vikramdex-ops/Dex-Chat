@@ -61,17 +61,52 @@ function segmenterAssets(): Plugin {
   };
 }
 
+/** Describe-to-Automation: a small sentence-embedding model (all-MiniLM-L6-v2, quantized, Apache-2.0)
+ * copied beside the app, so drafting rules from plain words runs on this PC with nothing downloaded.
+ * The ONNX runtime's WebAssembly (MIT) is emitted by the build itself, from the worker's import. */
+const ortDist = path.dirname(require.resolve('onnxruntime-web'));
+function flowModelAssets(): Plugin {
+  const model = path.resolve(__dirname, 'assets/models/all-MiniLM-L6-v2');
+  const files: Array<[string, string]> = [
+    ...['config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'onnx/model_quantized.onnx']
+      .map((f): [string, string] => [path.join(model, f), `models/all-MiniLM-L6-v2/${f}`]),
+  ];
+  let outDir = '';
+  return {
+    name: 'dex-flow-model-assets',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    writeBundle() {
+      for (const [from, to] of files) {
+        fs.mkdirSync(path.dirname(path.join(outDir, 'minilm', to)), { recursive: true });
+        fs.copyFileSync(from, path.join(outDir, 'minilm', to));
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use('/minilm/', (req, res, next) => {
+        const hit = files.find(([, to]) => req.url?.split('?')[0] === `/${to}`);
+        if (!hit) return next();
+        res.setHeader('content-type', hit[1].endsWith('.wasm') ? 'application/wasm' : hit[1].endsWith('.json') ? 'application/json' : 'application/octet-stream');
+        fs.createReadStream(hit[0]).pipe(res);
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: 'src/renderer',
   base: './',
   // the interface's JSX runtime translates literal text into the chosen language (src/renderer/i18n)
-  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets()],
+  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets(), flowModelAssets()],
   resolve: {
     alias: {
       '@dex/i18n/jsx-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-runtime.ts'),
       '@dex/i18n/jsx-dev-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-dev-runtime.ts'),
+      // the sentence model runs on the CPU: the plain WebAssembly runtime, not the 28 MB WebGPU one
+      'onnxruntime-web/webgpu': path.join(ortDist, 'ort.wasm.bundle.min.mjs'),
     },
   },
+  // the Automations drafter's worker imports modules
+  worker: { format: 'es' },
   build: {
     outDir: '../../dist-renderer',
     emptyOutDir: true,
