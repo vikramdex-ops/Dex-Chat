@@ -13,12 +13,16 @@ export interface Config {
   hub: HubTarget | null;
   displayName: string | null;
   settings: Settings;
+  /** Version that ran last time; used to detect "just updated". */
+  lastRunVersion?: string;
+  /** Notes of the update being installed, shown after relaunch. */
+  pendingNotes?: { version: string; notes: string } | null;
 }
 
 const DEFAULT_CONFIG: Config = {
   hub: null,
   displayName: null,
-  settings: { theme: 'system', startAtLogin: true, closeToTray: true },
+  settings: { theme: 'system', startAtLogin: true, closeToTray: true, updateChannel: 'stable', autoDownloadUpdates: true },
 };
 
 const file = (name: string) => path.join(app.getPath('userData'), name);

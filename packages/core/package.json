@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/hub-client.ts",
-    "./discovery": "./src/discovery.ts"
+    "./discovery": "./src/discovery.ts",
+    "./updates": "./src/updates.ts"
   },
   "dependencies": {
     "ws": "^8.18.3"

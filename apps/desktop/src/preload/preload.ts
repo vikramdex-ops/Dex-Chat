@@ -23,6 +23,10 @@ const bridge: DexBridge = {
   },
   setSettings: (patch) => ipcRenderer.invoke('app:setSettings', patch),
   notify: (title, body) => ipcRenderer.send('app:notify', title, body),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  dismissWhatsNew: () => ipcRenderer.invoke('update:dismissWhatsNew'),
 };
 
 contextBridge.exposeInMainWorld('dex', bridge);

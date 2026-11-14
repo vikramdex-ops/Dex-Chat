@@ -2,6 +2,29 @@
 import type { Ops, OpName, Session, WindowsAccount } from '@dex/core';
 
 export type Theme = 'system' | 'light' | 'dark';
+export type UpdateChannel = 'stable' | 'beta';
+
+export type UpdatePhase =
+  | 'disabled'     // development build
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'    // found, not downloading (auto-download off)
+  | 'downloading'
+  | 'ready'        // downloaded and verified; restart to install
+  | 'installing'
+  | 'error';
+
+export interface UpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  lastCheck: number | null;
+  available: { version: string; notes: string; releasedAt: string; mandatory: boolean; size: number; source: 'hub' | 'internet' } | null;
+  progress: { received: number; total: number } | null;
+  error: string | null;
+  /** Shown once after the app relaunches into a new version. */
+  justUpdated: { version: string; notes: string } | null;
+}
 
 export interface DiscoveredHub {
   id: string;
@@ -33,6 +56,7 @@ export interface AppState {
   retryInMs: number;
   error: string | null;
   settings: Settings;
+  update: UpdateState;
   platform: NodeJS.Platform;
   version: string;
 }
@@ -41,6 +65,8 @@ export interface Settings {
   theme: Theme;
   startAtLogin: boolean;
   closeToTray: boolean;
+  updateChannel: UpdateChannel;
+  autoDownloadUpdates: boolean;
 }
 
 export interface JoinRequest {
@@ -61,6 +87,10 @@ export interface DexBridge {
   request<K extends OpName>(op: K, data?: Ops[K]['req']): Promise<Ops[K]['res']>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   notify(title: string, body: string): void;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
+  dismissWhatsNew(): Promise<void>;
 }
 
 declare global {

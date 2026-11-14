@@ -5,7 +5,8 @@ import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
-import { loadConfig, loadIdentity } from './persist.ts';
+import { loadConfig, loadIdentity, saveConfig } from './persist.ts';
+import { Updater } from './updater.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -15,6 +16,7 @@ const devUrl = process.env.VITE_DEV_SERVER_URL;
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let controller: Controller | null = null;
+let updater: Updater | null = null;
 let quitting = false;
 let pendingDeepLink: string | null = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`)) ?? null;
 
@@ -142,11 +144,16 @@ function buildTray(): void {
         click: (item) => { const s2 = controller?.updateSettings({ startAtLogin: item.checked }); if (s2) applyLogin(s2); },
       },
       { type: 'separator' },
+      updater?.state.phase === 'ready'
+        ? { label: `Restart to update to ${updater.state.available?.version ?? 'the new version'}`, click: () => { updater?.install(true); } }
+        : { label: 'Check for updates', enabled: updater?.state.phase !== 'disabled', click: () => { void updater?.check(true); showWindow(); } },
+      { type: 'separator' },
       { label: 'Quit', click: () => { quitting = true; app.quit(); } },
     ]));
   };
   refresh();
   controller?.on('state', refresh);
+  updater?.on('state', refresh);
   tray.on('click', showWindow);
 }
 
@@ -160,9 +167,13 @@ function wireIpc(c: Controller): void {
     if (patch.theme === 'system' || patch.theme === 'light' || patch.theme === 'dark') safe.theme = patch.theme;
     if (typeof patch.startAtLogin === 'boolean') safe.startAtLogin = patch.startAtLogin;
     if (typeof patch.closeToTray === 'boolean') safe.closeToTray = patch.closeToTray;
+    if (patch.updateChannel === 'stable' || patch.updateChannel === 'beta') safe.updateChannel = patch.updateChannel;
+    if (typeof patch.autoDownloadUpdates === 'boolean') safe.autoDownloadUpdates = patch.autoDownloadUpdates;
+    const channelChanged = safe.updateChannel && safe.updateChannel !== c.settings.updateChannel;
     const s = c.updateSettings(safe);
     applyTheme(s);
     applyLogin(s);
+    if (channelChanged) void updater?.check(false);
     return s;
   });
   ipcMain.handle('hub:request', async (_e, op: OpName, data: unknown) => {
@@ -172,6 +183,10 @@ function wireIpc(c: Controller): void {
       return { ok: false, error: (err as Error).message };
     }
   });
+  ipcMain.handle('update:check', () => updater?.check(true));
+  ipcMain.handle('update:download', () => updater?.download());
+  ipcMain.handle('update:install', () => { updater?.install(true); });
+  ipcMain.handle('update:dismissWhatsNew', () => updater?.dismissWhatsNew());
   ipcMain.on('app:notify', (_e, title: unknown, body: unknown) => {
     if (typeof title === 'string' && typeof body === 'string') notify(title.slice(0, 120), body.slice(0, 400));
   });
@@ -186,7 +201,12 @@ function wireIpc(c: Controller): void {
   });
 }
 
-app.on('before-quit', () => { quitting = true; controller?.stop(); });
+app.on('before-quit', () => {
+  quitting = true;
+  updater?.installOnQuit();
+  updater?.stop();
+  controller?.stop();
+});
 app.on('window-all-closed', () => { /* stay in the tray */ });
 app.on('open-url', (e, url) => { e.preventDefault(); showWindow(); routeDeepLink(url); });
 
@@ -200,7 +220,40 @@ void app.whenReady().then(async () => {
     const [username, displayName] = devAccount.split('|');
     Object.assign(account, { username, displayName: displayName || username, hostname: `${username.toUpperCase()}-PC` });
   }
-  controller = new Controller(account, identity, config, { platform: process.platform, version: app.getVersion() });
+  // "What's new" after relaunching into a newer version
+  const version = app.getVersion();
+  const justUpdated = config.lastRunVersion && config.lastRunVersion !== version && config.pendingNotes?.version === version
+    ? config.pendingNotes : null;
+  if (config.lastRunVersion !== version || config.pendingNotes) {
+    config.lastRunVersion = version;
+    config.pendingNotes = null;
+    saveConfig(config);
+  }
+
+  const devUpdates = !app.isPackaged && process.env.DEXCONNECT_UPDATER_DEV === '1';
+  updater = new Updater({
+    version,
+    enabled: app.isPackaged || devUpdates,
+    downloadDir: path.join(app.getPath('userData'), 'updates'),
+    channel: () => config.settings.updateChannel,
+    autoDownload: () => config.settings.autoDownloadUpdates,
+    hub: () => controller?.hubEndpoint() ?? null,
+    feedBase: devUpdates ? process.env.DEXCONNECT_FEED_BASE : undefined,
+    platformOverride: devUpdates ? (process.env.DEXCONNECT_UPDATER_PLATFORM as never) || undefined : undefined,
+    allowHttp: devUpdates,
+    beforeInstall: (v, notes) => { config.pendingNotes = { version: v, notes }; saveConfig(config); },
+    quit: () => { quitting = true; app.quit(); },
+  }, justUpdated ?? null);
+
+  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state });
+  updater.on('state', () => controller?.push());
+  updater.on('ready', (v: string, mandatory: boolean) => {
+    if (!win?.isFocused()) notify(mandatory ? 'Required update ready' : 'Update ready', `Dexterity Connect ${v} is ready. Restart to install it.`);
+  });
+  controller.on('hub-ready', () => {
+    const last = updater?.state.lastCheck ?? 0;
+    if (Date.now() - last > 30 * 60 * 1000) void updater?.check(false);
+  });
   wireIpc(controller);
   applyLogin(config.settings);
   nativeTheme.themeSource = config.settings.theme;
@@ -209,4 +262,5 @@ void app.whenReady().then(async () => {
   createWindow(process.argv.includes('--hidden'));
   buildTray();
   controller.start();
+  updater.start();
 });

@@ -3,6 +3,8 @@ import type { Session } from '@dex/core';
 import type { AppState, Theme } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
+import { UpdateSettings } from '../UpdateUi.tsx';
+import type { UpdateChannel } from '../../shared/bridge.ts';
 
 export function SettingsView({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
@@ -95,6 +97,24 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <Icon name="laptop" className="lead" />
             <div className="txt"><div>This PC</div><div className="faint">{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
             <button className="btn" onClick={() => { if (confirm('Disconnect from this hub? You can join it or another hub again from the welcome screen.')) void window.dex.forgetHub(); }}>Disconnect</button>
+          </div>
+        </section>
+
+        <section>
+          <h3>Updates</h3>
+          <UpdateSettings state={state} />
+          <div className="setting">
+            <Icon name="list" className="lead" />
+            <div className="txt"><div>Update channel</div><div className="faint">Beta gets new features first, from builds still being tested.</div></div>
+            <Segmented<UpdateChannel> label="Update channel" value={state.settings.updateChannel} onChange={(updateChannel) => set({ updateChannel })} options={[
+              { value: 'stable', label: 'Stable' },
+              { value: 'beta', label: 'Beta' },
+            ]} />
+          </div>
+          <div className="setting">
+            <Icon name="tray" className="lead" />
+            <div className="txt"><div>Download updates automatically</div><div className="faint">In the background; nothing installs until you restart or quit.</div></div>
+            <Toggle label="Download updates automatically" checked={state.settings.autoDownloadUpdates} onChange={(v) => set({ autoDownloadUpdates: v })} />
           </div>
         </section>
 

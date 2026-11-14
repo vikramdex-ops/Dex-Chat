@@ -7,7 +7,7 @@ import { HubClient } from '@dex/core/client';
 import type { ClientState, HubTarget } from '@dex/core/client';
 import { HubFinder } from '@dex/core/discovery';
 import type { FoundHub } from '@dex/core/discovery';
-import type { AppState, DiscoveredHub, JoinRequest, Phase, Settings } from '../shared/bridge.ts';
+import type { AppState, DiscoveredHub, JoinRequest, Phase, Settings, UpdateState } from '../shared/bridge.ts';
 import { saveConfig } from './persist.ts';
 import type { Config } from './persist.ts';
 
@@ -31,9 +31,9 @@ export class Controller extends EventEmitter {
   private account: WindowsAccount;
   private readonly identity: DeviceIdentity;
   private readonly config: Config;
-  private readonly meta: { platform: NodeJS.Platform; version: string };
+  private readonly meta: { platform: NodeJS.Platform; version: string; update: () => UpdateState };
 
-  constructor(account: WindowsAccount, identity: DeviceIdentity, config: Config, meta: { platform: NodeJS.Platform; version: string }) {
+  constructor(account: WindowsAccount, identity: DeviceIdentity, config: Config, meta: { platform: NodeJS.Platform; version: string; update: () => UpdateState }) {
     super();
     this.identity = identity;
     this.config = config;
@@ -81,12 +81,19 @@ export class Controller extends EventEmitter {
         : cs.kind === 'identity-mismatch' ? `The hub presented a different certificate (${cs.actual.slice(0, 23)}…) than the one this PC trusts.`
         : cs.kind === 'offline' ? cs.error : null,
       settings: this.config.settings,
+      update: this.meta.update(),
       platform: this.meta.platform,
       version: this.meta.version,
     };
   }
 
-  private push(): void {
+  /** The connected hub, for downloading updates from its mirror. */
+  hubEndpoint(): { host: string; port: number; fp: string } | null {
+    const hub = this.config.hub;
+    return this.client?.state.kind === 'ready' && hub?.fp ? { host: hub.host, port: hub.port, fp: hub.fp } : null;
+  }
+
+  push(): void {
     this.emit('state', this.state());
   }
 
@@ -100,6 +107,7 @@ export class Controller extends EventEmitter {
     const client = new HubClient({ identity: this.identity, account: this.account });
     this.client = client;
     client.on('state', (s: ClientState) => {
+      if (s.kind === 'ready') this.emit('hub-ready');
       if (s.kind === 'ready' || s.kind === 'pending') {
         // remember the hub (with the id and name it announced) once it has accepted us
         this.config.hub = { ...s.target };

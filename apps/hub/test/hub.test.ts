@@ -26,7 +26,7 @@ function tempDir(): string {
 }
 
 async function startHub(dataDir = tempDir(), extra: Partial<ConstructorParameters<typeof Hub>[0]> = {}): Promise<Hub> {
-  const hub = new Hub({ dataDir, port: 0, host: '127.0.0.1', discoveryPort: false, name: 'Test Hub', ...extra });
+  const hub = new Hub({ dataDir, port: 0, host: '127.0.0.1', discoveryPort: false, updates: false, name: 'Test Hub', ...extra });
   await hub.start();
   return hub;
 }

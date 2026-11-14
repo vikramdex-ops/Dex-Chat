@@ -57,6 +57,14 @@ export interface AuditEntry {
   detail: unknown;
 }
 
+export interface UpdateMirrorInfo {
+  enabled: boolean;
+  checking: boolean;
+  lastCheck: number | null;
+  lastError: string | null;
+  channels: Partial<Record<'stable' | 'beta', { version: string; mirroredAt: number }>>;
+}
+
 export interface Session {
   hub: HubInfo;
   me: PublicUser;
@@ -104,6 +112,7 @@ export interface Ops {
   'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner'> }; res: PublicUser };
   'admin.revoke': { req: { deviceId: string }; res: DeviceRecord };
   'admin.audit': { req: { limit?: number } | void; res: AuditEntry[] };
+  'admin.updates': { req: { refresh?: boolean } | void; res: UpdateMirrorInfo };
   'ping': { req: void; res: { at: number } };
 }
 export type OpName = keyof Ops;

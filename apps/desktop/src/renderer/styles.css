@@ -494,3 +494,24 @@ select.input { padding-right: 6px; }
 @keyframes pulse { 50% { opacity: .45; } }
 @keyframes ring { 0% { transform: scale(.6); opacity: .7; } 100% { transform: scale(1.35); opacity: 0; } }
 @keyframes flash { 0%, 40% { box-shadow: 0 0 0 2px var(--amber); } 100% { box-shadow: var(--shadow-1); } }
+
+/* -------------------------------------------------------------- updates */
+.titlebar-right { display: flex; align-items: center; gap: 8px; }
+.btn.update-btn { height: 28px; padding: 0 12px; border-radius: 14px; background: var(--amber); color: #3a2300; }
+.btn.update-btn:hover { background: #f0a63c; }
+.ring {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--p, 0%), var(--subtle-2) 0);
+  -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+          mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+}
+.bar { height: 6px; border-radius: 3px; background: var(--subtle-2); overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width var(--med) var(--ease); }
+.danger-text { color: var(--danger) !important; }
+.whats-new { border-color: var(--accent); background: linear-gradient(135deg, var(--accent-soft), var(--card) 60%); }
+.whats-new ul { margin: 6px 0 0; padding-left: 20px; color: var(--text-2); }
+.whats-new li + li { margin-top: 3px; }
+.scrim { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(8, 20, 22, .45); backdrop-filter: blur(6px); animation: enter var(--med) var(--ease); }
+.dialog { width: min(440px, calc(100% - 32px)); display: grid; gap: 14px; justify-items: start; padding: 28px; border-radius: 16px; background: var(--layer-solid); border: 1px solid var(--stroke); box-shadow: var(--shadow-2); animation: rise 300ms var(--ease); }
+.dialog > svg { color: var(--accent); }
+.dialog .bar { width: 100%; }

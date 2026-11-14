@@ -2,6 +2,7 @@
 // people directory and an audit trail. Discovery answers LAN probes so apps find it unaided.
 import https from 'node:https';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -13,6 +14,8 @@ import type { ClientFrame, DeviceRecord, HubInfo, OpName, Ops, PublicUser, Role,
 import { HubAnnouncer } from '@dex/core/discovery';
 import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
+import { UpdateMirror } from './update-mirror.ts';
+import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
 export const HUB_VERSION = '0.1.0';
@@ -22,6 +25,8 @@ export interface HubOptions {
   name?: string;
   port?: number;
   host?: string;
+  /** Update mirror settings; `false` turns the mirror off. */
+  updates?: Omit<MirrorOptions, 'dir' | 'log'> | false;
   /** UDP port for discovery; `false` disables discovery (tests). */
   discoveryPort?: number | false;
   log?: (level: 'info' | 'warn' | 'error' | 'debug', msg: string, extra?: Record<string, unknown>) => void;
@@ -65,6 +70,7 @@ export class Hub {
   private readonly wss: WebSocketServer;
   private readonly conns = new Set<Conn>();
   private announcer: HubAnnouncer | null = null;
+  readonly mirror: UpdateMirror | null;
   private heartbeat: NodeJS.Timeout | null = null;
   private readonly startedAt = Date.now();
   private readonly log: NonNullable<HubOptions['log']>;
@@ -80,6 +86,8 @@ export class Hub {
     this.fingerprint = tls.fingerprint;
 
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
+    this.mirror = opts.updates === false ? null
+      : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
   }
@@ -109,6 +117,7 @@ export class Hub {
         this.announcer = null;
       }
     }
+    this.mirror?.start();
     this.heartbeat = setInterval(() => {
       for (const c of this.conns) {
         if (!c.alive) { c.ws.terminate(); continue; }
@@ -121,6 +130,7 @@ export class Hub {
 
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat);
+    this.mirror?.stop();
     this.announcer?.stop();
     for (const c of this.conns) c.ws.terminate();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
@@ -130,6 +140,7 @@ export class Hub {
 
   // --------------------------------------------------------------- http
   private http(req: IncomingMessage, res: ServerResponse): void {
+    if (this.mirror?.handle(req, res)) return;
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -394,6 +405,19 @@ export class Hub {
         this.requireAdmin(conn);
         const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(1000, d.limit)) : 200;
         return this.store.auditTrail(limit);
+      }
+
+      case 'admin.updates': {
+        this.requireAdmin(conn);
+        if (d.refresh === true && this.mirror) void this.mirror.refresh();
+        const st = this.mirror?.status;
+        return {
+          enabled: !!this.mirror,
+          checking: st?.checking ?? false,
+          lastCheck: st?.lastCheck ?? null,
+          lastError: st?.lastError ?? null,
+          channels: st?.channels ?? {},
+        } satisfies Ops['admin.updates']['res'];
       }
 
       default:

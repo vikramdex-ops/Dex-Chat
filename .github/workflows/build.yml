@@ -102,3 +102,107 @@ jobs:
           path: hub-package/*.zip
           if-no-files-found: error
           retention-days: 30
+
+  # Publishes the build to the public release repository and updates the update feed that
+  # installed apps read. main = stable channel (everyone), any other branch = beta (opt-in).
+  publish:
+    name: publish (${{ github.ref_name == 'main' && 'stable' || 'beta' }})
+    needs: [desktop, hub]
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-feed
+      cancel-in-progress: false
+    env:
+      PUBLIC_REPO: dexterity-admin/dexterity-connect
+      GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+    steps:
+      - name: Check the release token
+        id: gate
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::RELEASES_TOKEN is not set; skipping publishing."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          fetch-depth: 50
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          path: artifacts
+      - name: Prepare release
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          BASE=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
+          VERSION="$BASE.${{ github.run_number }}"
+          CHANNEL=${{ github.ref_name == 'main' && 'stable' || 'beta' }}
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
+          mkdir -p release-files
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.apk' -o -name '*.zip' \) -exec cp {} release-files/ \;
+          ls -la release-files
+          # what changed: commit subjects in this push (or the latest commit)
+          BEFORE="${{ github.event.before }}"
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then RANGE="$BEFORE..HEAD"; else RANGE="-1"; fi
+          git log --no-merges --format='- %s' $RANGE | head -n 30 > notes.md
+          node scripts/release/make-feed.mjs --dir release-files --channel "$CHANNEL" --version "$VERSION" \
+            --base-url "https://github.com/$PUBLIC_REPO/releases/download/v$VERSION" \
+            --notes-file notes.md --out "feed/$CHANNEL.json"
+      - name: Create the release
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          {
+            echo "## Dexterity Connect $VERSION"
+            echo
+            echo "Channel: **$CHANNEL**. Installed apps pick this up automatically."
+            echo
+            cat notes.md
+            echo
+            echo "| File | For |"
+            echo "| --- | --- |"
+            for f in release-files/*; do
+              n=$(basename "$f")
+              case "$n" in
+                *Setup*.exe) d="Windows 10/11 app" ;;
+                *mac-arm64.dmg) d="macOS, Apple Silicon" ;;
+                *mac-x64.dmg) d="macOS, Intel" ;;
+                *.apk) d="Android phones" ;;
+                *Hub*.zip) d="Office hub (Windows service)" ;;
+                *) continue ;;
+              esac
+              echo "| \`$n\` | $d |"
+            done
+            echo
+            echo "Verify downloads with \`SHA256SUMS.txt\`."
+          } > release-notes.md
+          FLAGS=""
+          if [ "$CHANNEL" = "beta" ]; then FLAGS="--prerelease --latest=false"; else FLAGS="--latest"; fi
+          gh release create "v$VERSION" release-files/* --repo "$PUBLIC_REPO" \
+            --title "Dexterity Connect $VERSION${{ github.ref_name != 'main' && ' (beta)' || '' }}" \
+            --notes-file release-notes.md $FLAGS
+      - name: Update the feed installed apps read
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          git config --global user.name "Dexterity Connect release bot"
+          git config --global user.email "noreply@users.noreply.github.com"
+          URL="https://x-access-token:${GH_TOKEN}@github.com/${PUBLIC_REPO}.git"
+          if git clone --quiet --depth 1 --branch update-feed "$URL" feedrepo 2>/dev/null; then :; else
+            mkdir feedrepo && cd feedrepo && git init -q -b update-feed && git remote add origin "$URL" && cd ..
+          fi
+          cp "feed/$CHANNEL.json" "feedrepo/$CHANNEL.json"
+          cd feedrepo
+          git add "$CHANNEL.json"
+          git commit -q -m "$CHANNEL: $VERSION"
+          for i in 1 2 3 4; do
+            git push -q origin update-feed && break
+            git pull -q --rebase origin update-feed || true
+            sleep $((i * 3))
+          done

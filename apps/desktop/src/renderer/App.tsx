@@ -4,6 +4,7 @@ import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
 import logo from './app-icon.svg';
 import { Icon, ToastHost } from './ui.tsx';
+import { RequiredUpdate, UpdatePill, WhatsNew } from './UpdateUi.tsx';
 import type { IconName } from './ui.tsx';
 import { Onboarding } from './views/Onboarding.tsx';
 import { Home } from './views/Home.tsx';
@@ -133,9 +134,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           />
           <span className="kbd">Ctrl K</span>
         </label>
-        <span className={`conn${conn.warn ? ' warn' : ''}`} title={state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
-          <span className="pip" />{conn.text}
-        </span>
+        <div className="titlebar-right">
+          <UpdatePill state={state} />
+          <span className={`conn${conn.warn ? ' warn' : ''}`} title={state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
+            <span className="pip" />{conn.text}
+          </span>
+        </div>
       </header>
       <div className="body">
         <nav className="rail" aria-label="Sections">
@@ -153,12 +157,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           </button>
         </nav>
         <main className="layer">
+          {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
           {section === 'home' && <Home state={state} session={session} pendingCount={pendingCount} go={setSection} />}
           {section === 'people' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} />}
           {section === 'admin' && isAdmin && <Admin state={state} session={session} />}
           {section === 'settings' && <SettingsView state={state} session={session} />}
         </main>
       </div>
+      <RequiredUpdate state={state} />
     </div>
   );
 }
