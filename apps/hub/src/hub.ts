@@ -41,6 +41,7 @@ import { Meetings } from './meetings.ts';
 import { Flows, FlowError } from './flows.ts';
 import { BotFlows, BotFlowsError } from './botflows.ts';
 import { BotFlowError } from '@dex/core/botflows';
+import { MiniApps, MiniAppError } from './miniapps.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 import { Links, LinkError } from './links.ts';
@@ -134,6 +135,7 @@ export class Hub {
   readonly reactionInsights: ReactionInsights;
   readonly flows: Flows;
   readonly botflows: BotFlows;
+  readonly miniapps: MiniApps;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -208,9 +210,10 @@ export class Hub {
     });
     this.messaging.observe = (e) => this.flows.onEvent(e);
     this.messaging.keptTags = (id) => this.flows.tagsOf(id);
-    // step-by-step conversations with integrations (bot flows and sessions)
+    // conversations with integrations (flows, sessions) and tools in conversations
     this.botflows = new BotFlows({ store: this.store, messaging: this.messaging, files: this.files, desk: this.desk, broadcast: (n, d) => this.emit(n, d), log: (l, m, e) => this.log(l, m, e) });
-    this.messaging.extraView = (r) => this.botflows.view(r);
+    this.miniapps = new MiniApps({ store: this.store, messaging: this.messaging, files: this.files, deliver: (u, n, d) => this.deliver(u, n, d), broadcast: (n, d) => this.emit(n, d) });
+    this.messaging.extraView = (r) => ({ ...this.botflows.view(r), ...this.miniapps.view(r) });
     this.messaging.onPosted = (author, convId, msg) => this.botflows.onPosted(author, convId, msg);
     this.commands.extra = { list: () => this.botflows.commandList(), run: (c, me, convId) => this.botflows.runCommand(c, me, convId) };
     this.relay = new Relay({
@@ -1151,6 +1154,15 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof BotFlowsError || err instanceof BotFlowError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(miniapp\.|admin\.miniapps\.)/.test(op)) {
+          try {
+            const result = this.miniapps.handle(op, this.store.userById(conn.userId!)!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof MiniAppError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }
