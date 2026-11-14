@@ -1342,7 +1342,7 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 [data-density='compact'] .run-tile .avatar, [data-density='compact'] .run-tile > * { transform: scale(.82); transform-origin: top center; }
 [data-density='compact'] .sb-row { padding-top: 5px; padding-bottom: 5px; min-height: 0; }
 [data-density='compact'] .sb-preview { display: none; }
-[data-density='compact'] .day-mark { margin: 8px 0 4px; }
+[data-density='compact'] .day-mark { margin-top: 8px; margin-bottom: 4px; }
 
 /* search */
 .search-view { display: grid; gap: 12px; align-content: start; }

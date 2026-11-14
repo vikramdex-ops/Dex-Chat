@@ -427,3 +427,7 @@ body.resizing { user-select: none; cursor: col-resize; }
 .emoji-grid { gap: 2px; }
 .emoji-grid button { height: 36px; border-radius: 3px; border: 1px solid transparent; }
 .emoji-grid button:hover, .emoji-grid button:focus-visible { background: var(--layer-solid); border-color: var(--accent); }
+.msg.tools-up > .spine-tools { top: auto; bottom: -3px; }
+/* a run paints only inside itself (content-visibility); while its tools are out it paints over its neighbours */
+.run:hover, .run:focus-within, .run:has(.spine-tools.open) { content-visibility: visible; }
+.dock textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

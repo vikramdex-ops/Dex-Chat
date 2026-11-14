@@ -452,18 +452,20 @@ function TrackLeader({ wrap, parentId }: { wrap: RefObject<HTMLDivElement | null
       const w = root.getBoundingClientRect();
       const t = tl.getBoundingClientRect();
       const p = panel.getBoundingClientRect();
-      const spine = parseFloat(getComputedStyle(tl).getPropertyValue('--spine-x')) || 52;
-      const x = t.left - w.left + spine;
       const head = panel.querySelector<HTMLElement>('.track-parent')?.getBoundingClientRect();
       const ex = (head ? head.left : p.left + 16) - w.left;
       const ey = (head ? head.top + 18 : p.top + 60) - w.top;
-      let top = msg ? msg.getBoundingClientRect().top - w.top : t.top - w.top;
+      const mx = p.left - w.left - 10;
+      // from the message's branch tag (the side-track's mark on the spine), else from the message's top edge
+      const tag = msg?.querySelector<HTMLElement>(':scope > .branch-tag')?.getBoundingClientRect();
+      const m = msg?.getBoundingClientRect();
+      let x = tag ? tag.right - w.left : m ? m.left - w.left : t.left - w.left + 52;
+      let y = tag ? tag.top + tag.height / 2 - w.top : m ? m.top - w.top : t.top - w.top;
       const min = t.top - w.top + 2;
       const max = t.bottom - w.top - 2;
-      const off = !msg || top < min || top > max;
-      top = Math.max(min, Math.min(max, top));
-      const mx = p.left - w.left - 10;
-      setD({ path: `M${x} ${top + 11}V${top}H${mx}V${ey}H${ex}`, x, y: top + 11, ex, ey, off });
+      const off = !msg || y < min || y > max;
+      if (off) { y = Math.max(min, Math.min(max, y)); x = t.left - w.left + 52; }
+      setD({ path: `M${x} ${y}H${mx}V${ey}H${ex}`, x, y, ex, ey, off });
     };
     const soon = () => { if (!frame) frame = requestAnimationFrame(draw); };
     soon();
@@ -472,15 +474,17 @@ function TrackLeader({ wrap, parentId }: { wrap: RefObject<HTMLDivElement | null
     root.addEventListener('animationend', soon, true);
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(soon);
     ro?.observe(root);
-    const spine = root.querySelector('.timeline .spine');
-    if (spine) ro?.observe(spine);
-    return () => { root.removeEventListener('scroll', soon, true); root.removeEventListener('animationend', soon, true); ro?.disconnect(); if (frame) cancelAnimationFrame(frame); };
+    // messages arriving move the parent without resizing anything: watch the timeline's content too
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(soon);
+    const tl = root.querySelector('.timeline');
+    if (tl) mo?.observe(tl, { childList: true, subtree: true });
+    return () => { root.removeEventListener('scroll', soon, true); root.removeEventListener('animationend', soon, true); ro?.disconnect(); mo?.disconnect(); if (frame) cancelAnimationFrame(frame); };
   }, [wrap, parentId]);
   if (!d) return null;
   return (
     <svg className={`track-leader${d.off ? ' off' : ''}`} aria-hidden="true">
       <path d={d.path} />
-      <circle cx={d.x} cy={d.y} r={3.5} />
+      <circle cx={d.x} cy={d.y} r={2.5} />
       <rect x={d.ex - 3} y={d.ey - 3} width={6} height={6} />
     </svg>
   );
@@ -550,7 +554,8 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
       if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP) { prev.msgs.push(m); continue; }
       if (m.createdAt - lastTick >= TICK) {
         const at = Math.floor(m.createdAt / TICK) * TICK;
-        out.push({ kind: 'tick', label: clock(at), key: `t${at}-${m.id}` });
+        // a dimension mark, not a timestamp: no AM/PM
+        out.push({ kind: 'tick', label: clock(at).replace(/\s?[ap]\.?\s?m\.?$/i, ''), key: `t${at}-${m.id}` });
         lastTick = m.createdAt;
       }
       out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
@@ -611,6 +616,13 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }:
 });
 
 // ------------------------------------------------------------------ one message
+/** The tool column hangs down from a message; near the bottom of the timeline it hangs up instead. */
+function toolsFit(e: React.SyntheticEvent<HTMLDivElement>): void {
+  const el = e.currentTarget;
+  const box = el.closest('.timeline')?.getBoundingClientRect();
+  if (box) el.classList.toggle('tools-up', el.getBoundingClientRect().top + 150 > box.bottom);
+}
+
 function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   ctx: Ctx; m: AnyMessage; onTrack?: (id: string) => void; activeTrack?: string | null; inTrack?: boolean;
 }) {
@@ -668,6 +680,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
 
   return (
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
+      onMouseEnter={inTrack ? undefined : toolsFit} onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
       {seen && <span className={`notch ${seen.state}`} role={seen.tag ? 'img' : undefined} aria-label={seen.tag || undefined} />}
       {seen?.tag && <span className="seen-tag mono" aria-hidden="true">{seen.tag}</span>}
@@ -820,7 +833,12 @@ function WritingLine({ k, users }: { k: string; users: Map<string, PublicUser> }
 }
 
 // ------------------------------------------------------------------ the Dock (composer)
-const autoGrow = (el: HTMLTextAreaElement) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 260)}px`; };
+const autoGrow = (el: HTMLTextAreaElement) => {
+  // empty: one row (a long placeholder in a narrow Pane must not make it grow)
+  if (!el.value) { el.style.height = ''; return; }
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
+};
 
 /** Stored bodies use <@id>; while typing people see @Name. */
 function toEditable(body: string, users: Map<string, PublicUser>): string {
@@ -909,6 +927,15 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
 
   useEffect(() => { setText(chatState().drafts.get(key) ?? ''); setMention(null); ref.current?.focus(); }, [key]);
   useEffect(() => { if (ref.current) autoGrow(ref.current); }, [text]);
+  // Panes change width as others open and close beside them: wrap the text again
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; autoGrow(el); } });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const candidates = useMemo(() => {
     if (!mention) return [];

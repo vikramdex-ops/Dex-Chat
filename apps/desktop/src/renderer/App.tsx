@@ -23,7 +23,7 @@ import { ChatView } from './chat/ChatView.tsx';
 import { addConversation, chatState, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
 import type { Chip } from './chat/Switchboard.tsx';
-import { closePane, openInPane, panesNow } from './chat/panes.ts';
+import { closePane, focusPane, openInPane, panesNow } from './chat/panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, todayAt } from './chat/officeTime.ts';
 import { IncomingCall, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
@@ -213,14 +213,30 @@ function LensStrip({ lens, setLens, onTalkAgain }: { lens: Lens; setLens: (l: Le
   );
 }
 
+/**
+ * Choosing the Direct or Spaces lens on a PC shows a conversation of that kind: the Pane that
+ * already has one gets focus, otherwise the latest one opens in the focused Pane.
+ */
+function showKind(kind: 'direct' | 'space'): void {
+  if (!window.matchMedia('(min-width: 721px)').matches) return;
+  const p = panesNow();
+  const convs = chatState().conversations;
+  if (p.ids.length && convs.get(p.ids[p.focus])?.kind === kind) return;
+  const at = p.ids.findIndex((id) => convs.get(id)?.kind === kind);
+  if (at >= 0) { focusPane(at); return; }
+  const latest = [...convs.values()].filter((c) => c.joined && c.kind === kind && !c.archived)
+    .sort((a, b) => (b.lastMessage?.createdAt ?? b.createdAt) - (a.lastMessage?.createdAt ?? a.createdAt))[0];
+  if (latest) openInPane(latest.id);
+}
+
 function Shell({ state, session }: { state: AppState; session: Session }) {
   const [lens, setLensRaw] = useState<Lens>('pulse');
   // the Switchboard's lens chip follows the Direct and Spaces lenses, and they follow it
   const [chip, setChipRaw] = useState<Chip>('all');
   const setLens = (l: Lens) => {
     setLensRaw(l);
-    if (l === 'direct') setChipRaw('people');
-    else if (l === 'spaces') setChipRaw((c) => (c === 'projects' ? c : 'spaces'));
+    if (l === 'direct') { setChipRaw('people'); showKind('direct'); }
+    else if (l === 'spaces') { setChipRaw((c) => (c === 'projects' ? c : 'spaces')); showKind('space'); }
   };
   const setChip = (c: Chip) => {
     setChipRaw(c);
@@ -315,6 +331,8 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     return window.dex.onHubEvent((name) => { if (name === 'admin.pending' || name === 'device.updated') void refresh(); });
   }, [isAdmin, live]);
 
+  const soundRef = useRef(state.settings.sound);
+  useEffect(() => { soundRef.current = state.settings.sound; }, [state.settings.sound]);
   // keyboard: Ctrl+G go to, Ctrl+1..n lenses, Ctrl+, preferences, Esc closes
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -342,13 +360,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       else if (k === '/') { e.preventDefault(); setShortcuts(true); }
       else if (k === 'f' && e.shiftKey) { e.preventDefault(); openSearch({}); }
       else if (k === 'q' && e.shiftKey) {
-        // quiet or bring back notification sounds
+        // quiet or bring back notification sounds (read the latest, a quick second press must undo the first)
         e.preventDefault();
-        const cur = state.settings.sound;
+        const cur = soundRef.current;
         let back: MessageSound = 'chime';
         try { back = (localStorage.getItem('dex-sound-before-mute') as MessageSound | null) ?? 'chime'; } catch { /* storage off */ }
         if (cur !== 'none') { try { localStorage.setItem('dex-sound-before-mute', cur); } catch { /* storage off */ } }
-        void window.dex.setSettings({ sound: cur === 'none' ? back : 'none' });
+        soundRef.current = cur === 'none' ? back : 'none';
+        void window.dex.setSettings({ sound: soundRef.current });
         toast(cur === 'none' ? 'Sounds back on' : 'Sounds quiet · Ctrl+Shift+Q brings them back');
       }
       else if (k === ',') { e.preventDefault(); setSheet('preferences'); }
