@@ -50,7 +50,9 @@ export interface AppState {
   /** This PC's device id; its first 8 characters are the code admins see when approving */
   deviceId: string;
   hubs: DiscoveredHub[];
-  hub: { id?: string; name?: string; host: string; port: number; fingerprint?: string } | null;
+  hub: { id?: string; name?: string; host: string; port: number; fingerprint?: string; gateway?: string | null } | null;
+  /** How the app reaches the hub right now: the office network, or the internet gateway. */
+  via?: 'lan' | 'remote';
   session: Session | null;
   pendingPosition: number;
   retryInMs: number;
@@ -95,6 +97,8 @@ export interface JoinRequest {
   officeAccount?: string;
   /** Guest invite code from an administrator (people outside the company). */
   invite?: string;
+  /** Outside the office: the "DXC1-…" setup code from a colleague's PC or the Control room. */
+  setupCode?: string;
 }
 
 export interface DexBridge {

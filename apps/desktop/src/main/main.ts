@@ -221,7 +221,7 @@ function wireIpc(c: Controller): void {
     const hub = c.hubEndpoint();
     const token = c.state().session?.fileToken;
     if (!hub || !token) throw new Error('Not connected to the office hub.');
-    return { ...hub, token };
+    return { ...hub, token, tunnel: c.viaGateway ? (r) => c.http(r) : undefined };
   };
   const wrap = async <T>(fn: () => Promise<T>) => {
     try { return { ok: true, data: await fn() }; } catch (err) { return { ok: false, error: (err as Error).message }; }
@@ -334,7 +334,8 @@ void app.whenReady().then(async () => {
     downloadDir: path.join(app.getPath('userData'), 'updates'),
     channel: () => config.settings.updateChannel,
     autoDownload: () => config.settings.autoDownloadUpdates,
-    hub: () => controller?.hubEndpoint() ?? null,
+    // outside the office there is internet: updates come from the release feed, not the hub's mirror
+    hub: () => (controller?.viaGateway ? null : controller?.hubEndpoint() ?? null),
     feedBase: devUpdates ? process.env.DEXCONNECT_FEED_BASE : undefined,
     platformOverride: devUpdates ? (process.env.DEXCONNECT_UPDATER_PLATFORM as never) || undefined : undefined,
     allowHttp: devUpdates,
@@ -359,7 +360,7 @@ void app.whenReady().then(async () => {
   handleFileScheme(() => {
     const hub = controller?.hubEndpoint();
     const token = controller?.state().session?.fileToken;
-    return hub && token ? { ...hub, token } : null;
+    return hub && token ? { ...hub, token, tunnel: controller!.viaGateway ? (r) => controller!.http(r) : undefined } : null;
   });
   void pruneCache();
   applyLogin(config.settings);

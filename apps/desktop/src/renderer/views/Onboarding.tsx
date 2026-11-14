@@ -1,6 +1,7 @@
 // First run and every state before the app is usable: choose the hub, wait for approval,
 // or recover from a declined device or a hub whose certificate changed.
 import { useEffect, useState } from 'react';
+import { parseSetupCode } from '@dex/core/remote';
 import type { AppState } from '../../shared/bridge.ts';
 import logo from '../app-icon.svg';
 import { Icon, deviceCode } from '../ui.tsx';
@@ -27,6 +28,14 @@ function Welcome({ state }: { state: AppState }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [manual, setManual] = useState(false);
   const [address, setAddress] = useState('');
+  // outside the office: a setup code (pasted, or from a dexconnect://remote link or QR code)
+  const [outside, setOutside] = useState(false);
+  const [code, setCode] = useState('');
+  const parsed = outside ? parseSetupCode(code) : null;
+  useEffect(() => window.dex.onDeepLink((url) => {
+    const m = url.match(/^dexconnect:\/\/remote\/?\?code=([^&#]+)/i);
+    if (m) { setOutside(true); setCode(decodeURIComponent(m[1])); }
+  }), []);
   const isPhone = state.platform === 'android';
   const [office, setOffice] = useState('');
   const [guest, setGuest] = useState(false);
@@ -39,13 +48,13 @@ function Welcome({ state }: { state: AppState }) {
     if (!selected && state.hubs.length === 1) setSelected(state.hubs[0].id);
   }, [state.hubs, selected]);
 
-  const canJoin = name.trim().length > 0 && (manual ? address.trim().length > 0 : !!selected) && !busy;
+  const canJoin = name.trim().length > 0 && (outside ? !!parsed : manual ? address.trim().length > 0 : !!selected) && !busy;
   const join = async () => {
     setBusy(true);
     setError(null);
     try {
       const extra = { ...(isPhone && office.trim() ? { officeAccount: office } : {}), ...(guest && invite.trim() ? { invite } : {}) };
-      await window.dex.join(manual ? { address, displayName: name, ...extra } : { hubId: selected!, displayName: name, ...extra });
+      await window.dex.join(outside ? { setupCode: code, displayName: name, ...extra } : manual ? { address, displayName: name, ...extra } : { hubId: selected!, displayName: name, ...extra });
     } catch (e) {
       setError((e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
       setBusy(false);
@@ -58,7 +67,7 @@ function Welcome({ state }: { state: AppState }) {
         <img className="mark" src={logo} alt="" />
         <h1>Welcome to Dexterity&nbsp;Connect</h1>
         <p className="lede">{isPhone
-          ? 'Messages, calls and files that stay on the office network. Connect to the office Wi-Fi to join.'
+          ? 'Messages, calls and files from the office, on your phone. Join on the office Wi-Fi, or anywhere with a setup code.'
           : "Messages, calls and files that stay on the office network. You're signed in through Windows — no password needed."}</p>
       </div>
 
@@ -86,6 +95,17 @@ function Welcome({ state }: { state: AppState }) {
         </div>
       )}
 
+      {outside ? (
+        <div className="field">
+          <label htmlFor="setup-code">Setup code</label>
+          <textarea id="setup-code" className="input mono" rows={3} placeholder="DXC1-…" value={code} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setCode(e.target.value)} />
+          <span className="faint" style={{ fontSize: 12 }}>
+            {parsed ? <>Reaches <b>{parsed.name ?? 'your office hub'}</b> through the office's secure gateway. An administrator approves this device before it can see anything.</>
+              : 'On a PC that already uses Dexterity Connect: Preferences → Outside the office → Set up a phone or laptop. Or scan its QR code with your phone camera.'}
+          </span>
+          <div><button type="button" className="link" onClick={() => { setOutside(false); setError(null); }}>I'm on the office network</button></div>
+        </div>
+      ) : (
       <div className="field">
         <label>Office hub</label>
         {!manual && (
@@ -113,8 +133,11 @@ function Welcome({ state }: { state: AppState }) {
           <button type="button" className="link" onClick={() => { setManual(!manual); setError(null); }}>
             {manual ? 'Find the hub automatically instead' : 'Enter the hub address yourself'}
           </button>
+          {' · '}
+          <button type="button" className="link" onClick={() => { setOutside(true); setError(null); }}>I'm outside the office</button>
         </div>
       </div>
+      )}
 
       {guest ? (
         <div className="field">

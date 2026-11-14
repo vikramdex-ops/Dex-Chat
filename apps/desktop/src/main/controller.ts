@@ -10,6 +10,7 @@ import type { DeviceIdentity, Message, OpName, Ops, WindowsAccount } from '@dex/
 import { HubClient } from '@dex/core/client';
 import type { ClientState, HubTarget } from '@dex/core/client';
 import { HubFinder } from '@dex/core/discovery';
+import { parseSetupCode } from '@dex/core/remote';
 import type { FoundHub } from '@dex/core/discovery';
 import type { AppState, DiscoveredHub, JoinRequest, Phase, Settings, UpdateState } from '../shared/bridge.ts';
 import { saveConfig } from './persist.ts';
@@ -33,6 +34,12 @@ export class Controller extends EventEmitter {
   /** Guest invite typed on the join screen (used for the first registration only). */
   private invite = '';
   private client: HubClient | null = null;
+  /** Connected through the internet gateway (outside the office)? */
+  get viaGateway(): boolean { return !!this.client?.viaGateway; }
+  http(req: import('@dex/core/remote').TunnelRequest): Promise<import('@dex/core/remote').TunnelResponse> {
+    if (!this.client) return Promise.reject(new Error('Not connected to the office hub.'));
+    return this.client.http(req);
+  }
   private readonly finder = new HubFinder();
   private account: WindowsAccount;
   private readonly identity: DeviceIdentity;
@@ -89,7 +96,8 @@ export class Controller extends EventEmitter {
       account: this.account,
       deviceId: this.identity.deviceId,
       hubs: [...this.finder.hubs.values()].map(toDiscovered),
-      hub: hub ? { id: hub.hubId, name: hub.name, host: hub.host, port: hub.port, fingerprint: hub.fp } : null,
+      hub: hub ? { id: hub.hubId, name: hub.name, host: hub.host, port: hub.port, fingerprint: hub.fp, gateway: hub.remote?.url ?? null } : null,
+      via: cs?.kind === 'ready' ? cs.via ?? 'lan' : undefined,
       session: cs.kind === 'ready' ? cs.session : null,
       pendingPosition: cs.kind === 'pending' ? cs.position : 0,
       retryInMs: cs.kind === 'offline' ? cs.retryInMs : 0,
@@ -172,7 +180,8 @@ export class Controller extends EventEmitter {
     const cs = this.client?.state;
     if (hub && hub.hubId === found.beacon.id && hub.fp === found.beacon.fp
       && (hub.host !== found.address || hub.port !== found.beacon.port)
-      && cs && (cs.kind === 'offline' || cs.kind === 'connecting')) {
+      && cs && (cs.kind === 'offline' || cs.kind === 'connecting' || (cs.kind === 'ready' && cs.via === 'remote'))) {
+      // back in the office (or the hub moved): use the office network
       this.config.hub = { ...hub, host: found.address, port: found.beacon.port };
       this.persist();
       this.connect(this.config.hub);
@@ -205,6 +214,11 @@ export class Controller extends EventEmitter {
     } else if (req.address) {
       const a = parseAddress(req.address);
       if (a) target = { ...a };
+    } else if (req.setupCode) {
+      const r = parseSetupCode(req.setupCode);
+      if (!r) throw new Error('That setup code is not complete. Copy all of it, starting with DXC1-.');
+      // no office address yet: straight to the gateway; discovery fills in the address in the office
+      target = { host: '', port: 0, hubId: r.hubId, name: r.name, fp: r.fp, remote: { url: r.url, hubId: r.hubId } };
     }
     if (!target) throw new Error('That hub could not be found. Check the address and try again.');
     this.config.hub = target;

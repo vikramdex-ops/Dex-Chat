@@ -139,15 +139,15 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
         <div className="card">
           <div className="eyebrow">Office hub</div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <span className="pal-icon" style={{ width: 36, height: 36 }}><Icon name="server" /></span>
+            <span className="pal-icon" style={{ width: 36, height: 36 }}><Icon name={state.via === 'remote' ? 'globe' : 'server'} /></span>
             <div style={{ minWidth: 0 }}>
               <h3>{session.hub.name}</h3>
-              <div className="faint mono">{state.hub?.host}:{state.hub?.port}</div>
+              <div className="faint mono">{state.via === 'remote' ? 'Through the internet gateway' : `${state.hub?.host}:${state.hub?.port}`}</div>
             </div>
           </div>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span className={`chip ${live ? 'ok' : 'warn'}`}><Icon name={live ? 'lock' : 'wifi'} size={13} />{live ? 'Encrypted connection' : 'Reconnecting'}</span>
-            <span className="chip">Works without internet</span>
+            <span className={`chip ${live ? 'ok' : 'warn'}`}><Icon name={live ? 'lock' : 'wifi'} size={13} />{live ? (state.via === 'remote' ? 'Encrypted to the hub' : 'Encrypted connection') : 'Reconnecting'}</span>
+            <span className="chip">{state.via === 'remote' ? 'Outside the office' : 'Works without internet'}</span>
           </div>
         </div>
       </div>

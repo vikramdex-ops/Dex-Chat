@@ -307,7 +307,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   };
 
   const conn = state.phase === 'ready'
-    ? { warn: false, text: session.hub.name }
+    ? { warn: false, text: state.via === 'remote' ? `${session.hub.name} · via the internet` : session.hub.name }
     : state.phase === 'offline'
       ? { warn: true, text: `Reconnecting${state.retryInMs ? ` in ${Math.ceil(state.retryInMs / 1000)}s` : '…'}` }
       : { warn: true, text: 'Connecting…' };
@@ -343,8 +343,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         <div className="titlebar-right">
           <UpdatePill state={state} />
           <WorkClock meId={session.me.id} live={live} role={session.me.role} />
-          <span className={`conn${conn.warn ? ' warn' : ''}`} title={state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
-            <span className="pip" /><span className="conn-text">{conn.text}</span>
+          <span className={`conn${conn.warn ? ' warn' : ''}${state.via === 'remote' && !conn.warn ? ' remote' : ''}`} aria-label={conn.text}
+            title={state.via === 'remote' ? 'Outside the office: connected through the internet gateway, encrypted to the hub' : state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
+            {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
           </span>
           <div className="me-wrap">
             <button className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You">

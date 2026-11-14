@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState, MessageSound, Settings, Theme } from '../../shared/bridge.ts';
 import { playSound } from '../sounds.ts';
+import { RemoteSettings } from './Remote.tsx';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
@@ -158,6 +159,8 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <Toggle label="Keep running in the tray" checked={state.settings.closeToTray} onChange={(v) => set({ closeToTray: v })} />
           </div>
         </section>}
+
+        <RemoteSettings state={state} />
 
         <section>
           <h3>Office hub</h3>

@@ -10,8 +10,13 @@ import type { TLSSocket } from 'node:tls';
 import type { IncomingMessage } from 'node:http';
 import { app, protocol, shell } from 'electron';
 import type { FileInfo } from '@dex/core';
+import type { TunnelRequest, TunnelResponse } from '@dex/core/remote';
 
-export interface HubAccess { host: string; port: number; fp: string; token: string }
+export interface HubAccess {
+  host: string; port: number; fp: string; token: string;
+  /** Outside the office: HTTP inside the gateway's encrypted channel instead of a direct connection. */
+  tunnel?: (req: TunnelRequest) => Promise<TunnelResponse>;
+}
 
 export const FILE_SCHEME = 'dexfile';
 
@@ -51,6 +56,26 @@ export async function uploadFile(access: HubAccess, src: UploadSource, onProgres
   const size = src.path ? (await fsp.stat(src.path)).size : src.data!.byteLength;
   const name = src.name || (src.path ? path.basename(src.path) : 'file');
   const q = `/files?name=${encodeURIComponent(name)}${src.mime ? `&type=${encodeURIComponent(src.mime)}` : ''}`;
+  if (access.tunnel) {
+    let sent = 0;
+    let last = 0;
+    async function* chunks(): AsyncIterable<Uint8Array> {
+      const stream: AsyncIterable<Buffer> = src.path ? fs.createReadStream(src.path, { highWaterMark: 256 * 1024 }) as AsyncIterable<Buffer> : Readable.from([Buffer.from(src.data!)]) as AsyncIterable<Buffer>;
+      for await (const c of stream) {
+        sent += c.length;
+        const now = Date.now();
+        if (now - last > 120 || sent === size) { last = now; onProgress(sent, size); }
+        yield new Uint8Array(c.buffer, c.byteOffset, c.length);
+      }
+    }
+    const r = await access.tunnel({ method: 'POST', path: q, headers: { authorization: `Bearer ${access.token}`, 'content-length': String(size), 'content-type': 'application/octet-stream' }, body: chunks() });
+    const parts: Uint8Array[] = [];
+    for await (const p of r.body) parts.push(p);
+    let json: FileInfo & { error?: string };
+    try { json = JSON.parse(Buffer.concat(parts).toString('utf8')); } catch { json = {} as FileInfo & { error?: string }; }
+    if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
+    return json;
+  }
   const { req, res } = await pinnedRequest(access, 'POST', q, { 'content-length': size, 'content-type': 'application/octet-stream' });
   let sent = 0;
   let last = 0;
@@ -88,6 +113,18 @@ function fetchToCache(access: HubAccess, id: string, name: string): Promise<stri
 async function download(access: HubAccess, id: string, target: string): Promise<string> {
   const dir = path.dirname(target);
   await fsp.mkdir(dir, { recursive: true });
+  if (access.tunnel) {
+    const r = await access.tunnel({ method: 'GET', path: `/files/${id}?download=1`, headers: { authorization: `Bearer ${access.token}` } });
+    if (r.status !== 200) { for await (const _ of r.body) { /* drain */ } throw new Error(r.status === 404 ? 'That file is no longer available.' : `Download failed (${r.status}).`); }
+    const part = `${target}.part`;
+    const out = fs.createWriteStream(part);
+    try {
+      for await (const p of r.body) if (!out.write(p)) await new Promise<void>((res) => out.once('drain', () => res()));
+      await new Promise<void>((res, rej) => { out.end(() => res()); out.on('error', rej); });
+    } catch (e) { out.destroy(); await fsp.rm(part, { force: true }); throw new Error(`Download interrupted: ${(e as Error).message}`); }
+    await fsp.rename(part, target);
+    return target;
+  }
   const { req, res } = await pinnedRequest(access, 'GET', `/files/${id}?download=1`);
   req.end();
   const r = await res;
