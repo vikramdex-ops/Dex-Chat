@@ -15,6 +15,7 @@ import { HubAnnouncer } from '@dex/core/discovery';
 import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
 import { UpdateMirror } from './update-mirror.ts';
+import { Messaging, MsgError } from './messaging.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
@@ -71,6 +72,7 @@ export class Hub {
   private readonly conns = new Set<Conn>();
   private announcer: HubAnnouncer | null = null;
   readonly mirror: UpdateMirror | null;
+  readonly messaging: Messaging;
   private heartbeat: NodeJS.Timeout | null = null;
   private readonly startedAt = Date.now();
   private readonly log: NonNullable<HubOptions['log']>;
@@ -86,6 +88,13 @@ export class Hub {
     this.fingerprint = tls.fingerprint;
 
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
+    this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers());
+    // databases from before messaging existed: create the Office space and add everyone
+    const owner = this.store.activeUsers().find((u) => u.role === 'owner');
+    if (owner) {
+      this.messaging.ensureEveryoneSpace(owner.id);
+      for (const u of this.store.activeUsers()) this.messaging.welcome(u.id);
+    }
     this.mirror = opts.updates === false ? null
       : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
@@ -187,6 +196,17 @@ export class Hub {
     for (const c of this.conns) if (c.ready && filter(c)) this.send(c, { t: 'evt', name, data });
   }
 
+  /** Send an event to every connected device of the given people. */
+  private deliver(userIds: string[], name: string, data: (userId: string) => unknown): void {
+    const wanted = new Set(userIds);
+    const cache = new Map<string, unknown>();
+    for (const c of this.conns) {
+      if (!c.ready || !c.userId || !wanted.has(c.userId)) continue;
+      if (!cache.has(c.userId)) cache.set(c.userId, data(c.userId));
+      this.send(c, { t: 'evt', name, data: cache.get(c.userId) });
+    }
+  }
+
   private onlineUserIds(): string[] {
     return [...new Set([...this.conns].filter((c) => c.ready && c.userId).map((c) => c.userId!))];
   }
@@ -259,6 +279,10 @@ export class Hub {
     let user = this.store.userByAccount(key);
     if (!user) user = this.store.createUser(key, account.displayName, first ? 'owner' : 'member');
     const device = this.store.createDevice(frame.deviceId, user.id, frame.publicKey, account.hostname, first ? 'approved' : 'pending');
+    if (first) {
+      this.messaging.ensureEveryoneSpace(user.id);
+      this.messaging.welcome(user.id);
+    }
     this.store.audit(first ? user.id : null, 'device.registered', device.id, { account: key, hostname: account.hostname, ip: conn.ip, autoApproved: first });
     this.log('info', 'device registered', { account: key, hostname: account.hostname, status: device.status });
 
@@ -364,6 +388,7 @@ export class Hub {
         if (approve && !wasActive) {
           const user = this.store.userById(device.userId);
           if (user) this.emit('user.added', user);
+          this.messaging.welcome(device.userId);
         }
         for (const c of this.conns) if (c.deviceId === device.id && !c.ready) this.continueAs(c, updated);
         return updated;
@@ -420,8 +445,19 @@ export class Hub {
         } satisfies Ops['admin.updates']['res'];
       }
 
-      default:
+      default: {
+        if (typeof op === 'string' && /^(conv\.|msg\.|typing$)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.messaging.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
         throw new OpError(`Unknown operation: ${String(op)}`);
+      }
     }
   }
 }
