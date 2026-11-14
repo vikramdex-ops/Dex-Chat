@@ -1,6 +1,6 @@
 # Dexterity Connect — product & engineering blueprint
 
-Status: **approved scope, pre-build** · Date: 2026-11-14 · Owner: Dexterity Design Services Pvt. Ltd.
+Status: **building, see the progress table in section 5** · Date: 2026-11-14 · Owner: Dexterity Design Services Pvt. Ltd.
 
 Dexterity Connect is an internal messenger for Dexterity's office. It has **every non-AI capability of Zoho
 Cliq** and works with the internet unplugged. This document is the single source of truth for what we are
@@ -157,6 +157,19 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 Live Events (deferred), Office-document inline preview, and Deluge scripting (replaced by JavaScript).
 
 ## 5. Build plan
+
+**Progress (2026-11-14):**
+
+| Phase | State |
+| --- | --- |
+| P0 Foundation | ✅ Done |
+| P1 Messaging core | ✅ Done, except direct PC-to-PC fallback and E2E for Direct messages (next) |
+| P2 Files & search | ✅ Files, viewer, Files panel, full-text search. OCR and voice/video messages are next |
+| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), screen share, mini-Room. Recording and an SFU for larger meetings are next |
+| P4 Productivity | ⏳ Not started |
+| P5 Platform & governance | 🟡 Bot API, integrations, Control room, audit. Whiteboard, guests and retention are next |
+| P6 Mobile & polish | 🟡 Android APK with updater, phone layout. File viewing on phones is next |
+
 
 Each phase ends with installers built by CI, a test pass, and a short demo note.
 
