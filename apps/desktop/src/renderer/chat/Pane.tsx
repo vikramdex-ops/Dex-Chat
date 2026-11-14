@@ -523,8 +523,18 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   }, [messages]);
 
   useEffect(() => { stick.current = true; }, [convId]);
-  // switching between spine and cards changes every height: stay with the newest message
-  useLayoutEffect(() => { const el = scroller.current; if (el && stick.current) el.scrollTop = el.scrollHeight; }, [ctx.cards]);
+  // switching between spine and cards changes every height: stay with the newest message while
+  // the runs settle (they are laid out as they come into view)
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !stick.current) return;
+    el.scrollTop = el.scrollHeight;
+    let n = 0;
+    let frame = 0;
+    const again = () => { if (stick.current) el.scrollTop = el.scrollHeight; if (++n < 4) frame = requestAnimationFrame(again); };
+    frame = requestAnimationFrame(again);
+    return () => cancelAnimationFrame(frame);
+  }, [ctx.cards]);
 
   // stay pinned to the newest message when the window or the Dock changes size
   useEffect(() => {
@@ -532,8 +542,6 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
     ro.observe(el);
-    // and when what is in it changes height (spine or cards, pictures arriving)
-    if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
   }, []);
 
@@ -657,7 +665,6 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   const stamps = useStamps();
   const policy = usePolicy();
   const actions = useActions(ctx.conv, more);
-  useKeys();
   const inWindow = withinEditWindow(m.createdAt, policy);
   const sticker = STICKER_RE.exec(m.body)?.[1] ?? null;
   const moderator = ctx.conv.kind === 'space' && (ctx.isAdmin || ctx.conv.moderators?.includes(ctx.meId) || ctx.conv.createdBy === ctx.meId);

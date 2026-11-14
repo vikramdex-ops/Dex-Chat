@@ -570,7 +570,11 @@ body.resizing { user-select: none; cursor: col-resize; }
 .layout-cards .msg.mentioned { background: var(--amber-soft); box-shadow: inset 3px 0 0 var(--amber); }
 .layout-cards .msg.tracked { background: var(--accent-soft); border-color: var(--accent); border-radius: 4px; }
 .layout-cards .msg.deleted { border-style: dashed; background: none; box-shadow: none; }
-.layout-cards .msg.sticker-msg { padding: 0; border-color: transparent; background: none; box-shadow: none; }
+/* things that are cards already (stickers, polls, forms, files alone) are not framed again */
+.layout-cards .run .msg.sticker-msg, .layout-cards .run .msg:is(:has(> .poll), :has(> .form-card), :has(> .msg-files):not(:has(> .msg-text))) {
+  padding: 0; border-color: transparent; background: none; box-shadow: none;
+}
+.layout-cards .msg:is(:has(> .poll), :has(> .form-card), :has(> .msg-files):not(:has(> .msg-text))) .card-time,
 .layout-cards .msg.sticker-msg .card-time { float: none; position: absolute; right: 2px; bottom: -2px; margin: 0; padding: 1px 4px; border: 1px solid var(--stroke); border-radius: 2px; background: var(--layer-solid); }
 .layout-cards .card-time { float: right; margin: 3px -3px 0 14px; font-size: 9.5px; line-height: 1.2; color: var(--text-3); letter-spacing: .04em; }
 /* your own: the amber notch rides the card's right edge, filling as people see it */
