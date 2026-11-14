@@ -340,6 +340,8 @@ export class Hub {
     this.gateway.stop();
     await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
+    // let automations that are running finish before the database closes
+    await Promise.race([this.flows.idle(), new Promise((r) => setTimeout(r, 3000).unref())]);
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     this.store.close();
