@@ -1,5 +1,6 @@
-// The Desk lens: your reminders, saved messages and scheduled messages in one place, and the
-// card that appears when a reminder goes off.
+// The Desk lens: callouts (@ you and side-track replies), side-tracks you follow, reminders,
+// what you kept, what waits to send, notes and your timesheet; and the card that appears when a
+// reminder goes off.
 import { useEffect, useRef, useState } from 'react';
 import type { Message, Ops, PublicUser, Reminder, ScheduledMessage, Session } from '@dex/core';
 import { Avatar, Icon, Popover, Segmented, presenceFor, useToast } from '../ui.tsx';
@@ -9,16 +10,22 @@ import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { Timesheet } from '../work/WorkUi.tsx';
 import { NoteEditor, NotesList } from '../chat/notes.tsx';
-import { REPEAT_LABEL, describeWhen, dismissRinging, toggleSaved, useDesk } from '../desk/store.ts';
+import { REPEAT_LABEL, describeWhen, dismissRinging, snoozePresets, toggleSaved, useDesk } from '../desk/store.ts';
+import type { WhenPreset } from '../desk/store.ts';
+import { SheetTabs } from './People.tsx';
 
-type Tab = 'reminders' | 'saved' | 'scheduled' | 'notes' | 'timesheet' | 'activity' | 'tracks';
+type Tab = 'callouts' | 'tracks' | 'reminders' | 'kept' | 'scheduled' | 'notes' | 'timesheet';
+const TABS: Tab[] = ['callouts', 'tracks', 'reminders', 'kept', 'scheduled', 'notes', 'timesheet'];
 type Jump = (convId: string, messageId?: string, parentId?: string | null) => void;
 
-const snooze = (r: Reminder, ms: number) => window.dex.request('remind.update', { id: r.id, dueAt: Date.now() + ms });
-const tomorrowMorning = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 30, 0, 0); return d.getTime() - Date.now(); };
+const snooze = (r: Reminder, p: WhenPreset) => window.dex.request('remind.update', { id: r.id, dueAt: p.at() });
+const snoozedLine = (p: WhenPreset) => (p.id === '15m' ? 'Snoozed for 15 min' : `Snoozed until ${describeWhen(p.at())}`);
 
 export function Desk({ session, jump }: { session: Session; jump: Jump }) {
-  const [tab, setTab] = useState<Tab>(() => (sessionStorage.getItem('dex-desk-tab') as Tab | null) ?? 'reminders');
+  const [tab, setTab] = useState<Tab>(() => {
+    try { const t = sessionStorage.getItem('dex-desk-tab') as Tab | null; if (t && TABS.includes(t)) return t; } catch { /* storage off */ }
+    return 'reminders';
+  });
   useEffect(() => { try { sessionStorage.setItem('dex-desk-tab', tab); } catch { /* storage off */ } }, [tab]);
   const [creating, setCreating] = useState(false);
   const [note, setNote] = useState<string | null | 'new'>(null);
@@ -28,6 +35,7 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
   const saved = useDesk((s) => s.saved);
   const scheduled = useDesk((s) => s.scheduled);
   const loaded = useDesk((s) => s.loaded);
+  const ringing = useDesk((s) => s.ringing.length);
   const openMine = [...reminders.values()].filter((r) => r.userId === meId && !r.done).length;
 
   return (
@@ -35,25 +43,25 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
       <div className="view-head">
         <div>
           <h1>Desk</h1>
-          <p className="muted">Mentions and replies, side-tracks you follow, reminders, saved messages, what is scheduled to send, and your timesheet.</p>
+          <p className="muted">Callouts, side-tracks you follow, reminders, what you kept, what waits to send, and your timesheet.</p>
         </div>
         <button className="btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={15} />New reminder</button>
       </div>
-      <Segmented<Tab> label="Desk section" value={tab} onChange={setTab} options={[
-        { value: 'activity', label: 'Mentions & replies' },
+      <SheetTabs<Tab> label="Desk section" value={tab} onChange={setTab} tabs={[
+        { value: 'callouts', label: 'Callouts' },
         { value: 'tracks', label: 'Side-tracks' },
-        { value: 'reminders', label: `Reminders${openMine ? ` · ${openMine}` : ''}` },
-        { value: 'saved', label: `Saved${saved.size ? ` · ${saved.size}` : ''}` },
-        { value: 'scheduled', label: `Scheduled${scheduled.size ? ` · ${scheduled.size}` : ''}` },
+        { value: 'reminders', label: 'Reminders', count: openMine, attention: ringing > 0 },
+        { value: 'kept', label: 'Kept', count: saved.size },
+        { value: 'scheduled', label: 'Waiting to send', count: scheduled.size },
         { value: 'notes', label: 'Notes' },
         ...(session.me.role === 'guest' ? [] : [{ value: 'timesheet' as Tab, label: 'Timesheet' }]),
       ]} />
       <div className="desk-body">
         {!loaded && <div className="tl-more"><span className="spinner" /></div>}
         {loaded && tab === 'reminders' && <Reminders list={[...reminders.values()]} users={users} meId={meId} jump={jump} onNew={() => setCreating(true)} />}
-        {loaded && tab === 'saved' && <Saved list={[...saved.values()].sort((a, b) => b.savedAt - a.savedAt)} users={users} meId={meId} jump={jump} />}
+        {loaded && tab === 'kept' && <Kept list={[...saved.values()].sort((a, b) => b.savedAt - a.savedAt)} users={users} meId={meId} jump={jump} />}
         {tab === 'timesheet' && <Timesheet me={session.me} />}
-        {tab === 'activity' && <Activity users={users} meId={meId} jump={jump} />}
+        {tab === 'callouts' && <Callouts users={users} meId={meId} jump={jump} />}
         {tab === 'tracks' && <Tracks users={users} meId={meId} jump={jump} />}
         {tab === 'notes' && (
           <div className="desk-notes card">
@@ -132,7 +140,7 @@ function ReminderRow({ r, users, meId, jump }: { r: Reminder; users: Map<string,
           </button>
         )}
         <div className="desk-meta">
-          <span className={`chip${overdue ? ' warn' : ''}`}><Icon name="alarm" size={12} />{describeWhen(r.dueAt)}</span>
+          <span className={`desk-when${overdue ? ' due' : ''}`}><Icon name="alarm" size={12} />{describeWhen(r.dueAt)}</span>
           {r.repeat !== 'none' && <span className="chip"><Icon name="repeat" size={12} />{REPEAT_LABEL[r.repeat]}</span>}
           {forOther && <span className="faint">for {users.get(r.userId)?.displayName ?? 'someone'}</span>}
           {by && <span className="faint">from {by}</span>}
@@ -140,14 +148,17 @@ function ReminderRow({ r, users, meId, jump }: { r: Reminder; users: Map<string,
       </div>
       {!r.done && (
         <div className="desk-actions">
-          {!forOther && <button className="btn ghost sm" onClick={() => act(snooze(r, 3600_000), 'Snoozed for an hour')}>Snooze</button>}
+          {!forOther && <button className="btn ghost sm" onClick={() => { const p = snoozePresets()[0]; act(snooze(r, p), snoozedLine(p)); }}>Snooze 15 min</button>}
           <button ref={menuBtn} className="icon-btn" aria-label="More" onClick={() => setMenu(!menu)}><Icon name="more" size={16} /></button>
           {menu && (
             <Popover anchor={menuBtn.current} onClose={() => setMenu(false)} className="menu desk-menu">
               {!forOther && <>
-                <button role="menuitem" onClick={() => { setMenu(false); act(snooze(r, 20 * 60_000), 'Snoozed for 20 minutes'); }}><Icon name="clock" size={16} />In 20 minutes</button>
-                <button role="menuitem" onClick={() => { setMenu(false); act(snooze(r, 3 * 3600_000), 'Snoozed for 3 hours'); }}><Icon name="clock" size={16} />In 3 hours</button>
-                <button role="menuitem" onClick={() => { setMenu(false); act(snooze(r, tomorrowMorning()), 'Moved to tomorrow'); }}><Icon name="sun" size={16} />Tomorrow morning</button>
+                <div className="menu-label label">Snooze until</div>
+                {snoozePresets().slice(1).map((p) => (
+                  <button key={p.id} role="menuitem" onClick={() => { setMenu(false); act(snooze(r, p), snoozedLine(p)); }}>
+                    <Icon name={p.id === 'tomorrow' ? 'sun' : 'clock'} size={16} />{p.label}{p.id !== 'tomorrow' && <span className="menu-at mono">{describeWhen(p.at()).split(', ').pop()}</span>}
+                  </button>
+                ))}
                 <div className="menu-sep" />
               </>}
               <button role="menuitem" className="danger" onClick={() => { setMenu(false); act(window.dex.request('remind.delete', { id: r.id }), 'Reminder deleted'); }}><Icon name="trash" size={16} />Delete</button>
@@ -168,11 +179,11 @@ function QuoteLine({ m, users, meId }: { m: Message; users: Map<string, PublicUs
   return <><span><b>{who}</b>{where && <span className="faint"> in {where}</span>}</span><span className="desk-quote-text">{text}</span></>;
 }
 
-// ------------------------------------------------------------------ saved
-function Saved({ list, users, meId, jump }: { list: Array<{ message: Message; savedAt: number }>; users: Map<string, PublicUser>; meId: string; jump: Jump }) {
+// ------------------------------------------------------------------ kept on my Desk
+function Kept({ list, users, meId, jump }: { list: Array<{ message: Message; savedAt: number }>; users: Map<string, PublicUser>; meId: string; jump: Jump }) {
   const toast = useToast();
   if (!list.length) {
-    return <div className="empty desk-empty"><Icon name="star" size={36} /><span>Save messages with <Icon name="star" size={13} /> to keep them here, for you only.</span></div>;
+    return <div className="empty desk-empty"><Icon name="tray" size={36} /><span>Choose <b>Keep on my Desk</b> <Icon name="tray" size={13} /> on any message to file it here. Only you see what you keep.</span></div>;
   }
   return (
     <section className="desk-group">
@@ -183,10 +194,10 @@ function Saved({ list, users, meId, jump }: { list: Array<{ message: Message; sa
             <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} presence={presenceFor(m.authorId)} size="sm" />
             <button className="desk-main desk-open" onClick={() => jump(m.convId, m.id, m.parentId)}>
               <QuoteLine m={m} users={users} meId={meId} />
-              <div className="desk-meta"><span className="faint">{describeWhen(m.createdAt)} · saved {describeWhen(savedAt)}</span></div>
+              <div className="desk-meta"><span className="faint">{describeWhen(m.createdAt)}</span><span className="desk-tag mono">KEPT · {describeWhen(savedAt).toUpperCase()}</span></div>
             </button>
-            <button className="icon-btn on" aria-label="Remove from saved" title="Remove from saved"
-              onClick={() => void toggleSaved(m).then(() => toast('Removed from your Desk')).catch((e: Error) => toast(e.message, true))}><Icon name="star" size={16} /></button>
+            <button className="btn ghost sm" title="Take it off your Desk"
+              onClick={() => void toggleSaved(m).then(() => toast('Taken off your Desk')).catch((e: Error) => toast(e.message, true))}><Icon name="tray" size={15} />Take off Desk</button>
           </div>
         );
       })}
@@ -197,7 +208,7 @@ function Saved({ list, users, meId, jump }: { list: Array<{ message: Message; sa
 // ------------------------------------------------------------------ scheduled
 function Scheduled({ list, users, meId, jump }: { list: ScheduledMessage[]; users: Map<string, PublicUser>; meId: string; jump: Jump }) {
   if (!list.length) {
-    return <div className="empty desk-empty"><Icon name="schedule" size={36} /><span>Nothing scheduled. Write a message and choose <Icon name="schedule" size={13} /> beside Send to send it later.</span></div>;
+    return <div className="empty desk-empty"><Icon name="schedule" size={36} /><span>Nothing scheduled. Write a message and choose <b>Send later</b> beside Send.</span></div>;
   }
   return <section className="desk-group">{list.map((s) => <ScheduledRow key={s.id} s={s} users={users} meId={meId} jump={jump} />)}</section>;
 }
@@ -266,13 +277,12 @@ export function ReminderCards({ users, meId, jump }: { users: Map<string, Public
           {r.repeat !== 'none' ? (
             <div className="reminder-actions">
               <span className="faint">{REPEAT_LABEL[r.repeat]} · next {describeWhen(r.dueAt)}</span>
-              <button className="btn primary sm" onClick={() => dismissRinging(r.id)}><Icon name="check" size={14} />OK</button>
+              <button className="btn primary sm" onClick={() => dismissRinging(r.id)}><Icon name="check" size={14} />Dismiss</button>
             </div>
           ) : (
           <div className="reminder-actions">
-            <button className="btn sm" onClick={() => act(r, snooze(r, 10 * 60_000))}>10 min</button>
-            <button className="btn sm" onClick={() => act(r, snooze(r, 3600_000))}>1 hour</button>
-            <button className="btn sm" onClick={() => act(r, snooze(r, tomorrowMorning()))}>Tomorrow</button>
+            <span className="reminder-snooze label">Snooze</span>
+            {snoozePresets().map((p) => <button key={p.id} className="btn sm" title={describeWhen(p.at())} onClick={() => act(r, snooze(r, p))}>{p.label}</button>)}
             <button className="btn primary sm" onClick={() => act(r, window.dex.request('remind.update', { id: r.id, done: true }))}><Icon name="check" size={14} />Done</button>
           </div>
           )}
@@ -282,8 +292,8 @@ export function ReminderCards({ users, meId, jump }: { users: Map<string, Public
   );
 }
 
-// ------------------------------------------------------------------ mentions and replies
-function Activity({ users, meId, jump }: { users: Map<string, PublicUser>; meId: string; jump: Jump }) {
+// ------------------------------------------------------------------ callouts: @ you, and replies in your side-tracks
+function Callouts({ users, meId, jump }: { users: Map<string, PublicUser>; meId: string; jump: Jump }) {
   const [kind, setKind] = useState<'all' | 'mentions' | 'replies'>('all');
   const [items, setItems] = useState<Ops['activity.list']['res']['items'] | null>(null);
   const [more, setMore] = useState(false);
@@ -295,10 +305,10 @@ function Activity({ users, meId, jump }: { users: Map<string, PublicUser>; meId:
   return (
     <section className="desk-group">
       <Segmented<'all' | 'mentions' | 'replies'> label="Show" value={kind} onChange={setKind} options={[
-        { value: 'all', label: 'All' }, { value: 'mentions', label: 'Mentions' }, { value: 'replies', label: 'Replies' },
+        { value: 'all', label: 'All' }, { value: 'mentions', label: '@ you' }, { value: 'replies', label: 'Side-track replies' },
       ]} />
       {items === null && <div className="tl-more"><span className="spinner" /></div>}
-      {items?.length === 0 && <div className="empty desk-empty"><Icon name="at" size={36} /><span>When someone mentions you, or replies in a side-track you are part of, it shows here.</span></div>}
+      {items?.length === 0 && <div className="empty desk-empty"><Icon name="at" size={36} /><span>When someone writes @ your name, or answers in a side-track you are part of, it lands here.</span></div>}
       {items?.map(({ kind: k, message: m }) => {
         const u = users.get(m.authorId);
         return (
@@ -306,7 +316,7 @@ function Activity({ users, meId, jump }: { users: Map<string, PublicUser>; meId:
             <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} presence={presenceFor(m.authorId)} size="sm" />
             <button className="desk-main desk-open" onClick={() => jump(m.convId, m.id, m.parentId)}>
               <QuoteLine m={m} users={users} meId={meId} />
-              <div className="desk-meta"><span className={`chip ${k === 'mention' ? 'accent' : ''}`}>{k === 'mention' ? '@ Mention' : 'Reply'}</span><span className="faint">{describeWhen(m.createdAt)}</span></div>
+              <div className="desk-meta"><span className={`desk-tag mono${k === 'mention' ? ' callout' : ''}`}>{k === 'mention' ? 'CALLOUT' : 'SIDE-TRACK REPLY'}</span><span className="faint">{describeWhen(m.createdAt)}</span></div>
             </button>
           </div>
         );

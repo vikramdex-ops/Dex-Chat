@@ -9,7 +9,7 @@ import { useChat } from '../chat/store.ts';
 import { ConvTile, convTitle, shortTime } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
 import { describeWhen, useDesk } from '../desk/store.ts';
-import { TeamToday } from '../work/WorkUi.tsx';
+import { DayLogCard } from '../work/WorkUi.tsx';
 import { NextMeeting } from '../calendar/CalendarView.tsx';
 
 function greeting(d = new Date()): string {
@@ -102,7 +102,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
       </section>
 
       <div className="grid cols-3">
-        <TeamToday users={session.users} meId={session.me.id} onPerson={onPerson} />
+        <DayLogCard users={session.users} meId={session.me.id} onPerson={onPerson} />
         <NextMeeting meId={session.me.id} onOpen={() => go('calendar')} />
         <div className="card interactive" onClick={() => go('directory')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go('directory')}>
           <div className="eyebrow">Online now</div>

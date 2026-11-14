@@ -1,8 +1,10 @@
-// Search: words plus filters (who, where, when, Direct or Spaces, files). Opened from Ctrl+K,
-// Ctrl+Shift+F or a conversation's header (already scoped to it).
+// Search: words plus a ruled strip of filters (by whom, in which conversation, when, Direct or
+// Spaces, with files). Opened from the palette, Ctrl+Shift+F or a conversation's header (already
+// scoped to it).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
-import { Avatar, Icon, Popover, Segmented } from '../ui.tsx';
+import { Avatar, Icon, Popover } from '../ui.tsx';
+import { SheetTabs } from './People.tsx';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
 import { formatSize } from '../chat/files.tsx';
@@ -15,8 +17,8 @@ type Hit = { message: Message; snippet: string };
 type FileHit = FileInfo & { messageId: string; convId: string; textMatch?: string };
 
 const WHEN: Array<{ value: When; label: string }> = [
-  { value: 'any', label: 'Any time' }, { value: 'today', label: 'Today' }, { value: 'week', label: 'Past 7 days' },
-  { value: 'month', label: 'Past 30 days' }, { value: 'year', label: 'Past year' },
+  { value: 'any', label: 'Any time' }, { value: 'today', label: 'Today' }, { value: 'week', label: 'Last 7 days' },
+  { value: 'month', label: 'Last 30 days' }, { value: 'year', label: 'Last 12 months' },
 ];
 function since(w: When): number | undefined {
   const d = new Date();
@@ -46,7 +48,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
   const [period, setPeriod] = useState<When>('any');
   const [kind, setKind] = useState<'all' | 'direct' | 'space'>('all');
   const [hasFile, setHasFile] = useState(false);
-  const [tab, setTab] = useState<'messages' | 'files'>('messages');
+  const [tab, setTab] = useState<'text' | 'files'>('text');
   const [hits, setHits] = useState<Hit[]>([]);
   const [files, setFiles] = useState<FileHit[]>([]);
   const [busy, setBusy] = useState(false);
@@ -111,24 +113,39 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
         <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search messages and files" aria-label="Search messages and files" maxLength={200} />
         {busy && <span className="spinner" />}
       </div>
-      <div className="search-filters" role="group" aria-label="Filters">
-        <button ref={anchors.from} className={`chip-btn${from ? ' on' : ''}`} onClick={() => setMenu('from')} aria-haspopup="menu">
-          <Icon name="user" size={14} />{from ? `From ${byId.get(from)?.displayName ?? 'someone'}` : 'From anyone'}
-        </button>
-        {from && <button className="chip-x" aria-label="Clear person" onClick={() => setFrom(null)}><Icon name="x" size={12} /></button>}
-        <button ref={anchors.in} className={`chip-btn${convId ? ' on' : ''}`} onClick={() => setMenu('in')} aria-haspopup="menu">
-          <Icon name="chat" size={14} />{chosenConv ? `In ${convTitle(chosenConv, byId, meId)}` : 'In any conversation'}
-        </button>
-        {convId && <button className="chip-x" aria-label="Clear conversation" onClick={() => setConvId(null)}><Icon name="x" size={12} /></button>}
-        <button ref={anchors.when} className={`chip-btn${period !== 'any' ? ' on' : ''}`} onClick={() => setMenu('when')} aria-haspopup="menu">
-          <Icon name="calendar" size={14} />{WHEN.find((w) => w.value === period)!.label}
-        </button>
+      <div className="search-rule" role="group" aria-label="Filters">
+        <div className={`sr-cell${from ? ' on' : ''}`}>
+          <button ref={anchors.from} className="sr-pick" onClick={() => setMenu('from')} aria-haspopup="menu">
+            <span className="sr-k">By</span><span className="sr-v">{from ? byId.get(from)?.displayName ?? 'someone' : 'anyone'}</span>
+          </button>
+          {from && <button className="sr-x" aria-label="Clear person" onClick={() => setFrom(null)}><Icon name="x" size={12} /></button>}
+        </div>
+        <div className={`sr-cell${convId ? ' on' : ''}`}>
+          <button ref={anchors.in} className="sr-pick" onClick={() => setMenu('in')} aria-haspopup="menu">
+            <span className="sr-k">In</span><span className="sr-v">{chosenConv ? convTitle(chosenConv, byId, meId) : 'every conversation'}</span>
+          </button>
+          {convId && <button className="sr-x" aria-label="Clear conversation" onClick={() => setConvId(null)}><Icon name="x" size={12} /></button>}
+        </div>
+        <div className={`sr-cell${period !== 'any' ? ' on' : ''}`}>
+          <button ref={anchors.when} className="sr-pick" onClick={() => setMenu('when')} aria-haspopup="menu">
+            <span className="sr-k">When</span><span className="sr-v">{WHEN.find((w) => w.value === period)!.label.toLowerCase()}</span>
+          </button>
+        </div>
         {!convId && (
-          <Segmented<'all' | 'direct' | 'space'> label="Where" value={kind} onChange={setKind} options={[
-            { value: 'all', label: 'All' }, { value: 'direct', label: 'Direct' }, { value: 'space', label: 'Spaces' },
-          ]} />
+          <div className={`sr-cell sr-where${kind !== 'all' ? ' on' : ''}`} role="group" aria-label="Where">
+            <span className="sr-k">Where</span>
+            <span className="sr-opts">
+              {([['all', 'Both'], ['direct', 'Direct'], ['space', 'Spaces']] as const).map(([v, l]) => (
+                <button key={v} className="sr-opt" aria-pressed={kind === v} onClick={() => setKind(v)}>{l}</button>
+              ))}
+            </span>
+          </div>
         )}
-        <button className={`chip-btn${hasFile ? ' on' : ''}`} aria-pressed={hasFile} onClick={() => setHasFile(!hasFile)}><Icon name="paperclip" size={14} />Has files</button>
+        <div className={`sr-cell sr-files${hasFile ? ' on' : ''}`}>
+          <button className="sr-pick" aria-pressed={hasFile} onClick={() => setHasFile(!hasFile)}>
+            <span className="sr-k">Files</span><span className="sr-v">{hasFile ? 'attached only' : 'with or without'}</span>
+          </button>
+        </div>
       </div>
       {menu === 'from' && (
         <Popover anchor={anchors.from.current} onClose={closeMenu} className="menu pick-menu" align="start">
@@ -152,17 +169,17 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
         </Popover>
       )}
 
-      <Segmented<'messages' | 'files'> label="Results" value={tab} onChange={setTab} options={[
-        { value: 'messages', label: `Messages${ready ? ` · ${hits.length}${more ? '+' : ''}` : ''}` },
-        { value: 'files', label: `Files${ready ? ` · ${files.length}` : ''}` },
+      <SheetTabs<'text' | 'files'> label="Results" value={tab} onChange={setTab} tabs={[
+        { value: 'text', label: 'Text', count: ready && hits.length ? `${hits.length}${more ? '+' : ''}` : undefined },
+        { value: 'files', label: 'Files', count: ready ? files.length : undefined },
       ]} />
 
       {!ready ? (
-        <div className="empty"><Icon name="search" size={28} /><p>Type at least two letters, or pick a person, a conversation, a date or <b>Has files</b>.</p>
+        <div className="empty"><Icon name="search" size={28} /><p>Type at least two letters, or set one of the filters above: by whom, in which conversation, when, or files attached.</p>
           <p className="faint" style={{ fontSize: 12.5 }}>End-to-end encrypted Direct messages are searched on this device, among the conversations it has open: the hub cannot read them.</p></div>
-      ) : tab === 'messages' ? (
+      ) : tab === 'text' ? (
         <div className="search-results" role="list">
-          {!busy && hits.length === 0 && <div className="empty"><p>No messages match.</p></div>}
+          {!busy && hits.length === 0 && <div className="empty"><p>Nothing written matches.</p></div>}
           {hits.map((h) => {
             const c = conversations.get(h.message.convId);
             const a = byId.get(h.message.authorId);
@@ -170,7 +187,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <button key={h.message.id} role="listitem" className="search-hit" onClick={() => onOpen(h.message.convId, h.message.id, h.message.parentId)}>
                 <Avatar user={a ?? { id: h.message.authorId, displayName: '?' }} size="sm" />
                 <span className="sb-main">
-                  <span className="search-meta"><b>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint"> in {convTitle(c, byId, meId)}</span>}{h.message.parentId && <span className="faint"> · reply</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
+                  <span className="search-meta"><b>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint"> in {convTitle(c, byId, meId)}</span>}{h.message.parentId && <span className="faint"> · side-track</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
                   <span className="search-snippet">{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
                 </span>
               </button>
