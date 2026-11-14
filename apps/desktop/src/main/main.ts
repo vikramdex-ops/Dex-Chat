@@ -1,6 +1,6 @@
 // Dexterity Connect — Electron main process.
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, shell, Tray } from 'electron';
+import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
@@ -221,6 +221,25 @@ function wireIpc(c: Controller): void {
   }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
+  // screen sharing: the UI shows its own picker, then getDisplayMedia() gets the chosen source
+  let chosenScreen: string | null = null;
+  ipcMain.handle('screen:list', async () => {
+    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
+    return sources.filter((s) => !/Dexterity Connect/.test(s.name)).map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }));
+  });
+  ipcMain.handle('screen:choose', (_e, id: string) => { chosenScreen = typeof id === 'string' ? id : null; });
+  session.defaultSession.setDisplayMediaRequestHandler((_req, callback) => {
+    void desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+      const pick = sources.find((s) => s.id === chosenScreen) ?? sources.find((s) => s.id.startsWith('screen:'));
+      chosenScreen = null;
+      if (pick) callback({ video: pick }); else callback({});
+    });
+  });
+  // camera, microphone and screen capture are allowed for the app itself only
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => {
+    const own = wc.getURL().startsWith('file://') || (!!devUrl && wc.getURL().startsWith(devUrl));
+    cb(own && ['media', 'display-capture', 'notifications', 'clipboard-sanitized-write'].includes(permission));
+  });
   ipcMain.handle('update:check', () => updater?.check(true));
   ipcMain.handle('update:download', () => updater?.download());
   ipcMain.handle('update:install', () => { updater?.install(true); });

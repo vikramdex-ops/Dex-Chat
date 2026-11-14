@@ -17,6 +17,7 @@ import { Store } from './store.ts';
 import { UpdateMirror } from './update-mirror.ts';
 import { Messaging, MsgError } from './messaging.ts';
 import { FileStore } from './files.ts';
+import { Rooms, RoomError } from './rooms.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
@@ -79,6 +80,7 @@ export class Hub {
   readonly mirror: UpdateMirror | null;
   readonly messaging: Messaging;
   readonly files: FileStore;
+  readonly rooms: Rooms;
   /** file token -> user, one per signed-in connection */
   private readonly fileTokens = new Map<string, string>();
   private heartbeat: NodeJS.Timeout | null = null;
@@ -98,6 +100,12 @@ export class Hub {
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
     this.files = new FileStore(this.store.db, path.join(opts.dataDir, 'files'), opts.maxFileBytes);
     this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers(), this.files);
+    this.rooms = new Rooms({
+      members: (convId) => this.messaging.members(convId),
+      deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+      broadcast: (name, data) => this.emit(name, data),
+    });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -284,6 +292,7 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
+    if (conn.deviceId && conn.ready) this.rooms.leaveAll(conn.deviceId);
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
     if (conn.ready && conn.userId) this.announcePresence(conn.userId);
@@ -394,6 +403,7 @@ export class Hub {
       users: this.store.activeUsers(),
       online: this.onlineUserIds(conn.userId!),
       away: [...new Set(this.onlineUserIds(conn.userId!).filter((id) => this.isAway(id)))],
+      inRoom: this.rooms.inRoomUsers(),
       fileToken: conn.fileToken!,
     };
   }
@@ -529,6 +539,16 @@ export class Hub {
       }
 
       default: {
+        if (typeof op === 'string' && op.startsWith('room.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.rooms.handle(op, me, conn.deviceId!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
         if (typeof op === 'string' && /^(conv\.|msg\.|file\.|typing$|search$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {

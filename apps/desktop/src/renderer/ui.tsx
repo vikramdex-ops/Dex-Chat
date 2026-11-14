@@ -38,6 +38,15 @@ const PATHS = {
   play: 'M7 5v14l11-7z',
   open: 'M14 4.5h5.5V10M19.5 4.5 11 13M17 13.5V19.5H4.5V7H10',
   download: 'M12 4.5v11M7 11l5 5 5-5M5 19.5h14',
+  phone: 'M6.5 3.5h3l1.5 4.5-2 1.5a11 11 0 0 0 5.5 5.5l1.5-2 4.5 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4.5 5.5a2 2 0 0 1 2-2z',
+  'phone-off': 'M4 15.5c4.6-4.4 11.4-4.4 16 0l-1.6 2.6-3.6-1.3v-2.5a10 10 0 0 0-5.6 0v2.5l-3.6 1.3z',
+  video: 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3',
+  'video-off': 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3M3 3l18 18',
+  mic: 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21',
+  'mic-off': 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16',
+  screen: 'M3.5 4.5h17v12h-17zM8.5 20h7M12 16.5V20M12 8v5M9.5 10.5 12 8l2.5 2.5',
+  minimize: 'M5 19h14M9 5v6H3M15 5v6h6',
+  expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   bell: 'M6 16.5h12l-1.5-2.5V10a4.5 4.5 0 0 0-9 0v4zM10 19.5h4',
   mute: 'M6 16.5h10.5M10 19.5h4M7.5 10a4.5 4.5 0 0 1 7.7-3.2M16.5 10.5V14l1.5 2.5M4 4l16 16',
   pin: 'M9 4h6l-1 6 3 3H7l3-3zM12 13v7',
@@ -80,13 +89,14 @@ export function initials(name: string): string {
 export type Presence = 'on' | 'off' | 'away' | 'room' | 'dnd' | 'busy';
 
 // Presence of everyone, refreshed by the app frame whenever the session changes.
-let presenceSource: { online: Set<string>; away: Set<string>; users: Map<string, PublicUser> } = { online: new Set(), away: new Set(), users: new Map() };
-export function setPresenceSource(online: string[], away: string[], users: PublicUser[]): void {
-  presenceSource = { online: new Set(online), away: new Set(away), users: new Map(users.map((u) => [u.id, u] as const)) };
+let presenceSource: { online: Set<string>; away: Set<string>; inRoom: Set<string>; users: Map<string, PublicUser> } = { online: new Set(), away: new Set(), inRoom: new Set(), users: new Map() };
+export function setPresenceSource(online: string[], away: string[], users: PublicUser[], inRoom: string[] = []): void {
+  presenceSource = { online: new Set(online), away: new Set(away), inRoom: new Set(inRoom), users: new Map(users.map((u) => [u.id, u] as const)) };
 }
 export function presenceFor(id: string): Presence {
   const { online, away, users } = presenceSource;
   if (!online.has(id)) return 'off';
+  if (presenceSource.inRoom.has(id)) return 'room';
   if (away.has(id)) return 'away';
   const a = users.get(id)?.availability;
   return a === 'dnd' ? 'dnd' : a === 'busy' ? 'busy' : 'on';

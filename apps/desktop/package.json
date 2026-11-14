@@ -105,7 +105,11 @@
       ],
       "category": "public.app-category.business",
       "icon": "build/icon.png",
-      "artifactName": "DexterityConnect-${version}-mac-${arch}.${ext}"
+      "artifactName": "DexterityConnect-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Dexterity Connect uses the microphone for calls with colleagues.",
+        "NSCameraUsageDescription": "Dexterity Connect uses the camera for video calls with colleagues."
+      }
     },
     "dmg": {
       "title": "Dexterity Connect"

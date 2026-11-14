@@ -18,6 +18,8 @@ import { SettingsView } from './views/Settings.tsx';
 import { ChatView } from './chat/ChatView.tsx';
 import { addConversation, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
+import { IncomingCall, RoomStage } from './rooms/RoomUi.tsx';
+import { setSelfUser, startCalls } from './rooms/engine.ts';
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'directory';
 export type SheetName = 'preferences' | 'control' | null;
@@ -139,7 +141,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   useEffect(() => {
     if (state.phase !== 'ready') return;
     void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
-  }, [state.phase, session.me.id]);
+    setSelfUser(session.me.id);
+    startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
+  }, [state.phase, session.me.id, session.deviceId]);
 
   const openConversation = (id: string, kind: 'direct' | 'space') => {
     if (kind === 'space') { setOpenSpace(id); setLens('spaces'); } else { setOpenDirect(id); setLens('direct'); }
@@ -156,7 +160,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
   const live = state.phase === 'ready';
   const online = new Set(session.online);
-  setPresenceSource(live ? session.online : [], session.away ?? [], session.users);
+  setPresenceSource(live ? session.online : [], session.away ?? [], session.users, session.inRoom ?? []);
   const toast = useToast();
   const setAvailability = (availability: Availability) => {
     setMenu(false);
@@ -326,6 +330,10 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           }}
         />
       )}
+      <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
+        title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
+        onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
+      <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       <RequiredUpdate state={state} />
     </div>
   );

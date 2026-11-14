@@ -134,6 +134,27 @@ export interface Message {
 /** Mention markup inside message bodies: <@USERID> or <@all>. */
 export const MENTION_RE = /<@([0-9A-Z]{26}|all)>/g;
 
+// ---------------------------------------------------------------- rooms (calls)
+export interface RoomParticipant {
+  userId: string;
+  deviceId: string;
+  joinedAt: number;
+  muted: boolean;
+  camera: boolean;
+  screen: boolean;
+}
+
+export interface RoomInfo {
+  id: string;
+  convId: string;
+  startedBy: string;
+  startedAt: number;
+  video: boolean;
+  participants: RoomParticipant[];
+  /** People invited who have not answered yet. */
+  ringing: string[];
+}
+
 export interface Session {
   hub: HubInfo;
   me: PublicUser;
@@ -142,6 +163,8 @@ export interface Session {
   online: string[];
   /** Online but idle (no input for a while, or the screen is locked). */
   away: string[];
+  /** People currently in a Room (call). */
+  inRoom: string[];
   /** Bearer token for this connection's file uploads and downloads over HTTPS. */
   fileToken: string;
 }
@@ -210,6 +233,13 @@ export interface Ops {
   'msg.pin': { req: { messageId: string; pinned: boolean }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
   'typing': { req: { convId: string; parentId?: string }; res: { ok: true } };
+  'room.start': { req: { convId: string; video: boolean }; res: RoomInfo };
+  'room.join': { req: { roomId: string }; res: RoomInfo };
+  'room.leave': { req: { roomId: string }; res: { ok: true } };
+  'room.decline': { req: { roomId: string }; res: { ok: true } };
+  'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
+  'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
+  'room.list': { req: void; res: RoomInfo[] };
   'search': {
     req: { q: string; convId?: string; limit?: number };
     res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string }> };
@@ -231,5 +261,10 @@ export interface Events {
   'msg.updated': Message;
   'typing': { convId: string; userId: string; parentId: string | null };
   'read': { convId: string; userId: string; messageId: string };
+  'room.ring': { room: RoomInfo; from: string };
+  'room.updated': RoomInfo;
+  'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number };
+  'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
+  'room.busy': { userId: string; inRoom: boolean };
 }
 export type EventName = keyof Events;

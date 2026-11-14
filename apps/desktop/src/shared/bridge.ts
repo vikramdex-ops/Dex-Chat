@@ -97,6 +97,9 @@ export interface DexBridge {
   pathForFile?(file: File): string;
   openFile?(id: string, name: string): Promise<void>;
   saveFile?(id: string, name: string): Promise<string>;
+  /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
+  listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
+  chooseScreen?(id: string): Promise<void>;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   installUpdate(): Promise<void>;

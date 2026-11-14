@@ -13,6 +13,7 @@ import {
 } from './store.ts';
 import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, convTitle } from './Switchboard.tsx';
+import { CallButtons } from '../rooms/RoomUi.tsx';
 
 const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
 const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
@@ -110,6 +111,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
             <p className="faint">{subtitle}</p>
           </div>
           <div className="row-actions">
+            {conv.members.length > 1 && <CallButtons convId={convId} live={live} />}
+            <span className="head-sep" />
             <button className={`icon-btn${side?.kind === 'files' ? ' on' : ''}`} title="Files" onClick={() => setSide(side?.kind === 'files' ? null : { kind: 'files' })}><Icon name="paperclip" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'pins' ? ' on' : ''}`} title="Pinned" onClick={() => setSide(side?.kind === 'pins' ? null : { kind: 'pins' })}><Icon name="pin" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'members' ? ' on' : ''}`} title="People" onClick={() => setSide(side?.kind === 'members' ? null : { kind: 'members' })}><Icon name="people" size={17} /></button>

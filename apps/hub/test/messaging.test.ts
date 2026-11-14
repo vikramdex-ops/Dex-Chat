@@ -207,3 +207,41 @@ test('search finds words, line numbers and mentions, only in your conversations'
   await owner.request('msg.delete', { messageId: edited.id });
   assert.equal((await priya.request('search', { q: 'rack' })).messages.length, 0, 'deleted messages disappear');
 });
+
+test('Rooms: ring, join, relay signals device-to-device, busy state, decline and end', async () => {
+  const { owner, priya, ravi } = await office();
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [me(priya)] });
+
+  const ring = nextEvent<{ room: { id: string }; from: string }>(priya, 'room.ring');
+  const busy = nextEvent<{ userId: string; inRoom: boolean }>(ravi, 'room.busy');
+  const room = await owner.request('room.start', { convId: dm.id, video: true });
+  assert.equal((await ring).from, me(owner));
+  assert.deepEqual(await busy, { userId: me(owner), inRoom: true });
+  assert.deepEqual(room.ringing, [me(priya)]);
+  await assert.rejects(ravi.request('room.join', { roomId: room.id }), /ended/, 'not a member of the conversation');
+
+  const updated = nextEvent<{ participants: unknown[] }>(owner, 'room.updated', (r) => r.participants.length === 2);
+  const joined = await priya.request('room.join', { roomId: room.id });
+  assert.equal(joined.participants.length, 2);
+  assert.deepEqual(joined.ringing, []);
+  await updated;
+
+  // offers and ICE go to exactly one device
+  const ownerDevice = owner.session!.deviceId;
+  const signal = nextEvent<{ fromUser: string; data: { sdp: string } }>(owner, 'room.signal');
+  await priya.request('room.signal', { roomId: room.id, toDevice: ownerDevice, data: { sdp: 'offer' } });
+  assert.deepEqual((await signal).data, { sdp: 'offer' });
+  await priya.request('room.media', { roomId: room.id, muted: true, camera: false, screen: false });
+  assert.equal((await owner.request('room.list'))[0].participants.find((p) => p.userId === me(priya))!.muted, true);
+
+  const ended = nextEvent<{ missed: boolean }>(priya, 'room.ended');
+  await owner.request('room.leave', { roomId: room.id }); // one-to-one: hanging up ends it for both
+  assert.equal((await ended).missed, false);
+  assert.deepEqual(await owner.request('room.list'), []);
+
+  // a declined call ends as missed
+  const r2 = await owner.request('room.start', { convId: dm.id, video: false });
+  const missed = nextEvent<{ missed: boolean }>(owner, 'room.ended');
+  await priya.request('room.decline', { roomId: r2.id });
+  assert.equal((await missed).missed, true);
+});
