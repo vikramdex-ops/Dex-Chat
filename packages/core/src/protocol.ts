@@ -1,5 +1,6 @@
 // Wire protocol shared by the hub, the desktop app and (later) the phone web app.
 // Every frame is one JSON object with a `t` discriminator.
+import type { FlowEvents, FlowOps } from './flows.ts';
 
 export const PROTOCOL_VERSION = 1;
 export const APP_ID = 'dexconnect';
@@ -729,7 +730,7 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 }
 
 // Request/response operations available in a session.
-export interface Ops {
+export interface Ops extends FlowOps {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
   'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
@@ -994,7 +995,7 @@ export const HASHTAG_RE = /(?<![\p{L}\p{N}&/#])#([\p{L}][\p{L}\p{N}_-]{1,48})/gu
 export const hashtags = (body: string): string[] => [...new Set([...body.matchAll(HASHTAG_RE)].map((m) => m[1].toLowerCase()))].slice(0, 20);
 
 // Server-pushed events.
-export interface Events {
+export interface Events extends FlowEvents {
   'presence': { userId: string; online: boolean; away?: boolean };
   'user.updated': PublicUser;
   'user.added': PublicUser;
