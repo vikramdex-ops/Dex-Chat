@@ -1,5 +1,6 @@
 // The Direct and Spaces lenses: Switchboard on the left, the open conversation beside it.
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Conversation, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { Icon, Segmented, Toggle, useToast } from '../ui.tsx';
@@ -60,7 +61,7 @@ function Dialog({ title, children, onClose }: { title: string; children: React.R
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="dialog wide" role="dialog" aria-modal="true" aria-label={title}>
         <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
@@ -69,7 +70,8 @@ function Dialog({ title, children, onClose }: { title: string; children: React.R
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

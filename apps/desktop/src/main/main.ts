@@ -7,6 +7,8 @@ import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
 import { loadConfig, loadIdentity, saveConfig } from './persist.ts';
 import { Updater } from './updater.ts';
+import { handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
+import type { HubAccess, UploadSource } from './files.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -31,6 +33,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.setAppUserModelId(APP_ID);
+registerFileScheme();
 if (process.defaultApp && process.argv[1]) {
   app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
 } else {
@@ -201,6 +204,23 @@ function wireIpc(c: Controller): void {
       return { ok: false, error: (err as Error).message };
     }
   });
+  const access = (): HubAccess => {
+    const hub = c.hubEndpoint();
+    const token = c.state().session?.fileToken;
+    if (!hub || !token) throw new Error('Not connected to the office hub.');
+    return { ...hub, token };
+  };
+  const wrap = async <T>(fn: () => Promise<T>) => {
+    try { return { ok: true, data: await fn() }; } catch (err) { return { ok: false, error: (err as Error).message }; }
+  };
+  ipcMain.handle('file:upload', (e, uploadId: string, src: UploadSource) => wrap(() => uploadFile(access(), {
+    path: typeof src?.path === 'string' ? src.path : undefined,
+    data: src?.data instanceof ArrayBuffer ? src.data : undefined,
+    name: String(src?.name ?? 'file').slice(0, 200),
+    mime: typeof src?.mime === 'string' ? src.mime : undefined,
+  }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
+  ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
+  ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
   ipcMain.handle('update:check', () => updater?.check(true));
   ipcMain.handle('update:download', () => updater?.download());
   ipcMain.handle('update:install', () => { updater?.install(true); });
@@ -276,6 +296,12 @@ void app.whenReady().then(async () => {
     if (Date.now() - last > 30 * 60 * 1000) void updater?.check(false);
   });
   wireIpc(controller);
+  handleFileScheme(() => {
+    const hub = controller?.hubEndpoint();
+    const token = controller?.state().session?.fileToken;
+    return hub && token ? { ...hub, token } : null;
+  });
+  void pruneCache();
   applyLogin(config.settings);
   nativeTheme.themeSource = config.settings.theme;
   nativeTheme.on('updated', () => applyTheme(controller!.settings));

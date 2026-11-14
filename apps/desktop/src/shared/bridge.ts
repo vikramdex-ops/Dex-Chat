@@ -91,6 +91,12 @@ export interface DexBridge {
   notify(title: string, body: string, link?: string): void;
   /** Unread attention count for the taskbar / dock badge. */
   setBadge?(count: number): void;
+  /** Files (desktop only; absent on phones for now). */
+  uploadFile?(uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string }): Promise<import('@dex/core').FileInfo>;
+  onUploadProgress?(cb: (uploadId: string, sent: number, total: number) => void): () => void;
+  pathForFile?(file: File): string;
+  openFile?(id: string, name: string): Promise<void>;
+  saveFile?(id: string, name: string): Promise<string>;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   installUpdate(): Promise<void>;

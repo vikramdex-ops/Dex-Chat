@@ -16,6 +16,7 @@ import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
 import { UpdateMirror } from './update-mirror.ts';
 import { Messaging, MsgError } from './messaging.ts';
+import { FileStore } from './files.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
@@ -26,6 +27,8 @@ export interface HubOptions {
   name?: string;
   port?: number;
   host?: string;
+  /** Largest file accepted (default 1 GB). */
+  maxFileBytes?: number;
   /** Update mirror settings; `false` turns the mirror off. */
   updates?: Omit<MirrorOptions, 'dir' | 'log'> | false;
   /** UDP port for discovery; `false` disables discovery (tests). */
@@ -41,6 +44,7 @@ interface Conn {
   deviceId: string | null;
   userId: string | null;
   ready: boolean;
+  fileToken: string | null;
 }
 
 const isAdminRole = (r: Role) => r === 'owner' || r === 'admin';
@@ -73,6 +77,9 @@ export class Hub {
   private announcer: HubAnnouncer | null = null;
   readonly mirror: UpdateMirror | null;
   readonly messaging: Messaging;
+  readonly files: FileStore;
+  /** file token -> user, one per signed-in connection */
+  private readonly fileTokens = new Map<string, string>();
   private heartbeat: NodeJS.Timeout | null = null;
   private readonly startedAt = Date.now();
   private readonly log: NonNullable<HubOptions['log']>;
@@ -88,7 +95,8 @@ export class Hub {
     this.fingerprint = tls.fingerprint;
 
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
-    this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers());
+    this.files = new FileStore(this.store.db, path.join(opts.dataDir, 'files'), opts.maxFileBytes);
+    this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers(), this.files);
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -150,6 +158,7 @@ export class Hub {
   // --------------------------------------------------------------- http
   private http(req: IncomingMessage, res: ServerResponse): void {
     if (this.mirror?.handle(req, res)) return;
+    if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -169,11 +178,46 @@ export class Hub {
     res.end(JSON.stringify({ error: 'not found' }));
   }
 
+  /** POST /files?name=…&type=…  and  GET /files/<id>[?download=1], authorised by a session file token. */
+  private async fileRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url ?? '/', 'https://hub');
+    const sendJson = (code: number, body: unknown) => {
+      if (res.headersSent) { res.end(); return; }
+      res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(body));
+    };
+    const auth = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : url.searchParams.get('t');
+    const userId = auth ? this.fileTokens.get(auth) : undefined;
+    const user = userId ? this.store.userById(userId) : null;
+    if (!user) { req.resume(); sendJson(401, { error: 'Sign in again to use files.' }); return; }
+
+    if (req.method === 'POST' && url.pathname === '/files') {
+      if (user.role === 'guest') { req.resume(); sendJson(403, { error: 'Guests cannot upload files.' }); return; }
+      try {
+        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined);
+        this.log('info', 'file uploaded', { user: user.account, size: info.size });
+        sendJson(200, info);
+      } catch (err) {
+        const e = err as Error & { status?: number };
+        req.resume();
+        sendJson(e.status ?? 500, { error: e.status ? e.message : 'Upload failed.' });
+      }
+      return;
+    }
+    const m = url.pathname.match(/^\/files\/([0-9A-Z]{26})$/);
+    if ((req.method === 'GET' || req.method === 'HEAD') && m) {
+      if (!this.files.canRead(user.id, m[1])) { sendJson(404, { error: 'not found' }); return; }
+      this.files.serve(req, res, m[1], url.searchParams.get('download') === '1');
+      return;
+    }
+    sendJson(404, { error: 'not found' });
+  }
+
   // ---------------------------------------------------------- websocket
   private accept(ws: WebSocket, req: IncomingMessage): void {
     const conn: Conn = {
       ws, nonce: crypto.randomBytes(24).toString('base64url'), ip: req.socket.remoteAddress ?? '',
-      alive: true, deviceId: null, userId: null, ready: false,
+      alive: true, deviceId: null, userId: null, ready: false, fileToken: null,
     };
     this.conns.add(conn);
     ws.on('pong', () => { conn.alive = true; });
@@ -218,6 +262,8 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
+    // keep the token briefly so a download that is already running can finish
+    if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
     if (conn.ready && conn.userId && !this.isOnline(conn.userId)) {
       this.emit('presence', { userId: conn.userId, online: false });
     }
@@ -313,6 +359,8 @@ export class Hub {
     }
     const wasOnline = this.isOnline(device.userId, conn);
     conn.ready = true;
+    conn.fileToken = crypto.randomBytes(24).toString('base64url');
+    this.fileTokens.set(conn.fileToken, device.userId);
     this.store.touchDevice(device.id);
     this.send(conn, { t: 'ready', session: this.sessionFor(conn) });
     if (!wasOnline) this.emit('presence', { userId: device.userId, online: true }, (c) => c !== conn);
@@ -325,6 +373,7 @@ export class Hub {
       deviceId: conn.deviceId!,
       users: this.store.activeUsers(),
       online: this.onlineUserIds(),
+      fileToken: conn.fileToken!,
     };
   }
 
@@ -446,7 +495,7 @@ export class Hub {
       }
 
       default: {
-        if (typeof op === 'string' && /^(conv\.|msg\.|typing$)/.test(op)) {
+        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|typing$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);

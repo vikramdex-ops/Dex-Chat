@@ -2,7 +2,9 @@
 // optional side panel (side-track, pins or members) on the right.
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Conversation, PublicUser } from '@dex/core';
+import type { Conversation, FileInfo, PublicUser } from '@dex/core';
+import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
+import type { Attachment } from './files.tsx';
 import { Avatar, Icon, colorFor, useToast } from '../ui.tsx';
 import { isEmojiOnly, renderBody } from './format.tsx';
 import {
@@ -16,9 +18,12 @@ const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
 const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
 const RUN_GAP = 5 * 60 * 1000;
 
-type Side = { kind: 'track'; parentId: string } | { kind: 'pins' } | { kind: 'members' } | null;
+type Side = { kind: 'track'; parentId: string } | { kind: 'pins' } | { kind: 'members' } | { kind: 'files' } | null;
 
-interface Ctx { users: Map<string, PublicUser>; meId: string; isAdmin: boolean; conv: Conversation; online: Set<string> }
+interface Ctx {
+  users: Map<string, PublicUser>; meId: string; isAdmin: boolean; conv: Conversation; online: Set<string>;
+  view: (f: FileInfo, all: FileInfo[]) => void;
+}
 
 function dayLabel(ts: number): string {
   const d = new Date(ts);
@@ -37,6 +42,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
 }) {
   const conv = useChat((s) => s.conversations.get(convId));
   const [side, setSide] = useState<Side>(null);
+  const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
@@ -48,7 +55,14 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
   }, [convId]);
 
   if (!conv) return <div className="pane empty"><div className="empty"><Icon name="chat" size={36} /><span>This conversation is no longer available.</span></div></div>;
-  const ctx: Ctx = { users, meId, isAdmin, conv, online };
+  const ctx: Ctx = { users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }) };
+  const canAttach = filesSupported() && live;
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const files = [...e.dataTransfer.files];
+    if (files.length && canAttach) window.dispatchEvent(new CustomEvent('dex-attach', { detail: { key: tlKey(convId), files } }));
+  };
   const title = convTitle(conv, users, meId);
   const others = conv.members.filter((m) => m !== meId);
   const subtitle = conv.kind === 'space'
@@ -59,7 +73,11 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
 
   return (
     <div className={`pane-wrap${side ? ' with-side' : ''}`}>
-      <section className="pane" aria-label={title}>
+      <section className="pane" aria-label={title}
+        onDragOver={(e) => { if (canAttach && e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
+        onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
+        onDrop={onDrop}>
+        {dragging && <div className="drop-zone" onDragLeave={() => setDragging(false)}><Icon name="paperclip" size={28} /><span>Drop to share in {title}</span></div>}
         <header className="pane-head">
           {onBack && <button className="icon-btn only-narrow" onClick={onBack} aria-label="Back to the list"><Icon name="back" size={18} /></button>}
           <ConvTile c={conv} users={users} meId={meId} online={online} />
@@ -68,6 +86,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
             <p className="faint">{subtitle}</p>
           </div>
           <div className="row-actions">
+            <button className={`icon-btn${side?.kind === 'files' ? ' on' : ''}`} title="Files" onClick={() => setSide(side?.kind === 'files' ? null : { kind: 'files' })}><Icon name="paperclip" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'pins' ? ' on' : ''}`} title="Pinned" onClick={() => setSide(side?.kind === 'pins' ? null : { kind: 'pins' })}><Icon name="pin" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'members' ? ' on' : ''}`} title="People" onClick={() => setSide(side?.kind === 'members' ? null : { kind: 'members' })}><Icon name="people" size={17} /></button>
             <button className={`icon-btn${conv.muted ? ' on' : ''}`} title={conv.muted ? 'Unmute' : 'Mute'}
@@ -83,6 +102,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
       {side?.kind === 'track' && <SideTrack ctx={ctx} parentId={side.parentId} live={live} onClose={() => setSide(null)} />}
       {side?.kind === 'pins' && <PinsPanel ctx={ctx} onClose={() => setSide(null)} onJump={(id) => setSide({ kind: 'track', parentId: id })} />}
       {side?.kind === 'members' && <MembersPanel ctx={ctx} onClose={() => setSide(null)} />}
+      {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
+      {viewer && <Lightbox file={viewer.file} all={viewer.all} onClose={() => setViewer(null)} />}
     </div>
   );
 }
@@ -241,11 +262,14 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
       {editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
       ) : (
-        <div className={`msg-text selectable${isEmojiOnly(m.body) ? ' big' : ''}`}>
-          {renderBody(m.body, ctx.users, ctx.meId)}
-          {m.editedAt && <span className="edited"> (edited)</span>}
-        </div>
+        m.body ? (
+          <div className={`msg-text selectable${isEmojiOnly(m.body) ? ' big' : ''}`}>
+            {renderBody(m.body, ctx.users, ctx.meId)}
+            {m.editedAt && <span className="edited"> (edited)</span>}
+          </div>
+        ) : null
       )}
+      <MessageFiles files={m.files ?? []} onView={ctx.view} />
 
       {Object.keys(m.reactions).length > 0 && (
         <div className="reactions">
@@ -284,8 +308,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           <button onClick={() => setPicker(!picker)} title="More reactions"><Icon name="smile" size={16} /></button>
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Reply in a side-track"><Icon name="reply" size={16} /></button>}
           <button onClick={() => void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned')} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="pin" size={16} /></button>
-          <button onClick={() => { void navigator.clipboard.writeText(m.body); toast('Copied'); }} title="Copy text"><Icon name="copy" size={16} /></button>
-          {mine && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
+          {m.body && <button onClick={() => { void navigator.clipboard.writeText(m.body); toast('Copied'); }} title="Copy text"><Icon name="copy" size={16} /></button>}
+          {mine && m.body && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
           {canDelete && <button className="danger" onClick={() => { if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id })); }} title="Delete"><Icon name="trash" size={16} /></button>}
           {picker && (
             <div className="emoji-pop" onMouseLeave={() => setPicker(false)}>
@@ -355,7 +379,27 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null);
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const canAttach = filesSupported() && live;
+
+  const addFiles = (files: File[]) => {
+    if (!files.length || !canAttach) return;
+    const room = 20 - attachments.length;
+    const fresh = startUploads(files.slice(0, room), (k, patch) =>
+      setAttachments((list) => (patch === null ? list.filter((a) => a.key !== k) : list.map((a) => (a.key === k ? { ...a, ...patch } : a)))));
+    setAttachments((list) => [...list, ...fresh]);
+    ref.current?.focus();
+  };
+  useEffect(() => {
+    const onAttach = (e: Event) => { const d = (e as CustomEvent).detail as { key: string; files: File[] }; if (d.key === key) addFiles(d.files); };
+    window.addEventListener('dex-attach', onAttach);
+    return () => window.removeEventListener('dex-attach', onAttach);
+  });
+  useEffect(() => () => { for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview); }, [key]);
+  const uploading = attachments.some((a) => !a.info && !a.error);
+  const ready = attachments.filter((a) => a.info);
 
   useEffect(() => { setText(chatState().drafts.get(key) ?? ''); setMention(null); ref.current?.focus(); }, [key]);
   useEffect(() => { if (ref.current) autoGrow(ref.current); }, [text]);
@@ -401,8 +445,10 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
 
   const send = () => {
     const body = toWire(text, ctx.users, ctx.conv);
-    if (!body || !live) return;
-    void sendMessage(convId, body, parentId);
+    if ((!body && !ready.length) || !live || uploading) return;
+    void sendMessage(convId, body, parentId, ready.map((a) => a.info!));
+    for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
+    setAttachments([]);
     setText('');
     setDraft(key, '');
     setMention(null);
@@ -438,8 +484,15 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
           ))}
         </ul>
       )}
-      <div className={`dock${text.trim() ? ' has-text' : ''}`}>
+      <AttachmentTray items={attachments} onRemove={(k) => setAttachments((l) => l.filter((a) => a.key !== k))} />
+      <div className={`dock${text.trim() || (ready.length && !uploading) ? ' has-text' : ''}`}>
         <div className="dock-tools">
+          {canAttach && (
+            <>
+              <button className="icon-btn" title="Attach files (or drop them here)" onClick={() => picker.current?.click()}><Icon name="paperclip" size={18} /></button>
+              <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
+            </>
+          )}
           <button className="icon-btn" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
           <button className="icon-btn" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
@@ -456,9 +509,10 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
           maxLength={8000}
           onChange={(e) => update(e.target.value, e.target.selectionStart)}
           onKeyDown={onKey}
+          onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length && canAttach) { e.preventDefault(); addFiles(files); } }}
           aria-label={placeholder}
         />
-        <button className="send" onClick={send} disabled={!text.trim() || !live} title="Send (Enter)" aria-label="Send">
+        <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
           <Icon name="send" size={18} />
         </button>
       </div>

@@ -3,6 +3,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, ulid } from '@dex/core';
 import type { Conversation, Message, MessagePreview, Ops, PublicUser } from '@dex/core';
+import type { FileStore } from './files.ts';
 
 export class MsgError extends Error {}
 
@@ -69,11 +70,13 @@ export class Messaging {
   /** Delivers an event to a set of users (all their connected devices). */
   private readonly deliver: (userIds: string[], name: string, data: (userId: string) => unknown) => void;
   private readonly users: () => PublicUser[];
+  private readonly files: FileStore;
 
-  constructor(db: DatabaseSync, deliver: Messaging['deliver'], users: () => PublicUser[]) {
+  constructor(db: DatabaseSync, deliver: Messaging['deliver'], users: () => PublicUser[], files: FileStore) {
     this.db = db;
     this.deliver = deliver;
     this.users = users;
+    this.files = files;
     db.exec(SCHEMA);
   }
 
@@ -103,7 +106,13 @@ export class Messaging {
   private preview(convId: string): MessagePreview | null {
     const r = this.db.prepare('SELECT id, author_id, body, created_at, deleted FROM messages WHERE conv_id = ? AND parent_id IS NULL ORDER BY id DESC LIMIT 1')
       .get(convId) as { id: string; author_id: string; body: string; created_at: number; deleted: number } | undefined;
-    return r ? { id: r.id, authorId: r.author_id, body: r.deleted ? '' : r.body.slice(0, 280), createdAt: r.created_at } : null;
+    if (!r) return null;
+    let body = r.deleted ? '' : r.body.slice(0, 280);
+    if (!r.deleted && !body) {
+      const names = this.files.forMessage(r.id).map((f) => f.name);
+      body = names.length ? `📎 ${names.length === 1 ? names[0] : `${names.length} files`}` : '';
+    }
+    return { id: r.id, authorId: r.author_id, body, createdAt: r.created_at };
   }
 
   view(c: ConvRow, viewer: string): Conversation {
@@ -133,6 +142,7 @@ export class Messaging {
       createdAt: r.created_at, editedAt: r.edited_at, deleted: !!r.deleted, pinned: !!r.pinned, reactions,
       mentions: r.body.includes('<@all>') && !r.deleted ? ['all', ...mentions] : mentions,
       replyCount: replies?.n ?? 0, lastReplyAt: replies?.last ?? null, clientId: r.client_id,
+      files: r.deleted ? [] : this.files.forMessage(r.id),
     };
   }
 
@@ -296,6 +306,12 @@ export class Messaging {
         return { messages: rows.slice(0, limit).reverse().map((r) => this.messageView(r)), hasMore } satisfies Ops['msg.list']['res'];
       }
 
+      case 'file.list': {
+        const c = this.requireMember(String(d.convId), me.id);
+        const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(200, Math.floor(d.limit))) : 100;
+        return this.files.inConversation(c.id, typeof d.before === 'string' ? d.before : '~', limit);
+      }
+
       case 'msg.pins': {
         const c = this.requireMember(String(d.convId), me.id);
         return (this.db.prepare('SELECT * FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0 ORDER BY id DESC LIMIT 50').all(c.id) as unknown as MsgRow[]).map((r) => this.messageView(r));
@@ -304,7 +320,10 @@ export class Messaging {
       case 'msg.send': {
         const c = this.requireMember(String(d.convId), me.id);
         const body = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim() : '';
-        if (!body) throw new MsgError('Write something first.');
+        const fileIds = Array.isArray(d.files) ? [...new Set(d.files.filter((f): f is string => typeof f === 'string'))].slice(0, 21) : [];
+        if (fileIds.length > 20) throw new MsgError('Attach up to 20 files at a time.');
+        for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
+        if (!body && !fileIds.length) throw new MsgError('Write something first.');
         if (body.length > MAX_BODY) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
         if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
         const clientId = typeof d.clientId === 'string' ? d.clientId.slice(0, 64) : null;
@@ -322,6 +341,7 @@ export class Messaging {
         this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(id, c.id, me.id, body, parentId, Date.now(), clientId);
         this.recordMentions(id, c.id, body);
+        if (fileIds.length) this.files.link(id, c.id, fileIds);
         // sending implies you have read up to here
         if (!parentId) this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(id, c.id, me.id);
         const row = this.message(id)!;

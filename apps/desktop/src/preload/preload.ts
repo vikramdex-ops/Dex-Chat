@@ -1,11 +1,17 @@
 // Sandboxed preload: exposes a narrow, typed API to the UI.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DexBridge } from '../shared/bridge.ts';
 
 function subscribe<T extends unknown[]>(channel: string, cb: (...args: T) => void): () => void {
   const listener = (_e: Electron.IpcRendererEvent, ...args: unknown[]) => cb(...(args as T));
   ipcRenderer.on(channel, listener);
   return () => { ipcRenderer.removeListener(channel, listener); };
+}
+
+async function unwrap<T>(p: Promise<{ ok: boolean; data?: T; error?: string }>): Promise<T> {
+  const r = await p;
+  if (!r.ok) throw new Error(r.error);
+  return r.data as T;
 }
 
 const bridge: DexBridge = {
@@ -24,6 +30,11 @@ const bridge: DexBridge = {
   setSettings: (patch) => ipcRenderer.invoke('app:setSettings', patch),
   notify: (title, body, link) => ipcRenderer.send('app:notify', title, body, link),
   setBadge: (count) => ipcRenderer.send('app:badge', count),
+  uploadFile: (uploadId, src) => unwrap(ipcRenderer.invoke('file:upload', uploadId, src)),
+  onUploadProgress: (cb) => subscribe('file:progress', cb),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  openFile: (id, name) => unwrap(ipcRenderer.invoke('file:open', id, name)),
+  saveFile: (id, name) => unwrap(ipcRenderer.invoke('file:save', id, name)),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

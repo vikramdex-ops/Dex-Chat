@@ -855,3 +855,50 @@ select.input { padding-right: 6px; }
 
 .only-narrow { display: none; }
 @media (max-width: 720px) { .only-narrow { display: grid; } }
+
+/* ============================================================== files */
+.msg-files { display: grid; gap: 6px; margin-top: 6px; max-width: 520px; }
+.img-grid { display: grid; gap: 4px; border-radius: var(--radius-l); overflow: hidden; }
+.img-grid.n1 { grid-template-columns: 1fr; max-width: 420px; }
+.img-grid.n2 { grid-template-columns: 1fr 1fr; }
+.img-grid.n3, .img-grid.n4 { grid-template-columns: 1fr 1fr; }
+.img-tile { position: relative; padding: 0; border: 0; background: var(--subtle-2); cursor: zoom-in; aspect-ratio: 4 / 3; overflow: hidden; }
+.img-grid.n1 .img-tile { aspect-ratio: auto; max-height: 340px; }
+.img-tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform var(--med) var(--ease); }
+.img-grid.n1 .img-tile img { object-fit: contain; max-height: 340px; background: var(--subtle); }
+.img-tile:hover img { transform: scale(1.02); }
+.img-tile .more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8,20,22,.55); color: #fff; font: 600 22px var(--font-display); }
+.file-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-l); border: 1px solid var(--stroke); background: var(--layer-solid); }
+.file-card.compact { margin-bottom: 6px; padding: 8px 10px; }
+.file-ico { width: 40px; height: 40px; flex: none; border-radius: 30%; display: grid; place-items: center; align-content: center; gap: 1px; background: var(--accent-soft); color: var(--accent-ink); }
+.file-ico span { font: 700 8px/1 var(--font-mono); letter-spacing: .04em; }
+.file-ico.small { width: 30px; height: 30px; }
+.file-ico[data-kind='drawing'] { background: var(--amber-soft); color: var(--amber-ink); }
+.file-actions { display: flex; gap: 4px; flex: none; }
+.file-actions .btn { height: 30px; padding: 0 10px; font-size: 13px; }
+.drop-zone {
+  position: absolute; inset: 8px; z-index: 6; display: grid; place-content: center; justify-items: center; gap: 10px;
+  border: 2px dashed var(--accent); border-radius: var(--radius-l); background: color-mix(in srgb, var(--layer-solid) 88%, transparent);
+  color: var(--accent-ink); font-weight: 600; animation: fade var(--fast);
+}
+.attach-tray { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 6px 6px; }
+.attach-chip { position: relative; display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 6px 4px 6px 6px; border-radius: var(--radius-m); background: var(--layer-solid); border: 1px solid var(--stroke); overflow: hidden; }
+.attach-chip img { width: 30px; height: 30px; border-radius: 6px; object-fit: cover; flex: none; }
+.attach-chip.failed { border-color: var(--danger); }
+.attach-chip.failed .sb-preview { color: var(--danger); }
+.attach-chip .icon-btn { width: 24px; height: 24px; }
+.chip-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--subtle-2); }
+.chip-bar span { display: block; height: 100%; background: var(--accent); transition: width var(--fast); }
+.files-images { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 12px; }
+.files-images .img-tile { border-radius: 6px; aspect-ratio: 1; }
+.lightbox { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-rows: auto 1fr; background: rgba(5, 13, 15, .92); animation: fade var(--med); }
+.lightbox header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: #e8f2f3; }
+.lightbox header .faint { color: #9fb9bc; font-size: 13px; }
+.lightbox header .icon-btn { color: #e8f2f3; }
+.lightbox > img { max-width: calc(100% - 120px); max-height: calc(100vh - 90px); margin: auto; object-fit: contain; border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: rise 260ms var(--ease); }
+.lb-nav { position: absolute; top: 50%; width: 46px; height: 46px; border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(232,242,243,.12); color: #fff; }
+.lb-nav.prev { left: 20px; }
+.lb-nav.next { right: 20px; transform: scaleX(-1); }
+
+.lightbox .btn.ghost { color: #e8f2f3; }
+.lightbox .btn.ghost:hover { background: rgba(232,242,243,.12); }

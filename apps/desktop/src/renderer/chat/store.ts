@@ -2,7 +2,7 @@
 // drafts. Sends are optimistic (shown instantly, confirmed by the hub, retried with the same
 // clientId so they never duplicate). Components subscribe with useChat(selector).
 import { useSyncExternalStore } from 'react';
-import type { Conversation, Message, PublicUser } from '@dex/core';
+import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
 import { plainPreview } from './format.tsx';
 
 export interface PendingMessage extends Message {
@@ -187,12 +187,12 @@ export async function loadOlder(convId: string): Promise<void> {
 // ------------------------------------------------------------------ actions
 const newClientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export async function sendMessage(convId: string, body: string, parentId?: string | null): Promise<void> {
+export async function sendMessage(convId: string, body: string, parentId?: string | null, files: FileInfo[] = []): Promise<void> {
   const clientId = newClientId();
   const optimistic: PendingMessage = {
     id: `~${clientId}`, convId, authorId: state.meId, body, parentId: parentId ?? null, createdAt: Date.now(),
     editedAt: null, deleted: false, pinned: false, reactions: {}, mentions: [], replyCount: 0, lastReplyAt: null,
-    clientId, pending: true,
+    clientId, pending: true, files,
   };
   const key = tlKey(convId, parentId);
   const tl = state.timelines.get(key) ?? { messages: [], hasMore: false, loaded: true, loading: false };
@@ -204,7 +204,7 @@ export async function sendMessage(convId: string, body: string, parentId?: strin
 async function deliver(m: PendingMessage): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const saved = await window.dex.request('msg.send', { convId: m.convId, body: m.body, parentId: m.parentId ?? undefined, clientId: m.clientId! });
+      const saved = await window.dex.request('msg.send', { convId: m.convId, body: m.body, parentId: m.parentId ?? undefined, clientId: m.clientId!, files: m.files.map((f) => f.id) });
       upsertMessage(saved);
       changed();
       return;

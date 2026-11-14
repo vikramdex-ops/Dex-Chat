@@ -98,6 +98,15 @@ export interface Conversation {
   reads: Record<string, string | null>;
 }
 
+export interface FileInfo {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  uploaderId: string;
+  createdAt: number;
+}
+
 export interface Message {
   id: string;
   convId: string;
@@ -116,6 +125,7 @@ export interface Message {
   replyCount: number;
   lastReplyAt: number | null;
   clientId: string | null;
+  files: FileInfo[];
 }
 
 /** Mention markup inside message bodies: <@USERID> or <@all>. */
@@ -127,6 +137,8 @@ export interface Session {
   deviceId: string;
   users: PublicUser[];
   online: string[];
+  /** Bearer token for this connection's file uploads and downloads over HTTPS. */
+  fileToken: string;
 }
 
 // ---- hub -> client
@@ -184,7 +196,8 @@ export interface Ops {
   'conv.read': { req: { convId: string; messageId: string }; res: Conversation };
   'conv.mute': { req: { convId: string; muted: boolean }; res: Conversation };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };
-  'msg.send': { req: { convId: string; body: string; parentId?: string; clientId: string }; res: Message };
+  'msg.send': { req: { convId: string; body: string; parentId?: string; clientId: string; files?: string[] }; res: Message };
+  'file.list': { req: { convId: string; before?: string; limit?: number }; res: Array<FileInfo & { messageId: string; authorId: string }> };
   'msg.edit': { req: { messageId: string; body: string }; res: Message };
   'msg.delete': { req: { messageId: string }; res: Message };
   'msg.react': { req: { messageId: string; emoji: string; on: boolean }; res: Message };
