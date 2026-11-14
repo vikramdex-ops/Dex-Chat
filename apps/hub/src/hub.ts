@@ -40,6 +40,8 @@ import { Rooms, RoomError } from './rooms.ts';
 import { Meetings } from './meetings.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
+import { Links, LinkError } from './links.ts';
+import { ReactionInsights, InsightError } from './reactions.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -125,6 +127,8 @@ export class Hub {
   readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
+  readonly links: Links;
+  readonly reactionInsights: ReactionInsights;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -181,6 +185,11 @@ export class Hub {
     this.messaging.customEmoji = (name) => this.emoji.exists(name);
     this.commands = new Commands(this.store, this.messaging);
     this.workspace = new Workspace(this.store.db, this.messaging, (userIds, name, data) => this.deliver(userIds, name, data));
+    this.links = new Links({ store: this.store, messaging: this.messaging, files: this.files, visibleUsers: (u) => this.guests.visibleTo(u, this.store.activeUsers()),
+      event: (u, id) => { try { return this.calendar.handle('cal.get', u, { eventId: id }) as import('@dex/core').CalEvent; } catch { return null; } } });
+    this.reactionInsights = new ReactionInsights(this.store, this.messaging);
+    this.messaging.onReaction = (messageId, convId, userId, emoji, on) => this.reactionInsights.record(messageId, convId, userId, emoji, on);
+    this.messaging.afterSend = (msg, author) => this.links.prefetch(msg, author);
     this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
     this.desk = new Desk(this.store.db, this.messaging, this.files, (userIds, name, data) => this.deliver(userIds, name, data), (uid) => {
       const u = this.store.userById(uid);
@@ -1252,6 +1261,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(links\.|admin\.links\.|reactions\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = op.startsWith('reactions.') ? this.reactionInsights.handle(op, me, d) : await this.links.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof LinkError || err instanceof InsightError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }

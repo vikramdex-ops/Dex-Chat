@@ -124,7 +124,115 @@ Up to 8 lines of 200 characters. Revoking the integration removes its widgets.
 | `dexconnect://conversation/<id>` | A conversation |
 | `dexconnect://message/<conversation id>/<message id>` | One message (shown as a preview card in messages; *Copy link* on a message makes one) |
 | `dexconnect://people/<user id>` | Someone's profile in the Directory |
+| `dexconnect://file/<file id>` | A file shared in a conversation |
+| `dexconnect://calendar/event/<event id>` | A meeting on the Calendar |
+| `dexconnect://desk/task/<reminder id>` | A task (reminder) on someone's Desk |
 | `dexconnect://desk`, `dexconnect://calendar`, `dexconnect://settings` | Those screens |
+
+Every one of these links, the tools' own links below, and paths on the office share are shown in
+messages as cards (see [Link cards](#5-link-cards-side-tracks-about-links-and-reaction-insights)).
+
+## 5. Link cards, side-tracks about links and reaction insights
+
+These are operations the apps call on the hub over their signed-in connection (like every other
+operation; there is no separate HTTP API). Types are in `packages/core/src/protocol.ts`.
+
+### `links.preview { url }` → `LinkCard`
+
+A card for any link in a message. The app asks when the message is on screen: posting a message
+never waits for a preview (the hub only warms its cache afterwards, for web links in messages it
+can read).
+
+| Link | Card `kind` | What it shows |
+| --- | --- | --- |
+| `dexconnect://message/<conv>/<msg>` | `message` | Author, conversation, sent or edited, replies, an excerpt (encrypted messages say so), actions `open` and `reply` |
+| `dexconnect://conversation/<id>` | `conversation` | Name, topic, members, last message, kind; `join` for an open Space you are not in |
+| `dexconnect://people/<id>` | `person` | Name, designation, department, seat, status |
+| `dexconnect://file/<id>` | `file` | Name, type, size, who shared it; a thumbnail (`preview.fileId`) for images |
+| `dexconnect://calendar/event/<id>` | `event` | Title, when, organiser, invited and going, your reply; `join` for a meeting held as a call |
+| `dexconnect://desk/task/<id>` | `task` | The task, due, open, overdue or done |
+| `sleuth://search?q=` | `search` | The search; `open-in-tool` (Sleuth) |
+| `dexterity://open/<server>/<book>?at=` | `workbook` | The workbook's name, its server and cell; `open-in-tool` (Dexterity Sheets) |
+| `projectopener://open/<id>` | `project` | The project; `open-in-tool` (Project Opener) |
+| `datum://c/<id>`, `datum://m/<module>/<calculator>` | `component`, `calculator` | `open-in-tool` (Datum) |
+| `\\server\share\…`, `file://…`, `D:\…` | `folder`, `path` | The name, the folder, the file type and server; actions `open-in-tool` (label *Open folder*, `tool: 'folder'`) and `copy-path`. The hub never reads the path. |
+| `http://`, `https://` | `web`, `video` (YouTube), `repo`, `issue`, `pull` (GitHub), `pdf`, `image` | Title, site, description, picture and icon from `og:*`, `twitter:*`, `<title>` and `<meta name="description">`; size for PDFs, dimensions for images |
+
+Hopper has no link scheme of its own (`hopper://` only serves files inside Hopper's window), so
+office-share paths are the way to point at files Hopper manages.
+
+Internal cards are worked out for the person asking. If they cannot see what the link points at,
+or it does not exist, the card is `{ kind: 'restricted' }` with no title, subtitle, details or
+actions, so a link never tells anyone what is behind it.
+
+Web pages are fetched by the hub, never by the apps:
+
+- `http` and `https` only, on the usual web ports (80, 443, 8080, 8443);
+- the host is looked up once and every address checked: loopback, private, link-local,
+  carrier-grade NAT, multicast, documentation and reserved addresses (IPv4 and IPv6, including
+  mapped, NAT64 and 6to4 forms, and numbers written in decimal, octal or hex) are refused, unless
+  an administrator lists the host in `allowLanHosts`. The request goes to the address that was
+  checked, so a second DNS answer cannot redirect it;
+- at most 3 redirects, each checked again; 4 seconds in all; at most 512 KB read;
+- only HTML is read for its tags; PDFs and images by their headers (and an image's first bytes for
+  its size); nothing else;
+- the request sends `User-Agent: DexterityConnect-LinkPreview` and no cookies, credentials or
+  referrer.
+
+A blocked page gives `{ kind: 'unavailable', status: 'blocked', reason }`, a failed one
+`status: 'failed'`. Web cards are cached on the hub for 24 hours (failures for 15 minutes) by a
+hash of the address without its `#fragment`, and shared by everyone. Each person can have 30
+web previews a minute that are not in the cache; after that the operation answers
+*Too many link previews in a minute*.
+
+### `admin.links.get`, `admin.links.set { externalPreviews?, guestExternalPreviews?, allowLanHosts? }` → `LinkSettings`
+
+Administrators only. `externalPreviews` (on by default) turns fetching web pages off for the whole
+office; cards then have `status: 'disabled'` and only the site's name. Guests get no web previews
+unless `guestExternalPreviews` is on (off by default, the data-protection friendly choice).
+`allowLanHosts` lists up to 50 office-network host names (an intranet wiki) the hub may fetch.
+
+### `links.discuss { url, convId, messageId? }` → `LinkThread`
+
+Opens the side-track about a link in a conversation: the same side-tracks as everywhere else
+(replies under a root message, `msg.list { parentId }`, `msg.send { parentId }`). The hub remembers
+the root for each conversation and link (`{ convId, urlHash, rootMessageId }`). The first time,
+it anchors to the latest message in the conversation that holds the link, or posts a new message
+with the link as the person asking. In a Direct conversation the hub cannot read the messages, so
+the app passes the `messageId` the person started from. Members only.
+
+### `reactions.insights { messageId }` → `ReactionInsights`
+
+What a message's reactions show, for members of its conversation. Every reaction added or removed
+is kept with its time (`reaction_events`), from the moment the hub is updated (reactions from
+before count as added when they were made).
+
+- `distribution`: each emoji with its count and percentage;
+- `audience`: the conversation's members other than the author and integrations: how many
+  reacted, read it without reacting, have not read it, and `unknown` (their read receipts are
+  off). Read receipts are used as people share them: someone with their own receipts off gets
+  `receipts: false` and no read counts, as in Read by…; side-track replies have no receipts;
+- `timeline`: added, removed and cumulative reactions in up to 25 equal steps from the message;
+  `firstAt` and `lastAt`;
+- `byDepartment`: reactors per department (when the office has departments);
+- `announcement`: for messages in the Office space or a Space where only moderators post, the
+  share of members who reacted against the average of the office's other announcements in the
+  last 90 days;
+- `anonymous`: for an anonymous poll only counts are given (no departments, no read counts).
+
+Every answer carries `note: 'Reactions are not approvals'`, which the app shows with the numbers.
+
+### Communication styles (in the app, no hub)
+
+`restyle(text, style, opts?)` in `@dex/core/restyle` rewrites a draft as `concise`, `formal`,
+`diplomatic`, `explanatory` or `technical`. It runs on the person's own PC, is rule-based and
+deterministic (no model, no network), and never changes numbers, units, dates, times, names,
+@mentions, drawing, line and tag numbers, code, links or quoted text (the technical style only
+writes the SI symbol and a thin space after a number). It returns the new text and each change
+(`from`, `to`, `rule`, `at`, `sourceAt`); `applyChoices(result, rejectedIds)` gives the text with
+the changes the person undid put back. `opts.names` lists more names to keep, `opts.glossary` adds
+the office's own abbreviations, and `opts.courtesy: false` stops the diplomatic style adding a
+greeting and thanks.
 
 ## What each tool does today
 

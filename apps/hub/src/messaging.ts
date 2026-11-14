@@ -136,6 +136,10 @@ export class Messaging {
   /** The office policy: how long after sending an author may edit or delete (null: any time). */
   editWindowMs: () => number | null = () => null;
   dlpRules: () => DlpRule[] = () => [];
+  /** A reaction was added or removed (the hub keeps the history for reaction insights). */
+  onReaction: ((messageId: string, convId: string, userId: string, emoji: string, on: boolean) => void) | null = null;
+  /** After a message is posted; nothing waits for it (link previews warm their cache). */
+  afterSend: ((msg: Message, author: PublicUser) => void) | null = null;
 
   /** Office data-loss rules on a message the hub can read: throws when blocked, returns it masked otherwise. */
   guardText(body: string, convId: string): string {
@@ -1022,6 +1026,7 @@ export class Messaging {
         } else {
           this.db.prepare('DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?').run(msg.id, me.id, emoji);
         }
+        this.onReaction?.(msg.id, msg.conv_id, me.id, emoji, d.on === true);
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         return this.messageView(row);
@@ -1171,6 +1176,7 @@ export class Messaging {
     this.pushMessage('msg.new', row);
     if (!parentId) this.pushConv(c.id);
     if (!extra.forwarded) this.outOfOffice(c, me.id, (this.db.prepare('SELECT user_id FROM mentions WHERE message_id = ?').all(id) as Array<{ user_id: string }>).map((r) => r.user_id));
+    if (this.afterSend) this.afterSend(this.messageView(row), me);
     return this.messageView(row, me.id);
   }
 

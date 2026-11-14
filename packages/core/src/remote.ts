@@ -55,7 +55,7 @@ const transcript = (hubId: string, deviceEph: Uint8Array, hubEph: Uint8Array) =>
 
 async function keys(shared: Uint8Array, deviceEph: Uint8Array, hubEph: Uint8Array) {
   const salt = new Uint8Array([...deviceEph, ...hubEph]);
-  const mk = async (label: string) => subtle().importKey('raw', hkdf(sha256, shared, salt, enc.encode(`${GW_PROTO} ${label}`), 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  const mk = async (label: string) => subtle().importKey('raw', new Uint8Array(hkdf(sha256, shared, salt, enc.encode(`${GW_PROTO} ${label}`), 32)), 'AES-GCM', false, ['encrypt', 'decrypt']);
   return { toHub: await mk('device-to-hub'), toDevice: await mk('hub-to-device') };
 }
 
