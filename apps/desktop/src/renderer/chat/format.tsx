@@ -2,6 +2,7 @@
 // (never HTML strings). Supports **bold**, *italic*, ~~strike~~, `code`, ``` blocks ```,
 // > quotes, lists, links, <@mentions> and engineering line-number references.
 import { EmojiImg, customEmoji } from '../emoji.tsx';
+import { highlight } from './highlight.tsx';
 import type { ReactNode } from 'react';
 import type { PublicUser } from '@dex/core';
 
@@ -49,6 +50,11 @@ const INLINE: Inline[] = [
     const u = ctx.users.get(m[1]);
     return <span key={k} className={`mention${m[1] === ctx.meId ? ' me' : ''}`}>@{u?.displayName ?? 'someone'}</span>;
   } },
+  // [text](address): https, or a link to a message or an office tool
+  { re: /\[([^\]\n]{1,200})\]\(((?:https?|dexconnect|projectopener|dexterity|sleuth|datum):\/\/[^\s)]{1,2000})\)/y, render: (m, k, ctx) => /^https?:/.test(m[2])
+    ? <a key={k} href={m[2]} target="_blank" rel="noreferrer noopener" title={m[2]}>{inline(m[1], ctx, k)}</a>
+    : <button key={k} className="md-link" title={m[2]} onClick={() => void window.dex.openLink?.(m[2]).catch(() => {})}>{inline(m[1], ctx, k)}</button> },
+  { re: /__([^_\n]+)__/y, render: (m, k, ctx) => <u key={k}>{inline(m[1], ctx, k)}</u> },
   { re: /\*\*([^*\n]+)\*\*/y, render: (m, k, ctx) => <strong key={k}>{inline(m[1], ctx, k)}</strong> },
   { re: /~~([^~\n]+)~~/y, render: (m, k, ctx) => <s key={k}>{inline(m[1], ctx, k)}</s> },
   { re: /(?<![\w*])\*([^*\n]+)\*(?![\w*])/y, render: (m, k, ctx) => <em key={k}>{inline(m[1], ctx, k)}</em> },
@@ -63,7 +69,7 @@ const INLINE: Inline[] = [
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS:]/;
+const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS:[]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];
@@ -72,7 +78,7 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   let n = 0;
   while (i < text.length) {
     let matched = false;
-    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~')) {
+    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~' || text[i] === '[')) {
       for (const rule of INLINE) {
         rule.re.lastIndex = i;
         const m = rule.re.exec(text);
@@ -101,12 +107,13 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
       const nl = part.indexOf('\n');
       const lang = nl > 0 && /^[\w+#.-]{1,20}$/.test(part.slice(0, nl).trim()) ? part.slice(0, nl).trim() : '';
       const code = lang ? part.slice(nl + 1) : part.replace(/^\n/, '');
-      blocks.push(<pre key={`c${pi}`} className="md-pre" data-lang={lang || undefined}><code>{code.replace(/\n$/, '')}</code></pre>);
+      const body = code.replace(/\n$/, '');
+      blocks.push(<pre key={`c${pi}`} className="md-pre" data-lang={lang || undefined}><code>{lang ? highlight(body, lang) : body}</code></pre>);
       return;
     }
     const lines = part.split('\n');
     let para: string[] = [];
-    let list: { ordered: boolean; items: string[] } | null = null;
+    let list: { ordered: boolean; items: Array<{ text: string; depth: number; ordered: boolean }> } | null = null;
     let quote: string[] = [];
     const flushPara = () => {
       if (para.length) {
@@ -118,8 +125,22 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
     const flushList = () => {
       if (list) {
         const k = `l${pi}-${blocks.length}`;
-        const items = list.items.map((it, ii) => <li key={ii}>{inline(it, ctx, `${k}-${ii}`)}</li>);
-        blocks.push(list.ordered ? <ol key={k}>{items}</ol> : <ul key={k}>{items}</ul>);
+        // indentation (two spaces or a tab per level) nests items under the one above
+        const build = (from: number, depth: number, ordered: boolean, key: string): [ReactNode, number] => {
+          const items: ReactNode[] = [];
+          let j = from;
+          while (j < list!.items.length && list!.items[j].depth >= depth) {
+            const it = list!.items[j];
+            if (it.depth > depth) { const [sub, next] = build(j, it.depth, it.ordered, `${key}-${j}`); items.push(<li key={`n${j}`} className="md-nest">{sub}</li>); j = next; continue; }
+            let sub: ReactNode = null;
+            let next = j + 1;
+            if (next < list!.items.length && list!.items[next].depth > depth) [sub, next] = build(next, list!.items[next].depth, list!.items[next].ordered, `${key}-${next}`);
+            items.push(<li key={j}>{inline(it.text, ctx, `${key}-${j}`)}{sub}</li>);
+            j = next;
+          }
+          return [ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>, j];
+        };
+        blocks.push(build(0, list.items[0].depth, list.items[0].ordered, k)[0]);
         list = null;
       }
     };
@@ -134,23 +155,30 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
       const bullet = raw.match(/^\s*[-*•]\s+(.*)$/);
       const numbered = raw.match(/^\s*\d{1,3}[.)]\s+(.*)$/);
       const q = raw.match(/^>\s?(.*)$/);
-      const heading = raw.match(/^(#{1,3})\s+(.+)$/);
+      const heading = raw.match(/^(#{1,6})\s+(.+)$/);
+      const rule = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(raw);
+      const depthOf = (m: RegExpMatchArray | null) => (m ? Math.min(4, Math.floor(m[0].match(/^\s*/)![0].replace(/\t/g, '  ').length / 2)) : 0);
       const check = raw.match(/^\s*[-*]\s+\[( |x|X)\]\s+(.*)$/);
       if (heading) {
         flushPara(); flushList(); flushQuote();
         const k = `h${pi}-${blocks.length}`;
         const level = heading[1].length;
         const content = inline(heading[2], ctx, k);
-        blocks.push(level === 1 ? <h3 key={k} className="md-h md-h1">{content}</h3> : level === 2 ? <h4 key={k} className="md-h md-h2">{content}</h4> : <h5 key={k} className="md-h md-h3">{content}</h5>);
+        blocks.push(level === 1 ? <h3 key={k} className="md-h md-h1">{content}</h3> : level === 2 ? <h4 key={k} className="md-h md-h2">{content}</h4> : level === 3 ? <h5 key={k} className="md-h md-h3">{content}</h5> : <h6 key={k} className="md-h md-h4">{content}</h6>);
+      } else if (rule) {
+        flushPara(); flushList(); flushQuote();
+        blocks.push(<hr key={`r${pi}-${blocks.length}`} className="md-hr" />);
       } else if (check) {
         flushPara(); flushQuote();
-        if (!list || list.ordered) { flushList(); list = { ordered: false, items: [] }; }
-        list.items.push(`${check[1].trim() ? '☑' : '☐'} ${check[2]}`);
+        if (!list) list = { ordered: false, items: [] };
+        list.items.push({ text: `${check[1].trim() ? '☑' : '☐'} ${check[2]}`, depth: depthOf(check), ordered: false });
       } else if (bullet || numbered) {
         flushPara(); flushQuote();
         const ordered = !!numbered;
-        if (!list || list.ordered !== ordered) { flushList(); list = { ordered, items: [] }; }
-        list.items.push((bullet ?? numbered)![1]);
+        const depth = depthOf(bullet ?? numbered);
+        if (list && depth === 0 && list.items.some((x) => x.depth === 0) && list.items.filter((x) => x.depth === 0).at(-1)!.ordered !== ordered) flushList();
+        if (!list) list = { ordered, items: [] };
+        list.items.push({ text: (bullet ?? numbered)![1], depth, ordered });
       } else if (q) {
         flushPara(); flushList();
         quote.push(q[1]);
@@ -172,6 +200,7 @@ export function plainPreview(body: string, users: Map<string, PublicUser>): stri
     .replace(/<@all>/g, '@everyone')
     .replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(/```[\s\S]*?```/g, '[code]')
+    .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
     // escaped characters stay, markup goes
     .replace(/\\([\\`*_~<>])/g, (_, c: string) => `\u0000${c}`)
     .replace(/(^|[^\u0000])[*_~`>]+/g, '$1')

@@ -1598,3 +1598,31 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .gw-url-row .input { flex: 1; min-width: 0; }
 .gw-url-row .btn { flex: none; }
 .field-label { display: block; margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+
+/* Markdown extras */
+.md-hr { border: 0; border-top: 1px solid var(--stroke-strong); margin: 10px 0; }
+.md-h4 { font-size: 13px; font-weight: 700; margin: 6px 0 2px; color: var(--text-2); }
+.md-link { display: inline; padding: 0; border: 0; background: none; color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; }
+.md-nest { list-style: none; }
+.msg-body ul ul, .msg-body ol ol, .msg-body ul ol, .msg-body ol ul { margin: 2px 0; }
+.hl-k { color: #8a3ffc; font-weight: 600; }
+.hl-s { color: #198038; }
+.hl-n { color: #b45309; }
+.hl-c { color: var(--text-3); font-style: italic; }
+:root[data-theme='dark'] .hl-k { color: #c4a2ff; }
+:root[data-theme='dark'] .hl-s { color: #8bd49c; }
+:root[data-theme='dark'] .hl-n { color: #f5b971; }
+.emoji-pop-wrap { padding: 0 !important; }
+.emoji-picker { width: 320px; display: grid; gap: 6px; padding: 8px; }
+.emoji-scroll { max-height: 280px; overflow: auto; }
+.emoji-group { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); padding: 8px 4px 4px; }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); }
+.emoji-grid button { height: 34px; border: 0; border-radius: 6px; background: none; font-size: 19px; cursor: pointer; display: grid; place-items: center; }
+.emoji-grid button:hover, .emoji-grid button:focus-visible { background: var(--subtle-2); }
+.md-help { width: 380px; }
+.md-help-row { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; align-items: center; padding: 5px 10px; font-size: 12.5px; }
+.md-help-row code { font: 11.5px var(--font-mono); color: var(--text-2); }
+.md-help-row .kbd { justify-self: end; }
+.dock-hint .link { font-size: inherit; padding: 0; }
+
+.md-help-row code { white-space: nowrap; }

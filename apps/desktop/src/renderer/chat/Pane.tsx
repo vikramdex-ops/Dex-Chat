@@ -18,6 +18,7 @@ import { FormBuilder, FormCard } from './forms.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
+import { EmojiPicker } from './EmojiPicker.tsx';
 import { EmojiGlyph, EmojiImg, useCustomEmoji } from '../emoji.tsx';
 import { ClipRecorder, clipsSupported, screenClipsSupported } from './clips.tsx';
 import type { Board } from '@dex/core';
@@ -46,6 +47,16 @@ interface Ctx {
   /** Multi-select: the chosen message ids (null when not selecting). */
   selected: Set<string> | null;
   select: (id: string | null) => void;
+}
+
+/** Insert text at the cursor (replacing the selection) through the browser's editing, so undo works. */
+function insertAtCursor(el: HTMLTextAreaElement, ins: string): void {
+  el.focus();
+  if (!document.execCommand('insertText', false, ins)) {
+    const { selectionStart: a, selectionEnd: b } = el;
+    el.setRangeText(ins, a, b, 'end');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 }
 
 /** The text of a message as a Markdown quote, for the Dock. */
@@ -544,9 +555,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
             </Popover>
           )}
           {picker && (
-            <Popover anchor={pickBtn.current} onClose={() => setPicker(false)} className="emoji-pop">
-              {EMOJI.map((e) => <button key={e} onClick={() => react(e)}>{e}</button>)}
-              {[...custom.keys()].map((n) => <button key={n} title={`:${n}:`} onClick={() => react(`:${n}:`)}><EmojiImg name={n} /></button>)}
+            <Popover anchor={pickBtn.current} onClose={() => setPicker(false)} className="emoji-pop-wrap">
+              <EmojiPicker onPick={(e) => react(e)} onClose={() => setPicker(false)} />
             </Popover>
           )}
         </div>
@@ -618,6 +628,9 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null);
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
+  const emojiBtn = useRef<HTMLButtonElement>(null);
+  const [mdHelp, setMdHelp] = useState(false);
+  const mdBtn = useRef<HTMLButtonElement>(null);
   const custom = useCustomEmoji();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | null>(null);
@@ -701,13 +714,21 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     requestAnimationFrame(() => { el.focus(); const pos = mention!.start + c.label.length + 2; el.setSelectionRange(pos, pos); });
   };
 
-  const wrap = (mark: string) => {
+  // edits go through the browser's own editing, so Ctrl+Z undoes them like typing
+  const wrap = (mark: string, end = mark) => {
     const el = ref.current!;
     const { selectionStart: a, selectionEnd: b } = el;
-    const v = `${text.slice(0, a)}${mark}${text.slice(a, b)}${mark}${text.slice(b)}`;
-    setText(v);
-    setDraft(key, v);
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a + mark.length, b + mark.length); });
+    insertAtCursor(el, `${mark}${el.value.slice(a, b)}${end}`);
+    el.setSelectionRange(a + mark.length, b + mark.length);
+  };
+  const link = () => {
+    const el = ref.current!;
+    const { selectionStart: a, selectionEnd: b } = el;
+    const sel = el.value.slice(a, b);
+    const isUrl = /^https?:\/\/\S+$/.test(sel);
+    insertAtCursor(el, isUrl ? `[link text](${sel})` : `[${sel || 'link text'}](https://)`);
+    if (isUrl) el.setSelectionRange(a + 1, a + 10);
+    else el.setSelectionRange(a + (sel || 'link text').length + 3, a + (sel || 'link text').length + 11);
   };
 
   const clear = () => { setText(''); setDraft(key, ''); setMention(null); };
@@ -772,7 +793,10 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       const last = [...(tl?.messages ?? [])].reverse().find((m) => m.authorId === ctx.meId && !m.deleted && !('pending' in m) && withinEditWindow(m.createdAt));
       if (last) { e.preventDefault(); window.dispatchEvent(new CustomEvent('dex-edit', { detail: last.id })); }
     }
-    if (e.ctrlKey && !e.shiftKey && (e.key === 'b' || e.key === 'i')) { e.preventDefault(); wrap(e.key === 'b' ? '**' : '*'); }
+    if (e.ctrlKey && !e.shiftKey && (e.key === 'b' || e.key === 'i' || e.key === 'u')) { e.preventDefault(); wrap(e.key === 'b' ? '**' : e.key === 'i' ? '*' : '__'); }
+    if (e.ctrlKey && !e.shiftKey && e.key === 'l') { e.preventDefault(); link(); }
+    if (e.ctrlKey && !e.shiftKey && e.key === 'e') { e.preventDefault(); setEmoji(true); }
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); if ((text.trim() || ready.length) && live && !direct && !uploading) setDockDialog('schedule'); }
     if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'x') { e.preventDefault(); wrap('~~'); }
   };
 
@@ -810,7 +834,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
             </>
           )}
-          <button className="icon-btn wide-only" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
+          <button ref={emojiBtn} className="icon-btn wide-only" title="Emoji (Ctrl+E)" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
           <button ref={addBtn} className="icon-btn" title="Add a video, poll, form, note or whiteboard" disabled={!live || direct} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
           {addMenu && (
             <Popover anchor={addBtn.current} onClose={() => setAddMenu(false)} className="menu add-menu" align="start">
@@ -825,9 +849,17 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
           )}
           <button className="icon-btn wide-only" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
-            <div className="emoji-pop dock-emoji" onMouseLeave={() => setEmoji(false)}>
-              {[...EMOJI, ...[...custom.keys()].map((n) => `:${n}:`)].map((e) => <button key={e} title={e.startsWith(':') ? e : undefined} onClick={() => { const el = ref.current!; const pos = el.selectionStart; const ins = e.startsWith(':') ? `${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}${e} ` : e; const v = text.slice(0, pos) + ins + text.slice(pos); setText(v); setDraft(key, v); setEmoji(false); el.focus(); }}><EmojiGlyph emoji={e} /></button>)}
-            </div>
+            <Popover anchor={emojiBtn.current} onClose={() => setEmoji(false)} className="emoji-pop-wrap" align="start">
+              <EmojiPicker onClose={() => { setEmoji(false); ref.current?.focus(); }} onPick={(e) => {
+                const el = ref.current!;
+                const pos = el.selectionStart;
+                const ins = e.startsWith(':') ? `${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}${e} ` : e;
+                setEmoji(false);
+                el.focus();
+                el.setSelectionRange(pos, el.selectionEnd);
+                insertAtCursor(el, ins);
+              }} />
+            </Popover>
           )}
         </div>
         {live && !direct && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
@@ -866,7 +898,21 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       {dockDialog === 'schedule' && <ScheduleDialog preview={toWire(text, ctx.users, ctx.conv)} users={ctx.users} meId={ctx.meId} onPick={schedule} onClose={() => setDockDialog(null)} />}
       <div className="dock-hint faint">
         {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 message scheduled · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} messages scheduled`} · see Desk</span>}
-        <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <b>**bold**</b> <i>*italic*</i> <code>`code`</code></span>
+        <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
+        {mdHelp && (
+          <Popover anchor={mdBtn.current} onClose={() => setMdHelp(false)} className="menu md-help" align="end">
+            <div className="menu-label">Formatting</div>
+            {[
+              ['**bold**', <b key="b">bold</b>, 'Ctrl+B'], ['*italic*', <i key="i">italic</i>, 'Ctrl+I'], ['__underline__', <u key="u">underline</u>, 'Ctrl+U'],
+              ['~~strike~~', <s key="s">strike</s>, 'Ctrl+Shift+X'], ['`code`', <code key="c" className="md-code">code</code>, ''], ['[text](url)', <span key="l" className="md-link">text</span>, 'Ctrl+L'],
+              ['# Heading', <b key="h">Heading</b>, ''], ['> quote', <span key="q" style={{ borderLeft: '3px solid var(--stroke-strong)', paddingLeft: 6 }}>quote</span>, ''],
+              ['- item  1. item', <span key="li">• item</span>, ''], ['  - nested', <span key="n" style={{ paddingLeft: 12 }}>◦ nested</span>, ''], ['- [ ] task', <span key="t">☐ task</span>, ''],
+              ['```js … ```', <code key="cb" className="md-code">code block</code>, ''], ['---', <span key="r" style={{ display: 'inline-block', width: 60, borderTop: '1px solid var(--stroke-strong)' }} />, ''],
+            ].map(([src, out, key]) => (
+              <div key={String(src)} className="md-help-row"><code>{src}</code><span>{out}</span>{key ? <span className="kbd">{key}</span> : <span />}</div>
+            ))}
+          </Popover>
+        )}
       </div>
     </div>
   );
