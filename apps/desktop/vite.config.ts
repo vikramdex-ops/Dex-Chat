@@ -64,7 +64,14 @@ function segmenterAssets(): Plugin {
 export default defineConfig({
   root: 'src/renderer',
   base: './',
-  plugins: [react(), ocrAssets(), segmenterAssets()],
+  // the interface's JSX runtime translates literal text into the chosen language (src/renderer/i18n)
+  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets()],
+  resolve: {
+    alias: {
+      '@dex/i18n/jsx-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-runtime.ts'),
+      '@dex/i18n/jsx-dev-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-dev-runtime.ts'),
+    },
+  },
   build: {
     outDir: '../../dist-renderer',
     emptyOutDir: true,
