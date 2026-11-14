@@ -101,6 +101,38 @@ export class FileStore {
     this.db.prepare('UPDATE files SET ocr_text = ? WHERE id = ?').run(clean || null, fileId);
   }
 
+  /** More reasons a file is in use, as SQL conditions on `f` (meeting recordings). */
+  readonly keep: string[] = [];
+
+  /** Store a file that was written to disk elsewhere (a recording uploaded in chunks); the file is moved. */
+  adopt(src: string, uploaderId: string, rawName: string, rawMime: string): FileInfo {
+    const name = cleanName(rawName);
+    const hash = crypto.createHash('sha256');
+    const fd = fs.openSync(src, 'r');
+    const buf = Buffer.alloc(1024 * 1024);
+    let size = 0;
+    try {
+      for (let n = fs.readSync(fd, buf); n > 0; n = fs.readSync(fd, buf)) { hash.update(buf.subarray(0, n)); size += n; }
+    } finally { fs.closeSync(fd); }
+    const sha = hash.digest('hex');
+    const blob = this.blobPath(sha);
+    if (fs.existsSync(blob)) fs.rmSync(src, { force: true });
+    else { fs.mkdirSync(path.dirname(blob), { recursive: true }); fs.renameSync(src, blob); }
+    const id = ulid();
+    this.db.prepare('INSERT INTO files (id, name, mime, size, sha256, uploader_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, cleanMime(rawMime, name), size, sha, uploaderId, Date.now());
+    return this.info(id)!;
+  }
+
+  /** Forget a file now (its blob goes when nothing else uses it). */
+  drop(fileId: string): void {
+    const r = this.db.prepare('SELECT sha256 FROM files WHERE id = ?').get(fileId) as { sha256: string } | undefined;
+    if (!r) return;
+    this.db.prepare('DELETE FROM message_files WHERE file_id = ?').run(fileId);
+    this.db.prepare('DELETE FROM files WHERE id = ?').run(fileId);
+    if (!this.db.prepare('SELECT 1 FROM files WHERE sha256 = ? LIMIT 1').get(r.sha256)) fs.rmSync(this.blobPath(r.sha256), { force: true });
+  }
+
   /** Files everyone may read (custom emoji images). */
   isPublic: (fileId: string) => boolean = () => false;
 
@@ -184,7 +216,7 @@ export class FileStore {
     const rows = this.db.prepare(`SELECT f.id, f.sha256 FROM files f WHERE f.created_at < ?
       AND NOT EXISTS (SELECT 1 FROM message_files mf JOIN messages m ON m.id = mf.message_id WHERE mf.file_id = f.id AND m.deleted = 0)
       AND NOT EXISTS (SELECT 1 FROM scheduled s WHERE s.files LIKE '%' || f.id || '%')
-      AND NOT EXISTS (SELECT 1 FROM custom_emoji e WHERE e.file_id = f.id) LIMIT 1000`).all(olderThan) as Array<{ id: string; sha256: string }>;
+      AND NOT EXISTS (SELECT 1 FROM custom_emoji e WHERE e.file_id = f.id)${this.keep.map((k) => ` AND ${k}`).join('')} LIMIT 1000`).all(olderThan) as Array<{ id: string; sha256: string }>;
     for (const r of rows) {
       this.db.prepare('DELETE FROM message_files WHERE file_id = ?').run(r.id);
       this.db.prepare('DELETE FROM files WHERE id = ?').run(r.id);

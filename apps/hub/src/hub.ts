@@ -38,6 +38,10 @@ import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import { Meetings } from './meetings.ts';
+import { MeetGuests } from './meet-guests.ts';
+import { MeetReports, ReportError } from './meet-reports.ts';
+import { Recordings, RecordingError } from './recordings.ts';
+import { isWebGuest, isWebGuestDevice } from '@dex/core';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
@@ -112,6 +116,10 @@ export class Hub {
   readonly messaging: Messaging;
   readonly files: FileStore;
   readonly rooms: Rooms;
+  readonly meetings: Meetings;
+  readonly meetGuests: MeetGuests;
+  readonly reports: MeetReports;
+  readonly recordings: Recordings;
   readonly desk: Desk;
   readonly org: Org;
   readonly work: Work;
@@ -192,21 +200,50 @@ export class Hub {
       deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
       log: (level, msg, meta) => this.log(level, msg, meta),
     }, opts.relayPorts);
+    this.meetings = new Meetings(this.store.db, this.messaging, (uid) => {
+      const u = this.store.userById(uid);
+      return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
+    });
+    this.meetings.defaults = () => { const p = this.policies.get(); return { lobby: p.meetingLobby ?? 'outside', joinBeforeHost: p.joinBeforeHost !== false }; };
+    this.reports = new MeetReports(this.store.db);
     this.rooms = new Rooms({
       members: (convId) => this.messaging.members(convId),
-      deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
-      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+      deliverToUsers: (userIds, name, data) => {
+        // browser guests are not connections of the hub: their events go through the gateway
+        const guests = userIds.filter(isWebGuest);
+        this.deliver(guests.length ? userIds.filter((u) => !isWebGuest(u)) : userIds, name, () => data);
+        for (const g of guests) this.meetGuests.toUser(g, name, data);
+      },
+      deliverToDevice: (deviceId, name, data) => {
+        if (isWebGuestDevice(deviceId)) { this.meetGuests.toDevice(deviceId, name, data); return; }
+        for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data });
+      },
+      visitorsOf: (ids) => this.meetGuests.visitors(ids),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      track: this.reports,
       broadcast: (name, data) => this.emit(name, data),
       allowRecording: () => this.policies.get().allowRecording,
       ended: (room, missed, durationMs) => this.policies.logCall(room.id, room.convId, room.startedBy, room.video, missed, durationMs),
       relayAvailable: () => this.opts.relay !== false && this.relay.available(),
       deviceLeft: (_roomId, deviceId) => this.relay.leave(deviceId),
       roomClosed: (roomId) => this.relay.closeRoom(roomId),
-      meetings: new Meetings(this.store.db, this.messaging, (uid) => {
-        const u = this.store.userById(uid);
-        return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
-      }),
+      meetings: this.meetings,
     });
+    this.recordings = new Recordings({
+      db: this.store.db, files: this.files, dir: path.join(opts.dataDir, 'recordings-partial'),
+      userById: (id) => this.store.userById(id),
+      isMember: (convId, userId) => this.messaging.isMember(convId, userId),
+      convKind: (convId) => { const r = this.store.db.prepare('SELECT kind FROM conversations WHERE id = ?').get(convId) as { kind: string } | undefined; return r ? (r.kind === 'direct' ? 'direct' : 'space') : null; },
+      session: (roomId) => { const r = this.store.db.prepare('SELECT meeting_id, conv_id, title FROM meeting_sessions WHERE room_id = ?').get(roomId) as { meeting_id: string | null; conv_id: string; title: string } | undefined; return r ? { meetingId: r.meeting_id, convId: r.conv_id, title: r.title } : null; },
+      attended: (roomId, userId) => this.reports.attended(roomId, userId),
+      maxBytes: () => (this.policies.get().recordingMaxMb ?? 2048) * 1024 * 1024,
+      allowed: () => this.policies.get().allowRecording,
+      retention: () => { const p = this.compliance.policy(); return { space: p.spaceRetentionDays, direct: p.directRetentionDays }; },
+      held: (convId, userId) => !!this.store.db.prepare(`SELECT 1 FROM legal_holds WHERE (kind = 'conv' AND target_id = ?) OR (kind = 'user' AND target_id = ?) LIMIT 1`).get(convId ?? '', userId),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      tell: (userIds, name, data) => this.deliver(userIds, name, () => data),
+    });
+    this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -216,10 +253,25 @@ export class Hub {
     this.mirror = opts.updates === false ? null
       : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
+    this.meetGuests = new MeetGuests({
+      rooms: this.rooms, meetings: this.meetings,
+      send: (gid, frame) => this.gateway.sendGuest(gid, frame),
+      close: (gid, code, reason) => this.gateway.closeGuest(gid, code, reason),
+      allowed: () => this.policies.get().guestLinks !== false,
+      iceServers: () => this.ice.servers(),
+      userById: (uid) => this.store.userById(uid),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      tellHosts: (room, name, reason) => {
+        const hosts = [room.hostId, ...(room.coHosts ?? [])].filter((u): u is string => !!u && room.participants.some((p) => p.userId === u));
+        this.deliver(hosts, 'meet.guestRefused', () => ({ roomId: room.id, name, reason }));
+      },
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     this.gateway = new RemoteGateway({
       hubId: id, certPem: tls.cert, keyPem: tls.key, localPort: () => this.port, secret: this.gatewaySecret,
       log: (level, msg, extra) => this.log(level, msg, extra),
       onStatus: () => {},
+      guests: this.meetGuests,
     });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
   }
@@ -258,6 +310,7 @@ export class Hub {
       if (Date.now() - this.lastPurge > 3600_000) {
         this.lastPurge = Date.now();
         try { this.compliance.purge(); } catch (err) { this.log('error', 'retention failed', { error: (err as Error).message }); }
+        try { this.recordings.purge(); } catch (err) { this.log('error', 'recording retention failed', { error: (err as Error).message }); }
       }
       try { this.presenceTick(); } catch (err) { this.log('error', 'presence timer failed', { error: (err as Error).message }); }
       try { this.messaging.tick(); } catch (err) { this.log('error', 'mute timer failed', { error: (err as Error).message }); }
@@ -480,6 +533,8 @@ export class Hub {
     const m = url.pathname.match(/^\/files\/([0-9A-Z]{26})$/);
     if ((req.method === 'GET' || req.method === 'HEAD') && m) {
       if (!this.files.canRead(user.id, m[1])) { sendJson(404, { error: 'not found' }); return; }
+      // a recording leaving the hub is in the audit log (once per download, not per byte range)
+      if (req.method === 'GET') this.recordings.downloaded(m[1], user.id, /^bytes=[1-9]/.test(req.headers.range ?? ''), String(req.headers['x-dex-remote-ip'] ?? req.socket.remoteAddress ?? ''));
       this.files.serve(req, res, m[1], url.searchParams.get('download') === '1');
       return;
     }
@@ -1059,7 +1114,51 @@ export class Hub {
         } satisfies Ops['admin.updates']['res'];
       }
 
+      case 'meet.guestLink': {
+        const me = this.store.userById(conn.userId!)!;
+        const m = this.meetings.get(d.id);
+        if (!m) throw new OpError('No meeting has that ID.');
+        const live = this.rooms.live(m.id);
+        const may = m.hostId === me.id || m.coHosts.includes(me.id) || (!!live && (live.hostId === me.id || (live.coHosts ?? []).includes(me.id)));
+        if (!may) throw new OpError('Only the host and co-hosts can see or change the guest link.');
+        const allowed = this.policies.get().guestLinks !== false;
+        let next = m;
+        if (d.enabled !== undefined || d.regenerate === true) {
+          if (d.enabled === true && !allowed) throw new OpError('Your office has turned guest links off (Control room ▸ Meetings).');
+          next = this.meetings.setGuest(m, typeof d.enabled === 'boolean' ? d.enabled : undefined, d.regenerate === true);
+          this.store.audit(me.id, d.regenerate === true ? 'meeting.guestLinkRenewed' : next.guest.enabled ? 'meeting.guestLinkOn' : 'meeting.guestLinkOff', m.id, {});
+        }
+        const rc = this.remoteConfig();
+        return this.meetings.guestView(next, { gateway: rc.enabled ? rc.url : null, allowed, relayOnly: live?.mode === 'relay' || this.meetings.expected(next) > 8 });
+      }
+
+      case 'meet.report': {
+        const me = this.store.userById(conn.userId!)!;
+        try {
+          return this.reports.report(d.roomId, me, (meetingId, userId) => { const m = meetingId ? this.meetings.get(meetingId) : null; return !!m && (m.hostId === userId || m.coHosts.includes(userId)); });
+        } catch (err) {
+          if (err instanceof ReportError) throw new OpError(err.message);
+          throw err;
+        }
+      }
+
+      case 'admin.meetings.usage': {
+        this.requireAdmin(conn);
+        const days = typeof d.days === 'number' && [28, 91, 182, 364].includes(d.days) ? d.days : 91;
+        return this.reports.usage(days, this.recordings.stats(Date.now() - days * 86400_000));
+      }
+
       default: {
+        if (typeof op === 'string' && op.startsWith('rec.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.recordings.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof RecordingError) throw new OpError(err.message);
+            throw err;
+          }
+        }
         if (typeof op === 'string' && op.startsWith('relay.')) {
           const me = this.store.userById(conn.userId!)!;
           // media through the relay stays on the office network

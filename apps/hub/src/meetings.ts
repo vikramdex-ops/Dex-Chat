@@ -5,8 +5,8 @@
 // the live Room (lobby, hands, host controls) is in rooms.ts.
 import crypto from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { formatMeetingId, meetingLink } from '@dex/core';
-import type { LobbyRule, MeetingInfo, MeetingKind, MeetingRecord, MeetingSettings, PublicUser, RoomInfo } from '@dex/core';
+import { PASSCODE_RE, formatMeetingId, guestUrl, isWebGuest, meetingLink, passcodeFrom } from '@dex/core';
+import type { GuestLinkView, LobbyRule, MeetingInfo, MeetingKind, MeetingRecord, MeetingSettings, PublicUser, RoomInfo } from '@dex/core';
 import type { Messaging } from './messaging.ts';
 
 const SCHEMA = `
@@ -57,9 +57,14 @@ export interface Meeting {
   eventId: string | null;
   coHosts: string[];
   settings: MeetingSettings;
+  /** The browser link for guests: on or off, and its passcode. */
+  guest: { enabled: boolean; passcode: string | null };
 }
 
-interface Row { id: string; kind: MeetingKind; title: string; host_id: string; conv_id: string | null; event_id: string | null; co_hosts: string; lobby: LobbyRule; join_before_host: number }
+interface Row { id: string; kind: MeetingKind; title: string; host_id: string; conv_id: string | null; event_id: string | null; co_hosts: string; lobby: LobbyRule; join_before_host: number; guest_on: number; guest_code: string | null }
+
+/** Defaults the office sets for new meetings (Control room ▸ Meetings). */
+export interface MeetingDefaults { lobby: LobbyRule; joinBeforeHost: boolean }
 
 const KINDS: MeetingKind[] = ['instant', 'personal', 'conversation', 'event'];
 const LOBBY: LobbyRule[] = ['off', 'outside', 'everyone'];
@@ -72,12 +77,17 @@ export class Meetings {
   private readonly db: DatabaseSync;
   private readonly messaging: Messaging;
   private readonly userById: (id: string) => PublicUser | null;
+  /** The office's defaults for new meetings. */
+  defaults: () => MeetingDefaults = () => ({ lobby: 'outside', joinBeforeHost: true });
 
   constructor(db: DatabaseSync, messaging: Messaging, userById: (id: string) => PublicUser | null) {
     this.db = db;
     this.messaging = messaging;
     this.userById = userById;
     db.exec(SCHEMA);
+    // M2: guest links for browsers
+    try { db.exec('ALTER TABLE meetings ADD COLUMN guest_on INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+    try { db.exec('ALTER TABLE meetings ADD COLUMN guest_code TEXT'); } catch { /* already there */ }
   }
 
   private parse(r: Row | undefined): Meeting | null {
@@ -87,6 +97,7 @@ export class Meetings {
     return {
       id: r.id, kind: r.kind, title: r.title, hostId: r.host_id, convId: r.conv_id, eventId: r.event_id, coHosts,
       settings: { lobby: LOBBY.includes(r.lobby) ? r.lobby : 'outside', joinBeforeHost: !!r.join_before_host },
+      guest: { enabled: !!r.guest_on && !!r.guest_code, passcode: r.guest_code && PASSCODE_RE.test(r.guest_code) ? r.guest_code : null },
     };
   }
 
@@ -133,7 +144,7 @@ export class Meetings {
     const own = rows.map((r) => this.parse(r)).filter((m): m is Meeting => !!m);
     const found = own.find((m) => m.kind === 'instant' || m.kind === 'personal') ?? own.find((m) => m.kind === 'conversation');
     if (found) return found;
-    return this.insert('conversation', '', starterId, convId, null, { lobby: 'outside', joinBeforeHost: true });
+    return this.insert('conversation', '', starterId, convId, null, this.defaults());
   }
 
   /** An instant meeting: a private Space of its own, with the people invited in it. */
@@ -143,7 +154,7 @@ export class Meetings {
     const known = new Set((Array.isArray(invite) ? invite : []).filter((x): x is string => typeof x === 'string' && x !== me.id));
     if (known.size > MAX_INVITE) throw new MeetingError(`Invite up to ${MAX_INVITE} people; share the meeting's link with more.`);
     const members = [...known].filter((u) => { const p = this.userById(u); return !!p && p.role !== 'bot'; });
-    const settings = Meetings.settings(settingsIn, { lobby: 'outside', joinBeforeHost: true });
+    const settings = Meetings.settings(settingsIn, this.defaults());
     const id = this.newId();
     const name = this.freeSpaceName(title ? `${title.slice(0, 44)} · ${formatMeetingId(id)}` : `Meeting ${formatMeetingId(id)}`, id);
     const conv = this.messaging.handle('conv.create', me, { kind: 'space', name, topic: `Meeting ${formatMeetingId(id)}, started by ${me.displayName}`, private: true, members }) as { id: string };
@@ -164,7 +175,7 @@ export class Meetings {
     const row = this.db.prepare(`SELECT * FROM meetings WHERE kind = 'personal' AND host_id = ?`).get(me.id) as Row | undefined;
     if (row) return this.parse(row)!;
     if (me.role === 'guest' || me.role === 'bot') throw new MeetingError('Only members of the office have a personal room.');
-    return this.insert('personal', `${me.displayName}'s room`, me.id, null, null, { lobby: 'outside', joinBeforeHost: false });
+    return this.insert('personal', `${me.displayName}'s room`, me.id, null, null, { lobby: this.defaults().lobby, joinBeforeHost: false });
   }
 
   /** The meeting a Calendar event held as a call takes place in. */
@@ -183,7 +194,7 @@ export class Meetings {
       }
       return this.parse(row)!;
     }
-    return this.insert('event', ev.title, ev.organizer_id, ev.conv_id, ev.id, { lobby: 'outside', joinBeforeHost: true });
+    return this.insert('event', ev.title, ev.organizer_id, ev.conv_id, ev.id, this.defaults());
   }
 
   private seesEvent(ev: { id: string; organizer_id: string; conv_id: string | null }, userId: string): boolean {
@@ -227,6 +238,8 @@ export class Meetings {
 
   /** Someone came in by the meeting's ID: an instant meeting or personal room adds them to its Space (its chat, polls, board and files). */
   admitted(m: Meeting, userId: string): void {
+    // guests from a browser have no account: they never join a conversation
+    if (isWebGuest(userId)) return;
     if ((m.kind === 'instant' || m.kind === 'personal') && m.convId) this.messaging.ensureMember(m.convId, userId);
   }
 
@@ -237,6 +250,37 @@ export class Meetings {
     void me;
     this.db.prepare('UPDATE meetings SET title = ?, lobby = ?, join_before_host = ? WHERE id = ?').run(title, settings.lobby, settings.joinBeforeHost ? 1 : 0, m.id);
     return this.get(m.id)!;
+  }
+
+  // ---------------------------------------------------------------- guest links (M2)
+  /** Turn the browser link on or off, or give it a new passcode (the old link stops working). */
+  setGuest(m: Meeting, enabled: boolean | undefined, regenerate: boolean): Meeting {
+    let code = m.guest.passcode;
+    if (regenerate || (enabled && !code)) code = passcodeFrom(crypto.randomBytes(48), 8);
+    const on = enabled === undefined ? m.guest.enabled : enabled;
+    this.db.prepare('UPDATE meetings SET guest_on = ?, guest_code = ? WHERE id = ?').run(on ? 1 : 0, code, m.id);
+    return this.get(m.id)!;
+  }
+
+  /** Does this passcode open the meeting's guest link? (Compared in constant time.) */
+  passcodeOk(m: Meeting, code: unknown): boolean {
+    if (!m.guest.enabled || !m.guest.passcode || typeof code !== 'string' || !PASSCODE_RE.test(code)) return false;
+    const a = crypto.createHash('sha256').update(m.guest.passcode).digest();
+    const b = crypto.createHash('sha256').update(code).digest();
+    return crypto.timingSafeEqual(a, b);
+  }
+
+  /** What a host sees about the guest link. */
+  guestView(m: Meeting, opts: { gateway: string | null; allowed: boolean; relayOnly: boolean }): GuestLinkView {
+    const problem = !opts.allowed ? 'Your office has turned guest links off (Control room ▸ Meetings).'
+      : !opts.gateway ? 'Guest links work through the internet gateway, which is not set up (Control room ▸ Outside the office).'
+        : opts.relayOnly ? 'This meeting runs on the office relay (more than 8 people), which browsers outside the office cannot reach. Guests can join meetings of up to 8.'
+          : null;
+    const on = m.guest.enabled && opts.allowed;
+    return {
+      meetingId: m.id, enabled: on, passcode: m.guest.passcode, allowed: opts.allowed, problem, relayOnly: opts.relayOnly,
+      url: on && opts.gateway && m.guest.passcode ? guestUrl(opts.gateway, m.id, m.guest.passcode) : null,
+    };
   }
 
   setCoHosts(m: Meeting, ids: string[]): void {

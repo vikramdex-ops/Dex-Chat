@@ -2,10 +2,12 @@
 // signalling (who is in the call, offers, answers and ICE candidates) and the meeting's rules
 // (lobby, lock, host and co-hosts, hands, reactions, spotlight, mute requests). Audio and video
 // travel directly between the PCs on the LAN, or through the hub's relay for large Rooms.
-import { MEETING_REACTIONS, ulid } from '@dex/core';
-import type { LobbyEntry, MeetingInfo, PublicUser, RaisedHand, RoomInfo } from '@dex/core';
+import { MEETING_REACTIONS, ROOM_CHAT_MAX, isWebGuest, ulid } from '@dex/core';
+import type { LobbyEntry, MeetingInfo, PublicUser, RaisedHand, RoomChatLine, RoomInfo, RoomVisitor } from '@dex/core';
 import { MeetingError, Meetings } from './meetings.ts';
 import type { Meeting } from './meetings.ts';
+import { Breakouts } from './breakouts.ts';
+import type { RoomTracker } from './meet-reports.ts';
 
 export class RoomError extends Error {}
 
@@ -16,7 +18,7 @@ const MAX_LOBBY = 100;
 const REACTION_GAP_MS = 250;
 const REACTIONS_PER_10S = 12;
 
-interface Room extends RoomInfo {
+export interface Room extends RoomInfo {
   ringTimer: NodeJS.Timeout | null;
   everJoined: Set<string>;
   meeting: Meeting | null;
@@ -27,6 +29,18 @@ interface Room extends RoomInfo {
   lobbyList: LobbyEntry[];
   handList: RaisedHand[];
   coHostSet: Set<string>;
+  /** The meeting chat (shared by a meeting's breakouts: the same array). */
+  chat: RoomChatLine[];
+}
+
+/** What breakout rooms (breakouts.ts) use of the Rooms. */
+export interface RoomsCore {
+  rooms: Map<string, Room>;
+  host: RoomHost;
+  publish(r: Room): void;
+  view(r: Room, forHost?: boolean): RoomInfo;
+  isHost(r: Room, userId: string): boolean;
+  capacity(r: RoomInfo): number;
 }
 
 export interface RoomHost {
@@ -45,6 +59,12 @@ export interface RoomHost {
   roomClosed?(roomId: string): void;
   /** Meeting records (IDs, settings, the log); without it Rooms are plain calls. */
   meetings?: Meetings;
+  /** Names of browser guests (they have no office account), for the apps to show. */
+  visitorsOf?(userIds: string[]): RoomVisitor[];
+  /** The office's audit log. */
+  audit?(actorId: string | null, action: string, target: string | null, meta?: Record<string, unknown>): void;
+  /** Attendance, hands and reactions, for the meeting's report. */
+  track?: RoomTracker;
 }
 
 /** A small sliding-window limiter: true when the key may act now. */
@@ -64,31 +84,49 @@ class Limiter {
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 export class Rooms {
-  private readonly rooms = new Map<string, Room>();
-  private readonly host: RoomHost;
+  readonly rooms = new Map<string, Room>();
+  readonly host: RoomHost;
   /** People who came by a meeting's ID before it started, by meeting ID. */
   private readonly waiting = new Map<string, LobbyEntry[]>();
   private readonly limits = new Limiter();
+  readonly breakouts: Breakouts;
 
-  constructor(host: RoomHost) { this.host = host; }
+  constructor(host: RoomHost) {
+    this.host = host;
+    this.breakouts = new Breakouts(this);
+  }
 
   inRoomUsers(): string[] {
     return [...new Set([...this.rooms.values()].flatMap((r) => r.participants.map((p) => p.userId)))];
   }
 
-  private isHost(r: Room, userId: string): boolean { return r.hostId === userId || r.coHostSet.has(userId); }
+  isHost(r: Room, userId: string): boolean { return r.hostId === userId || r.coHostSet.has(userId); }
 
-  private view(r: Room, forHost = false): RoomInfo {
+  view(r: Room, forHost = false): RoomInfo {
     return {
       id: r.id, convId: r.convId, startedBy: r.startedBy, startedAt: r.startedAt, video: r.video, participants: r.participants.map((p) => ({ ...p })),
       ringing: [...r.ringing], mode: r.mode ?? 'mesh', capacity: this.capacity(r),
       ...(r.meeting ? { meetingId: r.meeting.id, meetingKind: r.meeting.kind, title: r.meeting.title || undefined, settings: { ...r.meeting.settings } } : {}),
       hostId: r.hostId, coHosts: [...r.coHostSet], locked: !!r.locked, hands: r.handList.map((h) => ({ ...h })), spotlight: r.spotlight ?? null,
       ...(forHost ? { lobby: r.lobbyList.map((l) => ({ ...l })) } : {}),
+      ...this.extras(r),
     };
   }
 
-  private capacity(r: RoomInfo): number { return r.mode === 'relay' ? RELAY_CAPACITY : MAX_PARTICIPANTS; }
+  /** Browser guests' names, and the meeting's breakouts. */
+  private extras(r: Room): Partial<RoomInfo> {
+    const ids = [...r.participants.map((p) => p.userId), ...r.lobbyList.map((l) => l.userId)].filter(isWebGuest);
+    const visitors = ids.length && this.host.visitorsOf ? this.host.visitorsOf([...new Set(ids)]) : [];
+    const main = this.breakouts.main(r);
+    const breakouts = main.breakouts ? this.breakouts.view(main) : null;
+    return {
+      ...(visitors.length ? { visitors } : {}),
+      ...(breakouts ? { breakouts } : {}),
+      ...(r.parentId ? { parentId: r.parentId, breakoutName: r.breakoutName } : {}),
+    };
+  }
+
+  capacity(r: RoomInfo): number { return r.mode === 'relay' ? RELAY_CAPACITY : MAX_PARTICIPANTS; }
 
   /** The Room a device is in (for the relay). */
   roomOf(deviceId: string, roomId?: unknown): RoomInfo | null {
@@ -98,10 +136,15 @@ export class Rooms {
 
   /** Who hears about a Room: its conversation, everyone in it, and people let in from outside. */
   private audience(r: Room): string[] {
+    // a breakout is news only to the people in it and the meeting's hosts
+    if (r.parentId) {
+      const fam = this.breakouts.family(r);
+      return [...new Set([...r.participants.map((p) => p.userId), ...fam.flatMap((x) => x.participants.map((p) => p.userId)).filter((u) => this.isHost(r, u))])];
+    }
     return [...new Set([...this.host.members(r.convId), ...r.participants.map((p) => p.userId), ...r.admittedUsers])];
   }
 
-  private publish(r: Room): void {
+  publish(r: Room): void {
     const all = this.audience(r);
     const hosts = all.filter((u) => this.isHost(r, u));
     if (hosts.length) this.host.deliverToUsers(hosts, 'room.updated', this.view(r, true));
@@ -138,8 +181,13 @@ export class Rooms {
   }
 
   private end(r: Room, endedBy?: string): void {
+    // a breakout ends with its meeting
+    if (r.parentId) { const main = this.rooms.get(r.parentId); if (main) { this.end(main, endedBy); return; } }
+    if (r.breakouts) this.breakouts.endedWith(r);
     if (r.ringTimer) clearTimeout(r.ringTimer);
     this.rooms.delete(r.id);
+    this.host.track?.closed(r.id);
+    if (r.meeting) this.host.audit?.(endedBy ?? null, 'meeting.ended', r.meeting.id, { roomId: r.id, durationMs: Date.now() - r.startedAt, people: r.everJoined.size, endedForEveryone: !!endedBy });
     this.limits.forget(`${r.id}:`);
     this.host.roomClosed?.(r.id);
     const missed = r.everJoined.size <= 1;
@@ -170,10 +218,14 @@ export class Rooms {
       meeting, hostId, locked: false, spotlight: null,
       admittedUsers: new Set(), removedUsers: new Set(), lobbyList: [], handList: [],
       coHostSet: new Set(meeting && meeting.kind !== 'conversation' ? meeting.coHosts : []),
+      chat: [],
     };
     // nobody runs it yet (the host is not here): the first member of the office in it does
     if (!this.isHost(room, me.id) && me.role !== 'guest') room.coHostSet.add(me.id);
     this.rooms.set(room.id, room);
+    this.host.track?.opened(room);
+    this.host.track?.joined(room.id, me.id, deviceId, me.displayName);
+    if (meeting) this.host.audit?.(me.id, 'meeting.started', meeting.id, { roomId: room.id, title: meeting.title, mode: room.mode });
     if (room.ringing.length) {
       room.ringTimer = setTimeout(() => {
         room.ringTimer = null;
@@ -200,6 +252,7 @@ export class Rooms {
     r.ringing = r.ringing.filter((u) => u !== me.id);
     r.everJoined.add(me.id);
     r.lobbyList = r.lobbyList.filter((l) => l.deviceId !== deviceId);
+    this.host.track?.joined(this.breakouts.main(r).id, me.id, deviceId, me.displayName);
     const hostCame = this.isHost(r, me.id);
     this.publish(r);
     this.setBusy(me.id);
@@ -212,6 +265,8 @@ export class Rooms {
     if (this.isHost(r, me.id)) return false;
     if (r.removedUsers.has(me.id)) return true;
     if (r.admittedUsers.has(me.id)) return false;
+    // guests from a browser are always let in by a host
+    if (isWebGuest(me.id)) return true;
     const rule = r.meeting?.settings.lobby ?? 'off';
     if (rule === 'off') return false;
     if (rule === 'everyone') return true;
@@ -250,7 +305,14 @@ export class Rooms {
   }
 
   private runningFor(m: Meeting): Room | undefined {
-    return [...this.rooms.values()].find((r) => r.meeting?.id === m.id || (!!m.convId && r.convId === m.convId));
+    return [...this.rooms.values()].find((r) => !r.parentId && (r.meeting?.id === m.id || (!!m.convId && r.convId === m.convId)));
+  }
+
+  /** The meeting's main Room while it runs (for browser guests: is it on the relay?). */
+  live(meetingId: string): RoomInfo | null {
+    const m = this.host.meetings?.get(meetingId);
+    const r = m ? this.runningFor(m) : undefined;
+    return r ? this.view(r) : null;
   }
 
   private meetingInfo(m: Meeting): MeetingInfo {
@@ -277,7 +339,7 @@ export class Rooms {
     // not started yet
     const isHost = m.hostId === me.id || m.coHosts.includes(me.id);
     const outsider = me.role === 'guest' || !store.insider(m, me.id);
-    const needsAdmit = !isHost && (m.settings.lobby === 'everyone' || (m.settings.lobby === 'outside' && outsider));
+    const needsAdmit = !isHost && (isWebGuest(me.id) || m.settings.lobby === 'everyone' || (m.settings.lobby === 'outside' && outsider));
     if (!isHost && (!m.settings.joinBeforeHost || needsAdmit)) {
       const list = this.waiting.get(m.id) ?? [];
       if (!list.some((w) => w.deviceId === deviceId)) {
@@ -315,7 +377,7 @@ export class Rooms {
         const members = this.host.members(convId);
         if (!members.includes(me.id)) throw new RoomError('Conversation not found.');
         // one Room per conversation: starting again joins the running one
-        const running = [...this.rooms.values()].find((r) => r.convId === convId);
+        const running = [...this.rooms.values()].find((r) => r.convId === convId && !r.parentId);
         if (running) return this.handleOp('room.join', me, deviceId, { roomId: running.id, fromOutside });
         const meeting = this.host.meetings ? this.host.meetings.forConv(convId, me.id) : null;
         const ownSpace = meeting && (meeting.kind === 'instant' || meeting.kind === 'personal');
@@ -330,6 +392,7 @@ export class Rooms {
       case 'room.join': {
         const r = this.get(d.roomId, me);
         if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r, this.isHost(r, me.id));
+        if (r.parentId) throw new RoomError('A host moves people into breakout rooms. Join the meeting itself.');
         if (r.locked && !this.isHost(r, me.id)) throw new RoomError('The host has locked this meeting. Ask them to unlock it.');
         if (this.mustWait(r, me)) throw new RoomError('This meeting has a lobby: join it with its meeting ID so the host can let you in.');
         return this.enter(r, me, deviceId, fromOutside);
@@ -455,12 +518,14 @@ export class Rooms {
           }
           this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: d.allow === true ? 'admitted' : 'denied' });
         }
+        this.host.audit?.(me.id, d.allow === true ? 'meeting.admitted' : 'meeting.denied', r.meeting?.id ?? r.id, { roomId: r.id, people: picked.map((l) => l.userId), guests: picked.filter((l) => isWebGuest(l.userId)).length });
         this.publish(r);
         return { ok: true };
       }
       case 'room.lock': {
         const r = this.hosted(d.roomId, me, deviceId);
         r.locked = d.locked === true;
+        this.host.audit?.(me.id, r.locked ? 'meeting.locked' : 'meeting.unlocked', r.meeting?.id ?? r.id, { roomId: r.id });
         this.publish(r);
         return { ok: true };
       }
@@ -507,6 +572,7 @@ export class Rooms {
         r.admittedUsers.delete(p.userId);
         r.coHostSet.delete(p.userId);
         this.host.deliverToDevice(p.deviceId, 'room.removed', { roomId: r.id, by: me.id });
+        this.host.audit?.(me.id, 'meeting.removed', r.meeting?.id ?? r.id, { roomId: r.id, userId: p.userId });
         this.removeDevice(r, p.deviceId);
         return { ok: true };
       }
@@ -519,9 +585,12 @@ export class Rooms {
         return { ok: true };
       }
       case 'room.end': {
-        const r = this.hosted(d.roomId, me, deviceId);
-        for (const p of r.participants) this.host.deviceLeft?.(r.id, p.deviceId);
+        const r = this.breakouts.main(this.hosted(d.roomId, me, deviceId));
+        const fam = this.breakouts.family(r);
+        for (const x of fam) for (const p of x.participants) this.host.deviceLeft?.(x.id, p.deviceId);
         const users = r.participants.map((p) => p.userId);
+        for (const x of fam.slice(1)) for (const p of x.participants) this.host.track?.left(r.id, p.userId, p.deviceId);
+        for (const p of r.participants) this.host.track?.left(r.id, p.userId, p.deviceId);
         r.participants = [];
         this.end(r, me.id);
         for (const u of new Set(users)) this.setBusy(u);
@@ -535,7 +604,7 @@ export class Rooms {
           r.handList = d.all === true ? [] : r.handList.filter((h) => h.deviceId !== d.deviceId);
         } else if (d.up === true) {
           if (!this.limits.allow(`${r.id}:hand:${deviceId}`, 6, 10_000)) throw new RoomError('Slow down a little.');
-          if (!r.handList.some((h) => h.deviceId === deviceId)) r.handList.push({ userId: me.id, deviceId, at: Date.now() });
+          if (!r.handList.some((h) => h.deviceId === deviceId)) { r.handList.push({ userId: me.id, deviceId, at: Date.now() }); this.host.track?.hand(this.breakouts.main(r).id, me.id); }
         } else r.handList = r.handList.filter((h) => h.deviceId !== deviceId);
         this.publish(r);
         return { ok: true };
@@ -548,8 +617,29 @@ export class Rooms {
         if (!this.limits.allow(`${r.id}:react:${deviceId}`, REACTIONS_PER_10S, 10_000, REACTION_GAP_MS)) return { ok: true, limited: true };
         const evt = { roomId: r.id, deviceId, userId: me.id, emoji, at: Date.now() };
         for (const p of r.participants) this.host.deliverToDevice(p.deviceId, 'room.reaction', evt);
+        this.host.track?.reaction(this.breakouts.main(r).id, me.id, emoji);
         return { ok: true };
       }
+
+      // ------------------------------------------------------------ the meeting chat
+      case 'room.chat': {
+        const r = this.mine(d.roomId, me, deviceId);
+        const text = typeof d.text === 'string' ? d.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, ROOM_CHAT_MAX) : '';
+        if (!text) throw new RoomError('Write something first.');
+        if (!this.limits.allow(`${r.id}:chat:${deviceId}`, 10, 10_000)) throw new RoomError('Slow down a little.');
+        const name = isWebGuest(me.id) ? this.host.visitorsOf?.([me.id])[0]?.name ?? me.displayName : me.displayName;
+        const line: RoomChatLine = { id: ulid(), roomId: this.breakouts.main(r).id, userId: me.id, name, text, at: Date.now(), guest: isWebGuest(me.id) };
+        r.chat.push(line);
+        if (r.chat.length > 200) r.chat.splice(0, r.chat.length - 200);
+        for (const x of this.breakouts.family(r)) for (const p of x.participants) this.host.deliverToDevice(p.deviceId, 'room.chat', line);
+        return line;
+      }
+      case 'room.chatLog':
+        return [...this.mine(d.roomId, me, deviceId).chat];
+
+      // ------------------------------------------------------------ breakout rooms
+      case 'room.breakout.open': case 'room.breakout.note': case 'room.breakout.visit': case 'room.breakout.move': case 'room.breakout.close':
+        return this.breakouts.handle(op, me, deviceId, d, this.mine(d.roomId, me, deviceId));
     }
     return undefined;
   }
@@ -575,6 +665,15 @@ export class Rooms {
     r.handList = r.handList.filter((h) => h.deviceId !== deviceId);
     if (r.spotlight === deviceId) r.spotlight = null;
     this.host.deviceLeft?.(r.id, deviceId);
+    const main = this.breakouts.main(r);
+    this.host.track?.left(main.id, p.userId, deviceId);
+    // while breakouts run, a room that empties stays open; the meeting ends when every room is empty
+    if (r.parentId || main.breakouts) {
+      if (this.breakouts.empty(main)) this.end(main);
+      else { this.breakouts.left(r); this.publish(r); }
+      this.setBusy(p.userId);
+      return;
+    }
     // a one-to-one call ends when either person hangs up; group Rooms and meetings run until the last leaves
     const plainCall = !r.meeting || r.meeting.kind === 'conversation';
     const oneToOne = plainCall && this.host.members(r.convId).length === 2 && r.everJoined.size > 1;
@@ -592,6 +691,7 @@ export class Rooms {
 
   /** Guests never inherit host controls; anyone in the conversation or let in can. */
   private notGuest(userId: string, r: Room): boolean {
+    if (isWebGuest(userId)) return false;
     return this.host.members(r.convId).includes(userId) || r.admittedUsers.has(userId);
   }
 
