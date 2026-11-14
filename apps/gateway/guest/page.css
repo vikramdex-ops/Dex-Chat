@@ -136,7 +136,7 @@ button:disabled { cursor: default; opacity: .45; }
 .tools, .controls { display: flex; flex-wrap: wrap; gap: 6px; }
 .tool { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 64px; height: 54px; padding: 4px 6px; border: 1px solid var(--stroke-strong); border-radius: var(--radius); background: var(--layer-2); font-size: 11.5px; font-weight: 600; color: var(--text-2); }
 .tool:hover:not(:disabled) { color: var(--text); border-color: var(--text-3); }
-.tool.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.tool.on, .tool.on:hover:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
 .tool.off { color: var(--text-2); }
 .tool.hand { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-soft); }
 .lobby-wait { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--stroke-strong); border-radius: var(--radius); background: var(--layer-2); }

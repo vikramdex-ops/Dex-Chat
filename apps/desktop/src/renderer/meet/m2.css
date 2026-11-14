@@ -85,12 +85,12 @@ input.bo-col-name:hover, input.bo-col-name:focus { border-color: var(--stroke-st
 .bo-callback { margin: 0 12px 8px; }
 .bo-returning { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 6px 10px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: var(--amber-ink); font-size: 12.5px; }
 .bo-returning .mono { font-weight: 700; }
-.bo-banner { position: absolute; z-index: 3; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 40px); padding: 6px 12px; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); box-shadow: var(--shadow-1); font-size: 12.5px; }
-.bo-banner .mono { font-weight: 700; font-size: 11.5px; letter-spacing: .08em; color: var(--accent-ink); }
+.bo-banner { position: absolute; z-index: 3; top: 4px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 40px); height: 26px; padding: 0 12px; white-space: nowrap; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); box-shadow: var(--shadow-1); font-size: 12px; }
+.bo-banner .mono { font-weight: 700; font-size: 11px; letter-spacing: .08em; color: var(--accent-ink); }
 .bo-banner.amber { border-left-color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--layer-solid)); }
 .bo-banner.amber .mono { color: var(--amber-ink); }
-.bo-big { font-size: 18px !important; }
-.bo-note-text { flex-basis: 100%; color: var(--text-2); }
+.bo-big { font-size: 13px !important; }
+.bo-note-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
 
 /* ------------------------------------------------------------------ the sound menu */
 .room-sound-menu { width: 320px; padding-bottom: 10px; }

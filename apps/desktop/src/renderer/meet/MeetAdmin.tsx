@@ -26,7 +26,7 @@ export function MeetingPolicies({ p, save }: { p: OfficePolicy; save: (patch: Pa
             {recOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select></div>
       </div>
-      <div className="setting">
+      <div className="setting" style={{ marginTop: 12 }}>
         <div className="txt"><div>People can join new meetings before the host</div><div className="faint">Personal rooms always wait for their owner. Hosts can change it for each meeting.</div></div>
         <Toggle label="People can join new meetings before the host" checked={p.joinBeforeHost !== false} onChange={(v) => save({ joinBeforeHost: v })} />
       </div>

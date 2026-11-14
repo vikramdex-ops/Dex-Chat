@@ -111,7 +111,7 @@ const tintFor = (id: string) => { let x = 0; for (const c of id) x = (x * 31 + c
 function titleBlock(sheet: string): HTMLElement {
   const cell = (label: string, value: string, cls = '') => h('div', { class: `tb-cell ${cls}` }, h('span', { class: 'tb-label' }, label), h('span', { class: 'tb-value' }, value));
   return h('footer', { class: 'title-block', 'aria-label': 'Meeting details' },
-    cell('Meeting', state.lobbyTitle || state.room?.title || 'Meeting', 'wide'),
+    cell('Meeting', state.lobbyTitle || state.room?.title || '—', 'wide'),
     cell('ID', displayId, 'mono'),
     cell('You', state.name.trim() || '—'),
     cell('Sheet', sheet, 'mono'),

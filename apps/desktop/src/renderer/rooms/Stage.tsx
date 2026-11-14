@@ -310,8 +310,9 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   };
   const copyLink = () => { if (room.meetingId) void navigator.clipboard.writeText(meetingLink(room.meetingId)).then(() => toast('Meeting link copied')); };
 
-  const name = room.title || title(room.convId);
-  const kind = room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
+  // a breakout room is named for itself; its meeting's name is on the banner
+  const name = room.breakoutName ?? (room.title || title(room.convId));
+  const kind = room.parentId ? 'BREAKOUT' : room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
     : convKind === 'space' ? 'SPACE' : convMembers.length > 2 ? 'GROUP' : 'DIRECT';
   const canFloat = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
   const canRecord = recordSupported() && (policy.allowRecording || myRec);
@@ -381,7 +382,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
 
           <div className="room-block">
             <div className="tb-name">
-              <span className="label">{room.meetingKind && room.meetingKind !== 'conversation' ? 'Meeting' : 'Room'}</span>
+              <span className="label">{room.parentId ? `Breakout · ${room.title ?? 'meeting'}` : room.meetingKind && room.meetingKind !== 'conversation' ? 'Meeting' : 'Room'}</span>
               <h2 title={name}>{name}</h2>
               <span className="tb-kind mono">{kind}</span>
               {room.meetingId && (

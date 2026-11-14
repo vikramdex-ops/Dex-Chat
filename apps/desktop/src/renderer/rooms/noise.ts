@@ -32,6 +32,13 @@ export const useNoise = () => useSyncExternalStore((f) => { subs.add(f); return 
 
 const base = () => new URL('./noise/', location.href).href;
 
+/** Whether this build carries the engine (the desktop app does; phones keep the browser's filters). */
+let available: Promise<boolean> | null = null;
+export function noiseAvailable(): Promise<boolean> {
+  available ??= fetch(`${base()}rnnoise.wasm`, { method: 'HEAD' }).then((r) => r.ok, () => false);
+  return available;
+}
+
 /** The microphone through RNNoise: returns the cleaned track (the raw one is kept to switch back). */
 export async function processMic(raw: MediaStreamTrack): Promise<MediaStreamTrack> {
   if (chain?.raw === raw) return chain.out;
@@ -67,7 +74,7 @@ export function isProcessed(track: MediaStreamTrack | undefined): boolean { retu
 
 /** In a stream about to be used in a Room: put the cleaned microphone in place of the raw one. */
 export async function suppressNoise(stream: MediaStream): Promise<void> {
-  if (!readPref()) return;
+  if (!readPref() || !(await noiseAvailable())) return;
   const raw = stream.getAudioTracks()[0];
   if (!raw || isProcessed(raw)) return;
   const out = await processMic(raw);

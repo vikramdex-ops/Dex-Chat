@@ -2073,5 +2073,9 @@
  "On (optional)": "views/PoliciesUsage.tsx",
  "Remove this line": "views/PoliciesUsage.tsx",
  "Set for {0}": "views/PoliciesUsage.tsx",
- "Twenty years of drawings, one sheet at a time.": "views/PoliciesUsage.tsx"
+ "Twenty years of drawings, one sheet at a time.": "views/PoliciesUsage.tsx",
+ "It keeps uploading to the hub and will be on your Recordings shelf": "meet/RecordingDone.tsx",
+ "Sound · on this device": "meet/RoomExtras.tsx",
+ "Strong noise suppression runs in the desktop app. Here, the browser's own filters clean your mic.": "meet/RoomExtras.tsx",
+ "Breakout · {0}": "rooms/Stage.tsx"
 }

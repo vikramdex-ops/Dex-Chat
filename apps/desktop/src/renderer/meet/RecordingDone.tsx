@@ -71,7 +71,11 @@ function Done({ rec }: { rec: Recording }) {
   };
 
   return (
-    <Dialog title="Room recording ready" onClose={() => { if (up.status === 'done' || confirm('Close? The recording is not kept anywhere yet.')) close(); }}>
+    <Dialog title="Room recording ready" onClose={() => {
+      // an upload carries on without the dialog: the recording lands on the shelf
+      if (up.status === 'uploading') { clearRecording(); toast('It keeps uploading to the hub and will be on your Recordings shelf'); return; }
+      if (up.status === 'done' || confirm('Close? The recording is not kept anywhere yet.')) close();
+    }}>
       <dl className="rec-facts">
         <div><dt className="label">Length</dt><dd className="mono">{lengthOf(rec.ms)}</dd></div>
         <div><dt className="label">Size</dt><dd className="mono">{formatSize(rec.blob.size)}</dd></div>

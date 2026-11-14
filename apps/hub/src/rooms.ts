@@ -588,7 +588,7 @@ export class Rooms {
         const r = this.breakouts.main(this.hosted(d.roomId, me, deviceId));
         const fam = this.breakouts.family(r);
         for (const x of fam) for (const p of x.participants) this.host.deviceLeft?.(x.id, p.deviceId);
-        const users = r.participants.map((p) => p.userId);
+        const users = fam.flatMap((x) => x.participants.map((p) => p.userId));
         for (const x of fam.slice(1)) for (const p of x.participants) this.host.track?.left(r.id, p.userId, p.deviceId);
         for (const p of r.participants) this.host.track?.left(r.id, p.userId, p.deviceId);
         r.participants = [];

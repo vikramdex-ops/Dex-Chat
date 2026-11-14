@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { MeetingInfo, PublicUser, RoomInfo } from '@dex/core';
 import { Popover, Toggle, useToast } from '../ui.tsx';
 import { setNoiseSuppression } from '../rooms/engine.ts';
-import { useNoise } from '../rooms/noise.ts';
+import { noiseAvailable, useNoise } from '../rooms/noise.ts';
 import { GuestLinkControls, MeetingInvite } from './GuestLink.tsx';
 import { BreakoutHostBox, BreakoutSetup } from './Breakouts.tsx';
 import { Glyph } from '../rooms/parts.tsx';
@@ -66,6 +66,16 @@ export function HostExtras({ room, users, meDevice }: { room: RoomInfo; users: M
 export function SoundMenu({ anchor, onClose }: { anchor: HTMLElement; onClose: () => void }) {
   const toast = useToast();
   const noise = useNoise();
+  const [here, setHere] = useState(true);
+  useEffect(() => { void noiseAvailable().then(setHere); }, []);
+  if (!here) {
+    return (
+      <Popover anchor={anchor} onClose={onClose} className="menu room-sound-menu" align="start">
+        <div className="menu-label label">Sound · on this device</div>
+        <p className="faint" style={{ margin: '0 12px', fontSize: 12.5 }}>Strong noise suppression runs in the desktop app. Here, the browser's own filters clean your mic.</p>
+      </Popover>
+    );
+  }
   return (
     <Popover anchor={anchor} onClose={onClose} className="menu room-sound-menu" align="start">
       <div className="menu-label label">Sound · on this PC</div>
