@@ -2,7 +2,7 @@
 // Unread = bold name + a teal tick on the left edge; only mentions get an (amber) count.
 import { useMemo, useState } from 'react';
 import type { Conversation, PublicUser } from '@dex/core';
-import { Avatar, Icon, colorFor, initials } from '../ui.tsx';
+import { Avatar, Icon, colorFor, initials, presenceFor } from '../ui.tsx';
 import { plainPreview } from './format.tsx';
 import { useChat } from './store.ts';
 
@@ -25,7 +25,7 @@ export function ConvTile({ c, users, meId, online, size }: { c: Conversation; us
   const others = c.members.filter((m) => m !== meId);
   if (others.length === 1) {
     const u = users.get(others[0]);
-    return <Avatar user={{ id: others[0], displayName: u?.displayName ?? '?' }} presence={online.has(others[0]) ? 'on' : 'off'} size={size} />;
+    return <Avatar user={{ id: others[0], displayName: u?.displayName ?? '?' }} presence={presenceFor(others[0])} size={size} />;
   }
   return (
     <span className={`group-tile${size ? ` ${size}` : ''}`} aria-hidden="true">

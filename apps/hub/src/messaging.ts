@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS mentions (
   PRIMARY KEY (message_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mentions_user ON mentions(user_id, conv_id, message_id);
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNINDEXED, conv_id UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number }
@@ -78,6 +79,20 @@ export class Messaging {
     this.users = users;
     this.files = files;
     db.exec(SCHEMA);
+    // hubs upgraded from a version without search: index what is already there
+    const indexed = (db.prepare('SELECT COUNT(*) AS n FROM messages_fts').get() as { n: number }).n;
+    if (!indexed) {
+      for (const r of db.prepare('SELECT id, conv_id, body FROM messages WHERE deleted = 0').all() as Array<{ id: string; conv_id: string; body: string }>) this.index(r.id, r.conv_id, r.body);
+    }
+  }
+
+  /** Searchable text: mentions become names so "@priya" and "priya" both find the message. */
+  private index(messageId: string, convId: string, body: string): void {
+    this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(messageId);
+    if (!body) return;
+    const names = new Map(this.users().map((u) => [u.id, u.displayName] as const));
+    const text = body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${names.get(id) ?? ''}`);
+    this.db.prepare('INSERT INTO messages_fts (body, message_id, conv_id) VALUES (?, ?, ?)').run(text, messageId, convId);
   }
 
   // ------------------------------------------------------------ helpers
@@ -341,6 +356,7 @@ export class Messaging {
         this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(id, c.id, me.id, body, parentId, Date.now(), clientId);
         this.recordMentions(id, c.id, body);
+        this.index(id, c.id, body);
         if (fileIds.length) this.files.link(id, c.id, fileIds);
         // sending implies you have read up to here
         if (!parentId) this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(id, c.id, me.id);
@@ -361,6 +377,7 @@ export class Messaging {
         this.db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, Date.now(), msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
         this.recordMentions(msg.id, msg.conv_id, body);
+        this.index(msg.id, msg.conv_id, body);
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         if (!row.parent_id) this.pushConv(row.conv_id);
@@ -375,6 +392,7 @@ export class Messaging {
         this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ? WHERE id = ?').run(Date.now(), msg.id);
         this.db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
+        this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(msg.id);
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         if (!row.parent_id) this.pushConv(row.conv_id);
@@ -411,6 +429,29 @@ export class Messaging {
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         return this.messageView(row);
+      }
+
+      case 'search': {
+        const q = typeof d.q === 'string' ? d.q.slice(0, 200) : '';
+        const terms = q.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_.\-]*/gu)?.slice(0, 8) ?? [];
+        if (!terms.length) return { messages: [], files: [] } satisfies Ops['search']['res'];
+        const match = terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(' ');
+        const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(d.limit))) : 20;
+        const scope = typeof d.convId === 'string' ? d.convId : null;
+        const rows = this.db.prepare(`SELECT f.message_id, snippet(messages_fts, 0, '[[', ']]', '…', 12) AS snip
+          FROM messages_fts f JOIN conv_members cm ON cm.conv_id = f.conv_id AND cm.user_id = ?
+          WHERE messages_fts MATCH ? ${scope ? 'AND f.conv_id = ?' : ''} ORDER BY f.message_id DESC LIMIT ?`)
+          .all(...(scope ? [me.id, match, scope, limit] : [me.id, match, limit])) as Array<{ message_id: string; snip: string }>;
+        const messages = rows.map((r) => ({ message: this.messageView(this.message(r.message_id)!), snippet: r.snip })).filter((x) => !x.message.deleted);
+        const like = `%${terms.join('%')}%`;
+        const files = this.db.prepare(`SELECT f.*, mf.message_id, mf.conv_id FROM files f JOIN message_files mf ON mf.file_id = f.id
+          JOIN conv_members cm ON cm.conv_id = mf.conv_id AND cm.user_id = ? JOIN messages m ON m.id = mf.message_id
+          WHERE m.deleted = 0 AND lower(f.name) LIKE ? ${scope ? 'AND mf.conv_id = ?' : ''} ORDER BY mf.message_id DESC LIMIT 10`)
+          .all(...(scope ? [me.id, like, scope] : [me.id, like])) as Array<{ id: string; name: string; mime: string; size: number; uploader_id: string; created_at: number; message_id: string; conv_id: string }>;
+        return {
+          messages,
+          files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size, uploaderId: f.uploader_id, createdAt: f.created_at, messageId: f.message_id, convId: f.conv_id })),
+        } satisfies Ops['search']['res'];
       }
 
       case 'typing': {

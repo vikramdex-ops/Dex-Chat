@@ -290,6 +290,7 @@ function notifyIncoming(m: Message): void {
   const mentioned = m.mentions.includes(state.meId) || m.mentions.includes('all');
   if (c?.muted && !mentioned) return;
   if (activeConv === m.convId && document.hasFocus()) return;
+  if (directory().find((u) => u.id === state.meId)?.availability === 'dnd') return; // do not disturb
   const users = new Map(directory().map((u) => [u.id, u] as const));
   const who = users.get(m.authorId)?.displayName ?? 'Someone';
   const where = c?.kind === 'space' ? ` in ${c.name}` : c && c.members.length > 2 ? ' in a group' : '';

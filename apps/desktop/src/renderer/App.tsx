@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
 import logo from './app-icon.svg';
-import { Avatar, Icon, ToastHost } from './ui.tsx';
+import { Avatar, Icon, ToastHost, presenceFor, setPresenceSource, useToast } from './ui.tsx';
+import type { Availability } from '@dex/core';
 import type { IconName } from './ui.tsx';
 import { RequiredUpdate, UpdatePill, WhatsNew } from './UpdateUi.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
@@ -67,6 +68,13 @@ export function App() {
     </ToastHost>
   );
 }
+
+const AVAILABILITY: Array<{ id: Availability; label: string; hint: string }> = [
+  { id: 'available', label: 'Available', hint: 'Notifications on' },
+  { id: 'busy', label: 'Busy', hint: 'Shown as busy; notifications on' },
+  { id: 'dnd', label: 'Do not disturb', hint: 'No notifications or sounds' },
+  { id: 'invisible', label: 'Invisible', hint: 'Appear offline' },
+];
 
 const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'pulse', label: 'Pulse', icon: 'pulse' },
@@ -148,6 +156,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
   const live = state.phase === 'ready';
   const online = new Set(session.online);
+  setPresenceSource(live ? session.online : [], session.away ?? [], session.users);
+  const toast = useToast();
+  const setAvailability = (availability: Availability) => {
+    setMenu(false);
+    void window.dex.request('me.update', { availability }).then(() => toast(`You're now shown as ${AVAILABILITY.find((a) => a.id === availability)!.label.toLowerCase()}`)).catch((e: Error) => toast(e.message, true));
+  };
 
   // admins see a live count of devices waiting for approval
   useEffect(() => {
@@ -231,18 +245,27 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           </span>
           <div className="me-wrap">
             <button className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You">
-              <Avatar user={session.me} presence={live ? 'on' : 'off'} size="sm" />
+              <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} size="sm" />
               {isAdmin && pendingCount > 0 && <span className="badge me-badge">{pendingCount}</span>}
             </button>
             {menu && (
               <div className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
                 <div className="menu-head">
-                  <Avatar user={session.me} presence={live ? 'on' : 'off'} />
+                  <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600 }}>{session.me.displayName}</div>
                     <div className="faint" style={{ fontSize: 12 }}>{session.me.statusText ?? session.me.title ?? session.me.account}</div>
                   </div>
                 </div>
+                <div className="menu-label label">Show me as</div>
+                {AVAILABILITY.map((a) => (
+                  <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => setAvailability(a.id)}>
+                    <span className={`avail-ring ${a.id}`} />
+                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{a.hint}</span></span>
+                    {session.me.availability === a.id && <Icon name="check" size={15} />}
+                  </button>
+                ))}
+                <div className="menu-sep" />
                 <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences<span className="kbd">Ctrl ,</span></button>
                 {isAdmin && (
                   <button role="menuitem" onClick={() => { setSheet('control'); setMenu(false); }}>
@@ -294,6 +317,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           commands={commands}
           onClose={() => setPalette(false)}
           onPerson={(id) => { if (id === session.me.id) { setLens('directory'); setFocusUser(id); } else void messagePerson(id); }}
+          convName={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }}
+          onMessage={(m) => {
+            const c = conversations.get(m.convId);
+            if (!c) return;
+            openConversation(c.id, c.kind);
+            setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId: m.convId, messageId: m.id, parentId: m.parentId } })), 120);
+          }}
         />
       )}
       <RequiredUpdate state={state} />

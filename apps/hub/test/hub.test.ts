@@ -97,7 +97,7 @@ test('new devices wait for approval, then join live; presence and directory foll
   const ready = await until(priya, isKind('ready'));
   assert.equal(ready.kind === 'ready' && ready.session.me.role, 'member');
   assert.equal((await added as { account: string }).account, 'dexterity\\priya');
-  assert.deepEqual(await presence, { userId: ready.kind === 'ready' ? ready.session.me.id : '', online: true });
+  assert.deepEqual(await presence, { userId: ready.kind === 'ready' ? ready.session.me.id : '', online: true, away: false });
   assert.equal(owner.session!.users.length, 2);
   assert.equal(owner.session!.online.length, 2);
 
@@ -296,4 +296,36 @@ test('apps on the LAN find the hub by probing, and /health reports status', asyn
   });
   assert.equal(health.ok, true);
   assert.equal(health.fingerprint, hub.fingerprint);
+});
+
+test('away when idle, invisible looks offline, busy and do-not-disturb are shared', async () => {
+  const hub = await startHub();
+  cleanups.push(() => hub.stop());
+  const owner = client(hub, 'vikram');
+  await until(owner, isKind('ready'));
+  const anuId = createIdentity();
+  const anu = client(hub, 'anu', anuId);
+  await until(anu, isKind('pending'));
+  await owner.request('admin.decide', { deviceId: anuId.deviceId, approve: true });
+  await until(anu, isKind('ready'));
+  const anuUser = anu.session!.me.id;
+
+  const away = nextEvent(owner, 'presence');
+  await anu.request('me.idle', { idle: true });
+  assert.deepEqual(await away, { userId: anuUser, online: true, away: true });
+  assert.ok(owner.session!.away.includes(anuUser));
+  const back = nextEvent(owner, 'presence');
+  await anu.request('me.idle', { idle: false });
+  assert.equal((await back as { away: boolean }).away, false);
+
+  const gone = nextEvent(owner, 'presence');
+  await anu.request('me.update', { availability: 'invisible' });
+  assert.equal((await gone as { online: boolean }).online, false);
+  assert.ok(!(await owner.request('directory.list')).online.includes(anuUser));
+  assert.ok((await anu.request('directory.list')).online.includes(anuUser), 'you still see yourself');
+  const visible = nextEvent(owner, 'presence');
+  const dnd = await anu.request('me.update', { availability: 'dnd' });
+  assert.equal((await visible as { online: boolean }).online, true);
+  assert.equal(dnd.availability, 'dnd');
+  await assert.rejects(anu.request('me.update', { availability: 'sleeping' as never }), /Unknown availability/);
 });

@@ -77,7 +77,20 @@ export function initials(name: string): string {
   return ((parts[0][0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
-export type Presence = 'on' | 'off' | 'away' | 'room' | 'dnd';
+export type Presence = 'on' | 'off' | 'away' | 'room' | 'dnd' | 'busy';
+
+// Presence of everyone, refreshed by the app frame whenever the session changes.
+let presenceSource: { online: Set<string>; away: Set<string>; users: Map<string, PublicUser> } = { online: new Set(), away: new Set(), users: new Map() };
+export function setPresenceSource(online: string[], away: string[], users: PublicUser[]): void {
+  presenceSource = { online: new Set(online), away: new Set(away), users: new Map(users.map((u) => [u.id, u] as const)) };
+}
+export function presenceFor(id: string): Presence {
+  const { online, away, users } = presenceSource;
+  if (!online.has(id)) return 'off';
+  if (away.has(id)) return 'away';
+  const a = users.get(id)?.availability;
+  return a === 'dnd' ? 'dnd' : a === 'busy' ? 'busy' : 'on';
+}
 
 /** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
 export function Avatar({ user, online, presence, size }: {
@@ -95,7 +108,7 @@ export function Avatar({ user, online, presence, size }: {
   );
 }
 
-export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb' };
+export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb', busy: 'busy' };
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;

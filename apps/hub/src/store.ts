@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
-import type { DeviceRecord, DeviceStatus, PublicUser, Role } from '@dex/core';
+import type { Availability, DeviceRecord, DeviceStatus, PublicUser, Role } from '@dex/core';
 
 interface UserRow {
   id: string; account: string; display_name: string; role: Role; title: string | null;
-  status_text: string | null; created_at: number;
+  status_text: string | null; availability: Availability | null; created_at: number;
 }
 interface DeviceRow {
   id: string; user_id: string; public_key: string; hostname: string; status: DeviceStatus;
@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at);
 
 export const toPublicUser = (r: UserRow): PublicUser => ({
   id: r.id, account: r.account, displayName: r.display_name, role: r.role,
-  title: r.title, statusText: r.status_text, createdAt: r.created_at,
+  title: r.title, statusText: r.status_text, availability: r.availability ?? 'available', createdAt: r.created_at,
 });
 
 const toDevice = (r: DeviceRow): DeviceRecord => ({
@@ -69,6 +69,7 @@ export class Store {
     this.db = new DatabaseSync(path.join(dataDir, 'hub.db'));
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
     this.db.exec(SCHEMA);
+    try { this.db.exec(`ALTER TABLE users ADD COLUMN availability TEXT NOT NULL DEFAULT 'available'`); } catch { /* already there */ }
   }
 
   close(): void { this.db.close(); }
@@ -110,14 +111,15 @@ export class Store {
     return this.userById(id)!;
   }
 
-  updateUser(id: string, patch: { displayName?: string; title?: string | null; statusText?: string | null; role?: Role }): PublicUser {
+  updateUser(id: string, patch: { displayName?: string; title?: string | null; statusText?: string | null; role?: Role; availability?: Availability }): PublicUser {
     const cur = this.userById(id);
     if (!cur) throw new Error('user not found');
-    this.db.prepare('UPDATE users SET display_name = ?, title = ?, status_text = ?, role = ? WHERE id = ?').run(
+    this.db.prepare('UPDATE users SET display_name = ?, title = ?, status_text = ?, role = ?, availability = ? WHERE id = ?').run(
       patch.displayName ?? cur.displayName,
       patch.title === undefined ? cur.title : patch.title,
       patch.statusText === undefined ? cur.statusText : patch.statusText,
       patch.role ?? cur.role,
+      patch.availability ?? cur.availability,
       id,
     );
     return this.userById(id)!;

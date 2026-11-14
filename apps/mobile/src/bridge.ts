@@ -124,7 +124,11 @@ class MobileApp {
     void this.discoverLoop();
     setTimeout(() => void this.checkForUpdates(false), 8000);
     setInterval(() => void this.checkForUpdates(false), 4 * 3600 * 1000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) void this.checkForUpdates(false, true); });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void this.checkForUpdates(false, true);
+      // a phone in a pocket counts as away
+      if (this.session.state.kind === 'ready') void this.session.request('me.idle', { idle: document.hidden }).catch(() => {});
+    });
   }
 
   private async save(): Promise<void> {

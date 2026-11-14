@@ -107,7 +107,10 @@ export class Controller extends EventEmitter {
     const client = new HubClient({ identity: this.identity, account: this.account });
     this.client = client;
     client.on('state', (s: ClientState) => {
-      if (s.kind === 'ready') this.emit('hub-ready');
+      if (s.kind === 'ready') {
+        this.emit('hub-ready');
+        if (this.idle) void client.request('me.idle', { idle: true }).catch(() => {});
+      }
       if (s.kind === 'ready' || s.kind === 'pending') {
         // remember the hub (with the id and name it announced) once it has accepted us
         this.config.hub = { ...s.target };
@@ -135,6 +138,14 @@ export class Controller extends EventEmitter {
     }
     this.push();
   }
+
+  /** System idle / screen lock → shown as away to colleagues. */
+  setIdle(idle: boolean): void {
+    if (this.idle === idle) return;
+    this.idle = idle;
+    if (this.client?.state.kind === 'ready') void this.client.request('me.idle', { idle }).catch(() => {});
+  }
+  private idle = false;
 
   rescan(): void {
     this.finder.probe();

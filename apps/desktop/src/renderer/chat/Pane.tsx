@@ -5,7 +5,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Conversation, FileInfo, PublicUser } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
-import { Avatar, Icon, colorFor, useToast } from '../ui.tsx';
+import { Avatar, Icon, colorFor, useToast, presenceFor } from '../ui.tsx';
 import { isEmojiOnly, renderBody } from './format.tsx';
 import {
   chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
@@ -47,6 +47,30 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
+
+  // jump to a message (from search): open its side-track, or scroll to it and flash it
+  useEffect(() => {
+    const onJump = async (e: Event) => {
+      const d = (e as CustomEvent).detail as { convId: string; messageId: string; parentId: string | null };
+      if (d.convId !== convId) return;
+      if (d.parentId) { setSide({ kind: 'track', parentId: d.parentId }); return; }
+      for (let i = 0; i < 8; i++) {
+        const el = document.querySelector(`[data-mid="${d.messageId}"]`);
+        if (el) {
+          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          el.classList.add('flash');
+          setTimeout(() => el.classList.remove('flash'), 1800);
+          return;
+        }
+        const tl = chatState().timelines.get(convId);
+        if (tl && !tl.hasMore && tl.loaded) return;
+        if (tl?.loaded) await loadOlder(convId); else await loadLatest(convId);
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    };
+    window.addEventListener('dex-jump', onJump);
+    return () => window.removeEventListener('dex-jump', onJump);
+  }, [convId]);
   useEffect(() => {
     setActiveConversation(convId);
     const tl = chatState().timelines.get(convId);
@@ -213,7 +237,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
   const u = ctx.users.get(author);
   return (
     <div className={`run${mine ? ' mine' : ''}`}>
-      <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={ctx.online.has(author) ? 'on' : 'off'} /></div>
+      <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
           <span className="run-name" style={mine ? undefined : { color: colorFor(author) }}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
@@ -258,7 +282,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   if (m.deleted) return <div className="msg deleted"><span className="faint">Message deleted</span></div>;
 
   return (
-    <div className={`msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
+    <div data-mid={m.id} className={`msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
       {editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
       ) : (
@@ -477,7 +501,7 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
         <ul className="mention-pop" role="listbox">
           {candidates.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === mIndex} onMouseDown={(e) => { e.preventDefault(); pick(c); }} onMouseEnter={() => setMIndex(i)}>
-              {c.user ? <Avatar user={c.user} presence={ctx.online.has(c.id) ? 'on' : 'off'} size="sm" /> : <span className="pal-icon"><Icon name="people" size={14} /></span>}
+              {c.user ? <Avatar user={c.user} presence={presenceFor(c.id)} size="sm" /> : <span className="pal-icon"><Icon name="people" size={14} /></span>}
               <span>{c.label}</span>
               {c.user && <span className="faint mono" style={{ marginLeft: 'auto', fontSize: 11 }}>{c.user.account}</span>}
             </li>
@@ -613,7 +637,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         )}
         {members.sort((a, b) => Number(ctx.online.has(b.id)) - Number(ctx.online.has(a.id))).map((u) => (
           <div key={u.id} className="member-row">
-            <Avatar user={u} presence={ctx.online.has(u.id) ? 'on' : 'off'} size="sm" />
+            <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
             <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ?? u.title ?? u.account}</span></span>
           </div>
         ))}
@@ -638,7 +662,7 @@ export function PeoplePicker({ users, online, onDone, initial = [], cta = 'Add' 
         {shown.map((u) => (
           <label key={u.id} className={`picker-row${picked.includes(u.id) ? ' on' : ''}`}>
             <input type="checkbox" checked={picked.includes(u.id)} onChange={() => setPicked(picked.includes(u.id) ? picked.filter((x) => x !== u.id) : [...picked, u.id])} />
-            <Avatar user={u} presence={online.has(u.id) ? 'on' : 'off'} size="sm" />
+            <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
             <span className="sb-main"><span className="sb-name">{u.displayName}</span><span className="sb-preview">{u.title ?? u.account}</span></span>
           </label>
         ))}

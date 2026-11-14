@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Icon, ROLE_LABEL, Segmented } from '../ui.tsx';
+import { Avatar, Icon, ROLE_LABEL, Segmented, presenceFor } from '../ui.tsx';
 
 type Filter = 'all' | 'online' | 'admins';
 
@@ -47,7 +47,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
         <div className="grid cols-people">
           {people.map((u) => (
             <div key={u.id} id={`person-${u.id}`} className={`card person${focusUser === u.id ? ' flash' : ''}`}>
-              <Avatar user={u} online={online.has(u.id)} size="lg" />
+              <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
               <div className="who">
                 <div className="name">
                   <span className="line">{u.displayName}</span>

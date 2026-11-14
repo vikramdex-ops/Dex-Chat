@@ -1,6 +1,6 @@
 // Dexterity Connect — Electron main process.
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
@@ -310,4 +310,13 @@ void app.whenReady().then(async () => {
   buildTray();
   controller.start();
   updater.start();
+
+  // away after 10 minutes without input, or while the screen is locked
+  let locked = false;
+  const checkIdle = () => controller?.setIdle(locked || powerMonitor.getSystemIdleTime() >= 600);
+  setInterval(checkIdle, 30_000);
+  powerMonitor.on('lock-screen', () => { locked = true; checkIdle(); });
+  powerMonitor.on('unlock-screen', () => { locked = false; checkIdle(); });
+  powerMonitor.on('suspend', () => { locked = true; checkIdle(); });
+  powerMonitor.on('resume', () => { locked = false; checkIdle(); });
 });

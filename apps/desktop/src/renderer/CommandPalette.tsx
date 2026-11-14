@@ -1,19 +1,40 @@
 // Ctrl+K: one box to find people and run commands. Arrow keys move, Enter runs, Esc closes.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { PublicUser } from '@dex/core';
-import { Avatar, Icon } from './ui.tsx';
+import type { Message, PublicUser } from '@dex/core';
+import { Avatar, Icon, presenceFor } from './ui.tsx';
 import type { IconName } from './ui.tsx';
 
 interface Command { id: string; label: string; icon: IconName; run: () => void; hint?: string }
 
-export function CommandPalette({ users, online, commands, onClose, onPerson }: {
+type Hit = { message: Message; snippet: string };
+
+/** "a [[match]] here" → text with <mark>s */
+function Snippet({ text }: { text: string }) {
+  const parts = text.replace(/<@[0-9A-Z]{26}>/g, '@…').split(/\[\[|\]\]/);
+  return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}</>;
+}
+
+export function CommandPalette({ users, online, commands, onClose, onPerson, convName, onMessage }: {
   users: PublicUser[];
   online: Set<string>;
   commands: Command[];
   onClose: () => void;
   onPerson: (id: string) => void;
+  convName?: (convId: string) => string;
+  onMessage?: (m: Message) => void;
 }) {
   const [q, setQ] = useState('');
+  const [hits, setHits] = useState<Hit[]>([]);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2 || !onMessage) { setHits([]); return; }
+    setSearching(true);
+    const t = setTimeout(() => {
+      void window.dex.request('search', { q: term, limit: 12 }).then((r) => setHits(r.messages)).catch(() => setHits([])).finally(() => setSearching(false));
+    }, 180);
+    return () => clearTimeout(t);
+  }, [q, onMessage]);
   const [index, setIndex] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
@@ -28,9 +49,10 @@ export function CommandPalette({ users, online, commands, onClose, onPerson }: {
     const cmds = commands
       .filter((c) => !s || c.label.toLowerCase().includes(s))
       .map((c) => ({ kind: 'command' as const, id: c.id, command: c }));
-    return s ? [...cmds.filter((c) => c.command.hint), ...people, ...cmds.filter((c) => !c.command.hint)].slice(0, 14)
+    const msgs = hits.map((h) => ({ kind: 'message' as const, id: `m-${h.message.id}`, hit: h }));
+    return s ? [...cmds.filter((c) => c.command.hint).slice(0, 5), ...people.slice(0, 5), ...msgs, ...cmds.filter((c) => !c.command.hint)].slice(0, 24)
       : [...cmds.filter((c) => !c.command.hint), ...people.slice(0, 5)];
-  }, [q, users, online, commands]);
+  }, [q, users, online, commands, hits]);
 
   useEffect(() => { setIndex(0); }, [q]);
 
@@ -38,7 +60,9 @@ export function CommandPalette({ users, online, commands, onClose, onPerson }: {
     const r = results[i];
     if (!r) return;
     onClose();
-    if (r.kind === 'person') onPerson(r.id); else r.command.run();
+    if (r.kind === 'person') onPerson(r.id);
+    else if (r.kind === 'message') onMessage?.(r.hit.message);
+    else r.command.run();
   };
 
   return (
@@ -62,13 +86,19 @@ export function CommandPalette({ users, online, commands, onClose, onPerson }: {
           <span className="kbd">Esc</span>
         </div>
         <ul className="palette-list" role="listbox">
-          {results.length === 0 && <li className="palette-empty">Nothing matches “{q}”.</li>}
+          {results.length === 0 && <li className="palette-empty">{searching ? 'Searching messages…' : `Nothing matches “${q}”.`}</li>}
           {results.map((r, i) => (
             <li key={r.id} id={`pal-${r.id}`} role="option" aria-selected={i === index}
               onMouseEnter={() => setIndex(i)} onMouseDown={(e) => { e.preventDefault(); run(i); }}>
-              {r.kind === 'person' ? (
+              {r.kind === 'message' ? (
                 <>
-                  <Avatar user={r.user} presence={online.has(r.id) ? 'on' : 'off'} size="sm" />
+                  <span className="pal-icon"><Icon name="chat" size={16} /></span>
+                  <span className="pal-main pal-snippet"><Snippet text={r.hit.snippet} /></span>
+                  <span className="pal-meta">{users.find((u) => u.id === r.hit.message.authorId)?.displayName.split(' ')[0]} · {convName?.(r.hit.message.convId) ?? ''}</span>
+                </>
+              ) : r.kind === 'person' ? (
+                <>
+                  <Avatar user={r.user} presence={presenceFor(r.id)} size="sm" />
                   <span className="pal-main">{r.user.displayName}</span>
                   <span className="pal-meta mono">{r.user.account}</span>
                 </>

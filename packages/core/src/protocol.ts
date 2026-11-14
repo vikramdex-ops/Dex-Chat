@@ -8,6 +8,8 @@ export const DISCOVERY_PORT = 47901;
 
 export type Role = 'owner' | 'admin' | 'member' | 'guest';
 export type DeviceStatus = 'pending' | 'approved' | 'rejected' | 'revoked';
+/** Chosen by the person. 'invisible' appears offline to everyone else. */
+export type Availability = 'available' | 'busy' | 'dnd' | 'invisible';
 
 export interface WindowsAccount {
   /** Windows sign-in name, e.g. "priya.raman" */
@@ -34,6 +36,7 @@ export interface PublicUser {
   role: Role;
   title: string | null;
   statusText: string | null;
+  availability: Availability;
   createdAt: number;
 }
 
@@ -137,6 +140,8 @@ export interface Session {
   deviceId: string;
   users: PublicUser[];
   online: string[];
+  /** Online but idle (no input for a while, or the screen is locked). */
+  away: string[];
   /** Bearer token for this connection's file uploads and downloads over HTTPS. */
   fileToken: string;
 }
@@ -174,7 +179,8 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 // Request/response operations available in a session.
 export interface Ops {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
-  'me.update': { req: { displayName?: string; title?: string | null; statusText?: string | null }; res: PublicUser };
+  'me.update': { req: { displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability }; res: PublicUser };
+  'me.idle': { req: { idle: boolean }; res: { ok: true } };
   'admin.devices': { req: void; res: DeviceRecord[] };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
   'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner'> }; res: PublicUser };
@@ -204,12 +210,16 @@ export interface Ops {
   'msg.pin': { req: { messageId: string; pinned: boolean }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
   'typing': { req: { convId: string; parentId?: string }; res: { ok: true } };
+  'search': {
+    req: { q: string; convId?: string; limit?: number };
+    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string }> };
+  };
 }
 export type OpName = keyof Ops;
 
 // Server-pushed events.
 export interface Events {
-  'presence': { userId: string; online: boolean };
+  'presence': { userId: string; online: boolean; away?: boolean };
   'user.updated': PublicUser;
   'user.added': PublicUser;
   'admin.pending': DeviceRecord;

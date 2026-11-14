@@ -181,3 +181,29 @@ test('retries are idempotent, history pages backwards, typing reaches others onl
   owner.off('event', onSelf);
   assert.equal(selfTyping, false);
 });
+
+test('search finds words, line numbers and mentions, only in your conversations', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Search test', members: [me(priya)] });
+  await send(owner, space.id, 'Support spacing on line 6"-P-1001-A1B needs a check');
+  await send(owner, space.id, `<@${me(priya)}> please review the MTO`);
+  const secret = await owner.request('conv.create', { kind: 'direct', members: [me(ravi)] });
+  await send(owner, secret.id, 'support budget for ravi only');
+
+  const r1 = await priya.request('search', { q: 'support' });
+  assert.equal(r1.messages.length, 1);
+  assert.match(r1.messages[0].snippet, /\[\[Support\]\]/);
+  const r2 = await priya.request('search', { q: '1001' });
+  assert.equal(r2.messages.length, 1);
+  const r3 = await priya.request('search', { q: 'priy' });
+  assert.equal(r3.messages[0].message.body.includes('please review'), true, 'mentions are searchable by name');
+  assert.equal((await ravi.request('search', { q: 'spacing' })).messages.length, 0, 'not a member');
+  assert.equal((await priya.request('search', { q: '  ' })).messages.length, 0);
+
+  const edited = r1.messages[0].message;
+  await owner.request('msg.edit', { messageId: edited.id, body: 'Pipe rack PR-03 needs a check' });
+  assert.equal((await priya.request('search', { q: 'support' })).messages.length, 0, 'edits re-index');
+  assert.equal((await priya.request('search', { q: 'rack' })).messages.length, 1);
+  await owner.request('msg.delete', { messageId: edited.id });
+  assert.equal((await priya.request('search', { q: 'rack' })).messages.length, 0, 'deleted messages disappear');
+});

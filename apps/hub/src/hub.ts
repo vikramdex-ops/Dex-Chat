@@ -45,6 +45,7 @@ interface Conn {
   userId: string | null;
   ready: boolean;
   fileToken: string | null;
+  idle: boolean;
 }
 
 const isAdminRole = (r: Role) => r === 'owner' || r === 'admin';
@@ -217,7 +218,7 @@ export class Hub {
   private accept(ws: WebSocket, req: IncomingMessage): void {
     const conn: Conn = {
       ws, nonce: crypto.randomBytes(24).toString('base64url'), ip: req.socket.remoteAddress ?? '',
-      alive: true, deviceId: null, userId: null, ready: false, fileToken: null,
+      alive: true, deviceId: null, userId: null, ready: false, fileToken: null, idle: false,
     };
     this.conns.add(conn);
     ws.on('pong', () => { conn.alive = true; });
@@ -251,8 +252,29 @@ export class Hub {
     }
   }
 
-  private onlineUserIds(): string[] {
-    return [...new Set([...this.conns].filter((c) => c.ready && c.userId).map((c) => c.userId!))];
+  /** People others can see online (invisible people are left out). */
+  private onlineUserIds(viewer?: string): string[] {
+    const ids = new Set([...this.conns].filter((c) => c.ready && c.userId).map((c) => c.userId!));
+    for (const id of ids) {
+      if (id !== viewer && this.store.userById(id)?.availability === 'invisible') ids.delete(id);
+    }
+    return [...ids];
+  }
+
+  /** Away = every connected device of the person is idle. */
+  private isAway(userId: string): boolean {
+    let any = false;
+    for (const c of this.conns) {
+      if (!c.ready || c.userId !== userId) continue;
+      any = true;
+      if (!c.idle) return false;
+    }
+    return any;
+  }
+
+  private announcePresence(userId: string, except?: Conn): void {
+    const online = this.isOnline(userId, except) && this.store.userById(userId)?.availability !== 'invisible';
+    this.emit('presence', { userId, online, away: online && this.isAway(userId) }, (c) => c !== except && c.userId !== userId);
   }
 
   private isOnline(userId: string, except?: Conn): boolean {
@@ -264,9 +286,7 @@ export class Hub {
     this.conns.delete(conn);
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
-    if (conn.ready && conn.userId && !this.isOnline(conn.userId)) {
-      this.emit('presence', { userId: conn.userId, online: false });
-    }
+    if (conn.ready && conn.userId) this.announcePresence(conn.userId);
   }
 
   private proofOk(conn: Conn, deviceId: string, publicKey: string, sig: unknown): boolean {
@@ -363,7 +383,7 @@ export class Hub {
     this.fileTokens.set(conn.fileToken, device.userId);
     this.store.touchDevice(device.id);
     this.send(conn, { t: 'ready', session: this.sessionFor(conn) });
-    if (!wasOnline) this.emit('presence', { userId: device.userId, online: true }, (c) => c !== conn);
+    if (!wasOnline || this.isAway(device.userId) === false) this.announcePresence(device.userId, undefined);
   }
 
   private sessionFor(conn: Conn): Session {
@@ -372,7 +392,8 @@ export class Hub {
       me: this.store.userById(conn.userId!)!,
       deviceId: conn.deviceId!,
       users: this.store.activeUsers(),
-      online: this.onlineUserIds(),
+      online: this.onlineUserIds(conn.userId!),
+      away: [...new Set(this.onlineUserIds(conn.userId!).filter((id) => this.isAway(id)))],
       fileToken: conn.fileToken!,
     };
   }
@@ -404,7 +425,7 @@ export class Hub {
         return { at: Date.now() } satisfies Ops['ping']['res'];
 
       case 'directory.list':
-        return { users: this.store.activeUsers(), online: this.onlineUserIds() } satisfies Ops['directory.list']['res'];
+        return { users: this.store.activeUsers(), online: this.onlineUserIds(conn.userId!) } satisfies Ops['directory.list']['res'];
 
       case 'me.update': {
         const patch: { displayName?: string; title?: string | null; statusText?: string | null } = {};
@@ -415,9 +436,22 @@ export class Hub {
         }
         if (d.title !== undefined) patch.title = d.title === null ? null : clean(d.title, 80) || null;
         if (d.statusText !== undefined) patch.statusText = d.statusText === null ? null : clean(d.statusText, 120) || null;
-        const user = this.store.updateUser(conn.userId!, patch);
+        const before = this.store.userById(conn.userId!)!;
+        if (d.availability !== undefined) {
+          if (!['available', 'busy', 'dnd', 'invisible'].includes(String(d.availability))) throw new OpError('Unknown availability.');
+          (patch as { availability?: string }).availability = String(d.availability);
+        }
+        const user = this.store.updateUser(conn.userId!, patch as never);
         this.emit('user.updated', user);
+        if (before.availability !== user.availability && (before.availability === 'invisible' || user.availability === 'invisible')) this.announcePresence(user.id);
         return user;
+      }
+
+      case 'me.idle': {
+        const was = this.isAway(conn.userId!);
+        conn.idle = d.idle === true;
+        if (was !== this.isAway(conn.userId!)) this.announcePresence(conn.userId!);
+        return { ok: true } satisfies Ops['me.idle']['res'];
       }
 
       case 'admin.devices':
@@ -495,7 +529,7 @@ export class Hub {
       }
 
       default: {
-        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|typing$)/.test(op)) {
+        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|typing$|search$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);

@@ -230,10 +230,13 @@ export class HubSession extends Emitter {
       if (u.id === session.me.id) session.me = u;
     };
     if (name === 'presence') {
-      const { userId, online } = data as Events['presence'];
+      const { userId, online, away } = data as Events['presence'];
       const set = new Set(session.online);
       if (online) set.add(userId); else set.delete(userId);
       session.online = [...set];
+      const idle = new Set(session.away ?? []);
+      if (online && away) idle.add(userId); else idle.delete(userId);
+      session.away = [...idle];
     } else if (name === 'user.updated' || name === 'user.added') {
       upsert(data as PublicUser);
     } else {
