@@ -413,6 +413,12 @@ export class Flows {
     }
     times.push(now);
     this.recent.set(r.id, times);
+    // a rule acts for its owner: once they leave the conversation (or stop being an administrator), it stops
+    const owner = this.user(r.owner_id);
+    const lost = !owner ? 'The person who owns this rule no longer has an account here.'
+      : r.conv_id ? (!this.isMember(r.conv_id, owner.id) ? `${owner.displayName}, who owns this rule, is no longer in this conversation.` : null)
+        : (!isAdminRole(owner.role) ? `${owner.displayName}, who owns this office-wide rule, is no longer an administrator.` : null);
+    if (lost) { this.record(r, ctx, 'failed', lost, []); return; }
     const steps = await this.runActions(r, graph, ctx);
     const failed = steps.find((s) => s.status === 'failed');
     this.record(r, ctx, failed ? 'failed' : 'ok', failed?.note ?? null, steps);
@@ -664,9 +670,13 @@ export class Flows {
         if (existing) {
           if (typeof d.version === 'number' && d.version !== existing.version) throw new FlowError('Someone changed this rule since you opened it. Open it again to see their changes.');
           const enabled = typeof d.enabled === 'boolean' ? d.enabled : !!existing.enabled;
-          this.db.prepare('UPDATE flows SET name = ?, graph = ?, enabled = ?, version = version + 1, updated_at = ?, updated_by = ? WHERE id = ?')
-            .run(name, JSON.stringify(graph), enabled ? 1 : 0, now, me.id, existing.id);
-          this.d.store.audit(me.id, 'flow.updated', existing.id, { name, convId, version: existing.version + 1, enabled });
+          // a rule whose owner has lost access becomes the rule of whoever saves it next
+          const prev = this.user(existing.owner_id);
+          const ownerOk = !!prev && (convId ? this.isMember(convId, prev.id) : isAdminRole(prev.role));
+          const ownerId = ownerOk ? existing.owner_id : me.id;
+          this.db.prepare('UPDATE flows SET name = ?, graph = ?, enabled = ?, version = version + 1, updated_at = ?, updated_by = ?, owner_id = ? WHERE id = ?')
+            .run(name, JSON.stringify(graph), enabled ? 1 : 0, now, me.id, ownerId, existing.id);
+          this.d.store.audit(me.id, 'flow.updated', existing.id, { name, convId, version: existing.version + 1, enabled, ...(ownerOk ? {} : { owner: me.id }) });
         } else {
           const count = (this.db.prepare(`SELECT COUNT(*) AS n FROM flows WHERE ${convId ? 'conv_id = ?' : 'conv_id IS NULL'}`).get(...(convId ? [convId] : [])) as { n: number }).n;
           if (count >= (convId ? FLOW_LIMITS.rulesPerConversation : FLOW_LIMITS.rulesOffice)) throw new FlowError('There are too many automations here. Remove one you no longer need first.');

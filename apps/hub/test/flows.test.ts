@@ -376,6 +376,31 @@ test('permissions: who may see and change automations, versions, and the audit t
   assert.deepEqual(actions, ['flow.created', 'flow.created', 'flow.deleted', 'flow.disabled', 'flow.updated']);
 });
 
+test('a rule stops acting once its owner leaves the conversation', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  const sp = await priya.request('conv.create', { kind: 'space', name: 'Tender', members: [me(ravi), me(owner)] });
+  const flow = await priya.request('flow.save', { convId: sp.id, name: 'Copy to me', graph: {
+    trigger: { id: 't1', kind: 'message.matched', mode: 'keywords', pattern: 'price' }, conditions: [], actions: [{ id: 'a1', kind: 'notify', to: [{ kind: 'role', id: 'owner' }], text: '{{message.text}}' }],
+  } });
+  await send(ravi, sp.id, 'The price is 4.2 crore');
+  await hub.flows.idle();
+  assert.equal((await runsOf(owner, flow.id))[0].outcome, 'ok');
+  await priya.request('conv.leave', { convId: sp.id });
+  await send(ravi, sp.id, 'Revised price: 3.9 crore');
+  await hub.flows.idle();
+  const runs = await runsOf(owner, flow.id);
+  assert.equal(runs[0].outcome, 'failed');
+  assert.match(runs[0].error ?? '', /no longer in this conversation/);
+  assert.deepEqual(runs[0].steps, []);
+  assert.equal((await dmText(priya, systemId(hub))).filter((b) => b.includes('3.9')).length, 0, 'nothing reached her after she left');
+  // an administrator who is in the Space takes it over by saving it
+  const taken = await owner.request('flow.save', { id: flow.id, convId: sp.id, name: flow.name, graph: flow.graph, version: flow.version });
+  assert.equal(taken.ownerId, me(owner));
+  await send(ravi, sp.id, 'Final price: 3.8 crore');
+  await hub.flows.idle();
+  assert.equal((await runsOf(owner, flow.id))[0].outcome, 'ok');
+});
+
 test('a test run shows what would happen with a real message or a made-up one, and does nothing', async () => {
   const { hub, owner, priya } = await office();
   const sp = await owner.request('conv.create', { kind: 'space', name: 'Review', members: [me(priya)] });
