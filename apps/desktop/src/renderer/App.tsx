@@ -302,13 +302,6 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     window.addEventListener('dex-search', onSearch);
     return () => window.removeEventListener('dex-search', onSearch);
   }, []);
-  // a conversation's header menu opens its Automations
-  const [automations, setAutomations] = useState<string | null>(null);
-  useEffect(() => {
-    const on = (e: Event) => setAutomations(String((e as CustomEvent).detail));
-    window.addEventListener('dex-automations', on);
-    return () => window.removeEventListener('dex-automations', on);
-  }, []);
   // other parts of the app open a conversation by id (Take to Direct, links)
   useEffect(() => {
     const onOpen = (e: Event) => { const c = chatState().conversations.get(String((e as CustomEvent).detail)); if (c) openConversation(c.id, c.kind); };
@@ -560,7 +553,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       )}
 
-      {automations && <Suspense fallback={null}><AutomationsSheet convId={automations} session={session} onClose={() => setAutomations(null)} /></Suspense>}
+      <AutomationsHost session={session} />
       {shortcuts && <ShortcutsSheet onClose={() => setShortcuts(false)} />}
       {palette && (
         <CommandPalette
@@ -660,6 +653,18 @@ export function PopoutApp({ convId }: { convId: string }) {
         <Pane convId={convId} users={users} meId={session.me.id} isAdmin={session.me.role === 'owner' || session.me.role === 'admin'} online={new Set(session.online)}
           live={ready} onBack={() => void window.dex.showMain?.(convId)} session={session} />
       </div>
+      <AutomationsHost session={session} />
     </ToastHost>
   );
+}
+
+/** A conversation's header menu opens its Automations (in the main window and in pop-outs). */
+function AutomationsHost({ session }: { session: Session }) {
+  const [convId, setConvId] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setConvId(String((e as CustomEvent).detail));
+    window.addEventListener('dex-automations', on);
+    return () => window.removeEventListener('dex-automations', on);
+  }, []);
+  return convId ? <Suspense fallback={null}><AutomationsSheet convId={convId} session={session} onClose={() => setConvId(null)} /></Suspense> : null;
 }
