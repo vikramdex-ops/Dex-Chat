@@ -7,7 +7,11 @@
     ".": "./src/index.ts",
     "./client": "./src/hub-client.ts",
     "./discovery": "./src/discovery.ts",
-    "./updates": "./src/updates.ts"
+    "./updates": "./src/updates.ts",
+    "./session": "./src/session.ts",
+    "./emitter": "./src/emitter.ts",
+    "./feed": "./src/feed.ts",
+    "./protocol": "./src/protocol.ts"
   },
   "dependencies": {
     "ws": "^8.18.3"

@@ -27,6 +27,7 @@ const PATHS = {
   wifi: 'M2.5 9a14 14 0 0 1 19 0M5.5 12.3a9.5 9.5 0 0 1 13 0M8.6 15.5a5 5 0 0 1 6.8 0M12 19h.01',
   warning: 'M12 4 2.8 19.5h18.4zM12 10v4.5M12 17h.01',
   edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  pulse: 'M3 12h4l2.5-6 4 12 2.5-6H21',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -55,14 +56,25 @@ export function initials(name: string): string {
   return ((parts[0][0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
-export function Avatar({ user, online, size }: { user: Pick<PublicUser, 'id' | 'displayName'>; online?: boolean; size?: 'sm' | 'lg' }) {
+export type Presence = 'on' | 'off' | 'away' | 'room' | 'dnd';
+
+/** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
+export function Avatar({ user, online, presence, size }: {
+  user: Pick<PublicUser, 'id' | 'displayName'>;
+  online?: boolean;
+  presence?: Presence;
+  size?: 'sm' | 'lg';
+}) {
+  const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
   return (
-    <span className={`avatar${size ? ` ${size}` : ''}`} style={{ background: colorFor(user.id) }} title={user.displayName}>
+    <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }}
+      title={p ? `${user.displayName} · ${PRESENCE_LABEL[p]}` : user.displayName}>
       {initials(user.displayName)}
-      {online !== undefined && <span className={`presence${online ? ' on' : ''}`} aria-label={online ? 'online' : 'offline'} />}
     </span>
   );
 }
+
+export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb' };
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;

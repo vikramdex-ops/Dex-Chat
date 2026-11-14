@@ -21,12 +21,12 @@ export function createIdentity(): DeviceIdentity {
   return { deviceId: deviceIdFor(pub), publicKey: pub, privateKey: priv };
 }
 
-export function signWith(identity: DeviceIdentity, payload: Buffer): string {
+export function signWith(identity: DeviceIdentity, payload: Uint8Array): string {
   const key = crypto.createPrivateKey({ key: Buffer.from(identity.privateKey, 'base64'), format: 'der', type: 'pkcs8' });
   return crypto.sign(null, payload, key).toString('base64');
 }
 
-export function verifySignature(publicKeyB64: string, payload: Buffer, signatureB64: string): boolean {
+export function verifySignature(publicKeyB64: string, payload: Uint8Array, signatureB64: string): boolean {
   try {
     const key = crypto.createPublicKey({ key: Buffer.from(publicKeyB64, 'base64'), format: 'der', type: 'spki' });
     if (key.asymmetricKeyType !== 'ed25519') return false;

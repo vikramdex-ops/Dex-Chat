@@ -32,7 +32,7 @@ export function Home({ state, session, pendingCount, go }: { state: AppState; se
       <div className="view-head">
         <div>
           <h1>{greeting()}, {firstName}</h1>
-          <p className="muted">{onlineUsers.length} of {session.users.length} {session.users.length === 1 ? 'person' : 'people'} online on {session.hub.name}</p>
+          <p className="label">Pulse · {onlineUsers.length} of {session.users.length} online · {session.hub.name}</p>
         </div>
       </div>
 
@@ -42,10 +42,10 @@ export function Home({ state, session, pendingCount, go }: { state: AppState; se
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <span className="stat">{onlineUsers.length}</span>
             <span className="stack">
-              {onlineUsers.slice(0, 6).map((u) => <Avatar key={u.id} user={u} size="sm" />)}
+              {onlineUsers.slice(0, 6).map((u) => <Avatar key={u.id} user={u} presence="on" size="sm" />)}
             </span>
           </div>
-          <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>See everyone in the office directory</p>
+          <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>Open the Directory</p>
         </div>
 
         <div className="card">
@@ -65,7 +65,7 @@ export function Home({ state, session, pendingCount, go }: { state: AppState; se
               <span className="stat" style={{ color: pendingCount ? 'var(--amber-ink)' : undefined }}>{pendingCount}</span>
               {pendingCount > 0 && <span className="chip warn">Action needed</span>}
             </div>
-            <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>{pendingCount ? 'Review new devices in Admin' : 'No one is waiting'}</p>
+            <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>{pendingCount ? 'Review new devices in the Control room' : 'No one is waiting'}</p>
           </div>
         )}
 

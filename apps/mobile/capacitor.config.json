@@ -1,0 +1,10 @@
+{
+  "appId": "in.co.dexteritydesign.connect",
+  "appName": "Dexterity Connect",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

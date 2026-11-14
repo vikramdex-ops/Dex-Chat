@@ -1,0 +1,22 @@
+{
+  "name": "@dex/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dexterity Connect for Android",
+  "scripts": {
+    "build": "vite build",
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "@dex/core": "*"
+  }
+}

@@ -59,7 +59,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       <OfflineBanner state={state} />
       <div className="view-head">
         <div>
-          <h1>Admin</h1>
+          <h1>Control room</h1>
           <p className="muted">Approve who can join {session.hub.name} and keep track of every change.</p>
         </div>
       </div>

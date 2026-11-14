@@ -29,8 +29,8 @@ export function People({ state, session, query, setQuery, focusUser }: {
       <OfflineBanner state={state} />
       <div className="view-head">
         <div>
-          <h1>People</h1>
-          <p className="muted">{session.users.length} in the directory · {online.size} online</p>
+          <h1>Directory</h1>
+          <p className="label">{session.users.length} people · {online.size} online</p>
         </div>
       </div>
       <div className="toolbar">

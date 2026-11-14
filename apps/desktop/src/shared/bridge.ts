@@ -74,6 +74,8 @@ export interface JoinRequest {
   /** "host" or "host:port" typed by the user */
   address?: string;
   displayName: string;
+  /** Phones only: "DOMAIN\\username" to link the phone to the person's PC account. */
+  officeAccount?: string;
 }
 
 export interface DexBridge {

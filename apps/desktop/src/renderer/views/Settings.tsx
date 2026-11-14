@@ -25,7 +25,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
   return (
     <div className="view">
       <OfflineBanner state={state} />
-      <div className="view-head"><div><h1>Settings</h1></div></div>
+      <div className="view-head"><div><h1>Preferences</h1></div></div>
       <div className="settings">
         <section>
           <h3>Profile</h3>
@@ -62,7 +62,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           </div>
         </section>
 
-        <section>
+        {state.platform !== 'android' && <section>
           <h3>Start-up and windows</h3>
           <div className="setting">
             <Icon name="power" className="lead" />
@@ -74,7 +74,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="txt"><div>Keep running when the window is closed</div><div className="faint">So you keep receiving messages and calls. Quit from the tray icon.</div></div>
             <Toggle label="Keep running in the tray" checked={state.settings.closeToTray} onChange={(v) => set({ closeToTray: v })} />
           </div>
-        </section>
+        </section>}
 
         <section>
           <h3>Office hub</h3>
@@ -95,7 +95,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           </div>
           <div className="setting">
             <Icon name="laptop" className="lead" />
-            <div className="txt"><div>This PC</div><div className="faint">{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
+            <div className="txt"><div>{state.platform === 'android' ? 'This phone' : 'This PC'}</div><div className="faint">{state.platform === 'android' ? '' : `${state.account.domain}\\${state.account.username} · `}{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
             <button className="btn" onClick={() => { if (confirm('Disconnect from this hub? You can join it or another hub again from the welcome screen.')) void window.dex.forgetHub(); }}>Disconnect</button>
           </div>
         </section>

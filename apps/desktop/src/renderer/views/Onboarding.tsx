@@ -27,6 +27,8 @@ function Welcome({ state }: { state: AppState }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [manual, setManual] = useState(false);
   const [address, setAddress] = useState('');
+  const isPhone = state.platform === 'android';
+  const [office, setOffice] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +42,8 @@ function Welcome({ state }: { state: AppState }) {
     setBusy(true);
     setError(null);
     try {
-      await window.dex.join(manual ? { address, displayName: name } : { hubId: selected!, displayName: name });
+      const extra = isPhone && office.trim() ? { officeAccount: office } : {};
+      await window.dex.join(manual ? { address, displayName: name, ...extra } : { hubId: selected!, displayName: name, ...extra });
     } catch (e) {
       setError((e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
       setBusy(false);
@@ -52,21 +55,34 @@ function Welcome({ state }: { state: AppState }) {
       <div>
         <img className="mark" src={logo} alt="" />
         <h1>Welcome to Dexterity&nbsp;Connect</h1>
-        <p className="lede">Messages, calls and files that stay on the office network. You're signed in through Windows — no password needed.</p>
+        <p className="lede">{isPhone
+          ? 'Messages, calls and files that stay on the office network. Connect to the office Wi-Fi to join.'
+          : "Messages, calls and files that stay on the office network. You're signed in through Windows — no password needed."}</p>
       </div>
 
-      <div className="who-chip">
-        <Icon name="user" />
-        <div style={{ minWidth: 0 }}>
-          <div className="mono">{state.account.domain}\{state.account.username}</div>
-          <div className="faint" style={{ fontSize: 12 }}>on {state.account.hostname}</div>
+      {!isPhone && (
+        <div className="who-chip">
+          <Icon name="user" />
+          <div style={{ minWidth: 0 }}>
+            <div className="mono">{state.account.domain}\{state.account.username}</div>
+            <div className="faint" style={{ fontSize: 12 }}>on {state.account.hostname}</div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="field">
         <label htmlFor="display-name">Your name, as colleagues will see it</label>
         <input id="display-name" className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
       </div>
+
+      {isPhone && (
+        <div className="field">
+          <label htmlFor="office-account">Your PC sign-in (optional)</label>
+          <input id="office-account" className="input mono" placeholder="DEXTERITY\\priya.raman" value={office} autoCapitalize="none" autoCorrect="off"
+            onChange={(e) => setOffice(e.target.value)} />
+          <span className="faint" style={{ fontSize: 12 }}>Links this phone to your PC account so colleagues see one of you. Find it on your PC under Settings → This PC.</span>
+        </div>
+      )}
 
       <div className="field">
         <label>Office hub</label>

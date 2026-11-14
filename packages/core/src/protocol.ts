@@ -95,8 +95,8 @@ export type ClientFrame =
  * What a device signs to prove possession of its key. Binding the hub's TLS certificate
  * fingerprint means a relay with a different certificate cannot reuse the signature.
  */
-export function authPayload(nonce: string, hubFingerprint: string, deviceId: string): Buffer {
-  return Buffer.from(`${APP_ID}-auth-v${PROTOCOL_VERSION}|${nonce}|${hubFingerprint}|${deviceId}`, 'utf8');
+export function authPayload(nonce: string, hubFingerprint: string, deviceId: string): Uint8Array {
+  return new TextEncoder().encode(`${APP_ID}-auth-v${PROTOCOL_VERSION}|${nonce}|${hubFingerprint}|${deviceId}`);
 }
 
 export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>): string {
