@@ -83,6 +83,40 @@ X-Dex-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>.<body>" with the signin
 Reply within 8 seconds with `{ "text": "…" }` to post into the conversation as the integration, or
 `{ "text": "…", "ephemeral": true }` to show it only to the person who typed the command.
 
+### Message actions
+
+Give an integration **message actions** next to its commands (Control room → Integrations →
+Commands and message actions), one per line, e.g. `Raise an RFI (spaces)`. They appear in every
+message's menu (or only in Spaces / Direct). Choosing one sends the message to the same signed
+webhook:
+
+```
+{ "action": { "id": "…", "label": "Raise an RFI" }, "at": "2026-11-14T10:00:00Z",
+  "user": { "id": "…", "name": "Priya Raman", "account": "dex\\priya.raman" },
+  "message": { "id": "…", "text": "Nozzle N3 clashes with the platform", "createdAt": "…",
+               "author": { "id": "…", "name": "Vikram Shah", "account": "dex\\vikram" },
+               "files": [{ "name": "clash.png", "size": 48211, "type": "image/png" }] },
+  "conversation": { "id": "…", "kind": "space", "name": "P-12 Piping" } }
+```
+
+Reply `{ "text": "RFI-0042 raised" }` to post in the message's side-track, or add `"ephemeral": true`
+to show it only to the person who chose the action. For an encrypted Direct message the text is
+sent by the person's own app, because the hub cannot read it.
+
+### Pulse widgets
+
+An integration keeps up to 5 cards on everyone's Pulse up to date with its token:
+
+```
+POST https://<hub>:47900/api/bot/widget
+Authorization: Bearer <token>
+
+{ "key": "plotter", "title": "Plotter queue", "lines": ["3 sheets waiting", "A0 roll low"], "url": "https://…" }
+```
+
+Send the same `key` again to update it, or `{ "key": "plotter", "remove": true }` to take it down.
+Up to 8 lines of 200 characters. Revoking the integration removes its widgets.
+
 ## 4. Links that open Dexterity Connect
 
 | Link | Opens |
