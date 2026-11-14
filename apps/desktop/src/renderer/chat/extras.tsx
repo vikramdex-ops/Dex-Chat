@@ -2,7 +2,7 @@
 // new polls and scheduled sends.
 import { useMemo, useState } from 'react';
 import type { Conversation, Message, PublicUser, RepeatRule } from '@dex/core';
-import { Dialog, Icon, Toggle, colorFor, useToast } from '../ui.tsx';
+import { Dialog, Icon, ToggleRow, colorFor, useToast } from '../ui.tsx';
 import { REPEAT_LABEL, describeWhen, toLocalInput, whenPresets } from '../desk/store.ts';
 import { renderBody } from './format.tsx';
 import { holdUnread, useChat } from './store.ts';
@@ -243,8 +243,8 @@ export function PollDialog({ conv, parentId, onClose }: { conv: Conversation; pa
         </div>
         {dupes && <span className="field-error">Each choice must be different.</span>}
       </div>
-      <Toggle checked={multi} onChange={setMulti} label="People can choose more than one" />
-      <Toggle checked={anonymous} onChange={setAnonymous} label="Anonymous: hide who voted for what" />
+      <ToggleRow checked={multi} onChange={setMulti} label="People can choose more than one" />
+      <ToggleRow checked={anonymous} onChange={setAnonymous} label="Anonymous: hide who voted for what" />
       <div className="field">
         <label htmlFor="poll-close">Closes (optional)</label>
         <input id="poll-close" className="input" type="datetime-local" min={toLocalInput(Date.now())} value={closes ? toLocalInput(closes) : ''}

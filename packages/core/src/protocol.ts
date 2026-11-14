@@ -252,6 +252,66 @@ export interface AttendanceDay {
   autoClosed: boolean;
 }
 
+// ---------------------------------------------------------------- calendar and meetings
+export type Rsvp = 'pending' | 'yes' | 'no' | 'maybe';
+export type Recurrence = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly';
+
+/** A bookable conference room or cabin. */
+export interface Venue {
+  id: string;
+  name: string;
+  capacity: number | null;
+  note: string | null;
+}
+
+export interface CalEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  /** Free-text place (used when no venue is booked). */
+  location: string | null;
+  venueId: string | null;
+  startAt: number;
+  endAt: number;
+  allDay: boolean;
+  organizerId: string;
+  /** Conversation the meeting belongs to (its Room is used for the call). */
+  convId: string | null;
+  /** Hold the meeting as a call in Dexterity Connect. */
+  online: boolean;
+  recurrence: Recurrence;
+  /** Last day a repeating meeting can start (inclusive), or null. */
+  until: number | null;
+  /** Minutes before the start to remind attendees, or null. */
+  reminderMin: number | null;
+  attendees: Array<{ userId: string; response: Rsvp }>;
+  cancelled: boolean;
+  createdAt: number;
+}
+
+/** One time a (possibly repeating) event happens. */
+export interface Occurrence {
+  event: CalEvent;
+  startAt: number;
+  endAt: number;
+}
+
+export interface EventInput {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  venueId?: string | null;
+  startAt: number;
+  endAt: number;
+  allDay?: boolean;
+  attendees?: string[];
+  convId?: string | null;
+  online?: boolean;
+  recurrence?: Recurrence;
+  until?: number | null;
+  reminderMin?: number | null;
+}
+
 // ---------------------------------------------------------------- desk (personal productivity)
 export type RepeatRule = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly';
 
@@ -425,6 +485,17 @@ export interface Ops {
   'poll.vote': { req: { messageId: string; options: number[] }; res: Message };
   'poll.close': { req: { messageId: string }; res: Message };
   'desk.saved': { req: void; res: SavedMessage[] };
+  'cal.list': { req: { from: number; to: number }; res: Occurrence[] };
+  'cal.get': { req: { eventId: string }; res: CalEvent };
+  'cal.create': { req: EventInput; res: CalEvent };
+  'cal.update': { req: { eventId: string } & Partial<EventInput>; res: CalEvent };
+  'cal.cancel': { req: { eventId: string }; res: CalEvent };
+  'cal.respond': { req: { eventId: string; response: Exclude<Rsvp, 'pending'> }; res: CalEvent };
+  /** When people (and optionally a venue) are busy; no titles, just blocks. */
+  'cal.busy': { req: { userIds: string[]; venueId?: string; from: number; to: number }; res: Array<{ id: string; startAt: number; endAt: number }> };
+  'cal.venues': { req: void; res: Venue[] };
+  'admin.cal.saveVenue': { req: { id?: string; name: string; capacity?: number | null; note?: string | null }; res: Venue };
+  'admin.cal.deleteVenue': { req: { id: string }; res: { ok: true } };
   'work.checkIn': { req: { mode: WorkMode; note?: string }; res: WorkState };
   'work.checkOut': { req: void; res: WorkState };
   'work.break': { req: { on: boolean }; res: WorkState };
@@ -471,6 +542,13 @@ export interface Events {
   'room.busy': { userId: string; inRoom: boolean };
   'star.updated': { messageId: string; on: boolean };
   'work.updated': WorkState;
+  'cal.updated': CalEvent;
+  /** You were invited (only to the new attendees). */
+  'cal.invited': CalEvent;
+  'cal.removed': { eventId: string };
+  /** A meeting is about to start. */
+  'cal.reminder': Occurrence;
+  'cal.venues': Venue[];
   /** A reminder went off (to the person reminded). */
   'reminder.due': Reminder;
   'reminder.updated': Reminder;

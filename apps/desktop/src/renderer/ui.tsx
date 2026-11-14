@@ -135,6 +135,16 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;
 }
 
+/** A switch with its label beside it, for forms and dialogs (the whole row toggles). */
+export function ToggleRow({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <label className="toggle-row" onClick={(e) => { e.preventDefault(); onChange(!checked); }}>
+      <Toggle checked={checked} onChange={() => {}} label={label} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
 export function Segmented<T extends string>({ value, options, onChange, label }: {
   value: T; label: string; onChange: (v: T) => void; options: Array<{ value: T; label: string; icon?: IconName; badge?: number }>;
 }) {

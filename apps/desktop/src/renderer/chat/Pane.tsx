@@ -2,7 +2,7 @@
 // optional side panel (side-track, pins or members) on the right.
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Conversation, FileInfo, PublicUser } from '@dex/core';
+import type { Conversation, FileInfo, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
 import { Avatar, Icon, Popover, colorFor, useToast, presenceFor } from '../ui.tsx';
@@ -16,6 +16,7 @@ import { ConvTile, convTitle } from './Switchboard.tsx';
 import { CallButtons } from '../rooms/RoomUi.tsx';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
 import { describeWhen, toggleSaved, useDesk } from '../desk/store.ts';
+import { EventDialog } from '../calendar/CalendarView.tsx';
 
 const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
 const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
@@ -40,13 +41,14 @@ function dayLabel(ts: number): string {
 const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 // ------------------------------------------------------------------ pane
-export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
-  convId: string; users: Map<string, PublicUser>; meId: string; isAdmin: boolean; online: Set<string>; live: boolean; onBack?: () => void;
+export function Pane({ convId, users, meId, isAdmin, online, live, onBack, session }: {
+  convId: string; users: Map<string, PublicUser>; meId: string; isAdmin: boolean; online: Set<string>; live: boolean; onBack?: () => void; session?: Session;
 }) {
   const conv = useChat((s) => s.conversations.get(convId));
   const [side, setSide] = useState<Side>(null);
   const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
@@ -115,6 +117,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
           <div className="row-actions">
             {conv.members.length > 1 && <CallButtons convId={convId} live={live} />}
             <span className="head-sep" />
+            {live && session && session.me.role !== 'guest' && <button className="icon-btn" title="Plan a meeting with these people" onClick={() => setPlanning(true)}><Icon name="calendar" size={17} /></button>}
             <button className={`icon-btn${side?.kind === 'files' ? ' on' : ''}`} title="Files" onClick={() => setSide(side?.kind === 'files' ? null : { kind: 'files' })}><Icon name="paperclip" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'pins' ? ' on' : ''}`} title="Pinned" onClick={() => setSide(side?.kind === 'pins' ? null : { kind: 'pins' })}><Icon name="pin" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'members' ? ' on' : ''}`} title="People" onClick={() => setSide(side?.kind === 'members' ? null : { kind: 'members' })}><Icon name="people" size={17} /></button>
@@ -133,6 +136,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack }: {
       {side?.kind === 'members' && <MembersPanel ctx={ctx} onClose={() => setSide(null)} />}
       {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
       {viewer && <Lightbox file={viewer.file} all={viewer.all} onClose={() => setViewer(null)} />}
+      {planning && session && <EventDialog session={session} conv={conv} onClose={() => setPlanning(false)} />}
     </div>
   );
 }
@@ -724,3 +728,4 @@ export function PeoplePicker({ users, online, onDone, initial = [], cta = 'Add' 
     </div>
   );
 }
+

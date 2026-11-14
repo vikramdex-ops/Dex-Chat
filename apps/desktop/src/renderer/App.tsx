@@ -24,9 +24,11 @@ import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
 import { startOrg } from './org/store.ts';
 import { startWork } from './work/store.ts';
 import { WorkClock } from './work/WorkUi.tsx';
+import { startCalendar } from './calendar/store.ts';
+import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 
-export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'directory';
+export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory';
 export type SheetName = 'preferences' | 'control' | null;
 /** Kept for older call sites: a section is a lens or a sheet. */
 export type Section = Lens | 'admin' | 'settings' | 'home' | 'people';
@@ -88,6 +90,7 @@ const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'direct', label: 'Direct', icon: 'chat' },
   { id: 'spaces', label: 'Spaces', icon: 'grid' },
   { id: 'desk', label: 'Desk', icon: 'desk' },
+  { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'directory', label: 'Directory', icon: 'people' },
 ];
 
@@ -97,7 +100,7 @@ function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
   const due = useDesk((s) => s.ringing.length);
   const out: Record<Lens, { mentions: number; unread: boolean }> = {
     pulse: { mentions: 0, unread: false }, direct: { mentions: 0, unread: false }, spaces: { mentions: 0, unread: false },
-    desk: { mentions: due, unread: false }, directory: { mentions: 0, unread: false },
+    desk: { mentions: due, unread: false }, calendar: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false },
   };
   for (const c of conversations.values()) {
     const k: Lens = c.kind === 'space' ? 'spaces' : 'direct';
@@ -152,6 +155,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
     void startOrg();
     void startWork();
+    void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
   }, [state.phase, session.me.id, session.deviceId]);
@@ -222,13 +226,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else if (target === 'settings') setSheet('preferences');
     else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
     else if (target === 'desk') { setLens('desk'); setSheet(null); }
+    else if (target === 'calendar') { setLens('calendar'); setSheet(null); }
     else setLens('pulse');
   }), [isAdmin, conversations]);
 
   const go = (s: Section) => {
     if (s === 'admin') setSheet('control');
     else if (s === 'settings') setSheet('preferences');
-    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' ? 'desk' : 'pulse');
+    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' || s === 'calendar' ? s : 'pulse');
   };
 
   const conn = state.phase === 'ready'
@@ -246,6 +251,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
     { id: 'go-desk', label: 'Go to Desk: reminders, saved, scheduled', icon: 'desk' as IconName, run: () => setLens('desk') },
+    { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'people' as IconName, run: () => setLens('directory') },
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
@@ -310,6 +316,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         {lens === 'direct' && <ChatView kind="direct" state={state} session={session} openId={openDirect} setOpenId={setOpenDirect} />}
         {lens === 'spaces' && <ChatView kind="space" state={state} session={session} openId={openSpace} setOpenId={setOpenSpace} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}
+        {lens === 'calendar' && <CalendarView session={session} openConv={(id) => jump(id)} />}
         {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} onMessage={(id) => void messagePerson(id)} />}
       </main>
 
@@ -352,6 +359,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       <ReminderCards users={users} meId={session.me.id} jump={jump} />
+      <MeetingCards users={users} meId={session.me.id} />
       <RequiredUpdate state={state} />
     </div>
   );

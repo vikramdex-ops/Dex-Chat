@@ -37,7 +37,7 @@ export function ChatView({ kind, state, session, openId, setOpenId }: {
       <Switchboard kind={kind} users={users} meId={meId} online={online} activeId={openId} onOpen={setOpenId}
         onNew={() => setDialog('new')} onBrowse={kind === 'space' ? () => setDialog('browse') : undefined} />
       {openId && conversations.get(openId)?.kind === kind
-        ? <Pane key={openId} convId={openId} users={users} meId={meId} isAdmin={isAdmin} online={online} live={state.phase === 'ready'} onBack={() => setOpenId(null)} />
+        ? <Pane key={openId} convId={openId} users={users} meId={meId} isAdmin={isAdmin} online={online} live={state.phase === 'ready'} onBack={() => setOpenId(null)} session={session} />
         : (
           <div className="pane empty">
             <div className="empty">
