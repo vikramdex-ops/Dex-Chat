@@ -1,15 +1,33 @@
-// Rooms: voice and video calls. The hub only does signalling (who is in the call, offers,
-// answers and ICE candidates). Audio and video travel directly between the PCs on the LAN.
-import { ulid } from '@dex/core';
-import type { PublicUser, RoomInfo, RoomParticipant } from '@dex/core';
+// Rooms: voice and video calls, and the meetings they are held under. The hub only does
+// signalling (who is in the call, offers, answers and ICE candidates) and the meeting's rules
+// (lobby, lock, host and co-hosts, hands, reactions, spotlight, mute requests). Audio and video
+// travel directly between the PCs on the LAN, or through the hub's relay for large Rooms.
+import { MEETING_REACTIONS, ulid } from '@dex/core';
+import type { LobbyEntry, MeetingInfo, PublicUser, RaisedHand, RoomInfo } from '@dex/core';
+import { MeetingError, Meetings } from './meetings.ts';
+import type { Meeting } from './meetings.ts';
 
 export class RoomError extends Error {}
 
 const RING_TIMEOUT_MS = 45_000;
 const MAX_PARTICIPANTS = 8; // a full mesh: beyond this, quality drops on ordinary PCs
 const RELAY_CAPACITY = 50; // through the hub's relay
+const MAX_LOBBY = 100;
+const REACTION_GAP_MS = 250;
+const REACTIONS_PER_10S = 12;
 
-interface Room extends RoomInfo { ringTimer: NodeJS.Timeout | null; everJoined: Set<string> }
+interface Room extends RoomInfo {
+  ringTimer: NodeJS.Timeout | null;
+  everJoined: Set<string>;
+  meeting: Meeting | null;
+  /** Let in from the lobby (or by ID): may come and go without waiting again. */
+  admittedUsers: Set<string>;
+  /** Taken out by a host: they wait in the lobby to come back. */
+  removedUsers: Set<string>;
+  lobbyList: LobbyEntry[];
+  handList: RaisedHand[];
+  coHostSet: Set<string>;
+}
 
 export interface RoomHost {
   members(convId: string): string[];
@@ -25,11 +43,32 @@ export interface RoomHost {
   /** A device left a Room, or a Room ended (the relay closes its tracks). */
   deviceLeft?(roomId: string, deviceId: string): void;
   roomClosed?(roomId: string): void;
+  /** Meeting records (IDs, settings, the log); without it Rooms are plain calls. */
+  meetings?: Meetings;
 }
+
+/** A small sliding-window limiter: true when the key may act now. */
+class Limiter {
+  private readonly hits = new Map<string, number[]>();
+  allow(key: string, max: number, windowMs: number, minGapMs = 0, now = Date.now()): boolean {
+    const list = (this.hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (list.length >= max || (minGapMs && list.length && now - list[list.length - 1] < minGapMs)) { this.hits.set(key, list); return false; }
+    list.push(now);
+    this.hits.set(key, list);
+    if (this.hits.size > 5000) for (const [k, v] of this.hits) if (!v.length || now - v[v.length - 1] > windowMs) this.hits.delete(k);
+    return true;
+  }
+  forget(prefix: string): void { for (const k of [...this.hits.keys()]) if (k.startsWith(prefix)) this.hits.delete(k); }
+}
+
+const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 export class Rooms {
   private readonly rooms = new Map<string, Room>();
   private readonly host: RoomHost;
+  /** People who came by a meeting's ID before it started, by meeting ID. */
+  private readonly waiting = new Map<string, LobbyEntry[]>();
+  private readonly limits = new Limiter();
 
   constructor(host: RoomHost) { this.host = host; }
 
@@ -37,8 +76,16 @@ export class Rooms {
     return [...new Set([...this.rooms.values()].flatMap((r) => r.participants.map((p) => p.userId)))];
   }
 
-  private view(r: Room): RoomInfo {
-    return { id: r.id, convId: r.convId, startedBy: r.startedBy, startedAt: r.startedAt, video: r.video, participants: r.participants.map((p) => ({ ...p })), ringing: [...r.ringing], mode: r.mode ?? 'mesh', capacity: this.capacity(r) };
+  private isHost(r: Room, userId: string): boolean { return r.hostId === userId || r.coHostSet.has(userId); }
+
+  private view(r: Room, forHost = false): RoomInfo {
+    return {
+      id: r.id, convId: r.convId, startedBy: r.startedBy, startedAt: r.startedAt, video: r.video, participants: r.participants.map((p) => ({ ...p })),
+      ringing: [...r.ringing], mode: r.mode ?? 'mesh', capacity: this.capacity(r),
+      ...(r.meeting ? { meetingId: r.meeting.id, meetingKind: r.meeting.kind, title: r.meeting.title || undefined, settings: { ...r.meeting.settings } } : {}),
+      hostId: r.hostId, coHosts: [...r.coHostSet], locked: !!r.locked, hands: r.handList.map((h) => ({ ...h })), spotlight: r.spotlight ?? null,
+      ...(forHost ? { lobby: r.lobbyList.map((l) => ({ ...l })) } : {}),
+    };
   }
 
   private capacity(r: RoomInfo): number { return r.mode === 'relay' ? RELAY_CAPACITY : MAX_PARTICIPANTS; }
@@ -49,8 +96,17 @@ export class Rooms {
     return r && r.participants.some((p) => p.deviceId === deviceId) ? r : null;
   }
 
+  /** Who hears about a Room: its conversation, everyone in it, and people let in from outside. */
+  private audience(r: Room): string[] {
+    return [...new Set([...this.host.members(r.convId), ...r.participants.map((p) => p.userId), ...r.admittedUsers])];
+  }
+
   private publish(r: Room): void {
-    this.host.deliverToUsers(this.host.members(r.convId), 'room.updated', this.view(r));
+    const all = this.audience(r);
+    const hosts = all.filter((u) => this.isHost(r, u));
+    if (hosts.length) this.host.deliverToUsers(hosts, 'room.updated', this.view(r, true));
+    const rest = all.filter((u) => !this.isHost(r, u));
+    if (rest.length) this.host.deliverToUsers(rest, 'room.updated', this.view(r));
   }
 
   private setBusy(userId: string): void {
@@ -58,76 +114,230 @@ export class Rooms {
     this.host.broadcast('room.busy', { userId, inRoom });
   }
 
+  private canSee(r: Room, userId: string): boolean {
+    return this.host.members(r.convId).includes(userId) || r.participants.some((p) => p.userId === userId) || r.admittedUsers.has(userId) || r.ringing.includes(userId);
+  }
+
   private get(roomId: unknown, me: PublicUser): Room {
     const r = typeof roomId === 'string' ? this.rooms.get(roomId) : undefined;
-    if (!r || !this.host.members(r.convId).includes(me.id)) throw new RoomError('That call has ended.');
+    if (!r || !this.canSee(r, me.id)) throw new RoomError('That call has ended.');
     return r;
   }
 
-  private end(r: Room): void {
+  /** The Room and the participant asking (they must be in it). */
+  private mine(roomId: unknown, me: PublicUser, deviceId: string): Room {
+    const r = this.get(roomId, me);
+    if (!r.participants.some((p) => p.deviceId === deviceId)) throw new RoomError('Not in this call.');
+    return r;
+  }
+
+  private hosted(roomId: unknown, me: PublicUser, deviceId: string): Room {
+    const r = this.mine(roomId, me, deviceId);
+    if (!this.isHost(r, me.id)) throw new RoomError('Only the host and co-hosts can do that.');
+    return r;
+  }
+
+  private end(r: Room, endedBy?: string): void {
     if (r.ringTimer) clearTimeout(r.ringTimer);
     this.rooms.delete(r.id);
+    this.limits.forget(`${r.id}:`);
     this.host.roomClosed?.(r.id);
     const missed = r.everJoined.size <= 1;
     const durationMs = Date.now() - r.startedAt;
-    this.host.deliverToUsers(this.host.members(r.convId), 'room.ended', { roomId: r.id, convId: r.convId, missed, startedBy: r.startedBy, durationMs });
-    this.host.ended?.(this.view(r), missed, durationMs);
+    // people still waiting in the lobby are told it is over
+    for (const l of r.lobbyList) this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: 'denied' });
+    this.host.deliverToUsers(this.audience(r), 'room.ended', { roomId: r.id, convId: r.convId, missed, startedBy: r.startedBy, durationMs, ...(endedBy ? { endedBy } : {}) });
+    const view = this.view(r);
+    this.host.ended?.(view, missed, durationMs);
+    // a missed call is not a meeting; anything else goes into "Recent meetings"
+    if (this.host.meetings && (!missed || (r.meeting && r.meeting.kind !== 'conversation'))) {
+      try { this.host.meetings.log(view, r.meeting, r.meeting?.title ?? '', [...r.everJoined], durationMs); } catch { /* the call still ended */ }
+    }
+  }
+
+  /** Open a Room in a conversation (the caller is first in). */
+  private open(convId: string, me: PublicUser, deviceId: string, video: boolean, meeting: Meeting | null, ring: boolean, fromOutside: boolean): Room {
+    const members = this.host.members(convId);
+    this.leaveAll(deviceId);
+    const expected = Math.max(members.length, meeting && this.host.meetings ? this.host.meetings.expected(meeting) : 0);
+    const hostId = meeting && meeting.kind !== 'conversation' ? meeting.hostId : me.id;
+    const room: Room = {
+      id: ulid(), convId, startedBy: me.id, startedAt: Date.now(), video,
+      // a conversation bigger than a mesh can hold goes through the hub's relay
+      mode: expected > MAX_PARTICIPANTS && !fromOutside && this.host.relayAvailable?.() ? 'relay' : 'mesh',
+      participants: [{ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: video, screen: false }],
+      ringing: ring ? members.filter((m) => m !== me.id) : [], ringTimer: null, everJoined: new Set([me.id]),
+      meeting, hostId, locked: false, spotlight: null,
+      admittedUsers: new Set(), removedUsers: new Set(), lobbyList: [], handList: [],
+      coHostSet: new Set(meeting && meeting.kind !== 'conversation' ? meeting.coHosts : []),
+    };
+    // nobody runs it yet (the host is not here): the first member of the office in it does
+    if (!this.isHost(room, me.id) && me.role !== 'guest') room.coHostSet.add(me.id);
+    this.rooms.set(room.id, room);
+    if (room.ringing.length) {
+      room.ringTimer = setTimeout(() => {
+        room.ringTimer = null;
+        room.ringing = [];
+        if (room.participants.length <= 1 && room.everJoined.size <= 1 && (!room.meeting || room.meeting.kind === 'conversation')) this.end(room);
+        else if (this.rooms.has(room.id)) this.publish(room);
+      }, RING_TIMEOUT_MS);
+      room.ringTimer.unref?.();
+      this.host.deliverToUsers(room.ringing, 'room.ring', { room: this.view(room), from: me.id });
+    }
+    this.publish(room);
+    this.setBusy(me.id);
+    if (meeting) this.releaseWaiting(room);
+    return room;
+  }
+
+  /** Put a device in a Room. */
+  private enter(r: Room, me: PublicUser, deviceId: string, fromOutside: boolean): RoomInfo {
+    if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r, this.isHost(r, me.id));
+    if (r.participants.length >= this.capacity(r)) throw new RoomError(`This Room is full (${this.capacity(r)} people).`);
+    if (r.mode === 'relay' && fromOutside) throw new RoomError('This Room is large, so it runs through the office hub: join it from the office network.');
+    this.leaveAll(deviceId);
+    r.participants.push({ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: false, screen: false });
+    r.ringing = r.ringing.filter((u) => u !== me.id);
+    r.everJoined.add(me.id);
+    r.lobbyList = r.lobbyList.filter((l) => l.deviceId !== deviceId);
+    const hostCame = this.isHost(r, me.id);
+    this.publish(r);
+    this.setBusy(me.id);
+    if (hostCame) this.releaseWaiting(r);
+    return this.view(r, this.isHost(r, me.id));
+  }
+
+  /** Must this person wait to be let in? */
+  private mustWait(r: Room, me: PublicUser): boolean {
+    if (this.isHost(r, me.id)) return false;
+    if (r.removedUsers.has(me.id)) return true;
+    if (r.admittedUsers.has(me.id)) return false;
+    const rule = r.meeting?.settings.lobby ?? 'off';
+    if (rule === 'off') return false;
+    if (rule === 'everyone') return true;
+    return me.role === 'guest' || !r.meeting || !this.host.meetings?.insider(r.meeting, me.id);
+  }
+
+  /** Someone waits in a Room's lobby; the hosts see them. */
+  private knock(r: Room, me: PublicUser, deviceId: string): void {
+    if (!r.lobbyList.some((l) => l.deviceId === deviceId)) {
+      if (r.lobbyList.length >= MAX_LOBBY) throw new RoomError('The lobby is full. Try again in a moment.');
+      r.lobbyList.push({ userId: me.id, deviceId, at: Date.now(), reason: 'admit' });
+    }
+    this.publish(r);
+  }
+
+  /** A Room started or its host arrived: people waiting by the meeting's ID come in, or move to its lobby. */
+  private releaseWaiting(r: Room): void {
+    const m = r.meeting;
+    if (!m) return;
+    const list = this.waiting.get(m.id);
+    if (!list?.length) return;
+    const hostHere = r.participants.some((p) => this.isHost(r, p.userId));
+    const keep: LobbyEntry[] = [];
+    for (const w of list) {
+      if (w.reason === 'host' && !hostHere && !m.settings.joinBeforeHost) { keep.push(w); continue; }
+      const needsHost = w.reason === 'admit';
+      if (needsHost) {
+        if (!r.lobbyList.some((l) => l.deviceId === w.deviceId) && r.lobbyList.length < MAX_LOBBY) r.lobbyList.push({ ...w, reason: 'admit' });
+        this.host.deliverToDevice(w.deviceId, 'meet.lobby', { meetingId: m.id, state: 'waiting', reason: 'admit' });
+      } else this.host.deliverToDevice(w.deviceId, 'meet.lobby', { meetingId: m.id, state: 'admitted' });
+    }
+    if (keep.length) this.waiting.set(m.id, keep); else this.waiting.delete(m.id);
+    this.publish(r);
+  }
+
+  private runningFor(m: Meeting): Room | undefined {
+    return [...this.rooms.values()].find((r) => r.meeting?.id === m.id || (!!m.convId && r.convId === m.convId));
+  }
+
+  private meetingInfo(m: Meeting): MeetingInfo {
+    const live = this.runningFor(m);
+    return this.host.meetings!.info(m, live ?? null);
+  }
+
+  private meetings(): Meetings {
+    if (!this.host.meetings) throw new RoomError('Meetings are not available on this hub.');
+    return this.host.meetings;
+  }
+
+  /** Join a meeting by its ID. */
+  private joinMeeting(m: Meeting, me: PublicUser, deviceId: string, fromOutside: boolean): unknown {
+    const store = this.meetings();
+    const r = this.runningFor(m);
+    if (r) {
+      if (r.participants.some((p) => p.deviceId === deviceId)) return { room: this.view(r, this.isHost(r, me.id)) };
+      if (r.locked && !this.isHost(r, me.id)) throw new RoomError('The host has locked this meeting. Ask them to unlock it.');
+      if (this.mustWait(r, me)) { this.knock(r, me, deviceId); return { waiting: 'admit', meeting: this.meetingInfo(m) }; }
+      if (!this.host.members(r.convId).includes(me.id)) { r.admittedUsers.add(me.id); store.admitted(m, me.id); }
+      return { room: this.enter(r, me, deviceId, fromOutside) };
+    }
+    // not started yet
+    const isHost = m.hostId === me.id || m.coHosts.includes(me.id);
+    const outsider = me.role === 'guest' || !store.insider(m, me.id);
+    const needsAdmit = !isHost && (m.settings.lobby === 'everyone' || (m.settings.lobby === 'outside' && outsider));
+    if (!isHost && (!m.settings.joinBeforeHost || needsAdmit)) {
+      const list = this.waiting.get(m.id) ?? [];
+      if (!list.some((w) => w.deviceId === deviceId)) {
+        if (list.length >= MAX_LOBBY) throw new RoomError('Too many people are waiting for this meeting. Try again in a moment.');
+        this.leaveAll(deviceId);
+        list.push({ userId: me.id, deviceId, at: Date.now(), reason: needsAdmit ? 'admit' : 'host' });
+        this.waiting.set(m.id, list);
+      }
+      return { waiting: needsAdmit && m.settings.joinBeforeHost ? 'admit' : 'host', meeting: this.meetingInfo(m) };
+    }
+    const convId = store.ensureConv(m);
+    if (!this.host.members(convId).includes(me.id)) store.admitted(m, me.id);
+    const room = this.open(convId, me, deviceId, false, m, m.kind !== 'personal', fromOutside);
+    if (!this.host.members(convId).includes(me.id)) room.admittedUsers.add(me.id);
+    return { room: this.view(room, this.isHost(room, me.id)) };
   }
 
   handle(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>): unknown {
+    try {
+      return this.handleOp(op, me, deviceId, d);
+    } catch (err) {
+      if (err instanceof MeetingError) throw new RoomError(err.message);
+      throw err;
+    }
+  }
+
+  private handleOp(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>): unknown {
+    const fromOutside = d.fromOutside === true;
     switch (op) {
       case 'room.list':
-        return [...this.rooms.values()].filter((r) => this.host.members(r.convId).includes(me.id)).map((r) => this.view(r));
+        return [...this.rooms.values()].filter((r) => this.canSee(r, me.id)).map((r) => this.view(r, this.isHost(r, me.id)));
 
       case 'room.start': {
         const convId = String(d.convId ?? '');
         const members = this.host.members(convId);
         if (!members.includes(me.id)) throw new RoomError('Conversation not found.');
-        if (members.length < 2) throw new RoomError('There is no one else here to call.');
         // one Room per conversation: starting again joins the running one
         const running = [...this.rooms.values()].find((r) => r.convId === convId);
-        if (running) return this.handle('room.join', me, deviceId, { roomId: running.id });
-        this.leaveAll(deviceId);
-        const room: Room = {
-          id: ulid(), convId, startedBy: me.id, startedAt: Date.now(), video: d.video === true,
-          // a conversation bigger than a mesh can hold goes through the hub's relay
-          mode: members.length > MAX_PARTICIPANTS && d.fromOutside !== true && this.host.relayAvailable?.() ? 'relay' : 'mesh',
-          participants: [{ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: d.video === true, screen: false }],
-          ringing: members.filter((m) => m !== me.id), ringTimer: null, everJoined: new Set([me.id]),
-        };
-        this.rooms.set(room.id, room);
-        room.ringTimer = setTimeout(() => {
-          room.ringTimer = null;
-          room.ringing = [];
-          if (room.participants.length <= 1 && room.everJoined.size <= 1) this.end(room);
-          else this.publish(room);
-        }, RING_TIMEOUT_MS);
-        room.ringTimer.unref?.();
-        this.host.deliverToUsers(room.ringing, 'room.ring', { room: this.view(room), from: me.id });
-        this.publish(room);
-        this.setBusy(me.id);
-        return this.view(room);
+        if (running) return this.handleOp('room.join', me, deviceId, { roomId: running.id, fromOutside });
+        const meeting = this.host.meetings ? this.host.meetings.forConv(convId, me.id) : null;
+        const ownSpace = meeting && (meeting.kind === 'instant' || meeting.kind === 'personal');
+        if (members.length < 2 && !ownSpace) throw new RoomError('There is no one else here to call.');
+        if (meeting && !(meeting.hostId === me.id || meeting.coHosts.includes(me.id)) && meeting.kind !== 'conversation' && meeting.kind !== 'event' && !meeting.settings.joinBeforeHost) {
+          throw new RoomError('This meeting starts when its host arrives.');
+        }
+        const room = this.open(convId, me, deviceId, d.video === true, meeting, meeting?.kind !== 'personal', fromOutside);
+        return this.view(room, this.isHost(room, me.id));
       }
 
       case 'room.join': {
         const r = this.get(d.roomId, me);
-        if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r);
-        if (r.participants.length >= this.capacity(r)) throw new RoomError(`This Room is full (${this.capacity(r)} people).`);
-        if (r.mode === 'relay' && d.fromOutside === true) throw new RoomError('This Room is large, so it runs through the office hub: join it from the office network.');
-        this.leaveAll(deviceId);
-        r.participants.push({ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: false, screen: false });
-        r.ringing = r.ringing.filter((u) => u !== me.id);
-        r.everJoined.add(me.id);
-        this.publish(r);
-        this.setBusy(me.id);
-        return this.view(r);
+        if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r, this.isHost(r, me.id));
+        if (r.locked && !this.isHost(r, me.id)) throw new RoomError('The host has locked this meeting. Ask them to unlock it.');
+        if (this.mustWait(r, me)) throw new RoomError('This meeting has a lobby: join it with its meeting ID so the host can let you in.');
+        return this.enter(r, me, deviceId, fromOutside);
       }
 
       case 'room.decline': {
         const r = this.get(d.roomId, me);
         r.ringing = r.ringing.filter((u) => u !== me.id);
         // the only person called said no: the call is over
-        if (!r.ringing.length && r.participants.length <= 1 && r.everJoined.size <= 1) this.end(r);
+        if (!r.ringing.length && r.participants.length <= 1 && r.everJoined.size <= 1 && (!r.meeting || r.meeting.kind === 'conversation')) this.end(r);
         else this.publish(r);
         return { ok: true };
       }
@@ -151,17 +361,20 @@ export class Rooms {
       case 'room.invite': {
         const r = this.get(d.roomId, me);
         if (!r.participants.some((p) => p.userId === me.id)) throw new RoomError('Join the call first.');
+        if (r.locked && !this.isHost(r, me.id)) throw new RoomError('The host has locked this meeting.');
         const members = this.host.members(r.convId);
         const ids = (Array.isArray(d.userIds) ? d.userIds.map(String) : [])
           .filter((u) => members.includes(u) && !r.participants.some((p) => p.userId === u) && !r.ringing.includes(u)).slice(0, this.capacity(r));
         if (!ids.length) throw new RoomError('Everyone you chose is already in the call or being rung.');
         if (r.participants.length + ids.length > this.capacity(r)) throw new RoomError(`A Room holds up to ${this.capacity(r)} people.`);
         r.ringing.push(...ids);
+        // rung in by someone inside: they need not wait in the lobby
+        for (const u of ids) r.admittedUsers.add(u);
         const stop = setTimeout(() => { r.ringing = r.ringing.filter((u) => !ids.includes(u)); if (this.rooms.has(r.id)) this.publish(r); }, RING_TIMEOUT_MS);
         stop.unref?.();
         this.host.deliverToUsers(ids, 'room.ring', { room: this.view(r), from: me.id });
         this.publish(r);
-        return this.view(r);
+        return this.view(r, this.isHost(r, me.id));
       }
       case 'room.record': {
         const r = this.get(d.roomId, me);
@@ -180,24 +393,209 @@ export class Rooms {
         this.publish(r);
         return { ok: true };
       }
+
+      // ------------------------------------------------------------ meetings
+      case 'meet.create': {
+        const store = this.meetings();
+        if (typeof d.convId === 'string') {
+          if (!this.host.members(d.convId).includes(me.id)) throw new RoomError('Conversation not found.');
+          return this.meetingInfo(store.forConv(d.convId, me.id));
+        }
+        if (!this.limits.allow(`create:${me.id}`, 10, 60_000)) throw new RoomError('You started several meetings just now. Wait a minute.');
+        return this.meetingInfo(store.createInstant(me, d.title, d.invite, d.settings));
+      }
+      case 'meet.event':
+        return this.meetingInfo(this.meetings().forEvent(me, d.eventId));
+      case 'meet.personal':
+        return this.meetingInfo(this.meetings().personal(me));
+      case 'meet.get': {
+        if (!this.limits.allow(`lookup:${me.id}`, 30, 60_000)) throw new RoomError('Too many meeting IDs tried. Wait a minute.');
+        const m = this.meetings().get(d.id);
+        if (!m) throw new RoomError('No meeting has that ID. Check the number.');
+        return this.meetingInfo(m);
+      }
+      case 'meet.settings': {
+        const store = this.meetings();
+        const m = store.get(d.id);
+        if (!m) throw new RoomError('No meeting has that ID.');
+        const r = this.runningFor(m);
+        const may = m.hostId === me.id || m.coHosts.includes(me.id) || (!!r && this.isHost(r, me.id) && r.participants.some((p) => p.userId === me.id));
+        if (!may) throw new RoomError('Only the host and co-hosts can change the meeting.');
+        const next = store.update(m, me, d);
+        if (r?.meeting) { r.meeting.settings = next.settings; r.meeting.title = next.title; this.publish(r); }
+        return this.meetingInfo(next);
+      }
+      case 'meet.join': {
+        if (!this.limits.allow(`lookup:${me.id}`, 30, 60_000)) throw new RoomError('Too many meeting IDs tried. Wait a minute.');
+        const m = this.meetings().get(d.id);
+        if (!m) throw new RoomError('No meeting has that ID. Check the number.');
+        return this.joinMeeting(m, me, deviceId, fromOutside);
+      }
+      case 'meet.leaveLobby': {
+        this.dropWaiting(deviceId, typeof d.id === 'string' ? d.id : undefined);
+        return { ok: true };
+      }
+      case 'meet.recent':
+        return this.meetings().recent(me.id, d.limit);
+
+      // ------------------------------------------------------------ host controls
+      case 'room.admit': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        const ids = Array.isArray(d.deviceIds) ? new Set(d.deviceIds.map(String).slice(0, MAX_LOBBY)) : null;
+        const picked = r.lobbyList.filter((l) => d.all === true || ids?.has(l.deviceId));
+        if (!picked.length) throw new RoomError('No one is waiting.');
+        r.lobbyList = r.lobbyList.filter((l) => !picked.includes(l));
+        for (const l of picked) {
+          if (d.allow === true) {
+            r.admittedUsers.add(l.userId);
+            r.removedUsers.delete(l.userId);
+            if (r.meeting) this.host.meetings?.admitted(r.meeting, l.userId);
+          }
+          this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: d.allow === true ? 'admitted' : 'denied' });
+        }
+        this.publish(r);
+        return { ok: true };
+      }
+      case 'room.lock': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        r.locked = d.locked === true;
+        this.publish(r);
+        return { ok: true };
+      }
+      case 'room.cohost': {
+        const r = this.mine(d.roomId, me, deviceId);
+        if (r.hostId !== me.id) throw new RoomError('Only the host can choose co-hosts.');
+        const uid = str(d.userId);
+        if (!uid || uid === r.hostId) throw new RoomError('Choose someone in the meeting.');
+        if (d.on === true) {
+          if (!r.participants.some((p) => p.userId === uid)) throw new RoomError('Choose someone in the meeting.');
+          r.coHostSet.add(uid);
+        } else r.coHostSet.delete(uid);
+        if (r.meeting && r.meeting.kind !== 'conversation') this.host.meetings?.setCoHosts(r.meeting, [...r.coHostSet].filter((u) => u !== r.hostId));
+        this.publish(r);
+        return { ok: true };
+      }
+      case 'room.mute': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        const targets = d.all === true ? r.participants.filter((p) => p.deviceId !== deviceId) : r.participants.filter((p) => p.deviceId === str(d.deviceId));
+        if (!targets.length) throw new RoomError(d.all === true ? 'There is no one else to mute.' : 'That person has left.');
+        for (const p of targets) {
+          p.muted = true;
+          this.host.deliverToDevice(p.deviceId, 'room.muted', { roomId: r.id, by: me.id });
+        }
+        this.publish(r);
+        return { ok: true };
+      }
+      case 'room.askUnmute': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        const p = r.participants.find((x) => x.deviceId === str(d.deviceId));
+        if (!p) throw new RoomError('That person has left.');
+        if (!p.muted) throw new RoomError('Their microphone is already on.');
+        if (!this.limits.allow(`${r.id}:ask:${p.deviceId}`, 1, 4000)) throw new RoomError('You asked a moment ago.');
+        this.host.deliverToDevice(p.deviceId, 'room.unmuteAsk', { roomId: r.id, by: me.id });
+        return { ok: true };
+      }
+      case 'room.remove': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        const p = r.participants.find((x) => x.deviceId === str(d.deviceId));
+        if (!p) throw new RoomError('That person has left.');
+        if (p.userId === r.hostId || p.deviceId === deviceId) throw new RoomError('The host cannot be removed.');
+        if (r.coHostSet.has(p.userId) && r.hostId !== me.id) throw new RoomError('Only the host can remove a co-host.');
+        r.removedUsers.add(p.userId);
+        r.admittedUsers.delete(p.userId);
+        r.coHostSet.delete(p.userId);
+        this.host.deliverToDevice(p.deviceId, 'room.removed', { roomId: r.id, by: me.id });
+        this.removeDevice(r, p.deviceId);
+        return { ok: true };
+      }
+      case 'room.spotlight': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        const target = d.deviceId === null ? null : str(d.deviceId);
+        if (target !== null && !r.participants.some((p) => p.deviceId === target)) throw new RoomError('That person has left.');
+        r.spotlight = target;
+        this.publish(r);
+        return { ok: true };
+      }
+      case 'room.end': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        for (const p of r.participants) this.host.deviceLeft?.(r.id, p.deviceId);
+        const users = r.participants.map((p) => p.userId);
+        r.participants = [];
+        this.end(r, me.id);
+        for (const u of new Set(users)) this.setBusy(u);
+        return { ok: true };
+      }
+      case 'room.hand': {
+        const r = this.mine(d.roomId, me, deviceId);
+        if (d.all === true || (typeof d.deviceId === 'string' && d.deviceId !== deviceId)) {
+          if (!this.isHost(r, me.id)) throw new RoomError('Only the host and co-hosts can lower other hands.');
+          if (d.up === true) throw new RoomError('People raise their own hands.');
+          r.handList = d.all === true ? [] : r.handList.filter((h) => h.deviceId !== d.deviceId);
+        } else if (d.up === true) {
+          if (!this.limits.allow(`${r.id}:hand:${deviceId}`, 6, 10_000)) throw new RoomError('Slow down a little.');
+          if (!r.handList.some((h) => h.deviceId === deviceId)) r.handList.push({ userId: me.id, deviceId, at: Date.now() });
+        } else r.handList = r.handList.filter((h) => h.deviceId !== deviceId);
+        this.publish(r);
+        return { ok: true };
+      }
+      case 'room.react': {
+        const r = this.mine(d.roomId, me, deviceId);
+        const emoji = str(d.emoji);
+        if (!(MEETING_REACTIONS as readonly string[]).includes(emoji)) throw new RoomError('Choose one of the reactions.');
+        // a short burst is fine; a stream of them is not
+        if (!this.limits.allow(`${r.id}:react:${deviceId}`, REACTIONS_PER_10S, 10_000, REACTION_GAP_MS)) return { ok: true, limited: true };
+        const evt = { roomId: r.id, deviceId, userId: me.id, emoji, at: Date.now() };
+        for (const p of r.participants) this.host.deliverToDevice(p.deviceId, 'room.reaction', evt);
+        return { ok: true };
+      }
     }
     return undefined;
+  }
+
+  private dropWaiting(deviceId: string, meetingId?: string): void {
+    for (const [id, list] of [...this.waiting]) {
+      if (meetingId && id !== meetingId) continue;
+      const rest = list.filter((w) => w.deviceId !== deviceId);
+      if (rest.length) this.waiting.set(id, rest); else this.waiting.delete(id);
+    }
+    for (const r of this.rooms.values()) {
+      if (meetingId && r.meeting?.id !== meetingId) continue;
+      if (!r.lobbyList.some((l) => l.deviceId === deviceId)) continue;
+      r.lobbyList = r.lobbyList.filter((l) => l.deviceId !== deviceId);
+      this.publish(r);
+    }
   }
 
   private removeDevice(r: Room, deviceId: string): void {
     const p = r.participants.find((x) => x.deviceId === deviceId);
     if (!p) return;
     r.participants = r.participants.filter((x) => x.deviceId !== deviceId);
+    r.handList = r.handList.filter((h) => h.deviceId !== deviceId);
+    if (r.spotlight === deviceId) r.spotlight = null;
     this.host.deviceLeft?.(r.id, deviceId);
-    // a one-to-one call ends when either person hangs up; group Rooms run until the last leaves
-    const oneToOne = this.host.members(r.convId).length === 2 && r.everJoined.size > 1;
+    // a one-to-one call ends when either person hangs up; group Rooms and meetings run until the last leaves
+    const plainCall = !r.meeting || r.meeting.kind === 'conversation';
+    const oneToOne = plainCall && this.host.members(r.convId).length === 2 && r.everJoined.size > 1;
     if (!r.participants.length || (oneToOne && r.participants.length === 1)) this.end(r);
-    else this.publish(r);
+    else {
+      // the host and every co-host left: the longest-present member of the office runs it now
+      if (!r.participants.some((x) => this.isHost(r, x.userId))) {
+        const next = r.participants.find((x) => x.userId !== p.userId && !r.removedUsers.has(x.userId) && this.notGuest(x.userId, r));
+        if (next) r.coHostSet.add(next.userId);
+      }
+      this.publish(r);
+    }
     this.setBusy(p.userId);
+  }
+
+  /** Guests never inherit host controls; anyone in the conversation or let in can. */
+  private notGuest(userId: string, r: Room): boolean {
+    return this.host.members(r.convId).includes(userId) || r.admittedUsers.has(userId);
   }
 
   /** A device can only be in one Room; also called when a device disconnects. */
   leaveAll(deviceId: string): void {
+    this.dropWaiting(deviceId);
     for (const r of [...this.rooms.values()]) this.removeDevice(r, deviceId);
   }
 }
