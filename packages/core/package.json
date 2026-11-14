@@ -15,7 +15,10 @@
     "./e2e": "./src/e2e.ts",
     "./e2e-client": "./src/e2e-client.ts",
     "./remote": "./src/remote.ts",
-    "./dlp": "./src/dlp.ts"
+    "./dlp": "./src/dlp.ts",
+    "./assist": "./src/assist.ts",
+    "./pointers": "./src/pointers.ts",
+    "./helpdesk": "./src/helpdesk.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

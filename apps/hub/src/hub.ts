@@ -38,6 +38,9 @@ import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import { Meetings } from './meetings.ts';
+import { HelpDesk, HelpError } from './helpdesk.ts';
+import { LoungeError, Lounges } from './lounges.ts';
+import { PointerError, Pointers } from './pointers.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 
@@ -125,6 +128,9 @@ export class Hub {
   readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
+  readonly helpdesk: HelpDesk;
+  readonly lounges: Lounges;
+  readonly pointers: Pointers;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -206,7 +212,29 @@ export class Hub {
         const u = this.store.userById(uid);
         return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
       }),
+      purposeChanged: (room, ended) => {
+        this.lounges.roomChanged(room, ended);
+        if (ended) this.helpdesk.roomEnded(room); else this.helpdesk.roomChanged(room);
+      },
     });
+    const deliverNow = (userIds: string[], name: string, data: unknown) => this.deliver(userIds, name, () => data);
+    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data) });
+    this.lounges = new Lounges({
+      db: this.store.db, messaging: this.messaging, rooms: this.rooms, deliver: deliverNow,
+      // Space members see the lounge's name; everyone else only that the person is in a lounge
+      where: (userId, lounge) => {
+        const members = new Set(lounge ? this.messaging.members(lounge.convId) : []);
+        this.emit('lounge.where', { userId, loungeId: lounge?.id ?? null, name: lounge?.name ?? null }, (c) => !!c.userId && members.has(c.userId));
+        this.emit('lounge.where', { userId, loungeId: lounge?.id ?? null, name: null }, (c) => !c.userId || !members.has(c.userId));
+      },
+    });
+    this.pointers = new Pointers({
+      db: this.store.db, files: this.files, messaging: this.messaging, deliver: deliverNow,
+      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+    });
+    // files attached to a help ticket open for the people on it
+    const readBefore = this.files.extraRead;
+    this.files.extraRead = (userId, fileId) => readBefore(userId, fileId) || this.helpdesk.canRead(userId, fileId);
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -577,7 +605,7 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
-    if (conn.deviceId && conn.ready) this.rooms.leaveAll(conn.deviceId);
+    if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.pointers.dropDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
     if (conn.ready && conn.userId) this.announcePresence(conn.userId);
@@ -1080,6 +1108,36 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(help\.|admin\.help\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.helpdesk.handle(op, me, conn.deviceId!, d, conn.remote);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof HelpError || err instanceof RoomError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('lounge.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.lounges.handle(op, me, conn.deviceId!, d, conn.remote);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof LoungeError || err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('point.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.pointers.handle(op, me, conn.deviceId!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof PointerError) throw new OpError(err.message);
             throw err;
           }
         }
