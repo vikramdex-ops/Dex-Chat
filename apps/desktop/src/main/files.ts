@@ -11,6 +11,7 @@ import type { IncomingMessage } from 'node:http';
 import { app, protocol, shell } from 'electron';
 import type { FileInfo } from '@dex/core';
 import type { TunnelRequest, TunnelResponse } from '@dex/core/remote';
+import { MINIAPP_PRIVILEGES } from './miniapps.ts';
 
 export interface HubAccess {
   host: string; port: number; fp: string; token: string;
@@ -22,7 +23,8 @@ export const FILE_SCHEME = 'dexfile';
 
 /** Must run before app 'ready'. */
 export function registerFileScheme(): void {
-  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
+  // one call registers every scheme: the tools' scheme is registered here too
+  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }, MINIAPP_PRIVILEGES]);
 }
 
 function pinnedRequest(access: HubAccess, method: string, pathname: string, headers: Record<string, string | number> = {}): Promise<{ req: ReturnType<typeof https.request>; res: Promise<IncomingMessage> }> {

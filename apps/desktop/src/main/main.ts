@@ -13,6 +13,7 @@ import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme,
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
+import { guardFrames, handleMiniAppScheme } from './miniapps.ts';
 import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 
@@ -79,6 +80,7 @@ function popOut(convId: string, title: string): void {
   p.setMenuBarVisibility(false);
   p.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' }; });
   p.webContents.on('will-navigate', (e, url) => { if (url.split('#')[0] === p.webContents.getURL().split('#')[0]) return; if (!devUrl || !url.startsWith(devUrl)) e.preventDefault(); });
+  guardFrames(p.webContents);
   p.webContents.on('did-finish-load', () => p.webContents.setZoomFactor((controller?.settings.textSize ?? 100) / 100));
   if (devUrl) void p.loadURL(`${devUrl}#popout=${convId}`);
   else void p.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'), { hash: `popout=${convId}` });
@@ -130,6 +132,7 @@ function createWindow(startHidden: boolean): void {
     if (here(url) === here(win?.webContents.getURL() ?? '')) return;
     if (!devUrl || !url.startsWith(devUrl)) e.preventDefault();
   });
+  guardFrames(win.webContents);
 
   if (devUrl) void win.loadURL(devUrl);
   else void win.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'));
@@ -409,6 +412,7 @@ void app.whenReady().then(async () => {
     const token = controller?.state().session?.fileToken;
     return hub && token ? { ...hub, token, tunnel: controller!.viaGateway ? (r) => controller!.http(r) : undefined } : null;
   });
+  handleMiniAppScheme((op, data) => controller!.request(op, data));
   void pruneCache();
   applyLogin(config.settings);
   nativeTheme.themeSource = config.settings.theme;
