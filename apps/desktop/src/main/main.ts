@@ -1,5 +1,6 @@
 // Dexterity Connect — Electron main process.
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
@@ -7,7 +8,8 @@ import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
 import { loadConfig, loadIdentity, saveConfig } from './persist.ts';
 import { Updater } from './updater.ts';
-import { handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
+import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
+import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import type { HubAccess, UploadSource } from './files.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
@@ -221,6 +223,14 @@ function wireIpc(c: Controller): void {
   }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
+  ipcMain.on('slate:available', (e) => { e.returnValue = !!slateExe(); });
+  ipcMain.handle('slate:edit', (_e, noteId: string, title: string, body: string) => wrap(() => editInSlate(String(noteId), String(title), String(body), (id, text) => win?.webContents.send('slate:changed', id, text))));
+  ipcMain.handle('slate:open', (_e, id: string, name: string) => wrap(async () => {
+    const exe = slateExe();
+    if (!exe) throw new Error('Slate is not installed on this PC.');
+    const p = await cachedFile(access(), String(id), String(name));
+    spawn(exe, [p], { detached: true, stdio: 'ignore' }).unref();
+  }));
   // screen sharing: the UI shows its own picker, then getDisplayMedia() gets the chosen source
   let chosenScreen: string | null = null;
   ipcMain.handle('screen:list', async () => {
@@ -266,6 +276,7 @@ function wireIpc(c: Controller): void {
 }
 
 app.on('before-quit', () => {
+  stopWatching();
   quitting = true;
   updater?.installOnQuit();
   updater?.stop();

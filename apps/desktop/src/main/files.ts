@@ -93,6 +93,9 @@ async function fetchToCache(access: HubAccess, id: string, name: string): Promis
   return target;
 }
 
+/** The file downloaded into the local cache (for handing to another program). */
+export const cachedFile = (access: HubAccess, id: string, name: string) => fetchToCache(access, id, name);
+
 export async function openFile(access: HubAccess, id: string, name: string): Promise<void> {
   const p = await fetchToCache(access, id, name);
   const err = await shell.openPath(p);
@@ -138,6 +141,12 @@ async function sniffImage(p: string): Promise<string | null> {
   if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
   if (buf.subarray(0, 3).toString() === 'GIF') return 'image/gif';
   if (buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP') return 'image/webp';
+  // voice notes and other audio played inline
+  if (buf.subarray(0, 4).equals(Buffer.from('1a45dfa3', 'hex'))) return 'audio/webm';
+  if (buf.subarray(0, 4).toString() === 'OggS') return 'audio/ogg';
+  if (buf.subarray(0, 3).toString() === 'ID3' || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) return 'audio/mpeg';
+  if (buf.subarray(4, 8).toString() === 'ftyp') return 'audio/mp4';
+  if (buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WAVE') return 'audio/wav';
   if (buf.subarray(0, 2).toString() === 'BM') return 'image/bmp';
   return null;
 }

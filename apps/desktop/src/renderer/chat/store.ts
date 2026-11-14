@@ -199,7 +199,7 @@ export async function sendMessage(convId: string, body: string, parentId?: strin
   const optimistic: PendingMessage = {
     id: `~${clientId}`, convId, authorId: state.meId, body, parentId: parentId ?? null, createdAt: Date.now(),
     editedAt: null, deleted: false, pinned: false, reactions: {}, mentions: [], replyCount: 0, lastReplyAt: null,
-    clientId, pending: true, files, forwardedFrom: null, poll: null,
+    clientId, pending: true, files, forwardedFrom: null, poll: null, form: null,
   };
   const key = tlKey(convId, parentId);
   const tl = state.timelines.get(key) ?? { messages: [], hasMore: false, loaded: true, loading: false };

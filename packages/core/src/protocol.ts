@@ -236,6 +236,7 @@ export interface Message {
   /** Set when this message was forwarded from another conversation. */
   forwardedFrom: { authorId: string; convId: string; messageId: string; createdAt: number } | null;
   poll: PollView | null;
+  form: FormView | null;
 }
 
 export interface PollView {
@@ -291,6 +292,65 @@ export interface AttendanceDay {
   breakMs: number;
   modes: WorkMode[];
   autoClosed: boolean;
+}
+
+// ---------------------------------------------------------------- forms, notes, whiteboards
+export type FormFieldType = 'text' | 'long' | 'choice' | 'multi' | 'number' | 'date';
+export interface FormField {
+  id: string;
+  label: string;
+  type: FormFieldType;
+  options?: string[];
+  required: boolean;
+}
+
+export interface FormView {
+  id: string;
+  title: string;
+  description: string | null;
+  fields: FormField[];
+  closed: boolean;
+  responses: number;
+  /** The viewer's own answers, if they responded. */
+  mine: Record<string, string | string[]> | null;
+}
+
+export interface FormResponse {
+  userId: string;
+  answers: Record<string, string | string[]>;
+  at: number;
+}
+
+export interface NoteSummary {
+  id: string;
+  /** Shared in a conversation, or null for a personal note. */
+  convId: string | null;
+  ownerId: string;
+  title: string;
+  preview: string;
+  version: number;
+  updatedBy: string;
+  updatedAt: number;
+}
+
+export interface Note extends NoteSummary {
+  body: string;
+}
+
+export type BoardOp =
+  | { t: 'stroke'; id: string; color: string; width: number; points: number[] }
+  | { t: 'shape'; id: string; shape: 'rect' | 'ellipse' | 'line' | 'arrow'; color: string; width: number; x1: number; y1: number; x2: number; y2: number }
+  | { t: 'text'; id: string; color: string; x: number; y: number; size: number; text: string }
+  | { t: 'erase'; ids: string[] }
+  | { t: 'clear' };
+
+export interface Board {
+  id: string;
+  convId: string;
+  title: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ---------------------------------------------------------------- calendar and meetings
@@ -547,6 +607,21 @@ export interface Ops {
   'poll.vote': { req: { messageId: string; options: number[] }; res: Message };
   'poll.close': { req: { messageId: string }; res: Message };
   'desk.saved': { req: void; res: SavedMessage[] };
+  'form.create': { req: { convId: string; title: string; description?: string; fields: Array<Omit<FormField, 'id'> & { id?: string }>; clientId: string }; res: Message };
+  'form.respond': { req: { formId: string; answers: Record<string, string | string[]> }; res: Message };
+  'form.responses': { req: { formId: string }; res: { form: FormView; responses: FormResponse[] } };
+  'form.close': { req: { formId: string }; res: Message };
+  'note.list': { req: { convId?: string | null }; res: NoteSummary[] };
+  'note.get': { req: { id: string }; res: Note };
+  /** Save; pass the version you edited so a colleague's newer save is never overwritten. */
+  'note.save': { req: { id?: string; convId?: string | null; title: string; body: string; baseVersion?: number }; res: Note };
+  'note.delete': { req: { id: string }; res: { ok: true } };
+  'board.list': { req: { convId: string }; res: Board[] };
+  'board.create': { req: { convId: string; title: string }; res: Board };
+  'board.open': { req: { boardId: string }; res: { board: Board; ops: Array<{ seq: number; userId: string; op: BoardOp }> } };
+  'board.draw': { req: { boardId: string; op: BoardOp }; res: { seq: number } };
+  'board.rename': { req: { boardId: string; title: string }; res: Board };
+  'board.delete': { req: { boardId: string }; res: { ok: true } };
   'cal.list': { req: { from: number; to: number }; res: Occurrence[] };
   'cal.get': { req: { eventId: string }; res: CalEvent };
   'cal.create': { req: EventInput; res: CalEvent };
@@ -606,6 +681,11 @@ export interface Events {
   'room.busy': { userId: string; inRoom: boolean };
   'star.updated': { messageId: string; on: boolean };
   'work.updated': WorkState;
+  'note.updated': Note;
+  'note.removed': { id: string };
+  'board.op': { boardId: string; seq: number; userId: string; op: BoardOp };
+  'board.updated': Board;
+  'board.removed': { boardId: string };
   'cal.updated': CalEvent;
   /** You were invited (only to the new attendees). */
   'cal.invited': CalEvent;

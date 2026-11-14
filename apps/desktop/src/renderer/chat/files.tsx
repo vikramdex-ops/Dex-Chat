@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import type { FileInfo } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
+import { VoicePlayer } from './voice.tsx';
 
 export const filesSupported = () => typeof window.dex.uploadFile === 'function';
 export const fileSrc = (id: string) => `dexfile://f/${id}`;
@@ -42,6 +43,9 @@ export function FileActions({ f }: { f: FileInfo }) {
   return (
     <span className="file-actions">
       <button className="btn" disabled={!!busy} onClick={() => void run('open')}>{busy === 'open' ? <span className="spinner" /> : <Icon name="open" size={14} />}Open</button>
+      {window.dex.hasSlate && /\.(txt|csv|log|md|json|xml|ini|cfg|pcf|lst|tsv|sql|py|bat|ps1)$/i.test(f.name) && (
+        <button className="btn ghost" disabled={!!busy} title="Open in Slate" onClick={() => void window.dex.openInSlate!(f.id, f.name).catch((e: Error) => toast(e.message, true))}>Slate</button>
+      )}
       <button className="btn ghost" disabled={!!busy} onClick={() => void run('save')} title="Save to Downloads">{busy === 'save' ? <span className="spinner" /> : <Icon name="download" size={14} />}</button>
     </span>
   );
@@ -50,8 +54,9 @@ export function FileActions({ f }: { f: FileInfo }) {
 export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f: FileInfo, all: FileInfo[]) => void }) {
   if (!files.length) return null;
   const images = files.filter(isImage);
-  const others = files.filter((f) => !isImage(f));
   const showImages = filesSupported();
+  const audio = showImages ? files.filter((f) => f.mime.startsWith('audio/')) : [];
+  const others = files.filter((f) => !isImage(f) && !audio.includes(f));
   return (
     <div className="msg-files">
       {showImages && images.length > 0 && (
@@ -64,6 +69,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
           ))}
         </div>
       )}
+      {audio.map((f) => <VoicePlayer key={f.id} f={f} />)}
       {[...(showImages ? [] : images), ...others].map((f) => {
         const k = kind(f);
         return (

@@ -99,7 +99,19 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
       const bullet = raw.match(/^\s*[-*•]\s+(.*)$/);
       const numbered = raw.match(/^\s*\d{1,3}[.)]\s+(.*)$/);
       const q = raw.match(/^>\s?(.*)$/);
-      if (bullet || numbered) {
+      const heading = raw.match(/^(#{1,3})\s+(.+)$/);
+      const check = raw.match(/^\s*[-*]\s+\[( |x|X)\]\s+(.*)$/);
+      if (heading) {
+        flushPara(); flushList(); flushQuote();
+        const k = `h${pi}-${blocks.length}`;
+        const level = heading[1].length;
+        const content = inline(heading[2], ctx, k);
+        blocks.push(level === 1 ? <h3 key={k} className="md-h md-h1">{content}</h3> : level === 2 ? <h4 key={k} className="md-h md-h2">{content}</h4> : <h5 key={k} className="md-h md-h3">{content}</h5>);
+      } else if (check) {
+        flushPara(); flushQuote();
+        if (!list || list.ordered) { flushList(); list = { ordered: false, items: [] }; }
+        list.items.push(`${check[1].trim() ? '☑' : '☐'} ${check[2]}`);
+      } else if (bullet || numbered) {
         flushPara(); flushQuote();
         const ordered = !!numbered;
         if (!list || list.ordered !== ordered) { flushList(); list = { ordered, items: [] }; }

@@ -1,6 +1,6 @@
 // A conversation pane: header, the spine timeline, typing line and the Dock composer, with an
 // optional side panel (side-track, pins or members) on the right.
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Conversation, FileInfo, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
@@ -14,6 +14,11 @@ import {
 import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, convTitle } from './Switchboard.tsx';
 import { CallButtons } from '../rooms/RoomUi.tsx';
+import { FormBuilder, FormCard } from './forms.tsx';
+import { NoteEditor, NotesList } from './notes.tsx';
+import { BoardsList } from './Whiteboard.tsx';
+import { VoiceRecorder } from './voice.tsx';
+import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
 import { describeWhen, toggleSaved, useDesk } from '../desk/store.ts';
 import { EventDialog } from '../calendar/CalendarView.tsx';
@@ -21,11 +26,13 @@ import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
 
+const WhiteboardStage = lazy(() => import('./Whiteboard.tsx').then((m) => ({ default: m.WhiteboardStage })));
+
 const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
 const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
 const RUN_GAP = 5 * 60 * 1000;
 
-type Side = { kind: 'track'; parentId: string } | { kind: 'pins' } | { kind: 'members' } | { kind: 'files' } | null;
+type Side = { kind: 'track'; parentId: string } | { kind: 'pins' } | { kind: 'members' } | { kind: 'files' } | { kind: 'notes'; noteId: string | null | 'new' } | { kind: 'boards' } | null;
 
 interface Ctx {
   users: Map<string, PublicUser>; meId: string; isAdmin: boolean; conv: Conversation; online: Set<string>;
@@ -52,6 +59,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const [viewer, setViewer] = useState<{ file: FileInfo; all: FileInfo[] } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [board, setBoard] = useState<Board | null>(null);
+  useEffect(() => {
+    const onSide = (e: Event) => {
+      const d = (e as CustomEvent).detail as { convId: string; side: 'notes-new' | 'boards' };
+      if (d.convId !== convId) return;
+      setSide(d.side === 'boards' ? { kind: 'boards' } : { kind: 'notes', noteId: 'new' });
+    };
+    window.addEventListener('dex-side', onSide);
+    return () => window.removeEventListener('dex-side', onSide);
+  }, [convId]);
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
@@ -126,6 +143,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             {conv.members.length > 1 && <CallButtons convId={convId} live={live} />}
             <span className="head-sep" />
             {live && session && session.me.role !== 'guest' && <button className="icon-btn" title="Plan a meeting with these people" onClick={() => setPlanning(true)}><Icon name="calendar" size={17} /></button>}
+            <button className={`icon-btn${side?.kind === 'notes' ? ' on' : ''}`} title="Notes" onClick={() => setSide(side?.kind === 'notes' ? null : { kind: 'notes', noteId: null })}><Icon name="doc" size={17} /></button>
+            <button className={`icon-btn${side?.kind === 'boards' ? ' on' : ''}`} title="Whiteboards" onClick={() => setSide(side?.kind === 'boards' ? null : { kind: 'boards' })}><Icon name="drawing" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'files' ? ' on' : ''}`} title="Files" onClick={() => setSide(side?.kind === 'files' ? null : { kind: 'files' })}><Icon name="paperclip" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'pins' ? ' on' : ''}`} title="Pinned" onClick={() => setSide(side?.kind === 'pins' ? null : { kind: 'pins' })}><Icon name="pin" size={17} /></button>
             <button className={`icon-btn${side?.kind === 'members' ? ' on' : ''}`} title="People" onClick={() => setSide(side?.kind === 'members' ? null : { kind: 'members' })}><Icon name="people" size={17} /></button>
@@ -142,6 +161,23 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       {side?.kind === 'track' && <SideTrack ctx={ctx} parentId={side.parentId} live={live} onClose={() => setSide(null)} />}
       {side?.kind === 'pins' && <PinsPanel ctx={ctx} onClose={() => setSide(null)} onJump={(id) => setSide({ kind: 'track', parentId: id })} />}
       {side?.kind === 'members' && <MembersPanel ctx={ctx} onClose={() => setSide(null)} />}
+      {side?.kind === 'notes' && (
+        <aside className="side-panel" aria-label="Notes">
+          <header className="side-head"><span className="label">Notes</span><button className="icon-btn" onClick={() => setSide(null)} aria-label="Close"><Icon name="x" size={16} /></button></header>
+          <div className="side-body notes-side">
+            {side.noteId === null
+              ? <NotesList convId={convId} users={users} onOpen={(id) => setSide({ kind: 'notes', noteId: id })} onNew={() => setSide({ kind: 'notes', noteId: 'new' })} />
+              : <NoteEditor key={side.noteId} id={side.noteId === 'new' ? null : side.noteId} convId={convId} users={users} meId={meId} onClose={() => setSide({ kind: 'notes', noteId: null })} />}
+          </div>
+        </aside>
+      )}
+      {side?.kind === 'boards' && (
+        <aside className="side-panel" aria-label="Whiteboards">
+          <header className="side-head"><span className="label">Whiteboards</span><button className="icon-btn" onClick={() => setSide(null)} aria-label="Close"><Icon name="x" size={16} /></button></header>
+          <div className="side-body"><BoardsList convId={convId} onOpen={setBoard} /></div>
+        </aside>
+      )}
+      {board && <Suspense fallback={null}><WhiteboardStage board={board} convId={convId} onClose={() => setBoard(null)} /></Suspense>}
       {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
       {viewer && <Lightbox file={viewer.file} all={viewer.all} onClose={() => setViewer(null)} />}
       {planning && session && <EventDialog session={session} conv={conv} onClose={() => setPlanning(false)} />}
@@ -307,7 +343,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   return (
     <div data-mid={m.id} className={`msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
-      {m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
+      {m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
       ) : (
         m.body ? (
@@ -357,7 +393,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Reply in a side-track"><Icon name="reply" size={16} /></button>}
           <button className={saved ? 'on' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Saved to your Desk' : 'Removed from your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Remove from saved' : 'Save for later'} aria-pressed={saved}><Icon name="star" size={16} /></button>
           <button onClick={() => setDialog('remind')} title="Remind me about this"><Icon name="alarm" size={16} /></button>
-          {mine && m.body && !m.poll && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
+          {mine && m.body && !m.poll && !m.form && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
           <button ref={moreBtn} onClick={() => setMore(!more)} title="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={16} /></button>
           {more && (
             <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu">
@@ -443,7 +479,10 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | null>(null);
+  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | null>(null);
+  const [addMenu, setAddMenu] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const addBtn = useRef<HTMLButtonElement>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [botCmds, setBotCmds] = useState<CommandInfo[]>([]);
   const slashQuery = /^\/([\w-]*)$/.exec(text)?.[1]?.toLowerCase() ?? null;
@@ -616,7 +655,16 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
             </>
           )}
           <button className="icon-btn" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
-          <button className="icon-btn" title="Poll" disabled={!live} onClick={() => setDockDialog('poll')}><Icon name="poll" size={18} /></button>
+          <button ref={addBtn} className="icon-btn" title="Add a poll, form, note or whiteboard" disabled={!live} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
+          {addMenu && (
+            <Popover anchor={addBtn.current} onClose={() => setAddMenu(false)} className="menu add-menu" align="start">
+              <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('poll'); }}><Icon name="poll" size={16} />Poll</button>
+              {ctx.users.get(ctx.meId)?.role !== 'guest' && <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('form'); }}><Icon name="list" size={16} />Form</button>}
+              <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side: 'notes-new' } })); }}><Icon name="doc" size={16} />Note</button>
+              <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side: 'boards' } })); }}><Icon name="drawing" size={16} />Whiteboard</button>
+              {ctx.users.get(ctx.meId)?.role !== 'guest' && <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); }}><Icon name="calendar" size={16} />Meeting</button>}
+            </Popover>
+          )}
           <button className="icon-btn" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
             <div className="emoji-pop dock-emoji" onMouseLeave={() => setEmoji(false)}>
@@ -624,8 +672,10 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
             </div>
           )}
         </div>
+        {live && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
         <textarea
           ref={ref}
+          hidden={recording}
           rows={1}
           value={text}
           placeholder={live ? placeholder : 'Waiting for the office hub…'}
@@ -635,12 +685,13 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
           onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length && canAttach) { e.preventDefault(); addFiles(files); } }}
           aria-label={placeholder}
         />
-        <button className="icon-btn dock-later" onClick={() => setDockDialog('schedule')} disabled={(!text.trim() && !ready.length) || !live || uploading}
+        {!recording && <><button className="icon-btn dock-later" onClick={() => setDockDialog('schedule')} disabled={(!text.trim() && !ready.length) || !live || uploading}
           title="Send later" aria-label="Schedule message"><Icon name="schedule" size={17} /></button>
         <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
           <Icon name="send" size={18} />
-        </button>
+        </button></>}
       </div>
+      {dockDialog === 'form' && <FormBuilder conv={ctx.conv} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'poll' && <PollDialog conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'remind' && <RemindDialog users={ctx.users} meId={ctx.meId} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'help' && (

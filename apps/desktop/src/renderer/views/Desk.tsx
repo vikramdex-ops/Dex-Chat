@@ -8,9 +8,10 @@ import { plainPreview } from '../chat/format.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { Timesheet } from '../work/WorkUi.tsx';
+import { NoteEditor, NotesList } from '../chat/notes.tsx';
 import { REPEAT_LABEL, describeWhen, dismissRinging, toggleSaved, useDesk } from '../desk/store.ts';
 
-type Tab = 'reminders' | 'saved' | 'scheduled' | 'timesheet';
+type Tab = 'reminders' | 'saved' | 'scheduled' | 'notes' | 'timesheet';
 type Jump = (convId: string, messageId?: string, parentId?: string | null) => void;
 
 const snooze = (r: Reminder, ms: number) => window.dex.request('remind.update', { id: r.id, dueAt: Date.now() + ms });
@@ -19,6 +20,7 @@ const tomorrowMorning = () => { const d = new Date(); d.setDate(d.getDate() + 1)
 export function Desk({ session, jump }: { session: Session; jump: Jump }) {
   const [tab, setTab] = useState<Tab>('reminders');
   const [creating, setCreating] = useState(false);
+  const [note, setNote] = useState<string | null | 'new'>(null);
   const users = new Map(session.users.map((u) => [u.id, u] as const));
   const meId = session.me.id;
   const reminders = useDesk((s) => s.reminders);
@@ -40,6 +42,7 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
         { value: 'reminders', label: `Reminders${openMine ? ` · ${openMine}` : ''}` },
         { value: 'saved', label: `Saved${saved.size ? ` · ${saved.size}` : ''}` },
         { value: 'scheduled', label: `Scheduled${scheduled.size ? ` · ${scheduled.size}` : ''}` },
+        { value: 'notes', label: 'Notes' },
         ...(session.me.role === 'guest' ? [] : [{ value: 'timesheet' as Tab, label: 'Timesheet' }]),
       ]} />
       <div className="desk-body">
@@ -47,6 +50,13 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
         {loaded && tab === 'reminders' && <Reminders list={[...reminders.values()]} users={users} meId={meId} jump={jump} onNew={() => setCreating(true)} />}
         {loaded && tab === 'saved' && <Saved list={[...saved.values()].sort((a, b) => b.savedAt - a.savedAt)} users={users} meId={meId} jump={jump} />}
         {tab === 'timesheet' && <Timesheet me={session.me} />}
+        {tab === 'notes' && (
+          <div className="desk-notes card">
+            {note === null
+              ? <NotesList convId={null} users={users} onOpen={setNote} onNew={() => setNote('new')} />
+              : <NoteEditor key={note} id={note === 'new' ? null : note} convId={null} users={users} meId={meId} onClose={() => setNote(null)} />}
+          </div>
+        )}
         {loaded && tab === 'scheduled' && <Scheduled list={[...scheduled.values()].sort((a, b) => a.sendAt - b.sendAt)} users={users} meId={meId} jump={jump} />}
       </div>
       {creating && <RemindDialog users={users} meId={meId} onClose={() => setCreating(false)} />}

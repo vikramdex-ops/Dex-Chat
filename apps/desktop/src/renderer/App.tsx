@@ -1,7 +1,7 @@
 // App frame in the "Drafting Table" design language (docs/DESIGN-LANGUAGE.md):
 // title bar with brand, lens bar, command button and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
 import logo from './app-icon.svg';
@@ -13,7 +13,6 @@ import { CommandPalette } from './CommandPalette.tsx';
 import { Onboarding } from './views/Onboarding.tsx';
 import { Home } from './views/Home.tsx';
 import { People } from './views/People.tsx';
-import { Admin } from './views/Admin.tsx';
 import { SettingsView } from './views/Settings.tsx';
 import { ChatView } from './chat/ChatView.tsx';
 import { addConversation, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
@@ -27,6 +26,9 @@ import { WorkClock } from './work/WorkUi.tsx';
 import { startCalendar } from './calendar/store.ts';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
+
+// the Control room is used by a few people now and then: load it when opened
+const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory';
 export type SheetName = 'preferences' | 'control' | null;
@@ -337,7 +339,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
             <button className="sheet-close" onClick={() => setSheet(null)} aria-label="Close" title="Close (Esc)"><Icon name="x" size={18} /></button>
             <div className="sheet-body">
               {sheet === 'preferences' && <SettingsView state={state} session={session} />}
-              {sheet === 'control' && isAdmin && <Admin state={state} session={session} />}
+              {sheet === 'control' && isAdmin && <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><Admin state={state} session={session} /></Suspense>}
             </div>
           </aside>
         </div>

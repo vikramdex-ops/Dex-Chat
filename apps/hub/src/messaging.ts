@@ -2,7 +2,7 @@
 // typing, stored on the hub (SQLite). Every operation is authorised by membership.
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, ulid } from '@dex/core';
-import type { Conversation, Message, MessagePreview, Ops, PollView, PublicUser } from '@dex/core';
+import type { Conversation, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser } from '@dex/core';
 import type { FileStore } from './files.ts';
 
 export class MsgError extends Error {}
@@ -80,6 +80,21 @@ CREATE TABLE IF NOT EXISTS poll_votes (
   user_id TEXT NOT NULL,
   option INTEGER NOT NULL,
   PRIMARY KEY (message_id, user_id, option)
+);
+CREATE TABLE IF NOT EXISTS forms (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description TEXT,
+  fields TEXT NOT NULL,
+  closed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS form_responses (
+  form_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  answers TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (form_id, user_id)
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNINDEXED, conv_id UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
 `;
@@ -196,6 +211,18 @@ export class Messaging {
     return { question: p.question, options, multi: !!p.multi, anonymous: !!p.anonymous, closed, closesAt: p.closes_at, voterCount: people.size, mine };
   }
 
+  private formView(messageId: string, viewer: string | null): FormView | null {
+    const f = this.db.prepare('SELECT * FROM forms WHERE message_id = ?').get(messageId) as { id: string; title: string; description: string | null; fields: string; closed: number } | undefined;
+    if (!f) return null;
+    let fields: FormField[] = [];
+    try { fields = JSON.parse(f.fields) as FormField[]; } catch { /* corrupt row */ }
+    const n = (this.db.prepare('SELECT COUNT(*) AS n FROM form_responses WHERE form_id = ?').get(f.id) as { n: number }).n;
+    const mine = viewer ? this.db.prepare('SELECT answers FROM form_responses WHERE form_id = ? AND user_id = ?').get(f.id, viewer) as { answers: string } | undefined : undefined;
+    let answers: Record<string, string | string[]> | null = null;
+    if (mine) { try { answers = JSON.parse(mine.answers) as Record<string, string | string[]>; } catch { answers = {}; } }
+    return { id: f.id, title: f.title, description: f.description, fields, closed: !!f.closed, responses: n, mine: answers };
+  }
+
   /** A message as a given person sees it (null when they cannot). */
   messageFor(id: string, viewer: string): Message | null {
     const r = this.message(id);
@@ -218,6 +245,7 @@ export class Messaging {
       files: r.deleted ? [] : this.files.forMessage(r.id),
       forwardedFrom: r.forwarded && !r.deleted ? parseForward(r.forwarded) : null,
       poll: r.deleted ? null : this.pollView(r.id, viewer),
+      form: r.deleted ? null : this.formView(r.id, viewer),
     };
   }
 
@@ -243,7 +271,7 @@ export class Messaging {
     const view = this.messageView(msg);
     const members = this.members(msg.conv_id);
     // polls carry each person's own vote
-    this.deliver(members, name, view.poll ? (uid) => this.messageView(msg, uid) : () => view);
+    this.deliver(members, name, view.poll || view.form ? (uid) => this.messageView(msg, uid) : () => view);
     // a reply also changes the parent's reply count
     if (msg.parent_id) {
       const parent = this.message(msg.parent_id);
@@ -481,6 +509,77 @@ export class Messaging {
         return this.messageView(msg, me.id);
       }
 
+      case 'form.create': {
+        const c = this.requireMember(String(d.convId), me.id);
+        if (me.role === 'guest') throw new MsgError('Guests cannot create forms.');
+        const title = str(d.title, 140);
+        if (!title) throw new MsgError('Give the form a title.');
+        const raw = Array.isArray(d.fields) ? d.fields as Array<Record<string, unknown>> : [];
+        if (!raw.length) throw new MsgError('Add at least one question.');
+        if (raw.length > 30) throw new MsgError('A form can have up to 30 questions.');
+        const types = ['text', 'long', 'choice', 'multi', 'number', 'date'];
+        const fields: FormField[] = raw.map((f, i) => {
+          const label = str(f.label, 200);
+          if (!label) throw new MsgError(`Question ${i + 1} needs a label.`);
+          const type = types.includes(String(f.type)) ? f.type as FormField['type'] : 'text';
+          const options = type === 'choice' || type === 'multi' ? (Array.isArray(f.options) ? f.options.map((o) => str(o, 120)).filter(Boolean) : []) : undefined;
+          if (options && options.length < 2) throw new MsgError(`"${label}" needs at least two choices.`);
+          return { id: `q${i + 1}`, label, type, ...(options ? { options: options.slice(0, 20) } : {}), required: f.required === true };
+        });
+        const description = str(d.description, 1000) || null;
+        const msg = this.sendAs(me, c, `📝 ${title}`, undefined, [], d.clientId, {});
+        const formId = ulid();
+        this.db.prepare('INSERT INTO forms (id, message_id, title, description, fields) VALUES (?, ?, ?, ?, ?)').run(formId, msg.id, title, description, JSON.stringify(fields));
+        const row = this.message(msg.id)!;
+        this.pushMessage('msg.updated', row);
+        return this.messageView(row, me.id);
+      }
+
+      case 'form.respond': {
+        const f = typeof d.formId === 'string' ? this.db.prepare('SELECT * FROM forms WHERE id = ?').get(d.formId) as { id: string; message_id: string; closed: number; fields: string } | undefined : undefined;
+        const msg = f ? this.visibleMessage(f.message_id, me.id) : null;
+        if (!f || !msg) throw new MsgError('Form not found.');
+        if (f.closed) throw new MsgError('This form is closed.');
+        const fields = JSON.parse(f.fields) as FormField[];
+        const given = d.answers && typeof d.answers === 'object' ? d.answers as Record<string, unknown> : {};
+        const answers: Record<string, string | string[]> = {};
+        for (const q of fields) {
+          const v = given[q.id];
+          if (q.type === 'multi') {
+            const picks = Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && (q.options ?? []).includes(x)))] : [];
+            if (picks.length) answers[q.id] = picks;
+          } else {
+            let t = typeof v === 'string' ? v.trim().slice(0, q.type === 'long' ? 4000 : 500) : '';
+            if (t && q.type === 'choice' && !(q.options ?? []).includes(t)) throw new MsgError(`Choose one of the options for "${q.label}".`);
+            if (t && q.type === 'number' && !/^-?\d+(\.\d+)?$/.test(t)) throw new MsgError(`"${q.label}" needs a number.`);
+            if (t && q.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(t)) throw new MsgError(`"${q.label}" needs a date.`);
+            if (q.type === 'number' && t) t = String(Number(t));
+            if (t) answers[q.id] = t;
+          }
+          if (q.required && answers[q.id] === undefined) throw new MsgError(`"${q.label}" is required.`);
+        }
+        this.db.prepare('INSERT INTO form_responses (form_id, user_id, answers, at) VALUES (?, ?, ?, ?) ON CONFLICT(form_id, user_id) DO UPDATE SET answers = excluded.answers, at = excluded.at')
+          .run(f.id, me.id, JSON.stringify(answers), Date.now());
+        this.pushMessage('msg.updated', msg);
+        return this.messageView(msg, me.id);
+      }
+
+      case 'form.responses':
+      case 'form.close': {
+        const f = typeof d.formId === 'string' ? this.db.prepare('SELECT * FROM forms WHERE id = ?').get(d.formId) as { id: string; message_id: string } | undefined : undefined;
+        const msg = f ? this.visibleMessage(f.message_id, me.id) : null;
+        if (!f || !msg) throw new MsgError('Form not found.');
+        if (msg.author_id !== me.id && !isAdmin) throw new MsgError('Only the person who created the form can see the answers.');
+        if (op === 'form.close') {
+          this.db.prepare('UPDATE forms SET closed = 1 WHERE id = ?').run(f.id);
+          this.pushMessage('msg.updated', msg);
+          return this.messageView(msg, me.id);
+        }
+        const responses = (this.db.prepare('SELECT user_id, answers, at FROM form_responses WHERE form_id = ? ORDER BY at').all(f.id) as Array<{ user_id: string; answers: string; at: number }>)
+          .map((r) => { let answers: Record<string, string | string[]> = {}; try { answers = JSON.parse(r.answers); } catch { /* skip */ } return { userId: r.user_id, answers, at: r.at }; });
+        return { form: this.formView(msg.id, me.id)!, responses } satisfies Ops['form.responses']['res'];
+      }
+
       case 'conv.markUnread': {
         const c = this.requireMember(String(d.convId), me.id);
         const msg = typeof d.messageId === 'string' ? this.message(d.messageId) : undefined;
@@ -635,6 +734,8 @@ export class Messaging {
     const ids = [msg.id, ...(this.db.prepare('SELECT id FROM messages WHERE parent_id = ?').all(msg.id) as Array<{ id: string }>).map((r) => r.id)];
     for (const id of ids) {
       for (const t of ['reactions', 'mentions', 'polls', 'poll_votes', 'message_files', 'stars']) this.db.prepare(`DELETE FROM ${t} WHERE message_id = ?`).run(id);
+      const form = this.db.prepare('SELECT id FROM forms WHERE message_id = ?').get(id) as { id: string } | undefined;
+      if (form) { this.db.prepare('DELETE FROM form_responses WHERE form_id = ?').run(form.id); this.db.prepare('DELETE FROM forms WHERE id = ?').run(form.id); }
       this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
       this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
     }

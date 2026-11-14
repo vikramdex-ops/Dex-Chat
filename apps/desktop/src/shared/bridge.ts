@@ -99,6 +99,12 @@ export interface DexBridge {
   pathForFile?(file: File): string;
   openFile?(id: string, name: string): Promise<void>;
   saveFile?(id: string, name: string): Promise<string>;
+  /** Edit a note in Slate (or the default editor); saves there come back through onSlateChange. */
+  editInSlate?(noteId: string, title: string, body: string): Promise<'slate' | 'default'>;
+  onSlateChange?(cb: (noteId: string, text: string) => void): () => void;
+  /** Open a downloaded file with Slate (text, CSV, logs). */
+  openInSlate?(id: string, name: string): Promise<void>;
+  hasSlate?: boolean;
   /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
   listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
   chooseScreen?(id: string): Promise<void>;
