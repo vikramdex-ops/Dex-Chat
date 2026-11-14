@@ -260,6 +260,12 @@ export function ToastHost({ children }: { children: ReactNode }) {
     setToasts((t) => [...t.slice(-3), { id, text, bad }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
   }, []);
+  // parts of the app without access to the toast context (message formatting) raise errors this way
+  useEffect(() => {
+    const on = (e: Event) => push(String((e as CustomEvent).detail), true);
+    window.addEventListener('dex-toast', on);
+    return () => window.removeEventListener('dex-toast', on);
+  }, [push]);
   return (
     <ToastCtx.Provider value={push}>
       {children}

@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS form_responses (
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNINDEXED, conv_id UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
 `;
 
-interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number }
+interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number; archived: number; post_policy: 'everyone' | 'moderators' }
 export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null }
 
 const MAX_BODY = 8000;
@@ -126,6 +126,17 @@ export class Messaging {
     // hubs from before forwarding existed
     const cols = (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('forwarded')) db.exec('ALTER TABLE messages ADD COLUMN forwarded TEXT');
+    // sidebar organisation, timed mute, archive, moderation (hubs from before these existed)
+    const add = (table: string, col: string, def: string) => {
+      const have = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+      if (!have) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    };
+    add('conv_members', 'pinned_at', 'INTEGER');
+    add('conv_members', 'section', 'TEXT');
+    add('conv_members', 'muted_until', 'INTEGER');
+    add('conv_members', 'moderator', 'INTEGER NOT NULL DEFAULT 0');
+    add('conversations', 'archived', 'INTEGER NOT NULL DEFAULT 0');
+    add('conversations', 'post_policy', "TEXT NOT NULL DEFAULT 'everyone'");
     // hubs upgraded from a version without search: index what is already there
     const indexed = (db.prepare('SELECT COUNT(*) AS n FROM messages_fts').get() as { n: number }).n;
     if (!indexed) {
@@ -156,6 +167,20 @@ export class Messaging {
     return !!this.db.prepare('SELECT 1 FROM conv_members WHERE conv_id = ? AND user_id = ?').get(convId, userId);
   }
 
+  private isModerator(c: ConvRow, user: PublicUser): boolean {
+    if (user.role === 'owner' || user.role === 'admin' || c.created_by === user.id) return true;
+    return !!this.db.prepare('SELECT 1 FROM conv_members WHERE conv_id = ? AND user_id = ? AND moderator = 1').get(c.id, user.id);
+  }
+
+  /** Called on the hub timer: timed mutes end. */
+  tick(now = Date.now()): void {
+    const due = this.db.prepare('SELECT conv_id, user_id FROM conv_members WHERE muted_until IS NOT NULL AND muted_until <= ?').all(now) as Array<{ conv_id: string; user_id: string }>;
+    for (const r of due) {
+      this.db.prepare('UPDATE conv_members SET muted = 0, muted_until = NULL WHERE conv_id = ? AND user_id = ?').run(r.conv_id, r.user_id);
+      this.pushConv(r.conv_id, [r.user_id]);
+    }
+  }
+
   private requireMember(convId: string, userId: string): ConvRow {
     const c = this.conv(convId);
     if (!c || !this.isMember(convId, userId)) throw new MsgError('Conversation not found.');
@@ -180,7 +205,7 @@ export class Messaging {
   }
 
   view(c: ConvRow, viewer: string): Conversation {
-    const m = this.db.prepare('SELECT last_read_id, muted FROM conv_members WHERE conv_id = ? AND user_id = ?').get(c.id, viewer) as { last_read_id: string | null; muted: number } | undefined;
+    const m = this.db.prepare('SELECT last_read_id, muted, pinned_at, section, muted_until FROM conv_members WHERE conv_id = ? AND user_id = ?').get(c.id, viewer) as { last_read_id: string | null; muted: number; pinned_at: number | null; section: string | null; muted_until: number | null } | undefined;
     const lastRead = m?.last_read_id ?? '';
     const unread = m ? (this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conv_id = ? AND parent_id IS NULL AND deleted = 0 AND author_id != ? AND id > ?`)
       .get(c.id, viewer, lastRead) as { n: number }).n : 0;
@@ -191,6 +216,9 @@ export class Messaging {
       createdBy: c.created_by, createdAt: c.created_at, members: this.members(c.id), lastMessage: this.preview(c.id),
       joined: !!m, unread, mentions, lastReadId: m?.last_read_id ?? null, muted: !!m?.muted,
       reads: Object.fromEntries((this.db.prepare('SELECT user_id, last_read_id FROM conv_members WHERE conv_id = ?').all(c.id) as Array<{ user_id: string; last_read_id: string | null }>).map((r) => [r.user_id, r.last_read_id])),
+      pinnedAt: m?.pinned_at ?? null, section: m?.section ?? null, mutedUntil: m?.muted_until ?? null,
+      archived: !!c.archived, postPolicy: c.post_policy ?? 'everyone',
+      moderators: (this.db.prepare('SELECT user_id FROM conv_members WHERE conv_id = ? AND moderator = 1').all(c.id) as Array<{ user_id: string }>).map((r) => r.user_id),
     };
   }
 
@@ -399,7 +427,7 @@ export class Messaging {
       case 'conv.update': {
         const c = this.requireMember(String(d.convId), me.id);
         if (c.kind !== 'space') throw new MsgError('Only Spaces have a name and topic.');
-        if (c.created_by !== me.id && !isAdmin) throw new MsgError('Only the person who created this Space or an administrator can change it.');
+        if (!this.isModerator(c, me)) throw new MsgError('Only the person who created this Space, a moderator or an administrator can change it.');
         const name = d.name !== undefined ? str(d.name, 60) : c.name;
         if (!name) throw new MsgError('A Space needs a name.');
         const topic = d.topic === undefined ? c.topic : d.topic === null ? null : str(d.topic, 240) || null;
@@ -424,9 +452,47 @@ export class Messaging {
 
       case 'conv.mute': {
         const c = this.requireMember(String(d.convId), me.id);
-        this.db.prepare('UPDATE conv_members SET muted = ? WHERE conv_id = ? AND user_id = ?').run(d.muted === true ? 1 : 0, c.id, me.id);
+        const until = d.muted === true && typeof d.until === 'number' && d.until > Date.now() ? Math.floor(d.until) : null;
+        this.db.prepare('UPDATE conv_members SET muted = ?, muted_until = ? WHERE conv_id = ? AND user_id = ?').run(d.muted === true ? 1 : 0, until, c.id, me.id);
         this.pushConv(c.id, [me.id]);
         return this.view(c, me.id);
+      }
+
+      case 'conv.organise': {
+        const c = this.requireMember(String(d.convId), me.id);
+        if (d.pinned !== undefined) {
+          if (d.pinned === true) {
+            const n = (this.db.prepare('SELECT COUNT(*) AS n FROM conv_members WHERE user_id = ? AND pinned_at IS NOT NULL').get(me.id) as { n: number }).n;
+            if (n >= 100) throw new MsgError('You can pin up to 100 conversations.');
+          }
+          this.db.prepare('UPDATE conv_members SET pinned_at = ? WHERE conv_id = ? AND user_id = ?').run(d.pinned === true ? Date.now() : null, c.id, me.id);
+        }
+        if (d.section !== undefined) this.db.prepare('UPDATE conv_members SET section = ? WHERE conv_id = ? AND user_id = ?').run(str(d.section, 40) || null, c.id, me.id);
+        this.pushConv(c.id, [me.id]);
+        return this.view(c, me.id);
+      }
+
+      case 'conv.archive': {
+        const c = this.requireMember(String(d.convId), me.id);
+        if (c.kind !== 'space' || c.everyone) throw new MsgError('Only Spaces can be archived.');
+        if (!this.isModerator(c, me)) throw new MsgError('Only the person who created this Space, a moderator or an administrator can archive it.');
+        this.db.prepare('UPDATE conversations SET archived = ? WHERE id = ?').run(d.archived === true ? 1 : 0, c.id);
+        this.pushConv(c.id);
+        return this.view(this.conv(c.id)!, me.id);
+      }
+
+      case 'conv.settings': {
+        const c = this.requireMember(String(d.convId), me.id);
+        if (c.kind !== 'space') throw new MsgError('Only Spaces have these settings.');
+        if (!this.isModerator(c, me)) throw new MsgError('Only the person who created this Space, a moderator or an administrator can change it.');
+        if (d.postPolicy === 'everyone' || d.postPolicy === 'moderators') this.db.prepare('UPDATE conversations SET post_policy = ? WHERE id = ?').run(d.postPolicy, c.id);
+        if (Array.isArray(d.moderators)) {
+          const want = new Set(d.moderators.filter((x): x is string => typeof x === 'string'));
+          this.db.prepare('UPDATE conv_members SET moderator = 0 WHERE conv_id = ?').run(c.id);
+          for (const u of want) this.db.prepare('UPDATE conv_members SET moderator = 1 WHERE conv_id = ? AND user_id = ?').run(c.id, u);
+        }
+        this.pushConv(c.id);
+        return this.view(this.conv(c.id)!, me.id);
       }
 
       case 'msg.list': {
@@ -621,7 +687,7 @@ export class Messaging {
         const msg = typeof d.messageId === 'string' ? this.message(d.messageId) : undefined;
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
         const c = this.requireMember(msg.conv_id, me.id);
-        if (msg.author_id !== me.id && !(isAdmin && c.kind === 'space')) throw new MsgError('You can only delete your own messages.');
+        if (msg.author_id !== me.id && !(c.kind === 'space' && this.isModerator(c, me))) throw new MsgError('You can only delete your own messages.');
         this.beforeChange?.(msg, 'delete', me.id);
         this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ? WHERE id = ?').run(Date.now(), msg.id);
         this.db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msg.id);
@@ -706,6 +772,9 @@ export class Messaging {
     if (!body && !fileIds.length) throw new MsgError('Write something first.');
     if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
     if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
+    if (c.archived) throw new MsgError('This Space is archived. Restore it to post again.');
+    // announcement Spaces: only moderators start new messages (everyone can still reply in side-tracks)
+    if (c.post_policy === 'moderators' && typeof rawParent !== 'string' && me.role !== 'bot' && !this.isModerator(c, me)) throw new MsgError('Only moderators post in this Space. You can reply in a side-track.');
     const clientId = typeof rawClientId === 'string' ? rawClientId.slice(0, 96) : null;
     if (clientId) {
       const dup = this.db.prepare('SELECT * FROM messages WHERE author_id = ? AND client_id = ?').get(me.id, clientId) as MsgRow | undefined;

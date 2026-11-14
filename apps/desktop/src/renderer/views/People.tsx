@@ -157,6 +157,7 @@ function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onCl
         <h2>{u.displayName}</h2>
         <p className="muted">{u.title ?? ROLE_LABEL[u.role]}</p>
         <WorkChip userId={u.id} />
+        {u.ooo && <div className="work-line ooo"><Icon name="calendar" size={13} />Out of office until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}{u.ooo.delegateId ? ` · ask ${users.get(u.ooo.delegateId)?.displayName ?? 'a colleague'}` : ''}</div>}
         {u.statusText && <div className="status">{u.statusText}</div>}
         {u.id !== meId && (
           <div className="row-actions">

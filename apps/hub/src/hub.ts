@@ -194,6 +194,8 @@ export class Hub {
         this.lastPurge = Date.now();
         try { this.compliance.purge(); } catch (err) { this.log('error', 'retention failed', { error: (err as Error).message }); }
       }
+      try { this.presenceTick(); } catch (err) { this.log('error', 'presence timer failed', { error: (err as Error).message }); }
+      try { this.messaging.tick(); } catch (err) { this.log('error', 'mute timer failed', { error: (err as Error).message }); }
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
     };
@@ -551,6 +553,23 @@ export class Hub {
     }
   }
 
+  /** Timed availability returns to Available; out of office ends on its date. */
+  private presenceTick(now = Date.now()): void {
+    const rows = this.store.db.prepare('SELECT id, availability, availability_until, ooo FROM users WHERE (availability_until IS NOT NULL AND availability_until <= ?) OR ooo IS NOT NULL').all(now) as Array<{ id: string; availability: string; availability_until: number | null; ooo: string | null }>;
+    for (const r of rows) {
+      let changed = false;
+      if (r.availability_until !== null && r.availability_until <= now) {
+        this.store.updateUser(r.id, { availability: 'available' });
+        this.store.setPresenceExtras(r.id, { availabilityUntil: null });
+        changed = true;
+        if (r.availability === 'invisible') this.announcePresence(r.id);
+      }
+      const u = this.store.userById(r.id);
+      if (u?.ooo && u.ooo.until <= now) { this.store.setPresenceExtras(r.id, { ooo: null }); changed = true; }
+      if (changed) { const fresh = this.store.userById(r.id); if (fresh) this.emit('user.updated', fresh); }
+    }
+  }
+
   private requireAdmin(conn: Conn): PublicUser {
     const me = this.store.userById(conn.userId!);
     if (!me || !isAdminRole(me.role)) throw new OpError('Only administrators can do that.');
@@ -580,7 +599,21 @@ export class Hub {
           if (!['available', 'busy', 'dnd', 'invisible'].includes(String(d.availability))) throw new OpError('Unknown availability.');
           (patch as { availability?: string }).availability = String(d.availability);
         }
-        const user = this.store.updateUser(conn.userId!, patch as never);
+        this.store.updateUser(conn.userId!, patch as never);
+        if (d.availability !== undefined) {
+          const until = typeof d.until === 'number' && d.until > Date.now() && d.availability !== 'available' ? Math.floor(d.until) : null;
+          this.store.setPresenceExtras(conn.userId!, { availabilityUntil: until });
+        }
+        if (d.ooo !== undefined) {
+          const o = d.ooo as { until?: unknown; message?: unknown; delegateId?: unknown } | null;
+          if (o === null) this.store.setPresenceExtras(conn.userId!, { ooo: null });
+          else {
+            if (typeof o.until !== 'number' || o.until <= Date.now()) throw new OpError('Choose when you are back.');
+            const delegate = typeof o.delegateId === 'string' && o.delegateId !== conn.userId && this.store.userById(o.delegateId) ? o.delegateId : null;
+            this.store.setPresenceExtras(conn.userId!, { ooo: { until: Math.floor(o.until), message: clean(o.message, 300) || null, delegateId: delegate } });
+          }
+        }
+        const user = this.store.userById(conn.userId!)!;
         this.emit('user.updated', user);
         if (before.availability !== user.availability && (before.availability === 'invisible' || user.availability === 'invisible')) this.announcePresence(user.id);
         return user;

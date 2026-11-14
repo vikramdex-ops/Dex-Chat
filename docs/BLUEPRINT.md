@@ -92,9 +92,10 @@ building, why, and in what order.
 - Every message has a globally unique, time-sortable ID (ULID) and a per-device sequence number. Delivery is
   idempotent, so duplicates from hub and P2P paths merge cleanly.
 - **Hub up:** client → hub → fan-out to recipients. The hub stores channel history; DMs are stored as ciphertext.
-- **Hub down:** clients detect it within 3 s and switch to **direct mode**. Peers are found by beacon, and
-  DMs and group messages go straight to online recipients' PCs over pinned TLS. Messages for offline people
-  wait in the sender's outbox. File transfers go peer-to-peer.
+- **Hub down:** clients switch to **direct mode** when the connection drops. Desktop PCs find each other with
+  signed beacons (UDP 47902) and pass end-to-end sealed Direct messages straight across over a connection where
+  the caller proves its device key. Messages wait in the sender's outbox for anyone not reachable. Files, Spaces
+  and calls wait for the hub. *(As built.)*
 - **Hub back:** clients upload what they sent and received while it was down. The hub merges by ID and
   redistributes anything that is missing. Ordering is by ULID (hybrid logical clock), so history matches on every PC.
 - Large files always prefer a direct PC-to-PC transfer when both are online. That saves hub disk, the way
@@ -102,8 +103,10 @@ building, why, and in what order.
 
 ### 3.4 Encryption
 - Transport: TLS 1.3 everywhere, with certificates from the office CA the hub creates at install.
-- DMs: each message gets a random key, sealed to every device of both participants (sender-keys model).
-  The hub only ever sees ciphertext. Search over DMs runs on the local index of each PC.
+- DMs: each message gets a random AES-256-GCM key, wrapped for every device of every member with an ephemeral
+  X25519 key and HKDF, and signed with the sender device's Ed25519 key. The hub only ever sees the sealed
+  envelope; a user's existing device re-wraps history for a new device. People can compare a safety code.
+  *(As built; hub-side search excludes DMs.)*
 - Channels and groups: encrypted at rest on the hub; readable by compliance admins (retention, eDiscovery, export).
 - Planned hardening after v1: a double-ratchet layer for forward secrecy on DMs.
 
@@ -163,13 +166,12 @@ Live Events (deferred), Office-document inline preview, and Deluge scripting (re
 | Phase | State |
 | --- | --- |
 | P0 Foundation | ✅ Done |
-| P1 Messaging core | ✅ Done, except direct PC-to-PC fallback and E2E for Direct messages (next) |
-| P2 Files & search | ✅ Files, viewer, Files panel, full-text search. OCR and voice/video messages are next |
-| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), screen share, mini-Room. Recording and an SFU for larger meetings are next |
-| P4 Productivity | ⏳ Not started |
-| P5 Platform & governance | 🟡 Bot API, integrations, Control room, audit. Whiteboard, guests and retention are next |
-| P6 Mobile & polish | 🟡 Android APK with updater, phone layout. File viewing on phones is next |
-
+| P1 Messaging core | ✅ Done, including end-to-end encrypted Direct messages and the hub-off PC-to-PC mode |
+| P2 Files & search | ✅ Files, viewer, Files panel, full-text search, voice notes, files on phones. OCR and video messages are next |
+| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), screen share, mini-Room, Join from meetings. Recording is next |
+| P4 Productivity | ✅ Saved messages, reminders, scheduled messages, polls, forms, notes (with Slate), calendar and conference rooms, remote work, organisation and org chart |
+| P5 Platform & governance | ✅ Bot API, slash commands with signed webhooks, share links for office tools, whiteboards, guests, retention, legal hold, exports, Control room, audit |
+| P6 Mobile & polish | ✅ Android app with updater, files and a phone layout. Parity sweep (see below) in progress |
 
 Each phase ends with installers built by CI, a test pass, and a short demo note.
 

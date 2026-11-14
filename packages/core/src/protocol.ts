@@ -40,6 +40,10 @@ export interface PublicUser {
   createdAt: number;
   /** Organisation details: department, reporting line, contact and custom fields. */
   profile: Profile;
+  /** When a timed availability (for example Do not disturb for 1 hour) ends. */
+  availabilityUntil: number | null;
+  /** Out of office: until when, a note, and who to contact instead. */
+  ooo: { until: number; message: string | null; delegateId: string | null } | null;
 }
 
 export interface Profile {
@@ -203,6 +207,14 @@ export interface Conversation {
   muted: boolean;
   /** Each member's last read message id (read receipts). */
   reads: Record<string, string | null>;
+  /** Viewer's own organisation: pinned to the top (when), their section name, muted until. */
+  pinnedAt: number | null;
+  section: string | null;
+  mutedUntil: number | null;
+  /** Spaces: read-only after archiving; who may post; who moderates. */
+  archived: boolean;
+  postPolicy: 'everyone' | 'moderators';
+  moderators: string[];
 }
 
 export interface FileInfo {
@@ -527,7 +539,7 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 // Request/response operations available in a session.
 export interface Ops {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
-  'me.update': { req: { displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability }; res: PublicUser };
+  'me.update': { req: { displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
   'admin.devices': { req: void; res: DeviceRecord[] };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
@@ -590,7 +602,13 @@ export interface Ops {
   'conv.addMembers': { req: { convId: string; userIds: string[] }; res: Conversation };
   'conv.update': { req: { convId: string; name?: string; topic?: string | null }; res: Conversation };
   'conv.read': { req: { convId: string; messageId: string }; res: Conversation };
-  'conv.mute': { req: { convId: string; muted: boolean }; res: Conversation };
+  'conv.mute': { req: { convId: string; muted: boolean; /** mute until this time (then notifications come back) */ until?: number | null }; res: Conversation };
+  /** The viewer's own sidebar: pin to the top, or file under a section of their own. */
+  'conv.organise': { req: { convId: string; pinned?: boolean; section?: string | null }; res: Conversation };
+  /** Spaces: archive (read-only) or restore; only its creator, a moderator or an administrator. */
+  'conv.archive': { req: { convId: string; archived: boolean }; res: Conversation };
+  /** Spaces: who may post, and moderators (they can pin, delete and change the Space). */
+  'conv.settings': { req: { convId: string; postPolicy?: 'everyone' | 'moderators'; moderators?: string[] }; res: Conversation };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };
   'msg.send': { req: { convId: string; body: string; parentId?: string; clientId: string; files?: string[] }; res: Message };
   'file.list': { req: { convId: string; before?: string; limit?: number }; res: Array<FileInfo & { messageId: string; authorId: string }> };

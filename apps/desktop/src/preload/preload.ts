@@ -41,6 +41,8 @@ const bridge: DexBridge = {
   hasSlate: ipcRenderer.sendSync('slate:available') === true,
   e2eStatus: (convId) => unwrap(ipcRenderer.invoke('e2e:status', convId)),
   statFile: (p) => unwrap(ipcRenderer.invoke('file:stat', p)),
+  installedTools: () => ipcRenderer.invoke('tools:installed'),
+  openLink: (url) => unwrap(ipcRenderer.invoke('tools:open', url)),
   listScreens: () => ipcRenderer.invoke('screen:list'),
   chooseScreen: (id) => ipcRenderer.invoke('screen:choose', id),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

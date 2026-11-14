@@ -8,6 +8,7 @@ import type { Availability, DeviceRecord, DeviceStatus, PublicUser, Role } from 
 interface UserRow {
   id: string; account: string; display_name: string; role: Role; title: string | null;
   status_text: string | null; availability: Availability | null; created_at: number;
+  availability_until?: number | null; ooo?: string | null;
   // from profiles (LEFT JOIN)
   department_id?: string | null; manager_id?: string | null; phone?: string | null; extension?: string | null; location?: string | null;
   email?: string | null; employee_id?: string | null; joined_on?: string | null; birthday?: string | null; fields?: string | null;
@@ -89,9 +90,19 @@ function parseFields(raw: string | null | undefined): Record<string, string> {
   } catch { return {}; }
 }
 
+function parseOoo(raw: string | null | undefined): PublicUser['ooo'] {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as NonNullable<PublicUser['ooo']>;
+    return typeof v.until === 'number' ? { until: v.until, message: v.message ?? null, delegateId: v.delegateId ?? null } : null;
+  } catch { return null; }
+}
+
 export const toPublicUser = (r: UserRow): PublicUser => ({
   id: r.id, account: r.account, displayName: r.display_name, role: r.role,
   title: r.title, statusText: r.status_text, availability: r.availability ?? 'available', createdAt: r.created_at,
+  availabilityUntil: r.availability_until ?? null,
+  ooo: parseOoo(r.ooo),
   profile: {
     departmentId: r.department_id ?? null, managerId: r.manager_id ?? null, phone: r.phone ?? null, extension: r.extension ?? null,
     location: r.location ?? null, email: r.email ?? null, employeeId: r.employee_id ?? null, joinedOn: r.joined_on ?? null,
@@ -121,6 +132,7 @@ export class Store {
     this.db.exec(SCHEMA);
     try { this.db.exec(`ALTER TABLE users ADD COLUMN availability TEXT NOT NULL DEFAULT 'available'`); } catch { /* already there */ }
     for (const col of ['enc_key TEXT', 'enc_sig TEXT']) { try { this.db.exec(`ALTER TABLE devices ADD COLUMN ${col}`); } catch { /* already there */ } }
+    for (const col of ['availability_until INTEGER', 'ooo TEXT']) { try { this.db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch { /* already there */ } }
   }
 
   close(): void { this.db.close(); }
@@ -162,6 +174,12 @@ export class Store {
     this.db.prepare('INSERT INTO users (id, account, display_name, role, title, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(id, account, pre?.display_name || displayName, role, pre?.title ?? null, Date.now());
     return this.userById(id)!;
+  }
+
+  /** Timed availability and out of office (kept apart from updateUser's simple fields). */
+  setPresenceExtras(id: string, patch: { availabilityUntil?: number | null; ooo?: PublicUser['ooo'] }): void {
+    if (patch.availabilityUntil !== undefined) this.db.prepare('UPDATE users SET availability_until = ? WHERE id = ?').run(patch.availabilityUntil, id);
+    if (patch.ooo !== undefined) this.db.prepare('UPDATE users SET ooo = ? WHERE id = ?').run(patch.ooo ? JSON.stringify(patch.ooo) : null, id);
   }
 
   updateUser(id: string, patch: { displayName?: string; title?: string | null; statusText?: string | null; role?: Role; availability?: Availability }): PublicUser {

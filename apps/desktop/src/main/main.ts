@@ -12,6 +12,7 @@ import { Updater } from './updater.ts';
 import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
+import { installedTools, openToolLink } from './tools.ts';
 import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 
@@ -227,6 +228,11 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
+  ipcMain.handle('tools:installed', () => installedTools());
+  ipcMain.handle('tools:open', (_e, url: string) => wrap(async () => {
+    if (String(url).startsWith('dexconnect://')) { routeDeepLink(String(url)); return; }
+    await openToolLink(String(url));
+  }));
   ipcMain.handle('file:stat', (_e, p: string) => wrap(async () => {
     const full = path.resolve(String(p));
     const st = await fs.promises.stat(full);

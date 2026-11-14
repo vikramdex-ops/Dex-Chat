@@ -108,6 +108,9 @@ export interface DexBridge {
   fileUrl?(id: string, name: string): Promise<string>;
   /** Desktop: name and size of a local file another tool asked to share. */
   statFile?(path: string): Promise<{ name: string; size: number; isFile: boolean }>;
+  /** Which office tools are installed (by their link schemes), and opening links for them. */
+  installedTools?(): Promise<Record<'projectopener' | 'dexterity' | 'sleuth' | 'datum', boolean>>;
+  openLink?(url: string): Promise<void>;
   /** Edit a note in Slate (or the default editor); saves there come back through onSlateChange. */
   editInSlate?(noteId: string, title: string, body: string): Promise<'slate' | 'default'>;
   onSlateChange?(cb: (noteId: string, text: string) => void): () => void;

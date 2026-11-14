@@ -7,6 +7,33 @@ import type { PublicUser } from '@dex/core';
 /** Piping line numbers such as 6"-P-1001-A1B or 2-CW-2045 (Sleuth integration hooks onto these). */
 export const LINE_REF_RE = /\b\d{1,2}(?:"|''|in)?-[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]{1,6})?\b/g;
 
+/** Drawing numbers as Sleuth reads them from title blocks: ISO-1001-01, GA-204, PID-12. */
+export const DRAWING_RE = /\b(?:ISO|PID|GA|DWG|DOC|STR|LAY)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/g;
+
+const TOOL_NAME: Record<string, string> = { projectopener: 'Project Opener', dexterity: 'Dexterity Sheets', sleuth: 'Sleuth', datum: 'Datum', dexconnect: 'Dexterity Connect' };
+
+function ToolLink({ url }: { url: string }) {
+  const scheme = url.split(':')[0];
+  let label = url.replace(/^[a-z]+:\/\//, '');
+  try { label = decodeURIComponent(label); } catch { /* keep as is */ }
+  return (
+    <button className="tool-link" title={url} onClick={() => void window.dex.openLink?.(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })))}>
+      <span className="tool-name">{TOOL_NAME[scheme] ?? scheme}</span>{label.length > 60 ? `${label.slice(0, 57)}…` : label}
+    </button>
+  );
+}
+
+function TagRef({ tag, kind }: { tag: string; kind: 'line' | 'drawing' }) {
+  const canFind = toolsInstalled.sleuth;
+  return canFind
+    ? <button className="line-ref find" title={`Find ${tag} in Sleuth`} onClick={() => void window.dex.openLink?.(`sleuth://search?q=${encodeURIComponent(tag)}`).catch(() => {})}>{tag}</button>
+    : <span className="line-ref" title={kind === 'line' ? 'Line number' : 'Drawing number'}>{tag}</span>;
+}
+
+/** Filled once at start (desktop): which office tools are on this PC. */
+export const toolsInstalled: Record<string, boolean> = {};
+void window.dex?.installedTools?.().then((t) => Object.assign(toolsInstalled, t)).catch(() => {});
+
 type Inline = { re: RegExp; render: (m: RegExpExecArray, key: string, ctx: Ctx) => ReactNode };
 interface Ctx { users: Map<string, PublicUser>; meId: string }
 
@@ -24,11 +51,14 @@ const INLINE: Inline[] = [
   { re: /(?<![\w*])\*([^*\n]+)\*(?![\w*])/y, render: (m, k, ctx) => <em key={k}>{inline(m[1], ctx, k)}</em> },
   { re: /(?<![\w_])_([^_\n]+)_(?![\w_])/y, render: (m, k, ctx) => <em key={k}>{inline(m[1], ctx, k)}</em> },
   { re: /https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k) => <a key={k} href={m[0]} target="_blank" rel="noreferrer noopener">{m[0]}</a> },
-  { re: new RegExp(LINE_REF_RE.source, 'y'), render: (m, k) => <span key={k} className="line-ref" title="Line number">{m[0]}</span> },
+  // links for the other office tools become chips that open the tool
+  { re: /(?:projectopener|dexterity|sleuth|datum|dexconnect):\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k) => <ToolLink key={k} url={m[0]} /> },
+  { re: new RegExp(LINE_REF_RE.source, 'y'), render: (m, k) => <TagRef key={k} tag={m[0]} kind="line" /> },
+  { re: new RegExp(DRAWING_RE.source, 'y'), render: (m, k) => <TagRef key={k} tag={m[0]} kind="drawing" /> },
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_h0-9\\]/;
+const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];

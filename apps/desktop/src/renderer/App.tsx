@@ -5,7 +5,7 @@ import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
 import logo from './app-icon.svg';
-import { Avatar, Icon, ToastHost, presenceFor, setPresenceSource, useToast } from './ui.tsx';
+import { Avatar, Dialog, Icon, ToastHost, presenceFor, setPresenceSource, useToast } from './ui.tsx';
 import type { Availability } from '@dex/core';
 import type { IconName } from './ui.tsx';
 import { RequiredUpdate, UpdatePill, WhatsNew } from './UpdateUi.tsx';
@@ -189,10 +189,10 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const online = new Set(session.online);
   setPresenceSource(live ? session.online : [], session.away ?? [], session.users, session.inRoom ?? []);
   const toast = useToast();
-  const setAvailability = (availability: Availability) => {
-    setMenu(false);
-    void window.dex.request('me.update', { availability }).then(() => toast(`You're now shown as ${AVAILABILITY.find((a) => a.id === availability)!.label.toLowerCase()}`)).catch((e: Error) => toast(e.message, true));
+  const setAvailability = (availability: Availability, until: number | null = null) => {
+    void window.dex.request('me.update', { availability, until }).then(() => toast(`You're now shown as ${AVAILABILITY.find((a) => a.id === availability)!.label.toLowerCase()}${until ? ` until ${new Date(until).toLocaleTimeString([], { weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined, hour: 'numeric', minute: '2-digit' })}` : ''}`)).catch((e: Error) => toast(e.message, true));
   };
+  const [ooo, setOoo] = useState(false);
 
   // admins see a live count of devices waiting for approval
   useEffect(() => {
@@ -297,12 +297,21 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 </div>
                 <div className="menu-label label">Show me as</div>
                 {AVAILABILITY.map((a) => (
-                  <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => setAvailability(a.id)}>
+                  <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => { setMenu(a.id !== 'available'); setAvailability(a.id); }}>
                     <span className={`avail-ring ${a.id}`} />
-                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{a.hint}</span></span>
+                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Until ${new Date(session.me.availabilityUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : a.hint}</span></span>
                     {session.me.availability === a.id && <Icon name="check" size={15} />}
                   </button>
                 ))}
+                {session.me.availability !== 'available' && (
+                  <div className="avail-for">
+                    <span className="faint">For</span>
+                    {([[3600_000, '1 hour'], [2 * 3600_000, '2 hours'], [(() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime() - Date.now(); })(), 'Until tomorrow'], [0, 'Until I change it']] as Array<[number, string]>).map(([ms, label]) => (
+                      <button key={label} className="when-chip" onClick={() => { setMenu(false); setAvailability(session.me.availability, ms ? Date.now() + ms : null); }}>{label}</button>
+                    ))}
+                  </div>
+                )}
+                <button role="menuitem" disabled={!live} onClick={() => { setMenu(false); setOoo(true); }}><Icon name="calendar" size={16} />{session.me.ooo ? `Out of office until ${new Date(session.me.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Out of office…'}</button>
                 <div className="menu-sep" />
                 <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences<span className="kbd">Ctrl ,</span></button>
                 {isAdmin && (
@@ -365,11 +374,39 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
+      {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}
       <ReminderCards users={users} meId={session.me.id} jump={jump} />
       <MeetingCards users={users} meId={session.me.id} />
       {share && <ShareDialog req={share} session={session} onDone={(convId) => { setShare(null); if (convId) { const c = conversations.get(convId); if (c) openConversation(c.id, c.kind); } }} />}
       <RequiredUpdate state={state} />
     </div>
+  );
+}
+
+function OutOfOffice({ session, onClose }: { session: Session; onClose: () => void }) {
+  const toast = useToast();
+  const cur = session.me.ooo;
+  const [until, setUntil] = useState(() => new Date(cur?.until ?? Date.now() + 7 * 86400_000).toISOString().slice(0, 10));
+  const [message, setMessage] = useState(cur?.message ?? '');
+  const [delegate, setDelegate] = useState(cur?.delegateId ?? '');
+  const save = (off = false) => void window.dex.request('me.update', { ooo: off ? null : { until: new Date(`${until}T23:59:00`).getTime(), message: message || null, delegateId: delegate || null } })
+    .then(() => { toast(off ? 'Welcome back' : 'Out of office is on'); onClose(); }).catch((e: Error) => toast(e.message, true));
+  return (
+    <Dialog title="Out of office" onClose={onClose} narrow>
+      <p className="muted" style={{ margin: 0 }}>Colleagues see this on your profile and when they message you directly.</p>
+      <div className="field"><label htmlFor="ooo-until">Back on</label><input id="ooo-until" className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={until} onChange={(e) => setUntil(e.target.value)} /></div>
+      <div className="field"><label htmlFor="ooo-msg">Note</label><input id="ooo-msg" className="input" maxLength={300} placeholder="At the Jamnagar site, checking messages in the evening" value={message} onChange={(e) => setMessage(e.target.value)} /></div>
+      <div className="field"><label htmlFor="ooo-del">For anything urgent, contact</label>
+        <select id="ooo-del" className="input" value={delegate} onChange={(e) => setDelegate(e.target.value)}>
+          <option value="">No one</option>
+          {session.users.filter((u) => u.role !== 'bot' && u.id !== session.me.id).map((u) => <option key={u.id} value={u.id}>{u.displayName}</option>)}
+        </select></div>
+      <div className="dialog-actions">
+        <span />
+        {cur && <button className="btn ghost" onClick={() => save(true)}>I'm back</button>}
+        <button className="btn primary" onClick={() => save()}>{cur ? 'Update' : 'Turn on'}</button>
+      </div>
+    </Dialog>
   );
 }
 

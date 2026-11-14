@@ -197,9 +197,23 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <span>The office hub is off. Messages go straight to {others.every((o) => reachable.includes(o)) ? (others.length === 1 ? title.split(' ')[0] : 'everyone here') : 'colleagues whose PCs are on'} over the office network, encrypted, and are added to the history when the hub is back.</span>
           </div>
         )}
+        {conv.archived && (
+          <div className="direct-banner archived-banner" role="status">
+            <Icon name="archive" size={15} /><span>This Space is archived: you can read it, but not post.</span>
+            {(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) && <button className="btn sm" onClick={() => void window.dex.request('conv.archive', { convId, archived: false }).then(() => toast('Space restored')).catch((e: Error) => toast(e.message, true))}>Restore</button>}
+          </div>
+        )}
+        {conv.kind === 'direct' && others.map((id) => users.get(id)).filter((u) => u?.ooo).map((u) => (
+          <div key={u!.id} className="direct-banner ooo-banner" role="status">
+            <Icon name="calendar" size={15} />
+            <span><b>{u!.displayName.split(' ')[0]}</b> is out of office until {new Date(u!.ooo!.until).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}.{u!.ooo!.message ? ` “${u!.ooo!.message}”` : ''}{u!.ooo!.delegateId ? ` For anything urgent, contact ${users.get(u!.ooo!.delegateId)?.displayName ?? 'a colleague'}.` : ''}</span>
+          </div>
+        ))}
         <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
         <TypingLine k={tlKey(convId)} users={users} />
-        <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={`Message ${conv.kind === 'space' ? title : others.length === 1 ? title.split(' ')[0] : 'the group'}`} />
+        {conv.archived ? null : conv.postPolicy === 'moderators' && !(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) ? (
+          <div className="dock-locked faint"><Icon name="lock" size={14} />Only moderators post here. You can reply to a message in its side-track.</div>
+        ) : <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={`Message ${conv.kind === 'space' ? title : others.length === 1 ? title.split(' ')[0] : 'the group'}`} />}
       </section>
       {side?.kind === 'track' && <SideTrack ctx={ctx} parentId={side.parentId} live={live} onClose={() => setSide(null)} />}
       {side?.kind === 'pins' && <PinsPanel ctx={ctx} onClose={() => setSide(null)} onJump={(id) => setSide({ kind: 'track', parentId: id })} />}
@@ -870,11 +884,34 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
             <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ?? u.title ?? u.account}</span></span>
           </div>
         ))}
+        {c.kind === 'space' && (ctx.isAdmin || c.createdBy === ctx.meId || c.moderators.includes(ctx.meId)) && <SpaceSettings c={c} users={members} />}
         {c.kind === 'space' && !c.everyone && (
           <button className="btn ghost danger" style={{ marginTop: 16 }} onClick={() => { if (confirm(`Leave ${c.name}?`)) void window.dex.request('conv.leave', { convId: c.id }).catch((e: Error) => toast(e.message, true)); }}>Leave this Space</button>
         )}
       </div>
     </aside>
+  );
+}
+
+function SpaceSettings({ c, users }: { c: Conversation; users: PublicUser[] }) {
+  const toast = useToast();
+  const act = (p: Promise<unknown>, ok: string) => void p.then(() => toast(ok)).catch((e: Error) => toast(e.message, true));
+  return (
+    <div className="space-settings">
+      <div className="label">Space settings</div>
+      <label className="check-line"><input type="checkbox" checked={c.postPolicy === 'moderators'} onChange={(e) => act(window.dex.request('conv.settings', { convId: c.id, postPolicy: e.target.checked ? 'moderators' : 'everyone' }), e.target.checked ? 'Only moderators post now' : 'Everyone can post')} />Announcements: only moderators start messages</label>
+      <div className="faint" style={{ fontSize: 12 }}>Moderators can post when announcements are on, pin and remove messages, and change the Space.</div>
+      <div className="mod-list">
+        {users.filter((u) => u.role !== 'bot').map((u) => (
+          <label key={u.id} className="check-line">
+            <input type="checkbox" checked={c.moderators.includes(u.id) || u.id === c.createdBy} disabled={u.id === c.createdBy}
+              onChange={(e) => act(window.dex.request('conv.settings', { convId: c.id, moderators: e.target.checked ? [...c.moderators, u.id] : c.moderators.filter((x) => x !== u.id) }), 'Moderators updated')} />
+            {u.displayName}{u.id === c.createdBy ? ' (created it)' : ''}
+          </label>
+        ))}
+      </div>
+      {!c.everyone && <button className="btn" onClick={() => { if (confirm(`Archive ${c.name}? It becomes read-only for everyone until it is restored.`)) act(window.dex.request('conv.archive', { convId: c.id, archived: true }), 'Space archived'); }}><Icon name="archive" size={15} />Archive this Space</button>}
+    </div>
   );
 }
 
