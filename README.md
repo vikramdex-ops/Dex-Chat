@@ -19,7 +19,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Area | Built |
 | --- | --- |
 | Sign-in | Windows account, per-device Ed25519 keys (DPAPI-sealed), admin approval with matching device codes, pinned TLS |
-| Messaging | Spaces (open / private), Direct (1:1 and groups), side-tracks, @mentions and @everyone, reactions, pins, edit / delete, Seen receipts, typing, drafts, formatting, line-number references |
+| Messaging | Spaces (open / private), Direct (1:1 and groups), side-tracks, @mentions and @everyone, reactions (with office emoji), pins, edit / delete, quote, reply privately, copy a link to a message, select several to forward, copy, save or delete, Seen receipts, typing, drafts, formatting, line-number references |
 | Desk | Saved messages, reminders (on a message or standalone, for yourself or a colleague, repeating, snooze), messages scheduled to send later (sent by the hub even with your PC off), forwarding with credit, mark unread, polls (single or multiple choice, anonymous, closing time) |
 | Organisation | Departments (nested, with heads), designations, reporting lines, extension, phone, seat, joining date, birthday and custom fields; an org chart; profiles beside the Directory; CSV import from Excel or Dexterity Sheets that also covers people who have not joined yet |
 | Remote work | Check in from the title bar (office, home, site or client), breaks, change place during the day, live "who's working" on Pulse and on profiles, your timesheet on the Desk, team attendance for managers and administrators, CSV export; forgotten check-outs close at the last activity |
@@ -30,15 +30,16 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Notes, forms, whiteboards | Shared notes per conversation and personal notes on the Desk (save as you type, never overwrite a colleague, edit in Slate), forms with answers and CSV export, live whiteboards that can be posted as an image, voice notes |
 | Privacy | Direct messages are end-to-end encrypted (X25519 + AES-256-GCM, signed by each device's Ed25519 key); the hub only stores sealed envelopes; safety codes to compare in person; your other devices hand history to a new one |
 | Hub-off mode | If the hub PC is down, PCs find each other on the network and pass encrypted Direct messages straight across; everything written meanwhile is added to the hub's history when it is back |
-| Files | Drag, drop, paste or attach up to 1 GB; stored once on the hub; inline images with a viewer; Open / Save; Files panel |
-| Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
-| Search | Ctrl+K across people, conversations, commands and message text (FTS5), jump to the message |
+| Files and media | Drag, drop, paste or attach up to the office limit (1 GB by default); stored once on the hub; inline images with a viewer; voice notes, video messages and screen recordings that play inline; Open / Save; Files panel |
+| Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, recording (everyone is told; saved on the PC or shared in the conversation), mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
+| Search | Ctrl+K across people, conversations, commands and message text; a Search screen (Ctrl+Shift+F or a conversation's header) with filters for person, conversation, Direct or Spaces, dates and files; text in images found by OCR on the sender's PC (Spaces only) |
 | Presence | Available, Busy, Do not disturb, Invisible; automatic Away on idle or screen lock; beacon rings |
-| Notifications | Native toasts that open the conversation, taskbar / dock badge, mute per conversation |
-| Admin | Control room: approvals, devices, roles, integrations (bot tokens), audit log, update mirror status |
+| Notifications | Native toasts that open the conversation (Android too, with a background connection), taskbar / dock badge, mute per conversation, notify about everything / Direct and mentions / nothing, a choice of generated sounds, hide message text |
+| Admin | Control room: approvals, devices, roles, organisation, guests, compliance, policies (edit window, upload limit, PC-to-PC fallback, call recording, office emoji), usage report, integrations, audit log, update mirror status |
 | Integrations | Bot API, slash commands with signed webhooks, `dexconnect://share` links; Hopper notices, Slate notes, and Share to Dexterity Connect in Project Opener, Sleuth, Datum and Dexterity Sheets, whose links open back in the tool (see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)) |
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Phones | The same app on Android: images and voice notes inline, open files in another app, save to Downloads, attach from the phone, a layout made for small screens |
+| Comfort | Preferences for compact density and text size (also Ctrl+= / Ctrl+-), a keyboard shortcuts sheet (Ctrl+/), Alt+↑/↓ between conversations, light and dark themes |
 | Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
 **Next:** the remaining parity items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) (OCR, call recording, video messages, custom emoji).
@@ -85,9 +86,10 @@ npm run desktop:dev    # build and launch the desktop app
 ```
 apps/hub        hub service, its tests, Windows service packaging
 apps/desktop    Electron main process, preload bridge, React UI
-packages/core   protocol, identity, discovery, hub client (+ tests)
+apps/mobile     Android app (Capacitor) and its native LAN, file and notification plugin
+packages/core   protocol, identity, discovery, hub client, end-to-end encryption (+ tests)
 brand/          Dexterity International logo files and colour tokens
-docs/           blueprint and Cliq feature inventory
+docs/           blueprint, design language, Cliq feature inventory, integrations, third-party licences
 ```
 
 Internal software. © Dexterity Design Services Pvt. Ltd. All rights reserved.

@@ -6,7 +6,7 @@ import { startPolicy } from './policy.ts';
 import { startEmoji } from './emoji.tsx';
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
-import type { AppState } from '../shared/bridge.ts';
+import type { AppState, MessageSound } from '../shared/bridge.ts';
 import logo from './app-icon.svg';
 import { Avatar, Dialog, Icon, ToastHost, presenceFor, setPresenceSource, useToast } from './ui.tsx';
 import type { Availability } from '@dex/core';
@@ -259,6 +259,16 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       }
       else if (k === '/') { e.preventDefault(); setShortcuts(true); }
       else if (k === 'f' && e.shiftKey) { e.preventDefault(); openSearch({}); }
+      else if (k === 'm' && e.shiftKey) {
+        // mute or bring back notification sounds
+        e.preventDefault();
+        const cur = state.settings.sound;
+        let back: MessageSound = 'chime';
+        try { back = (localStorage.getItem('dex-sound-before-mute') as MessageSound | null) ?? 'chime'; } catch { /* storage off */ }
+        if (cur !== 'none') { try { localStorage.setItem('dex-sound-before-mute', cur); } catch { /* storage off */ } }
+        void window.dex.setSettings({ sound: cur === 'none' ? back : 'none' });
+        toast(cur === 'none' ? 'Notification sounds on' : 'Notification sounds off (Ctrl+Shift+M to turn back on)');
+      }
       else if (k === ',') { e.preventDefault(); setSheet('preferences'); }
       else {
         const n = Number(e.key);
@@ -267,7 +277,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [palette]);
+  }, [palette, state.settings.sound]);
 
   // dexconnect://people/<id>, dexconnect://admin, dexconnect://settings
   useEffect(() => window.dex.onDeepLink((url) => {

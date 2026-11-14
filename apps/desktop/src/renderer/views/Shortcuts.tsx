@@ -27,6 +27,7 @@ const GROUPS: Array<{ title: string; keys: Array<[string[], string]> }> = [
     [['Ctrl', '='], 'Larger text'],
     [['Ctrl', '-'], 'Smaller text'],
     [['Ctrl', '0'], 'Default text size'],
+    [['Ctrl', 'Shift', 'M'], 'Notification sounds off or on'],
   ] },
 ];
 
