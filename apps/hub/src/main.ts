@@ -8,6 +8,10 @@
 import path from 'node:path';
 import { Hub } from './hub.ts';
 
+// node:sqlite prints an "experimental" notice on every start; it is stable for our use.
+process.removeAllListeners('warning');
+process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') console.warn(w); });
+
 const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 } as const;
 type Level = keyof typeof LEVELS;
 const threshold = LEVELS[(process.env.DEXCONNECT_LOG_LEVEL as Level) ?? 'info'] ?? LEVELS.info;
@@ -28,13 +32,13 @@ const hub = new Hub({
   log,
 });
 
-try {
-  await hub.start();
-  log('info', 'Dexterity Connect Hub ready', { name: hub.info.name, dataDir: baseDir });
-} catch (err) {
-  log('error', 'hub failed to start', { error: (err as Error).message });
-  process.exit(1);
-}
+hub.start().then(
+  () => log('info', 'Dexterity Connect Hub ready', { name: hub.info.name, dataDir: baseDir }),
+  (err: Error) => {
+    log('error', 'hub failed to start', { error: err.message });
+    process.exit(1);
+  },
+);
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {

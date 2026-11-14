@@ -12,5 +12,8 @@
     "@dex/core": "*",
     "node-forge": "^1.4.3",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "postject": "^1.0.0-alpha.6"
   }
 }

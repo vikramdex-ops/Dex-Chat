@@ -1,11 +1,11 @@
 name: build
 
+# Every push builds tested installers. Version = <major.minor from package.json>.<run number>,
+# so every build is newer than the last (the in-app updater relies on this).
 on:
   push:
-    branches:
-      - "**"
-    tags:
-      - "v*"
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -15,73 +15,90 @@ concurrency:
 
 jobs:
   test:
-    name: tests
+    name: typecheck + tests
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Run the API suite
-        run: node --test tests/
-
-  installers:
-    name: installers (${{ matrix.os }})
-    needs: test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: --win nsis portable
-            artifact: windows
-          - os: ubuntu-latest
-            target: --linux AppImage deb
-            artifact: linux
-          - os: macos-latest
-            target: --mac dmg
-            artifact: macos
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-      - name: Install build tooling
-        run: npm ci
-      - name: Build installers
-        run: npx electron-builder ${{ matrix.target }} --publish never
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  desktop:
+    name: desktop (${{ matrix.name }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            args: --win nsis
+            files: apps/desktop/release/*.exe
+          - name: macos
+            os: macos-latest
+            args: --mac dmg
+            files: apps/desktop/release/*.dmg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Stamp build version
+        shell: bash
+        run: |
+          BASE=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
+          VERSION="$BASE.${{ github.run_number }}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          npm version "$VERSION" --no-git-tag-version -w @dex/desktop
+      - name: Build app
+        run: npm run build -w @dex/desktop
+      - name: Package installer
+        working-directory: apps/desktop
+        run: npx electron-builder ${{ matrix.args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: List what was produced
-        shell: bash
-        run: ls -la dist || dir dist
       - uses: actions/upload-artifact@v4
         with:
-          name: lattice-${{ matrix.artifact }}
+          name: dexterity-connect-${{ matrix.name }}-${{ env.VERSION }}
+          path: ${{ matrix.files }}
           if-no-files-found: error
           retention-days: 30
-          path: |
-            dist/*.exe
-            dist/*.blockmap
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.deb
 
-  release:
-    name: publish release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: installers
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  hub:
+    name: hub (windows service)
+    needs: test
+    runs-on: windows-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          path: artifacts
-      - uses: softprops/action-gh-release@v2
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Build single-file hub
+        run: node apps/hub/scripts/build.mjs --sea
+      - name: Assemble service package
+        shell: pwsh
+        run: |
+          $base = (node -p "require('./apps/hub/package.json').version.split('.').slice(0,2).join('.')")
+          $version = "$base.${{ github.run_number }}"
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $out = "hub-package/DexterityConnectHub"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item apps/hub/dist/DexterityConnectHub.exe $out
+          Copy-Item apps/hub/packaging/* $out
+          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe" -OutFile "$out/DexterityConnectHubService.exe"
+          Compress-Archive -Path $out -DestinationPath "hub-package/DexterityConnectHub-$version-win-x64.zip"
+      - uses: actions/upload-artifact@v4
         with:
-          generate_release_notes: true
-          files: artifacts/**/*
+          name: dexterity-connect-hub-${{ env.VERSION }}
+          path: hub-package/*.zip
+          if-no-files-found: error
+          retention-days: 30

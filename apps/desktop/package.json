@@ -1,0 +1,106 @@
+{
+  "name": "@dex/desktop",
+  "productName": "Dexterity Connect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dexterity Connect desktop app",
+  "author": "Dexterity International",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs && vite build",
+    "dev": "node scripts/build.mjs && electron .",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "@dex/core": "*",
+    "@fontsource-variable/outfit": "^5.3.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "45.3.2",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.8"
+  },
+  "build": {
+    "appId": "in.co.dexteritydesign.connect",
+    "productName": "Dexterity Connect",
+    "copyright": "Dexterity International",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist-renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Dexterity Connect",
+        "schemes": [
+          "dexconnect"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "DexterityConnect-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dexterity Connect",
+      "runAfterFinish": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Network",
+      "artifactName": "DexterityConnect-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.business",
+      "icon": "build/icon.png",
+      "artifactName": "DexterityConnect-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Dexterity Connect"
+    }
+  }
+}
