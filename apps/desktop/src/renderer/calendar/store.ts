@@ -4,8 +4,7 @@ import { calPrefs } from './tz.ts';
 import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { CalEvent, Occurrence, PublicUser, Venue } from '@dex/core';
-import { addConversation } from '../chat/store.ts';
-import { callState, joinRoom, startCall } from '../rooms/engine.ts';
+import { joinMeeting as joinById } from '../rooms/engine.ts';
 import { timeOpts } from '../time.ts';
 
 interface CalState { venues: Venue[]; version: number; soon: Occurrence[] }
@@ -48,20 +47,11 @@ export function dismissSoon(o: Occurrence): void {
   set({ soon: state.soon.filter((x) => x !== o) });
 }
 
-/** Join a meeting's call: its conversation's Room, or a Direct group with the attendees. */
+/** Join a meeting's call: every Calendar meeting held as a call has a meeting ID; its lobby and host apply. */
 export async function joinMeeting(ev: CalEvent, video = true): Promise<string> {
-  let convId = ev.convId;
-  if (!convId) {
-    const others = ev.attendees.map((a) => a.userId).filter((u) => u !== meId);
-    if (!others.length) throw new Error('Invite someone to hold a call.');
-    const c = await window.dex.request('conv.create', { kind: 'direct', members: others });
-    addConversation(c);
-    convId = c.id;
-  }
-  const active = callState().active.get(convId);
-  if (active && active.participants.length) await joinRoom(active.id, video);
-  else await startCall(convId, video);
-  return convId;
+  const m = await window.dex.request('meet.event', { eventId: ev.id });
+  await joinById(m.id, video);
+  return m.id;
 }
 
 // ------------------------------------------------------------------ dates

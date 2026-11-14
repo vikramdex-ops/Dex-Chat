@@ -2,6 +2,7 @@
 // answer and join, and the dialog to plan one with people, a conference room and a call.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CalEvent, Conversation, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
+import { formatMeetingId, meetingLink } from '@dex/core';
 import { Avatar, Dialog, Icon, Segmented, ToggleRow, presenceFor, useToast } from '../ui.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
@@ -254,7 +255,7 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
           <div><Icon name="globe" size={16} /><span>{timeIn(occ.startAt, ev.timeZone, timeOpts())} – {timeIn(occ.endAt, ev.timeZone, timeOpts())} in {zoneName(ev.timeZone)} <span className="faint">({zoneOffsetLabel(ev.timeZone, occ.startAt)})</span></span></div>
         )}
         {(venue || ev.location) && <div><Icon name="home" size={16} /><span>{venue ? `${venue.name}${venue.capacity ? ` · seats ${venue.capacity}` : ''}` : ev.location}</span></div>}
-        {ev.online && <div><Icon name="video" size={16} /><span>Call in Dexterity Connect</span></div>}
+        {ev.online && <MeetingLine eventId={ev.id} />}
         {conv && <div><Icon name={conv.kind === 'space' ? 'grid' : 'chat'} size={16} /><button className="link" onClick={() => { onClose(); openConv(conv.id); }}>{convTitle(conv, users, meId)}</button></div>}
         <div><Icon name="user" size={16} /><span>Organised by {ev.organizerId === meId ? 'you' : users.get(ev.organizerId)?.displayName ?? 'a former member'}</span></div>
       </div>
@@ -281,6 +282,19 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
         </div>
       )}
     </Dialog>
+  );
+}
+
+/** A meeting held as a call: its meeting ID and link, to copy into an invitation or a message. */
+function MeetingLine({ eventId }: { eventId: string }) {
+  const toast = useToast();
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => { void window.dex.request('meet.event', { eventId }).then((m) => setId(m.id)).catch(() => setId(null)); }, [eventId]);
+  return (
+    <div>
+      <Icon name="video" size={16} />
+      <span>Call in Dexterity Connect{id && <> · <span className="mono">ID {formatMeetingId(id)}</span> <button className="link" onClick={() => void navigator.clipboard.writeText(meetingLink(id)).then(() => toast('Meeting link copied'))}>Copy link</button></>}</span>
+    </div>
   );
 }
 
