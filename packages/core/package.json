@@ -18,7 +18,10 @@
     "./dlp": "./src/dlp.ts",
     "./restyle": "./src/restyle.ts",
     "./flows": "./src/flows.ts",
-    "./flow-describe": "./src/flow-describe.ts"
+    "./flow-describe": "./src/flow-describe.ts",
+    "./botflows": "./src/botflow-engine.ts",
+    "./miniapp": "./src/miniapp.ts",
+    "./bots": "./src/bots.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",
