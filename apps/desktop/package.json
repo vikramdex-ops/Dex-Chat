@@ -119,5 +119,8 @@
       "title": "Dexterity Connect"
     },
     "publish": null
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0"
   }
 }

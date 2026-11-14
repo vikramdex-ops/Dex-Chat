@@ -18,6 +18,7 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | wasm-feature-detect | Choosing the OCR engine build | Apache-2.0 |
 | Outfit (variable font, via Fontsource) | Headings | OFL-1.1 |
 | qrcode-generator | QR codes for setting up phones | MIT |
+| jsQR | Reading pairing QR codes with the camera | Apache-2.0 |
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
 | WinSW | Running the hub as a Windows service | MIT |
 

@@ -1,5 +1,6 @@
 // Outside the office: a real gateway (the Cloudflare Worker, run locally in Cloudflare's workerd
 // runtime by wrangler), the hub connected to it, and devices that cannot reach the office network.
+import { parsePairCode } from '@dex/core/remote';
 import { test, after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -139,6 +140,19 @@ test('from outside the office: join, approval, messages both ways, files, and th
   const wrong = outside('wrong', hub, await deadPort(), 'AA:'.repeat(31) + 'AA');
 
   await until(wrong.c, (s) => s.kind === 'identity-mismatch', 15000);
+
+  // a person's own phone pairs from outside with their code, even with joins from outside off
+  const made = await asha.c.request('pair.create', { kind: 'phone' });
+  const pairInfo = parsePairCode(made.code)!;
+  assert.equal(pairInfo.url, gateway!.url);
+  const pid = createIdentity();
+  const phone = new HubClient({ identity: pid, account: { username: 'phone-x', domain: 'PHONE', displayName: 'Phone', hostname: 'Pixel 8' } });
+  phone.setPair(pairInfo.token);
+  cleanups.push(() => phone.disconnect());
+  phone.connect({ host: '127.0.0.1', port: await deadPort(), fp: pairInfo.fp, remote: { url: pairInfo.url!, hubId: pairInfo.hubId } });
+  await until(phone, (s) => s.kind === 'ready', 15000);
+  assert.equal(me(phone), me(asha.c), 'the phone is Asha');
+  assert.equal(phone.viaGateway, true);
 
   // turning remote access off disconnects everyone outside at once
   await owner.request('admin.remote.set', { enabled: false });

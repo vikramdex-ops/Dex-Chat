@@ -22,6 +22,7 @@ const bridge: DexBridge = {
   onHubEvent: (cb) => subscribe('hub:event', cb),
   onDeepLink: (cb) => subscribe('app:deeplink', cb),
   join: (req) => ipcRenderer.invoke('app:join', req),
+  readClipboard: () => ipcRenderer.invoke('app:clipboard'),
   forgetHub: () => ipcRenderer.invoke('app:forgetHub'),
   rescan: () => ipcRenderer.invoke('app:rescan'),
   request: async (op, data) => {

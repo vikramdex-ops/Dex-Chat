@@ -54,6 +54,8 @@ export interface SessionOptions {
   maxBackoffMs?: number;
   /** Guest invite code sent with the first registration. */
   invite?: string;
+  /** Pairing token sent with the first registration. */
+  pair?: string;
 }
 
 interface Pending {
@@ -81,7 +83,7 @@ export class HubSession extends Emitter {
 
   constructor(opts: SessionOptions) {
     super();
-    this.opts = { ...opts, requestTimeoutMs: opts.requestTimeoutMs ?? 15000, maxBackoffMs: opts.maxBackoffMs ?? 15000, invite: opts.invite ?? '' };
+    this.opts = { ...opts, requestTimeoutMs: opts.requestTimeoutMs ?? 15000, maxBackoffMs: opts.maxBackoffMs ?? 15000, invite: opts.invite ?? '', pair: opts.pair ?? '' };
   }
 
   get session(): Session | null {
@@ -94,6 +96,10 @@ export class HubSession extends Emitter {
 
   setInvite(code: string): void {
     this.opts.invite = code;
+  }
+
+  setPair(token: string): void {
+    this.opts.pair = token;
   }
 
   connect(target: HubTarget): void {
@@ -265,7 +271,7 @@ export class HubSession extends Emitter {
         break;
       }
       case 'unknown':
-        this.send({ t: 'register', deviceId: this.opts.deviceId, publicKey: this.opts.publicKey, account: this.opts.account, sig: await this.proof(), ...(this.opts.invite ? { invite: this.opts.invite } : {}) });
+        this.send({ t: 'register', deviceId: this.opts.deviceId, publicKey: this.opts.publicKey, account: this.opts.account, sig: await this.proof(), ...(this.opts.invite ? { invite: this.opts.invite } : {}), ...(this.opts.pair ? { pair: this.opts.pair } : {}) });
         break;
       case 'pending':
         this.setState({ kind: 'pending', target, position: frame.position });

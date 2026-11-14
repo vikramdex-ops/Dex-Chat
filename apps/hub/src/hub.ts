@@ -23,6 +23,8 @@ import { Calendar, CalError } from './calendar.ts';
 import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
+import { Pairing, lanAddresses } from './pairing.ts';
+import { pairCode, pairLink } from '@dex/core/remote';
 import { Emoji, EmojiError } from './emoji.ts';
 import { RemoteGateway } from './remote.ts';
 import { Ice } from './ice.ts';
@@ -109,6 +111,7 @@ export class Hub {
   readonly guests: Guests;
   readonly compliance: Compliance;
   readonly policies: Policies;
+  readonly pairing: Pairing;
   readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
@@ -149,6 +152,7 @@ export class Hub {
     });
     this.compliance = new Compliance(this.store, this.messaging, this.files);
     this.policies = new Policies(this.store, this.files, (p) => this.emit('policy.updated', p));
+    this.pairing = new Pairing(this.store);
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
@@ -553,6 +557,7 @@ export class Hub {
 
   private onRegister(conn: Conn, frame: Extract<ClientFrame, { t: 'register' }>): void {
     if (conn.ready) return;
+    if (typeof frame.pair === 'string' && frame.pair && !this.store.device(String(frame.deviceId ?? ''))) { this.onPair(conn, frame); return; }
     if (conn.remote && !this.store.device(String(frame.deviceId ?? '')) && !this.remoteConfig().allowJoin) {
       this.send(conn, { t: 'rejected', reason: 'New devices join from the office network. Ask your administrator if you need to join from outside.' });
       conn.ws.close();
@@ -626,6 +631,33 @@ export class Hub {
     }
     this.continueAs(conn, device);
   }
+
+  /** A new device of someone who already has an approved one, carrying their pairing token. */
+  private onPair(conn: Conn, frame: Extract<ClientFrame, { t: 'register' }>): void {
+    const fail = (reason: string) => { this.send(conn, { t: 'rejected', reason }); conn.ws.close(); };
+    const account = validAccount(frame.account);
+    if (!account || typeof frame.publicKey !== 'string' || deviceIdFor(frame.publicKey) !== frame.deviceId) { fail('Malformed registration.'); return; }
+    if (!this.proofOk(conn, frame.deviceId, frame.publicKey, frame.sig)) { fail('This device could not prove its identity.'); return; }
+    if (this.policies.get().personalDevices === false) { fail('Your administrator has turned off adding personal devices. Ask them to approve this device instead.'); return; }
+    // guessing tokens is pointless (144 random bits) but keep failed tries cheap and rare
+    const hour = Date.now() - 3600_000;
+    this.pairFails = this.pairFails.filter((t) => t > hour);
+    if (this.pairFails.length >= 60) { fail('Too many pairing attempts. Try again in an hour.'); return; }
+    const r = this.pairing.consume(String(frame.pair), frame.deviceId);
+    if ('error' in r) { this.pairFails.push(Date.now()); fail(r.error); return; }
+    const user = this.store.userById(r.userId);
+    if (!user || user.role === 'bot' || !this.store.devices().some((x) => x.userId === user.id && x.status === 'approved')) { fail('That account is not active any more.'); return; }
+    const label = `${account.hostname || (r.kind === 'phone' ? 'Phone' : 'Laptop')}`.slice(0, 60);
+    const device = this.store.createDevice(frame.deviceId, user.id, frame.publicKey, label, 'approved');
+    this.store.audit(user.id, 'device.paired', device.id, { kind: r.kind, hostname: label, ip: conn.ip, remote: !!conn.remote });
+    this.log('info', 'device paired', { user: user.account, kind: r.kind, hostname: label });
+    this.emit('me.devicePaired', device, (c) => c.userId === user.id);
+    this.emit('device.updated', device, (c) => this.isAdminConn(c));
+    conn.deviceId = device.id;
+    conn.userId = user.id;
+    this.continueAs(conn, device);
+  }
+  private pairFails: number[] = [];
 
   private isAdminConn(c: Conn): boolean {
     if (!c.userId) return false;
@@ -764,6 +796,37 @@ export class Hub {
         this.emit('user.updated', user);
         if (before.availability !== user.availability && (before.availability === 'invisible' || user.availability === 'invisible')) this.announcePresence(user.id);
         return user;
+      }
+
+      case 'pair.create': {
+        const me = this.store.userById(conn.userId!)!;
+        if (me.role === 'guest' || me.role === 'bot') throw new OpError('Guests add devices through an invite from an administrator.');
+        if (this.policies.get().personalDevices === false) throw new OpError('Your administrator has turned off adding personal devices.');
+        const kind = d.kind === 'laptop' ? 'laptop' : 'phone';
+        const t = this.pairing.create(me.id, kind);
+        const rc = this.remoteConfig();
+        const code = pairCode({ hubId: this.info.id, fp: this.fingerprint, name: this.info.name, lan: lanAddresses(this.port), url: rc.enabled ? rc.url : null, token: t.token, kind });
+        this.store.audit(me.id, 'pair.created', null, { kind });
+        return { code, link: pairLink(code), expiresAt: t.expiresAt } satisfies Ops['pair.create']['res'];
+      }
+
+      case 'me.devices': {
+        return this.store.devices().filter((x) => x.userId === conn.userId && (x.status === 'approved' || x.status === 'pending'))
+          .map((x) => ({ ...x, current: x.id === conn.deviceId, paired: this.pairing.isPaired(x.id) }))
+          .sort((a, b) => Number(b.current) - Number(a.current) || (b.lastSeen ?? b.createdAt) - (a.lastSeen ?? a.createdAt)) satisfies Ops['me.devices']['res'];
+      }
+
+      case 'me.devices.remove': {
+        const device = typeof d.deviceId === 'string' ? this.store.device(d.deviceId) : null;
+        if (!device || device.userId !== conn.userId) throw new OpError('Device not found.');
+        if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
+        const updated = this.store.setDeviceStatus(device.id, 'revoked', conn.userId!);
+        this.store.audit(conn.userId!, 'device.removedByOwner', device.id, { hostname: device.hostname });
+        for (const c of [...this.conns]) {
+          if (c.deviceId === device.id) { this.send(c, { t: 'rejected', reason: 'This device was removed from your account.' }); c.ws.close(); }
+        }
+        this.emit('device.updated', updated, (c) => this.isAdminConn(c));
+        return { ok: true } satisfies Ops['me.devices.remove']['res'];
       }
 
       case 'me.idle': {

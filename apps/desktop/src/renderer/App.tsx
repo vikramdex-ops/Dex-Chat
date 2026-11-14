@@ -291,6 +291,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   }, [palette, state.settings.sound]);
 
   // dexconnect://people/<id>, dexconnect://admin, dexconnect://settings
+  // one of my devices was added with a pairing code: tell me, in case it was not me
+  useEffect(() => window.dex.onHubEvent((name, data) => {
+    if (name !== 'me.devicePaired') return;
+    const host = (data as { hostname?: string }).hostname ?? 'A new device';
+    window.dex.notify('A device was added to your account', `${host} is now signed in as you. Not you? Remove it in Preferences → Your devices.`, 'dexconnect://settings');
+  }), []);
+
   useEffect(() => window.dex.onDeepLink((url) => {
     const shareReq = parseShare(url);
     if (shareReq) { setShare(shareReq); return; }

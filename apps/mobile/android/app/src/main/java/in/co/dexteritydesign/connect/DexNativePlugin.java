@@ -641,6 +641,24 @@ public class DexNativePlugin extends Plugin {
     }
 
     /** The dexconnect:// link the app was opened with (a tapped notification), once. */
+    /** The clipboard's text, so a pairing code copied on the download page is found on first launch. */
+    @PluginMethod
+    public void clipboardText(PluginCall call) {
+        JSObject ret = new JSObject();
+        try {
+            android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            String text = null;
+            if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
+                CharSequence t = cm.getPrimaryClip().getItemAt(0).coerceToText(getContext());
+                if (t != null && t.length() <= 4000) text = t.toString();
+            }
+            ret.put("text", text);
+        } catch (Exception e) {
+            ret.put("text", (String) null);
+        }
+        call.resolve(ret);
+    }
+
     @PluginMethod
     public void takeLaunchLink(PluginCall call) {
         if (launchLink == null && getActivity() != null) {

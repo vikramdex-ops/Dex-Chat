@@ -49,6 +49,13 @@ export function PoliciesAdmin() {
           <Toggle label="People can record calls" checked={p.allowRecording} onChange={(v) => save({ allowRecording: v })} />
         </div>
       </section>
+      <section className="card">
+        <div className="eyebrow">Personal devices</div>
+        <div className="setting" style={{ marginTop: 6 }}>
+          <div className="txt"><div>People can add their own phones and laptops</div><div className="faint">From Preferences → Your devices, with a one-time code that lasts 24 hours. The new device joins as that person without approval. Off: every new device waits for an administrator.</div></div>
+          <Toggle label="People can add their own phones and laptops" checked={p.personalDevices !== false} onChange={(v) => save({ personalDevices: v })} />
+        </div>
+      </section>
     </div>
   );
 }

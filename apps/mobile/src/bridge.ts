@@ -16,7 +16,7 @@ import { HubSession } from '@dex/core/session';
 import type { ClientState, HubTarget } from '@dex/core/session';
 import { chooseUpdate, feedUrl, parseFeed } from '@dex/core/feed';
 import type { Channel, UpdateChoice } from '@dex/core/feed';
-import { openRemoteSocket, parseSetupCode } from '@dex/core/remote';
+import { openRemoteSocket, parsePairCode, parseSetupCode } from '@dex/core/remote';
 import type { RawHandlers } from '@dex/core/remote';
 import { SETTINGS_EXTRA_DEFAULTS, type AppState, type DexBridge, type DiscoveredHub, type JoinRequest, type Phase, type Settings, type UpdateState } from '../../desktop/src/shared/bridge.ts';
 
@@ -40,6 +40,7 @@ interface DexNativePlugin {
   keepAlive(o: { on: boolean; text?: string }): Promise<void>;
   askNotifications(): Promise<void>;
   takeLaunchLink(): Promise<{ url: string | null }>;
+  clipboardText(): Promise<{ text: string | null }>;
   gwOpen(o: { id: string; url: string }): Promise<void>;
   gwSend(o: { id: string; data: string }): Promise<void>;
   fileWrite(o: { id: string; name: string; data: string; first?: boolean; done?: boolean }): Promise<{ path?: string }>;
@@ -268,6 +269,7 @@ class MobileApp {
     });
     s.on('state', (st: ClientState) => {
       if (st.kind === 'ready' || st.kind === 'pending') { this.config.hub = { ...st.target }; void this.save(); }
+      if (st.kind === 'ready' || st.kind === 'rejected') s.setPair('');
       if (st.kind === 'ready') {
         void this.checkForUpdates(false, true);
         void this.e2e.ready(st.session.me.id, st.session.users.filter((u) => u.role === 'bot').map((u) => u.id)).catch(() => {});
@@ -457,6 +459,12 @@ class MobileApp {
         } else if (req.address) {
           const m = req.address.trim().replace(/^\w+:\/\//, '').match(/^([\w.\-]+)(?::(\d+))?$/);
           if (m) target = { host: m[1], port: m[2] ? Number(m[2]) : DEFAULT_HUB_PORT };
+        } else if (req.pairCode) {
+          const p = parsePairCode(req.pairCode);
+          if (!p) throw new Error('That pairing code is not complete. Copy all of it, starting with DXP1-.');
+          const [host, port] = (p.lan[0] ?? ':0').split(':');
+          target = { host, port: Number(port), hubId: p.hubId, name: p.name, fp: p.fp, ...(p.url ? { remote: { url: p.url, hubId: p.hubId } } : {}) };
+          this.session.setPair(p.token);
         } else if (req.setupCode) {
           const r = parseSetupCode(req.setupCode);
           if (!r) throw new Error('That setup code is not complete. Copy all of it, starting with DXC1-.');
@@ -475,6 +483,7 @@ class MobileApp {
         this.push();
       },
       rescan: async () => { /* the discovery loop runs continuously */ },
+      readClipboard: async () => (await Native.clipboardText().catch(() => ({ text: null }))).text ?? '',
       request: async <K extends OpName>(op: K, data?: Ops[K]['req']) => {
         const out = await this.e2e.outgoing(op, data) as Ops[K]['req'];
         return this.e2e.incoming(await this.session.request(op, out));

@@ -168,6 +168,8 @@ export interface OfficePolicy {
   allowRecording: boolean;
   /** Spaces every newly approved person joins (besides the Office space). */
   defaultSpaces?: string[];
+  /** People may add their own phones and laptops with a pairing code (no approval needed). */
+  personalDevices?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -610,7 +612,7 @@ export type ServerFrame =
 // ---- client -> hub
 export type ClientFrame =
   | { t: 'auth'; deviceId: string; sig: string }
-  | { t: 'register'; deviceId: string; publicKey: string; account: WindowsAccount; sig: string; /** guest invite code */ invite?: string }
+  | { t: 'register'; deviceId: string; publicKey: string; account: WindowsAccount; sig: string; /** guest invite code */ invite?: string; /** pairing token from one of the person's own devices */ pair?: string }
   | { t: 'req'; id: string; op: string; data?: unknown };
 
 /**
@@ -631,6 +633,12 @@ export interface Ops {
   'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
   'admin.devices': { req: void; res: DeviceRecord[] };
+  /** A one-time code (24 h) that adds a phone or laptop to your account without an administrator. */
+  'pair.create': { req: { kind: 'phone' | 'laptop' }; res: { code: string; link: string; expiresAt: number } };
+  /** Your own devices. */
+  'me.devices': { req: void; res: Array<DeviceRecord & { current: boolean; paired: boolean }> };
+  /** Remove one of your own devices (it is signed out at once). */
+  'me.devices.remove': { req: { deviceId: string }; res: { ok: true } };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
   'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner' | 'bot'> }; res: PublicUser };
   'admin.revoke': { req: { deviceId: string }; res: DeviceRecord };
@@ -830,6 +838,8 @@ export interface Events {
   'policy.updated': OfficePolicy;
   'emoji.updated': CustomEmoji[];
   'org.updated': OrgInfo;
+  /** One of your devices was added with a pairing code. */
+  'me.devicePaired': DeviceRecord;
   'device.updated': DeviceRecord;
   /** The viewer's copy of a conversation changed (new member, name, unread counts...). */
   'conv.updated': Conversation;

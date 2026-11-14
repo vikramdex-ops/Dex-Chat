@@ -4,11 +4,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import type { Ops, RemoteView } from '@dex/core';
-import { setupCode } from '@dex/core/remote';
 import type { AppState } from '../../shared/bridge.ts';
 import { Dialog, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 
-function Qr({ text, size = 220 }: { text: string; size?: number }) {
+export function Qr({ text, size = 220 }: { text: string; size?: number }) {
   const svg = useMemo(() => {
     const q = qrcode(0, 'M');
     q.addData(text);
@@ -18,34 +17,9 @@ function Qr({ text, size = 220 }: { text: string; size?: number }) {
   return <div className="qr" style={{ width: size, height: size }} dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label="QR code with the setup link" />;
 }
 
-function SetupDialog({ info, onClose }: { info: Ops['remote.info']['res']; onClose: () => void }) {
-  const toast = useToast();
-  const code = setupCode({ url: info.url!, hubId: info.hubId, fp: info.fingerprint, name: info.name });
-  const link = `${info.url}/join#${code}`;
-  return (
-    <Dialog title="Set up a phone or laptop" onClose={onClose}>
-      <div className="setup-grid">
-        <Qr text={link} />
-        <ol className="setup-steps">
-          <li>Install Dexterity Connect on the phone or laptop.</li>
-          <li>Scan this code with the phone's camera, or open the app and choose <b>I'm outside the office</b> and paste the setup code.</li>
-          <li>An administrator approves the new device, as on the office network.</li>
-        </ol>
-      </div>
-      <textarea className="input mono" rows={3} readOnly value={code} onFocus={(e) => e.currentTarget.select()} aria-label="Setup code" />
-      <div className="dialog-actions">
-        <span className="faint">The code is not a password: it says where the office is and how to recognise it.</span>
-        <button className="btn" onClick={() => { void navigator.clipboard.writeText(code); toast('Setup code copied'); }}><Icon name="copy" size={15} />Copy code</button>
-        <button className="btn primary" onClick={onClose}>Done</button>
-      </div>
-    </Dialog>
-  );
-}
-
 /** Preferences ▸ Outside the office. */
 export function RemoteSettings({ state }: { state: AppState }) {
   const [info, setInfo] = useState<Ops['remote.info']['res'] | null>(null);
-  const [dialog, setDialog] = useState(false);
   const live = state.phase === 'ready';
   useEffect(() => { if (live) void window.dex.request('remote.info').then(setInfo).catch(() => {}); }, [live, state.via]);
   const outside = state.via === 'remote';
@@ -62,14 +36,6 @@ export function RemoteSettings({ state }: { state: AppState }) {
         </div>
         {outside && <span className="chip ok"><Icon name="lock" size={13} />Encrypted</span>}
       </div>
-      {info?.url && (
-        <div className="setting">
-          <Icon name="mobile" className="lead" />
-          <div className="txt"><div>Set up a phone or laptop</div><div className="faint">A QR code and setup code for a device that is not on the office network.</div></div>
-          <button className="btn" onClick={() => setDialog(true)}>Show code</button>
-        </div>
-      )}
-      {dialog && info?.url && <SetupDialog info={info} onClose={() => setDialog(false)} />}
     </section>
   );
 }
@@ -79,7 +45,6 @@ export function RemoteAdmin() {
   const toast = useToast();
   const [v, setV] = useState<RemoteView | null>(null);
   const [url, setUrl] = useState('');
-  const [dialog, setDialog] = useState(false);
   const load = () => void window.dex.request('admin.remote.get').then((x) => { setV(x); setUrl((u) => u || x.config.url || ''); }).catch((e: Error) => toast(e.message, true));
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const save = (patch: Ops['admin.remote.set']['req']) => void window.dex.request('admin.remote.set', patch).then((x) => { setV(x); toast('Saved'); }).catch((e: Error) => toast(e.message, true));
@@ -125,9 +90,7 @@ export function RemoteAdmin() {
         <div className="eyebrow">This hub</div>
         <div className="kv"><span>Hub id</span><span className="mono selectable">{v.hubId}</span></div>
         <div className="kv"><span>Fingerprint</span><span className="mono selectable" style={{ wordBreak: 'break-all' }}>{v.fingerprint}</span></div>
-        {v.config.url && <button className="btn" style={{ marginTop: 10 }} onClick={() => setDialog(true)}><Icon name="mobile" size={15} />Setup code for a phone or laptop</button>}
       </section>
-      {dialog && v.config.url && <SetupDialog info={{ url: v.config.url, hubId: v.hubId, fingerprint: v.fingerprint, name: v.name, viaGateway: false }} onClose={() => setDialog(false)} />}
     </div>
   );
 }

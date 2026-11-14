@@ -55,6 +55,20 @@ What the gateway (and Cloudflare) *can* see:
 
 They never see message text, file contents, names, keys or call media.
 
+## Pairing codes (personal devices)
+
+- A pairing code (`DXP1-…`) carries the hub's id and certificate fingerprint, its office addresses,
+  the gateway address and a random 144-bit token. The hub stores only the token's SHA-256 hash.
+- It works **once**, for **24 hours**, and only for the person who made it. At most 5 unused codes
+  per person exist; older ones stop working.
+- The device that uses it joins **already approved, as that person**. Their other devices are told at
+  once ("A device was added to your account") and can remove it in **Preferences → Your devices**.
+  Every pairing is in the audit log.
+- In the QR code the code is in the link's `#fragment`, which browsers never send to a server.
+- Administrators can turn pairing off (**Control room → Policies → Personal devices**); new devices
+  then wait for approval as before. Removing a person's devices, or a person leaving, makes their
+  unused codes useless.
+
 Things that remain the office's responsibility:
 - Approving only devices you recognise.
 - Removing lost devices in the Control room (**Devices → Remove**). A removed device can no
@@ -80,12 +94,15 @@ Things that remain the office's responsibility:
 5. **Pin the gateway to the hub (recommended).** Copy the **Fingerprint** shown on the same page into a
    third repository secret, `HUB_FINGERPRINT`, and run the workflow again. The status then says
    *gateway pinned to this hub*.
-6. **Phones and home laptops.**
+6. **Phones and home laptops.** People add their own devices; no administrator is involved:
+   - On their office PC: **Preferences → Your devices → Add my phone** shows a QR code. The phone's
+     camera opens the download page, which installs the Android app and copies a one-time pairing
+     code. On first launch the app finds the code and signs in as that person. (If it doesn't, the
+     app's **Scan the code on your PC** reads the same QR code.)
+   - **Add my laptop** shows the same kind of code as text. They email or message it to themselves
+     and paste it into the app on the laptop.
    - Devices that have been on the office network once already know the gateway and simply work
      outside.
-   - New devices: on any PC, **Preferences → Outside the office → Show code** shows a QR code and
-     a setup code. Scan it with the phone's camera, or paste the code after choosing *I'm outside
-     the office* on the welcome screen. An administrator approves the device as usual.
 
 ## Calls across networks
 

@@ -2,7 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
@@ -211,6 +211,7 @@ function buildTray(): void {
 function wireIpc(c: Controller): void {
   ipcMain.handle('app:getState', () => c.state());
   ipcMain.handle('app:join', (_e, req: JoinRequest) => c.join(req));
+  ipcMain.handle('app:clipboard', async () => String(await clipboard.readText()).slice(0, 4000));
   ipcMain.handle('app:forgetHub', () => c.forgetHub());
   ipcMain.handle('app:rescan', () => c.rescan());
   ipcMain.handle('app:setSettings', (_e, patch: Partial<Settings>) => {

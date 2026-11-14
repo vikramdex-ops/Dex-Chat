@@ -57,6 +57,7 @@ export class Policies {
       maxUploadMb: Number.isFinite(up) && up >= 1 ? up : Math.max(1, Math.ceil(this.defaultBytes / 1024 / 1024)),
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
+      personalDevices: this.meta('policy_personal_devices') !== '0',
       defaultSpaces: (() => { try { return JSON.parse(this.meta('policy_default_spaces') ?? '[]') as string[]; } catch { return []; } })(),
     };
   }
@@ -147,6 +148,7 @@ export class Policies {
         }
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
+        if (typeof d.personalDevices === 'boolean') this.setMeta('policy_personal_devices', d.personalDevices ? '1' : '0');
         if (Array.isArray(d.defaultSpaces)) this.setMeta('policy_default_spaces', JSON.stringify(d.defaultSpaces.filter((x): x is string => typeof x === 'string').slice(0, 30)));
         const p = this.get();
         this.files.maxBytes = this.uploadBytes();

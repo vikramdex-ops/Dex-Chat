@@ -104,6 +104,8 @@ export interface JoinRequest {
   invite?: string;
   /** Outside the office: the "DXC1-…" setup code from a colleague's PC or the Control room. */
   setupCode?: string;
+  /** "DXP1-…": adds this phone or laptop to the account of the person who made the code. */
+  pairCode?: string;
 }
 
 export interface DexBridge {
@@ -115,6 +117,8 @@ export interface DexBridge {
   onHubEvent(cb: (name: string, data: unknown) => void): () => void;
   onDeepLink(cb: (url: string) => void): () => void;
   join(req: JoinRequest): Promise<void>;
+  /** Text on the clipboard (to pick up a pairing code copied from the download page). */
+  readClipboard?(): Promise<string>;
   forgetHub(): Promise<void>;
   rescan(): Promise<void>;
   request<K extends OpName>(op: K, data?: Ops[K]['req']): Promise<Ops[K]['res']>;

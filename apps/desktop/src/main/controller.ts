@@ -10,7 +10,7 @@ import type { DeviceIdentity, Message, OpName, Ops, WindowsAccount } from '@dex/
 import { HubClient } from '@dex/core/client';
 import type { ClientState, HubTarget } from '@dex/core/client';
 import { HubFinder } from '@dex/core/discovery';
-import { parseSetupCode } from '@dex/core/remote';
+import { parsePairCode, parseSetupCode } from '@dex/core/remote';
 import type { FoundHub } from '@dex/core/discovery';
 import type { AppState, DiscoveredHub, JoinRequest, Phase, Settings, UpdateState } from '../shared/bridge.ts';
 import { saveConfig } from './persist.ts';
@@ -33,6 +33,8 @@ const toDiscovered = (f: FoundHub): DiscoveredHub => ({
 export class Controller extends EventEmitter {
   /** Guest invite typed on the join screen (used for the first registration only). */
   private invite = '';
+  /** Pairing token from a "DXP1-…" code (used for the first registration only). */
+  private pair = '';
   private client: HubClient | null = null;
   /** Connected through the internet gateway (outside the office)? */
   get viaGateway(): boolean { return !!this.client?.viaGateway; }
@@ -131,8 +133,10 @@ export class Controller extends EventEmitter {
     this.client?.disconnect();
     const client = new HubClient({ identity: this.identity, account: this.account });
     if (this.invite) client.setInvite(this.invite);
+    if (this.pair) client.setPair(this.pair);
     this.client = client;
     client.on('state', (s: ClientState) => {
+      if (s.kind === 'ready' || s.kind === 'rejected') this.pair = '';
       if (s.kind === 'ready') {
         const session = s.session;
         void this.e2e.ready(session.me.id, session.users.filter((u) => u.role === 'bot').map((u) => u.id))
@@ -214,6 +218,12 @@ export class Controller extends EventEmitter {
     } else if (req.address) {
       const a = parseAddress(req.address);
       if (a) target = { ...a };
+    } else if (req.pairCode) {
+      const p = parsePairCode(req.pairCode);
+      if (!p) throw new Error('That pairing code is not complete. Copy all of it, starting with DXP1-.');
+      const [host, port] = (p.lan[0] ?? ':0').split(':');
+      target = { host, port: Number(port), hubId: p.hubId, name: p.name, fp: p.fp, ...(p.url ? { remote: { url: p.url, hubId: p.hubId } } : {}) };
+      this.pair = p.token;
     } else if (req.setupCode) {
       const r = parseSetupCode(req.setupCode);
       if (!r) throw new Error('That setup code is not complete. Copy all of it, starting with DXC1-.');
