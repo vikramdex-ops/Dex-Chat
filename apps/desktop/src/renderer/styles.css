@@ -117,7 +117,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: relative;
   z-index: 5;
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) auto minmax(170px, 1fr);
+  /* the side columns give way to the middle (lenses, Go to, the Room chip) instead of covering it */
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: 16px;
   padding: 0 14px;
@@ -128,7 +129,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .titlebar .brand { -webkit-app-region: drag; display: flex; align-items: center; gap: 10px; font: 600 13px/1 var(--font-display); letter-spacing: .01em; }
 .titlebar .brand img { width: 22px; height: 22px; }
 .titlebar-mid { display: flex; align-items: center; gap: 12px; -webkit-app-region: drag; }
-.titlebar-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.titlebar-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 
 /* lens bar: the primary navigation, centred in the title bar */
 .lens-bar { position: relative; display: flex; gap: 2px; height: 34px; padding: 0 2px; }
@@ -981,6 +982,10 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 }
 @media (max-width: 1180px) { .lens-bar .lens { padding: 0 10px; } .goto { min-width: 0; } .goto-hint { display: none; } }
 @media (max-width: 1000px) { .lens-bar .lens-label { display: none; } .lens-bar .lens { padding: 0 11px; } }
+/* the same steps earlier when the title bar holds more: Windows' caption buttons, a running Room's chip */
+@media (max-width: 1320px) { :root[data-platform='win32'] .lens-bar .lens, .titlebar:has(.room-chip) .lens-bar .lens { padding: 0 10px; } :root[data-platform='win32'] .goto-hint, .titlebar:has(.room-chip) .goto-hint { display: none; } }
+@media (max-width: 1140px) { :root[data-platform='win32'] .lens-bar .lens-label, .titlebar:has(.room-chip) .lens-bar .lens-label { display: none; } :root[data-platform='win32'] .lens-bar .lens, .titlebar:has(.room-chip) .lens-bar .lens { padding: 0 11px; } }
+@media (max-width: 1320px) { :root[data-platform='win32'] .titlebar:has(.room-chip) .lens-bar .lens-label { display: none; } :root[data-platform='win32'] .titlebar:has(.room-chip) .lens-bar .lens { padding: 0 11px; } }
 .guest-code { display: grid; gap: 10px; justify-items: start; }
 .code.big { font-size: 22px; padding: 10px 16px; letter-spacing: .14em; }
 .guest-row { padding: 8px 0; border-bottom: 1px dashed var(--stroke); }

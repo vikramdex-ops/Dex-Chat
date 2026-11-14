@@ -1,7 +1,7 @@
 // The day's line: one line a day for the whole office, beside a technical drawing generated from the
 // date that draws itself in like a pen plotter. The office can add its own lines (Control room).
 // On the first visit of the day a short "morning moment" shows it full screen, unless switched off.
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OfficeLine } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import { LINES, dayNumber, lineForDay } from './lines.ts';
@@ -12,6 +12,16 @@ import './dayline.css';
 const MOMENT_KEY = 'dex.dayline.moment';
 const SEEN_KEY = 'dex.dayline.seen';
 const store = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+
+/**
+ * What this app session knew about the day when Pulse first showed it. Taken once per day for the whole
+ * session, so Pulse mounting more than once while the app starts does not use up the plot or the moment.
+ */
+let firstLook: { day: number; seen: string | null; momentDone: boolean; plotted: boolean } | null = null;
+function lookAt(today: number) {
+  if (!firstLook || firstLook.day !== today) firstLook = { day: today, seen: store.get(SEEN_KEY), momentDone: false, plotted: false };
+  return firstLook;
+}
 
 const isoDate = (day: number) => new Date(day * 86400_000).toISOString().slice(0, 10);
 
@@ -67,10 +77,12 @@ export function DayLine({ live }: { live: boolean }) {
   const day = today - back;
   const line = lineFor(day, office);
   const card = useRef<HTMLElement>(null);
-  const [animate] = useState(() => store.get(SEEN_KEY) !== String(today));
-  // the morning moment greets people from their second day on (not on the very first start)
-  const [moment, setMoment] = useState(() => animate && store.get(SEEN_KEY) !== null && store.get(MOMENT_KEY) !== 'off' && !location.hash.includes('popout'));
-  useEffect(() => { store.set(SEEN_KEY, String(today)); }, [today]);
+  const look = lookAt(today);
+  const [animate] = useState(() => look.seen !== String(today) && !look.plotted);
+  // the morning moment greets people from their second day on (not on the very first start), once a day
+  const [moment, setMoment] = useState(() => animate && look.seen !== null && !look.momentDone && store.get(MOMENT_KEY) !== 'off' && !location.hash.includes('popout'));
+  useEffect(() => { store.set(SEEN_KEY, String(today)); lookAt(today).plotted = true; }, [today]);
+  const closeMoment = useCallback(() => { lookAt(today).momentDone = true; setMoment(false); }, [today]);
   // a slight parallax between the drawing's layers, without React re-rendering
   useEffect(() => {
     const el = card.current;
@@ -111,7 +123,7 @@ export function DayLine({ live }: { live: boolean }) {
         </div>
         <Plot day={day} animate={animate && back === 0} />
       </section>
-      {moment && <Moment day={today} line={lineFor(today, office)} onClose={() => setMoment(false)} />}
+      {moment && <Moment day={today} line={lineFor(today, office)} onClose={closeMoment} />}
     </>
   );
 }

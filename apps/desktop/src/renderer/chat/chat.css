@@ -260,9 +260,10 @@ body.resizing { user-select: none; cursor: col-resize; }
 .spine-tools {
   position: absolute; left: calc(var(--spine-x) - 66px - 15px); top: -3px; z-index: 5; display: none; flex-direction: column; gap: 1px;
   width: 30px; padding: 2px 0; border: 1px solid var(--stroke-strong); border-radius: 5px; background: var(--layer-solid); box-shadow: var(--shadow-1);
-  animation: drop 120ms var(--ease);
 }
-.msg:hover > .spine-tools, .spine-tools:focus-within, .spine-tools.open { display: flex; }
+/* it stays a moment after the pointer leaves, so crossing to it or a timeline that shifts under the pointer does not lose it */
+.run:hover .spine-tools { display: flex; visibility: hidden; opacity: 0; transform: translateY(-3px); transition: opacity 110ms var(--ease) 160ms, transform 110ms var(--ease) 160ms, visibility 0s linear 270ms; }
+.msg:hover > .spine-tools, .spine-tools:focus-within, .spine-tools.open { display: flex; visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
 .spine-tools > button { width: 28px; height: 26px; margin: 0 auto; display: grid; place-items: center; border: 0; border-radius: 3px; background: none; color: var(--text-2); }
 .spine-tools > button:hover { background: var(--subtle-2); color: var(--text); }
 .spine-tools > button.on { color: var(--accent-ink); background: var(--accent-soft); }
