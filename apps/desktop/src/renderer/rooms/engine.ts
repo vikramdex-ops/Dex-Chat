@@ -4,6 +4,7 @@
 // on the office network are enough, and nothing leaves the building.
 import { useSyncExternalStore } from 'react';
 import type { RoomInfo } from '@dex/core';
+import { timeOpts } from '../time.ts';
 
 export interface RemotePeer {
   deviceId: string;
@@ -75,7 +76,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (state.room) return; // already in a call: they will see "missed"
       set({ incoming: d, active: new Map(state.active).set(d.room.convId, d.room) });
       startRing(false);
-      if (!document.hasFocus()) notify(`${nameOf(d.from)} is calling`, d.room.video ? 'Video call' : 'Voice call');
+      if (!document.hasFocus()) notify(`${nameOf(d.from)} is opening a Room`, `${d.room.video ? 'Video' : 'Voice'} Room · join with voice or video`);
     } else if (name === 'room.updated') {
       const r = data as RoomInfo;
       const active = new Map(state.active).set(r.convId, r);
@@ -93,7 +94,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       const active = new Map(state.active); active.delete(d.convId);
       if (state.incoming?.room.id === d.roomId) {
         stopRing();
-        if (d.missed && !document.hasFocus()) notify(`Missed call from ${nameOf(d.startedBy)}`, 'Open Dexterity Connect to call back');
+        if (d.missed && !document.hasFocus()) notify(`You missed ${nameOf(d.startedBy)}'s Room · ${clock(state.incoming.room.startedAt)}`, 'Open the conversation to ring back');
         set({ incoming: null, active });
       } else if (state.room?.id === d.roomId) { cleanup(); set({ active }); }
       else set({ active });
@@ -102,6 +103,31 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (state.room?.id === d.roomId) void onSignal(d.fromDevice, d.fromUser, d.data);
     }
   });
+}
+
+/** A clock time in the person's 12/24-hour preference ("4:12 PM", "16:12"). */
+export function clock(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+}
+
+/** Caption form of a name, as on a drawing: "Priya Raman" -> "PRIYA R.". */
+export function capName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  const first = parts[0].toUpperCase();
+  return parts.length > 1 ? `${first} ${parts[parts.length - 1][0].toUpperCase()}.` : first;
+}
+
+/** Drawing-zone reference of the i-th tile in a grid of `cols` columns: A1, B1, A2, ... */
+export function zoneRef(i: number, cols: number): string {
+  const c = Math.max(1, cols);
+  return `${String.fromCharCode(65 + (i % c))}${Math.floor(i / c) + 1}`;
+}
+
+/** Columns for n tiles on the Room sheet (a shared screen puts people in one column). */
+export function sheetColumns(n: number, sharing: boolean): number {
+  if (sharing) return 1;
+  return n <= 2 ? Math.max(1, n) : n <= 4 ? 2 : n <= 9 ? 3 : 4;
 }
 
 let meUserId = '';
