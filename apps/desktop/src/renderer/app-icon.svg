@@ -1,31 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Dexterity Connect app icon: a "D" that is also a speech bubble, with an amber spark
-       (a message, a person online, a connection made) at its heart. -->
+  <!-- Dexterity Connect: a drawing sheet with its corner folded, a D drawn like a title-block corner,
+       and a dimension line that ends in the amber node where people connect. -->
   <defs>
-    <linearGradient id="bg" x1="72" y1="40" x2="440" y2="472" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3aa3ae"/>
-      <stop offset=".55" stop-color="#1c7680"/>
-      <stop offset="1" stop-color="#123a3f"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="256" y1="32" x2="256" y2="260" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fff" stop-opacity=".22"/>
-      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-    <radialGradient id="spark" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(262 238) scale(46)">
-      <stop offset="0" stop-color="#ffd38a"/>
-      <stop offset=".6" stop-color="#f7af44"/>
-      <stop offset="1" stop-color="#e8921e"/>
-    </radialGradient>
-    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#06191b" flood-opacity=".35"/>
-    </filter>
-  </defs>
-  <rect x="32" y="32" width="448" height="448" rx="116" fill="url(#bg)"/>
-  <rect x="32" y="32" width="448" height="448" rx="116" fill="url(#sheen)"/>
-  <g filter="url(#lift)">
-    <path fill="#ffffff" fill-rule="evenodd" d="
-      M150 120 H274 C356 120 410 178 410 256 C410 334 356 392 274 392 H214 L150 436 Z
-      M210 180 V332 H272 C319 332 350 300 350 256 C350 212 319 180 272 180 Z"/>
-    <circle cx="272" cy="256" r="38" fill="url(#spark)"/>
+  <linearGradient id="sheet" x1="60" y1="40" x2="452" y2="480" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#2f97a2"/><stop offset=".58" stop-color="#17656e"/><stop offset="1" stop-color="#0e3439"/>
+  </linearGradient>
+  <linearGradient id="fold" x1="372" y1="32" x2="452" y2="112" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#ffd590"/><stop offset="1" stop-color="#f19a26"/>
+  </linearGradient>
+  <radialGradient id="node" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(330 256) scale(34)">
+    <stop offset="0" stop-color="#ffe0a6"/><stop offset=".6" stop-color="#f7af44"/><stop offset="1" stop-color="#e48a17"/>
+  </radialGradient></defs>
+  <path d="M148 32 H372 L480 140 V364 A116 116 0 0 1 364 480 H148 A116 116 0 0 1 32 364 V148 A116 116 0 0 1 148 32 Z" fill="url(#sheet)"/>
+  <path d="M372 32 V108 A32 32 0 0 0 404 140 H480 Z" fill="url(#fold)"/>
+  <path d="M372 32 V108 A32 32 0 0 0 404 140 H480" fill="none" stroke="#0e3439" stroke-opacity=".25" stroke-width="4"/>
+  <path fill="#ffffff" fill-rule="evenodd" d="
+    M132 124 H262 C350 124 404 184 404 256 C404 328 350 388 262 388 H132 Z
+    M184 172 V340 H262 C318 340 352 304 352 256 C352 208 318 172 262 172 Z"/>
+  <g stroke="#ffffff" stroke-linecap="round">
+    <line x1="208" y1="256" x2="314" y2="256" stroke-width="14"/>
+    <line x1="200" y1="270" x2="216" y2="242" stroke-width="12"/>
   </g>
+  <circle cx="330" cy="256" r="30" fill="url(#node)" stroke="#0e3439" stroke-opacity=".18" stroke-width="3"/>
 </svg>

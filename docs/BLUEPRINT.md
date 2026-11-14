@@ -40,7 +40,7 @@ building, why, and in what order.
 | Updates | In-app updater on every platform: checks on open, on a timer and on demand, then downloads, verifies, installs and relaunches inside the app. Offline offices update from the hub's mirror. |
 | Feel | Lighter and faster than Cliq: performance budgets enforced in CI (see section 8). |
 | Ecosystem | Dexterity's own tools are wired in **on both sides**: Connect gets cards, launchers and an open bot/webhook API, and each tool gets small hooks (`dexterity://` links, "share to Connect"). Hopper's alerts move from its Zoho Cliq bot to Connect. |
-| Identity | Custom app icon (`brand/icon/`): a "D" that is a speech bubble, with an amber spark. Used everywhere: app, tray, installers, landing page, Android. |
+| Identity | Custom app icon: a drawing sheet with a folded amber corner and a "D" drawn like a title-block corner, crossed by a dimension line that ends in an amber node. Used everywhere: app, tray, installers, landing page, Android. |
 
 ## 3. Architecture
 
