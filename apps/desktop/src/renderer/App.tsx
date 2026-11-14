@@ -21,6 +21,7 @@ import { convTitle } from './chat/Switchboard.tsx';
 import { IncomingCall, RoomStage } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
 import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
+import { startOrg } from './org/store.ts';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'directory';
@@ -147,6 +148,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     if (state.phase !== 'ready') return;
     void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
     void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
+    void startOrg();
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
   }, [state.phase, session.me.id, session.deviceId]);

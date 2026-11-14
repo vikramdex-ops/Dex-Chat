@@ -8,6 +8,9 @@ import type { Availability, DeviceRecord, DeviceStatus, PublicUser, Role } from 
 interface UserRow {
   id: string; account: string; display_name: string; role: Role; title: string | null;
   status_text: string | null; availability: Availability | null; created_at: number;
+  // from profiles (LEFT JOIN)
+  department_id?: string | null; manager_id?: string | null; phone?: string | null; extension?: string | null; location?: string | null;
+  email?: string | null; employee_id?: string | null; joined_on?: string | null; birthday?: string | null; fields?: string | null;
 }
 interface DeviceRow {
   id: string; user_id: string; public_key: string; hostname: string; status: DeviceStatus;
@@ -47,6 +50,28 @@ CREATE TABLE IF NOT EXISTS audit (
   detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at);
+CREATE TABLE IF NOT EXISTS profiles (
+  account TEXT PRIMARY KEY,
+  display_name TEXT,
+  title TEXT,
+  department_id TEXT,
+  manager_account TEXT,
+  phone TEXT,
+  extension TEXT,
+  location TEXT,
+  email TEXT,
+  employee_id TEXT,
+  joined_on TEXT,
+  birthday TEXT,
+  fields TEXT
+);
+CREATE TABLE IF NOT EXISTS departments (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  parent_id TEXT,
+  head_id TEXT,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS bot_tokens (
   user_id TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
@@ -56,10 +81,28 @@ CREATE TABLE IF NOT EXISTS bot_tokens (
 );
 `;
 
+function parseFields(raw: string | null | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'string')) as Record<string, string> : {};
+  } catch { return {}; }
+}
+
 export const toPublicUser = (r: UserRow): PublicUser => ({
   id: r.id, account: r.account, displayName: r.display_name, role: r.role,
   title: r.title, statusText: r.status_text, availability: r.availability ?? 'available', createdAt: r.created_at,
+  profile: {
+    departmentId: r.department_id ?? null, managerId: r.manager_id ?? null, phone: r.phone ?? null, extension: r.extension ?? null,
+    location: r.location ?? null, email: r.email ?? null, employeeId: r.employee_id ?? null, joinedOn: r.joined_on ?? null,
+    birthday: r.birthday ?? null, fields: parseFields(r.fields),
+  },
 });
+
+/** Users with their organisation profile (the manager is stored by account so imports work before people join). */
+const USER_SELECT = `SELECT u.*, p.department_id, p.phone, p.extension, p.location, p.email, p.employee_id, p.joined_on, p.birthday, p.fields,
+  (SELECT m.id FROM users m WHERE m.account = p.manager_account) AS manager_id
+  FROM users u LEFT JOIN profiles p ON p.account = u.account`;
 
 const toDevice = (r: DeviceRow): DeviceRecord => ({
   id: r.id, userId: r.user_id, hostname: r.hostname, status: r.status, createdAt: r.created_at,
@@ -95,26 +138,28 @@ export class Store {
   }
 
   userById(id: string): PublicUser | null {
-    const r = this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+    const r = this.db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(id) as UserRow | undefined;
     return r ? toPublicUser(r) : null;
   }
 
   userByAccount(account: string): PublicUser | null {
-    const r = this.db.prepare('SELECT * FROM users WHERE account = ?').get(account) as UserRow | undefined;
+    const r = this.db.prepare(`${USER_SELECT} WHERE u.account = ?`).get(account) as UserRow | undefined;
     return r ? toPublicUser(r) : null;
   }
 
   /** People with at least one approved device, plus integrations (bots): who colleagues can see. */
   activeUsers(): PublicUser[] {
-    const rows = this.db.prepare(`SELECT * FROM users u WHERE u.role = 'bot' OR EXISTS
-      (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') ORDER BY display_name COLLATE NOCASE`).all() as unknown as UserRow[];
+    const rows = this.db.prepare(`${USER_SELECT} WHERE u.role = 'bot' OR EXISTS
+      (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') ORDER BY u.display_name COLLATE NOCASE`).all() as unknown as UserRow[];
     return rows.map(toPublicUser);
   }
 
   createUser(account: string, displayName: string, role: Role): PublicUser {
     const id = ulid();
-    this.db.prepare('INSERT INTO users (id, account, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(id, account, displayName, role, Date.now());
+    // an administrator may have imported this person's details before they joined
+    const pre = this.db.prepare('SELECT display_name, title FROM profiles WHERE account = ?').get(account) as { display_name: string | null; title: string | null } | undefined;
+    this.db.prepare('INSERT INTO users (id, account, display_name, role, title, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, account, pre?.display_name || displayName, role, pre?.title ?? null, Date.now());
     return this.userById(id)!;
   }
 
@@ -196,7 +241,7 @@ export class Store {
     const v = input.trim().toLowerCase();
     if (!v) return null;
     if (v.includes('\\')) return this.userByAccount(v);
-    const rows = this.db.prepare(`SELECT * FROM users WHERE role != 'bot' AND (account LIKE ? ESCAPE '!')`).all(`%!\\${v.replace(/[!%_]/g, (c) => `!${c}`)}`) as unknown as UserRow[];
+    const rows = this.db.prepare(`${USER_SELECT} WHERE u.role != 'bot' AND (u.account LIKE ? ESCAPE '!')`).all(`%!\\${v.replace(/[!%_]/g, (c) => `!${c}`)}`) as unknown as UserRow[];
     return rows.length === 1 ? toPublicUser(rows[0]) : null;
   }
 

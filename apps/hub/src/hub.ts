@@ -17,6 +17,7 @@ import { Store } from './store.ts';
 import { UpdateMirror } from './update-mirror.ts';
 import { Messaging, MsgError } from './messaging.ts';
 import { Desk } from './desk.ts';
+import { Org, OrgError } from './org.ts';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import type { MirrorOptions } from './update-mirror.ts';
@@ -83,6 +84,7 @@ export class Hub {
   readonly files: FileStore;
   readonly rooms: Rooms;
   readonly desk: Desk;
+  readonly org: Org;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
   private readonly fileTokens = new Map<string, string>();
@@ -103,6 +105,7 @@ export class Hub {
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
     this.files = new FileStore(this.store.db, path.join(opts.dataDir, 'files'), opts.maxFileBytes);
     this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers(), this.files);
+    this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
     this.desk = new Desk(this.store.db, this.messaging, this.files, (userIds, name, data) => this.deliver(userIds, name, data), (uid) => {
       const u = this.store.userById(uid);
       return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
@@ -553,6 +556,8 @@ export class Hub {
           const user = this.store.userById(device.userId);
           if (user) this.emit('user.added', user);
           this.messaging.welcome(device.userId);
+          // people who were imported as reporting to this person now resolve to them
+          if (user) this.org.announceReportsOf(user.account);
         }
         for (const c of this.conns) if (c.deviceId === device.id && !c.ready) this.continueAs(c, updated);
         return updated;
@@ -644,6 +649,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(org\.|admin\.org\.|me\.profile$)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.org.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof OrgError) throw new OpError(err.message);
             throw err;
           }
         }

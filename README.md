@@ -21,6 +21,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Sign-in | Windows account, per-device Ed25519 keys (DPAPI-sealed), admin approval with matching device codes, pinned TLS |
 | Messaging | Spaces (open / private), Direct (1:1 and groups), side-tracks, @mentions and @everyone, reactions, pins, edit / delete, Seen receipts, typing, drafts, formatting, line-number references |
 | Desk | Saved messages, reminders (on a message or standalone, for yourself or a colleague, repeating, snooze), messages scheduled to send later (sent by the hub even with your PC off), forwarding with credit, mark unread, polls (single or multiple choice, anonymous, closing time) |
+| Organisation | Departments (nested, with heads), designations, reporting lines, extension, phone, seat, joining date, birthday and custom fields; an org chart; profiles beside the Directory; CSV import from Excel or Dexterity Sheets that also covers people who have not joined yet |
 | Files | Drag, drop, paste or attach up to 1 GB; stored once on the hub; inline images with a viewer; Open / Save; Files panel |
 | Rooms (calls) | Voice and video, up to 8 people, screen sharing with a picker, mini-Room, ringing, missed calls; media peer-to-peer on the LAN |
 | Search | Ctrl+K across people, conversations, commands and message text (FTS5), jump to the message |

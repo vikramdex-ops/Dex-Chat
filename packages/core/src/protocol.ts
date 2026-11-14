@@ -38,6 +38,69 @@ export interface PublicUser {
   statusText: string | null;
   availability: Availability;
   createdAt: number;
+  /** Organisation details: department, reporting line, contact and custom fields. */
+  profile: Profile;
+}
+
+export interface Profile {
+  departmentId: string | null;
+  /** The person this one reports to. */
+  managerId: string | null;
+  phone: string | null;
+  extension: string | null;
+  location: string | null;
+  email: string | null;
+  employeeId: string | null;
+  /** YYYY-MM-DD */
+  joinedOn: string | null;
+  /** MM-DD (no year) */
+  birthday: string | null;
+  /** Custom fields set up by an administrator: field id -> value. */
+  fields: Record<string, string>;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  parentId: string | null;
+  /** The person who leads it. */
+  headId: string | null;
+  createdAt: number;
+}
+
+export interface ProfileField {
+  id: string;
+  label: string;
+}
+
+export interface OrgInfo {
+  departments: Department[];
+  fields: ProfileField[];
+}
+
+/** One row of a people import (CSV), matched by Windows account. */
+export interface ImportRow {
+  account: string;
+  displayName?: string;
+  title?: string;
+  department?: string;
+  manager?: string;
+  phone?: string;
+  extension?: string;
+  location?: string;
+  email?: string;
+  employeeId?: string;
+  joinedOn?: string;
+  birthday?: string;
+  fields?: Record<string, string>;
+}
+
+export interface ImportResult {
+  updated: number;
+  /** Not signed in yet: their details apply when they first join. */
+  waiting: number;
+  departmentsCreated: number;
+  problems: Array<{ row: number; message: string }>;
 }
 
 export interface DeviceRecord {
@@ -269,6 +332,18 @@ export interface Ops {
   'admin.bots.create': { req: { name: string }; res: { bot: PublicUser; token: string } };
   'admin.bots.revoke': { req: { userId: string }; res: { ok: true } };
   'ping': { req: void; res: { at: number } };
+  'org.get': { req: void; res: OrgInfo };
+  /** Contact details anyone can keep up to date themselves. */
+  'me.profile': { req: { phone?: string | null; extension?: string | null; location?: string | null; birthday?: string | null }; res: PublicUser };
+  'admin.org.saveDepartment': { req: { id?: string; name: string; parentId?: string | null; headId?: string | null }; res: Department };
+  'admin.org.deleteDepartment': { req: { id: string }; res: { ok: true } };
+  'admin.org.saveFields': { req: { fields: Array<{ id?: string; label: string }> }; res: ProfileField[] };
+  'admin.org.setProfile': {
+    req: { userId: string; title?: string | null; departmentId?: string | null; managerId?: string | null; phone?: string | null; extension?: string | null;
+      location?: string | null; email?: string | null; employeeId?: string | null; joinedOn?: string | null; birthday?: string | null; fields?: Record<string, string> };
+    res: PublicUser;
+  };
+  'admin.org.import': { req: { rows: ImportRow[]; dryRun?: boolean }; res: ImportResult };
 
   'conv.list': { req: void; res: Conversation[] };
   'conv.browse': { req: void; res: Conversation[] };
@@ -330,6 +405,7 @@ export interface Events {
   'user.updated': PublicUser;
   'user.added': PublicUser;
   'admin.pending': DeviceRecord;
+  'org.updated': OrgInfo;
   'device.updated': DeviceRecord;
   /** The viewer's copy of a conversation changed (new member, name, unread counts...). */
   'conv.updated': Conversation;

@@ -21,6 +21,15 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
     } catch (e) { toast((e as Error).message, true); }
   };
   const set = (patch: Partial<AppState['settings']>) => void window.dex.setSettings(patch);
+  const [contact, setContact] = useState({ phone: session.me.profile.phone ?? '', extension: session.me.profile.extension ?? '', location: session.me.profile.location ?? '', birthday: session.me.profile.birthday ?? '' });
+  const contactDirty = contact.phone !== (session.me.profile.phone ?? '') || contact.extension !== (session.me.profile.extension ?? '')
+    || contact.location !== (session.me.profile.location ?? '') || contact.birthday !== (session.me.profile.birthday ?? '');
+  const saveContact = async () => {
+    try {
+      await window.dex.request('me.profile', { phone: contact.phone || null, extension: contact.extension || null, location: contact.location || null, birthday: contact.birthday || null });
+      toast('Contact details saved');
+    } catch (e) { toast((e as Error).message, true); }
+  };
 
   return (
     <div className="view">
@@ -45,6 +54,24 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               <input id="s-status" className="input" value={status} maxLength={120} placeholder="What are you working on?" onChange={(e) => setStatus(e.target.value)} disabled={!live} /></div>
             <div className="full row-actions" style={{ justifyContent: 'flex-end' }}>
               <button className="btn primary" disabled={!dirty || !live || !name.trim()}>Save profile</button>
+            </div>
+          </form>
+        </section>
+
+        <section>
+          <h3>Contact details</h3>
+          <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (contactDirty) void saveContact(); }}>
+            <div className="field"><label htmlFor="s-ext">Extension</label>
+              <input id="s-ext" className="input" value={contact.extension} maxLength={12} onChange={(e) => setContact({ ...contact, extension: e.target.value })} disabled={!live} /></div>
+            <div className="field"><label htmlFor="s-phone">Phone</label>
+              <input id="s-phone" className="input" value={contact.phone} maxLength={40} onChange={(e) => setContact({ ...contact, phone: e.target.value })} disabled={!live} /></div>
+            <div className="field"><label htmlFor="s-seat">Seat or location</label>
+              <input id="s-seat" className="input" value={contact.location} maxLength={80} placeholder="Bay 2, Desk 4" onChange={(e) => setContact({ ...contact, location: e.target.value })} disabled={!live} /></div>
+            <div className="field"><label htmlFor="s-bday">Birthday (MM-DD)</label>
+              <input id="s-bday" className="input" value={contact.birthday} maxLength={5} placeholder="06-30" onChange={(e) => setContact({ ...contact, birthday: e.target.value })} disabled={!live} /></div>
+            <div className="full row-actions" style={{ justifyContent: 'space-between' }}>
+              <span className="faint" style={{ fontSize: 12.5 }}>Your department, designation and manager are set by an administrator.</span>
+              <button className="btn primary" disabled={!contactDirty || !live}>Save contact details</button>
             </div>
           </form>
         </section>

@@ -4,9 +4,10 @@ import type { AuditEntry, DeviceRecord, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
 import { Integrations } from './Integrations.tsx';
+import { OrgAdmin } from './OrgAdmin.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'integrations' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'integrations' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -23,6 +24,12 @@ const AUDIT_TEXT: Record<string, string> = {
   'user.role': 'changed a role',
   'bot.created': 'created an integration token',
   'bot.revoked': 'revoked an integration token',
+  'org.department.create': 'added a department',
+  'org.department.update': 'changed a department',
+  'org.department.delete': 'deleted a department',
+  'org.fields': 'changed the profile fields',
+  'org.profile': "changed someone's details",
+  'org.import': 'imported people from a spreadsheet',
 };
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
@@ -71,6 +78,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'approvals', label: 'Approvals', icon: 'check', badge: pending.length },
           { value: 'devices', label: 'Devices', icon: 'laptop' },
           { value: 'roles', label: 'People & roles', icon: 'people' },
+          { value: 'organisation', label: 'Organisation', icon: 'list' },
           { value: 'integrations', label: 'Integrations', icon: 'grid' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
@@ -153,6 +161,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
         </div>
       )}
 
+      {tab === 'organisation' && <OrgAdmin users={session.users} />}
       {tab === 'integrations' && <Integrations state={state} />}
 
       {tab === 'audit' && (audit.length === 0 ? (
