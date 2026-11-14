@@ -138,6 +138,16 @@ export interface RemoteView {
   name: string;
 }
 
+/** A STUN or TURN server for calls (the browser's RTCIceServer). */
+export interface IceServer { urls: string | string[]; username?: string; credential?: string }
+/** How calls connect across networks (people outside the office). */
+export interface IceConfig {
+  mode: 'auto' | 'cloudflare' | 'custom';
+  /** Cloudflare Realtime TURN key id (the API token is stored on the hub only). */
+  keyId?: string | null;
+  servers: IceServer[];
+}
+
 /** An office emoji added by an administrator, used as :name:. */
 export interface CustomEmoji { name: string; fileId: string; createdBy: string; createdAt: number }
 
@@ -629,6 +639,10 @@ export interface Ops {
   /** How to reach this hub from outside (for a phone's setup code); null url when it is off. */
   'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean } };
   'admin.remote.get': { req: void; res: RemoteView };
+  /** STUN/TURN servers for a call (fresh short-lived credentials when Cloudflare TURN is used). */
+  'room.ice': { req: void; res: { iceServers: IceServer[] } };
+  'admin.ice.get': { req: void; res: IceConfig & { hasToken: boolean } };
+  'admin.ice.set': { req: { mode: IceConfig['mode']; keyId?: string | null; token?: string | null; servers?: IceServer[] }; res: IceConfig & { hasToken: boolean } };
   'admin.remote.set': { req: Partial<RemoteConfig>; res: RemoteView };
   /** Text the uploader's PC read from an image, so search can find it (not Direct conversations). */
   'file.setText': { req: { fileId: string; text: string }; res: { ok: true } };

@@ -122,10 +122,19 @@ async function getMedia(video: boolean): Promise<MediaStream> {
   }
 }
 
+/** STUN/TURN for this call: on the office LAN none are needed; across networks the hub supplies them. */
+let iceServers: RTCIceServer[] = [];
+async function refreshIce(): Promise<void> {
+  try {
+    const r = await Promise.race([window.dex.request('room.ice'), new Promise<null>((res) => setTimeout(() => res(null), 2500))]);
+    if (r) iceServers = r.iceServers as RTCIceServer[];
+  } catch { /* a hub without relays: LAN-only calls */ }
+}
+
 export async function startCall(convId: string, video: boolean): Promise<void> {
   if (state.room) return;
   try {
-    const local = await getMedia(video);
+    const [local] = await Promise.all([getMedia(video), refreshIce()]);
     const room = await window.dex.request('room.start', { convId, video });
     set({ room, local, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
     if (room.participants.length > 1) connectAll(room); else startRing(true);
@@ -143,7 +152,7 @@ export async function answer(video: boolean): Promise<void> {
 export async function joinRoom(roomId: string, video: boolean): Promise<void> {
   if (state.room) return;
   try {
-    const local = await getMedia(video);
+    const [local] = await Promise.all([getMedia(video), refreshIce()]);
     const room = await window.dex.request('room.join', { roomId });
     set({ room, local, incoming: null, camera: local.getVideoTracks().length > 0, muted: false, minimized: false, error: null, peers: new Map() });
     connectAll(room); // the newcomer reaches out to everyone already there
@@ -253,7 +262,7 @@ function connectAll(room: RoomInfo): void {
 function ensureLink(deviceId: string, userId: string): Link {
   const existing = links.get(deviceId);
   if (existing) return existing;
-  const pc = new RTCPeerConnection({ iceServers: [], bundlePolicy: 'max-bundle' });
+  const pc = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle' });
   const link: Link = { pc, polite: myDevice > deviceId, makingOffer: false, ignoreOffer: false, userId, senders: [] };
   links.set(deviceId, link);
   const local = state.local;

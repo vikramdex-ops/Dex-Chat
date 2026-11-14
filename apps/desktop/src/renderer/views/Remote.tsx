@@ -6,7 +6,7 @@ import qrcode from 'qrcode-generator';
 import type { Ops, RemoteView } from '@dex/core';
 import { setupCode } from '@dex/core/remote';
 import type { AppState } from '../../shared/bridge.ts';
-import { Dialog, Icon, Toggle, relativeTime, useToast } from '../ui.tsx';
+import { Dialog, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 
 function Qr({ text, size = 220 }: { text: string; size?: number }) {
   const svg = useMemo(() => {
@@ -120,6 +120,7 @@ export function RemoteAdmin() {
           <Toggle label="The Control room works from outside" checked={v.config.allowAdmin} onChange={(on) => save({ allowAdmin: on })} />
         </div>
       </section>
+      <CallsAcross />
       <section className="card">
         <div className="eyebrow">This hub</div>
         <div className="kv"><span>Hub id</span><span className="mono selectable">{v.hubId}</span></div>
@@ -128,5 +129,55 @@ export function RemoteAdmin() {
       </section>
       {dialog && v.config.url && <SetupDialog info={{ url: v.config.url, hubId: v.hubId, fingerprint: v.fingerprint, name: v.name, viaGateway: false }} onClose={() => setDialog(false)} />}
     </div>
+  );
+}
+
+/** Control room ▸ Outside the office ▸ Calls across networks. */
+function CallsAcross() {
+  const toast = useToast();
+  const [c, setC] = useState<Ops['admin.ice.get']['res'] | null>(null);
+  const [mode, setMode] = useState<'auto' | 'cloudflare' | 'custom'>('auto');
+  const [keyId, setKeyId] = useState('');
+  const [token, setToken] = useState('');
+  const [turn, setTurn] = useState({ urls: '', username: '', credential: '' });
+  useEffect(() => {
+    void window.dex.request('admin.ice.get').then((x) => {
+      setC(x); setMode(x.mode); setKeyId(x.keyId ?? '');
+      const s0 = x.servers[0];
+      if (s0) setTurn({ urls: (Array.isArray(s0.urls) ? s0.urls : [s0.urls]).join(' '), username: s0.username ?? '', credential: '' });
+    }).catch(() => {});
+  }, []);
+  const save = () => {
+    const req: Ops['admin.ice.set']['req'] = mode === 'cloudflare'
+      ? { mode, keyId: keyId.trim(), ...(token.trim() ? { token: token.trim() } : {}) }
+      : mode === 'custom'
+        ? { mode, servers: [{ urls: turn.urls.split(/[\s,]+/).filter(Boolean), ...(turn.username ? { username: turn.username } : {}), ...(turn.credential ? { credential: turn.credential } : {}) }] }
+        : { mode };
+    void window.dex.request('admin.ice.set', req).then((x) => { setC(x); setToken(''); toast('Saved'); }).catch((e: Error) => toast(e.message, true));
+  };
+  if (!c) return null;
+  return (
+    <section className="card">
+      <div className="eyebrow">Calls across networks</div>
+      <p className="muted" style={{ marginTop: 0 }}>On the office network, calls go straight between PCs. With someone at home or on mobile data, calls need a relay to get through routers. Calls stay encrypted end to end; a relay only forwards them.</p>
+      <Segmented<'auto' | 'cloudflare' | 'custom'> label="Relay for calls" value={mode} onChange={setMode} options={[
+        { value: 'auto', label: 'Basic' }, { value: 'cloudflare', label: 'Cloudflare TURN' }, { value: 'custom', label: 'Own TURN server' },
+      ]} />
+      {mode === 'auto' && <p className="faint" style={{ fontSize: 12.5 }}>Uses a public STUN server when access from outside is on. Works on most home routers; calls on some mobile networks may not connect without a TURN relay.</p>}
+      {mode === 'cloudflare' && (
+        <div className="form-row" style={{ marginTop: 10 }}>
+          <div className="field"><label htmlFor="cf-key">TURN key id</label><input id="cf-key" className="input mono" value={keyId} onChange={(e) => setKeyId(e.target.value)} placeholder="32 characters" /></div>
+          <div className="field"><label htmlFor="cf-token">API token</label><input id="cf-token" className="input mono" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={c.hasToken ? 'Saved (leave empty to keep)' : 'From Cloudflare > Realtime > TURN'} /></div>
+        </div>
+      )}
+      {mode === 'custom' && (
+        <div className="form-row" style={{ marginTop: 10 }}>
+          <div className="field" style={{ flex: 2 }}><label htmlFor="turn-urls">Addresses</label><input id="turn-urls" className="input mono" value={turn.urls} onChange={(e) => setTurn({ ...turn, urls: e.target.value })} placeholder="turn:turn.example.com:3478 turns:turn.example.com:5349" /></div>
+          <div className="field"><label htmlFor="turn-user">Username</label><input id="turn-user" className="input" value={turn.username} onChange={(e) => setTurn({ ...turn, username: e.target.value })} /></div>
+          <div className="field"><label htmlFor="turn-pass">Password</label><input id="turn-pass" className="input" type="password" value={turn.credential} onChange={(e) => setTurn({ ...turn, credential: e.target.value })} placeholder="Leave empty to keep" /></div>
+        </div>
+      )}
+      <div className="row-actions" style={{ marginTop: 10, justifyContent: 'flex-end' }}><button className="btn primary" onClick={save}>Save</button></div>
+    </section>
   );
 }

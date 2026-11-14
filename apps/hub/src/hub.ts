@@ -10,7 +10,7 @@ import {
   APP_ID, DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION,
   accountKey, authPayload, deviceIdFor, verifySignature,
 } from '@dex/core';
-import type { ClientFrame, DeviceRecord, HubInfo, OpName, RemoteConfig, RemoteView, Ops, PublicUser, Role, ServerFrame, Session, WindowsAccount } from '@dex/core';
+import type { ClientFrame, DeviceRecord, HubInfo, IceConfig, IceServer, OpName, RemoteConfig, RemoteView, Ops, PublicUser, Role, ServerFrame, Session, WindowsAccount } from '@dex/core';
 import { HubAnnouncer } from '@dex/core/discovery';
 import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
@@ -25,6 +25,7 @@ import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
 import { Emoji, EmojiError } from './emoji.ts';
 import { RemoteGateway } from './remote.ts';
+import { Ice } from './ice.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
@@ -235,6 +236,15 @@ export class Hub {
   }
 
   // ------------------------------------------------------------ outside the office
+  readonly ice = new Ice(() => this.iceConfig(), () => this.remoteConfig().enabled);
+
+  private iceConfig(): IceConfig & { token?: string } {
+    const m = (k: string) => this.store.meta(k, () => '');
+    const mode = m('ice_mode');
+    let servers: IceServer[] = [];
+    try { servers = JSON.parse(m('ice_servers') || '[]'); } catch { /* none */ }
+    return { mode: mode === 'cloudflare' || mode === 'custom' ? mode : 'auto', keyId: m('ice_key') || null, token: m('ice_token') || undefined, servers };
+  }
   remoteConfig(): RemoteConfig {
     const m = (k: string, d: string) => this.store.meta(k, () => d);
     const url = m('remote_url', '');
@@ -892,6 +902,37 @@ export class Hub {
             if (err instanceof WorkError) throw new OpError(err.message);
             throw err;
           }
+        }
+        if (op === 'room.ice') return { iceServers: await this.ice.servers() };
+        if (op === 'admin.ice.get' || op === 'admin.ice.set') {
+          const me = this.store.userById(conn.userId!)!;
+          if (me.role !== 'owner' && me.role !== 'admin') throw new OpError('Only administrators can do that.');
+          if (op === 'admin.ice.set') {
+            const mode = d.mode === 'cloudflare' || d.mode === 'custom' ? d.mode : 'auto';
+            const servers = Array.isArray(d.servers) ? (d.servers as unknown[]).slice(0, 6).map((x) => {
+              const s = x as { urls?: unknown; username?: unknown; credential?: unknown };
+              const urls = (Array.isArray(s.urls) ? s.urls : [s.urls]).map(String).filter((u) => /^(stun|turns?):[\w.-]+(:\d+)?(\?transport=(udp|tcp))?$/i.test(u)).slice(0, 6);
+              return { urls, ...(typeof s.username === 'string' && s.username ? { username: s.username.slice(0, 200) } : {}), ...(typeof s.credential === 'string' && s.credential ? { credential: s.credential.slice(0, 400) } : {}) };
+            }).filter((s) => s.urls.length) : [];
+            if (mode === 'custom' && !servers.length) throw new OpError('Add at least one stun:, turn: or turns: address.');
+            // a password left empty keeps the one already saved for the same addresses
+            const before = this.iceConfig().servers;
+            for (const sv of servers as Array<{ urls: string[]; credential?: string }>) {
+              if (sv.credential) continue;
+              const old = before.find((o) => JSON.stringify([o.urls].flat()) === JSON.stringify(sv.urls));
+              if (old?.credential) sv.credential = old.credential;
+            }
+            if (mode === 'cloudflare' && typeof d.keyId === 'string' && !/^[0-9a-f]{32}$/i.test(d.keyId.trim())) throw new OpError('The TURN key id is 32 letters and numbers, from Cloudflare > Realtime > TURN.');
+            this.setMeta('ice_mode', mode);
+            if (d.keyId !== undefined) this.setMeta('ice_key', typeof d.keyId === 'string' ? d.keyId.trim() : '');
+            if (typeof d.token === 'string' && d.token.trim()) this.setMeta('ice_token', d.token.trim());
+            if (d.token === null) this.setMeta('ice_token', '');
+            this.setMeta('ice_servers', JSON.stringify(servers));
+            this.ice.clear();
+            this.store.audit(me.id, 'ice.set', null, { mode, keyId: this.store.meta('ice_key', () => ''), servers: servers.map((s) => s.urls) });
+          }
+          const c = this.iceConfig();
+          return { mode: c.mode, keyId: c.keyId, servers: c.servers.map((s) => ({ urls: s.urls, ...(s.username ? { username: s.username } : {}), ...(s.credential ? { credential: '••••••' } : {}) })), hasToken: !!c.token };
         }
         if (op === 'remote.info') {
           const c = this.remoteConfig();
