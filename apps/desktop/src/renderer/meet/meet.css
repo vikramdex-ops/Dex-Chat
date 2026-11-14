@@ -1,0 +1,146 @@
+/* Meetings, in the Room's drawing-sheet language: the lobby sheet, the meeting panel's tabs
+   (chat, polls, board, files) and the Meet lens, a register of ruled title-block cards. Colours
+   come from the theme tokens; amber only where someone must act. */
+
+/* ------------------------------------------------------------------ the lobby */
+.lobby-stage { display: grid; place-items: center; }
+.lobby-sheet {
+  position: relative; width: min(880px, 100%); display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  border: 1px solid var(--text-3); outline: 1px solid var(--stroke-strong); outline-offset: 5px; background: var(--layer-solid);
+  animation: enter var(--med) var(--ease);
+}
+.lobby-preview { display: grid; align-content: center; gap: 0; padding: 26px 24px 0; border-right: 1px solid var(--text-3); background: var(--layer); }
+.lobby-preview .room-tile { margin-bottom: 18px; }
+.lobby-controls { grid-template-columns: 1fr 1fr; margin: 0 -24px; border-top: 1px solid var(--stroke-strong); }
+.lobby-controls button:nth-child(2n) { border-right: 0; }
+.lobby-controls button { border-bottom: 0; }
+.lobby-block { display: flex; flex-direction: column; min-width: 0; }
+.lobby-block .tb-name { padding-top: 14px; }
+.lobby-facts { margin: 0; display: grid; grid-template-columns: 1.2fr 1.2fr .8fr; border-bottom: 1px solid var(--stroke-strong); }
+.lobby-facts > div { display: grid; gap: 3px; padding: 8px 12px 10px; min-width: 0; }
+.lobby-facts > div + div { border-left: 1px solid var(--stroke-strong); }
+.lobby-facts dt { font-size: 10px; }
+.lobby-facts dd { margin: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lobby-facts dd.mono { font-size: 14px; font-weight: 600; letter-spacing: .04em; }
+.lobby-status { flex: 1; display: grid; align-content: center; gap: 8px; padding: 22px 16px; min-height: 160px; }
+.lobby-status strong { font: 600 17px/1.3 var(--font-display); }
+.lobby-status .faint { font-size: 12.5px; }
+.lobby-status .open-seat-line { width: 120px; }
+.lobby-block .tb-foot { border-top: 1px solid var(--stroke-strong); }
+.lobby-since { font-size: 10.5px; letter-spacing: .12em; animation: pulse 1.6s var(--ease) infinite; }
+
+/* ------------------------------------------------------------------ the meeting panel's tabs */
+.meet-empty { margin: 0; padding: 18px 14px; font-size: 12.5px; color: var(--text-2); }
+.meet-visitor { display: grid; justify-items: start; gap: 8px; padding: 18px 14px; color: var(--text-2); font-size: 13px; }
+.meet-visitor p { margin: 0; }
+.meet-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.meet-chat-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 0 10px; }
+.meet-chat-line { padding: 2px 12px 2px 14px; }
+.meet-chat-line:not(.run) { margin-top: 8px; }
+.meet-chat-line.pending { opacity: .6; }
+.meet-chat-head { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.meet-chat-head .avatar { --size: 20px; font-size: 9px; }
+.meet-chat-head .mono { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
+.meet-chat-head .mono.faint { font-weight: 500; letter-spacing: .02em; }
+.meet-chat-line.mine .meet-chat-head .mono:first-of-type { color: var(--accent-ink); }
+.meet-chat-body { padding-left: 27px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; display: grid; gap: 2px; }
+.meet-chat-line.mine .meet-chat-body { box-shadow: inset 2px 0 0 var(--amber); padding-left: 25px; margin-left: 2px; }
+.meet-chat-sys { margin: 8px 14px 2px; font-size: 10px; letter-spacing: .08em; color: var(--text-3); text-align: center; }
+.meet-compose { display: flex; align-items: flex-end; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--stroke-strong); background: var(--layer); }
+.meet-compose textarea { flex: 1; min-height: 34px; max-height: 120px; resize: none; padding: 7px 10px; font: inherit; font-size: 13px; line-height: 1.4; }
+.meet-compose .icon-btn:not(:disabled) { color: var(--accent-ink); }
+.meet-polls, .meet-boards { display: grid; gap: 10px; padding: 12px; align-content: start; }
+.meet-polls > .btn, .meet-boards .notes-list > .btn { justify-self: start; }
+.meet-polls .poll-card, .meet-polls .poll { margin: 0; }
+.meet-files .side-panel { width: auto; border: 0; height: auto; position: static; box-shadow: none; }
+.meet-files .side-head .icon-btn { display: none; }
+
+/* ------------------------------------------------------------------ the Meet lens */
+.view.meet { max-width: 1240px; }
+.meet-inroom { display: flex; align-items: center; gap: 10px; margin: -8px 0 18px; padding: 9px 14px; border: 1px solid var(--amber); border-radius: var(--radius-s); background: var(--amber-soft); color: var(--amber-ink); font-weight: 600; font-size: 13px; }
+.meet-sheet { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.meet-col { display: grid; gap: 22px; min-width: 0; }
+.meet-block { position: relative; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 3px; box-shadow: var(--shadow-1); }
+/* the head of each card is a title-block strip: what it is, and a reference on the right */
+.meet-block-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 32px; padding: 0 14px; border-bottom: 1px solid var(--stroke-strong); background: var(--layer); border-radius: 3px 3px 0 0; }
+.meet-block-head .label { font-size: 10.5px; color: var(--text-2); }
+.meet-block-head .mono { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; color: var(--text-3); }
+.meet-block-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--stroke); }
+.meet-block-foot .faint { font-size: 12px; }
+.meet-form { display: grid; gap: 10px; padding: 14px 14px 12px; }
+.meet-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; min-height: 38px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); background: var(--field, var(--layer-solid)); }
+.meet-invite .input { flex: 1; min-width: 140px; border: 0; background: none; box-shadow: none; height: 28px; padding: 0 4px; }
+.meet-invite .chip button { display: grid; place-items: center; border: 0; background: none; color: inherit; padding: 0; }
+.meet-suggest { display: grid; border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); overflow: hidden; }
+.meet-suggest button { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 0; background: none; text-align: left; font-size: 13px; }
+.meet-suggest button + button { border-top: 1px solid var(--stroke); }
+.meet-suggest button:hover { background: var(--subtle); }
+.meet-suggest .faint { margin-left: auto; font-size: 12px; }
+.meet-options { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.meet-personal .meet-options { padding: 0 14px 12px; }
+.meet-opt { display: grid; gap: 4px; font-size: 12.5px; min-width: 0; }
+.meet-opt .label { font-size: 10px; }
+.meet-opt .input { width: 100%; min-width: 0; }
+.meet-col > * { min-width: 0; }
+.meet-opt.check { display: flex; align-items: center; gap: 8px; color: var(--text-2); padding-bottom: 8px; white-space: nowrap; }
+.meet-id-input { height: 46px; font-size: 22px !important; letter-spacing: .12em; text-align: center; }
+.meet-found { min-height: 20px; font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
+.meet-form > * { min-width: 0; }
+.meet-id-input { width: 100%; }
+
+/* the personal room's number, lettered into ruled boxes like a drawing number */
+.meet-number { display: flex; align-items: center; justify-content: center; gap: 0; padding: 22px 14px 10px; }
+.meet-number span {
+  display: grid; place-items: center; width: 34px; height: 46px; font: 600 26px/1 var(--font-mono); color: var(--text);
+  border: 1px solid var(--stroke-strong); border-left-width: 0; background: var(--layer);
+}
+.meet-number span:first-child, .meet-number i + span { border-left-width: 1px; }
+.meet-number i { width: 14px; height: 1px; margin: 0 4px; background: var(--text-3); }
+.meet-link { padding: 0 14px 14px; text-align: center; font-size: 12px; color: var(--accent-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.meet-sub { padding: 10px 14px 4px; font-size: 10px; }
+.meet-rows { list-style: none; margin: 0; padding: 0 0 6px; }
+.meet-rows li { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 14px; border-top: 1px solid var(--stroke); }
+.meet-sub + .meet-rows li:first-child { border-top: 0; }
+.meet-rows li.soon { box-shadow: inset 3px 0 0 var(--amber); }
+.meet-row-main { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.meet-row-main b { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meet-row-main .faint { font-size: 12px; }
+.meet-time { width: 64px; flex: none; font-size: 12px; font-weight: 600; color: var(--accent-ink); }
+.meet-now .room-chip-pip { flex: none; }
+
+.meet-log { width: 100%; border-collapse: collapse; }
+.meet-log td { padding: 8px 10px; border-top: 1px solid var(--stroke); vertical-align: middle; }
+.meet-log tr:first-child td { border-top: 0; }
+.meet-when { width: 96px; white-space: nowrap; padding-left: 14px !important; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: var(--text-2); line-height: 1.5; }
+.meet-when span { font-weight: 500; letter-spacing: .02em; color: var(--text-3); }
+.meet-what { min-width: 0; max-width: 0; width: 100%; }
+.meet-what b { display: block; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meet-what .faint { font-size: 12px; }
+.meet-who { white-space: nowrap; }
+.meet-act { width: 76px; padding-right: 14px !important; text-align: right; }
+
+@media (max-width: 900px) {
+  .meet-sheet { grid-template-columns: minmax(0, 1fr); }
+  .lobby-sheet { grid-template-columns: 1fr; }
+  .lobby-preview { border-right: 0; border-bottom: 1px solid var(--text-3); }
+}
+@media (max-width: 720px) {
+  .meet-options { grid-template-columns: minmax(0, 1fr); }
+  .meet-opt.check { white-space: normal; }
+  .meet-block-foot { flex-wrap: wrap; }
+  .meet-number span { width: 26px; height: 38px; font-size: 20px; }
+  .meet-who { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lobby-since { animation: none; }
+}
+/* centring marks on the lobby sheet's edges, as on the Room sheet */
+.lobby-sheet::before {
+  content: ''; position: absolute; inset: -9px; pointer-events: none;
+  background:
+    linear-gradient(var(--text-3), var(--text-3)) 50% 0 / 1px 12px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 50% 100% / 1px 12px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 0 50% / 12px 1px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 100% 50% / 12px 1px no-repeat;
+}

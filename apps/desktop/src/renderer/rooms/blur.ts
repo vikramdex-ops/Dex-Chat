@@ -1,5 +1,6 @@
-// Background blur for the camera in a Room: MediaPipe's selfie segmenter (Apache-2.0) finds the
-// person in each frame on this PC; the background is blurred and the person drawn sharp on top.
+// The camera's background in a Room: MediaPipe's selfie segmenter (Apache-2.0) finds the person
+// in each frame on this PC; what is behind them is blurred, or replaced by a picture (an office
+// background drawn in code, or the person's own image), and the person is drawn sharp on top.
 // Nothing leaves the PC; the model and engine are bundled (see vite.config.ts).
 import type { ImageSegmenter } from '@mediapipe/tasks-vision';
 
@@ -19,10 +20,25 @@ async function getSegmenter(): Promise<ImageSegmenter> {
   try { return await segmenter; } catch (err) { segmenter = null; throw err; }
 }
 
-export interface Blurred { track: MediaStreamTrack; stop(): void }
+/** What goes behind the person: a blur of the room, or a picture. */
+export type BackdropSpec = { kind: 'blur'; strength?: number } | { kind: 'image'; image: HTMLCanvasElement | ImageBitmap };
 
-/** A new video track: the camera with its background blurred. Stopping it leaves the camera running. */
-export async function blurTrack(camera: MediaStreamTrack, strength = 14): Promise<Blurred> {
+export interface Blurred {
+  track: MediaStreamTrack;
+  /** Change what is behind the person without restarting the camera. */
+  set(spec: BackdropSpec): void;
+  stop(): void;
+}
+
+/** Draw an image to fill w x h (cropping the overflow), as CSS object-fit: cover. */
+function drawCover(ctx: CanvasRenderingContext2D, img: HTMLCanvasElement | ImageBitmap, w: number, h: number): void {
+  const s = Math.max(w / img.width, h / img.height);
+  const dw = img.width * s, dh = img.height * s;
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+
+/** A new video track: the camera with its background blurred or replaced. Stopping it leaves the camera running. */
+export async function backdropTrack(camera: MediaStreamTrack, initial: BackdropSpec): Promise<Blurred> {
   const seg = await getSegmenter();
   const s = camera.getSettings();
   const w = s.width ?? 1280;
@@ -40,6 +56,13 @@ export async function blurTrack(camera: MediaStreamTrack, strength = 14): Promis
   const pctx = person.getContext('2d')!;
   const mask = document.createElement('canvas');
   const mctx = mask.getContext('2d')!;
+  // a replacement picture is scaled once per change, not once per frame
+  const backdrop = document.createElement('canvas');
+  backdrop.width = w; backdrop.height = h;
+  const bctx = backdrop.getContext('2d')!;
+  let spec = initial;
+  const prepare = () => { if (spec.kind === 'image') { bctx.clearRect(0, 0, w, h); drawCover(bctx, spec.image, w, h); } };
+  prepare();
   let live = true;
   let last = -1;
   let maskData: ImageData | null = null;
@@ -70,10 +93,13 @@ export async function blurTrack(camera: MediaStreamTrack, strength = 14): Promis
       pctx.globalCompositeOperation = 'destination-in';
       pctx.imageSmoothingEnabled = true;
       pctx.drawImage(mask, 0, 0, w, h);
-      // the background, blurred, then the person on top
-      ctx.filter = `blur(${strength}px)`;
-      ctx.drawImage(video, -strength, -strength, w + strength * 2, h + strength * 2);
-      ctx.filter = 'none';
+      // the background, then the person on top
+      if (spec.kind === 'blur') {
+        const strength = spec.strength ?? 14;
+        ctx.filter = `blur(${strength}px)`;
+        ctx.drawImage(video, -strength, -strength, w + strength * 2, h + strength * 2);
+        ctx.filter = 'none';
+      } else ctx.drawImage(backdrop, 0, 0);
       ctx.drawImage(person, 0, 0);
     }
     video.requestVideoFrameCallback ? video.requestVideoFrameCallback(frame) : requestAnimationFrame(frame);
@@ -83,8 +109,14 @@ export async function blurTrack(camera: MediaStreamTrack, strength = 14): Promis
   const track = stream.getVideoTracks()[0];
   return {
     track,
+    set(next) { spec = next; prepare(); },
     stop() { live = false; track.stop(); video.srcObject = null; },
   };
+}
+
+/** A new video track: the camera with its background blurred. */
+export function blurTrack(camera: MediaStreamTrack, strength = 14): Promise<Blurred> {
+  return backdropTrack(camera, { kind: 'blur', strength });
 }
 
 /** Whether this build carries the segmenter (desktop yes, phones not yet). */
