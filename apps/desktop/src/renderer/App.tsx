@@ -25,12 +25,12 @@ import { convTitle } from './chat/Switchboard.tsx';
 import type { Chip } from './chat/Switchboard.tsx';
 import { closePane, focusPane, openInPane, panesNow } from './chat/panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, todayAt } from './chat/officeTime.ts';
-import { IncomingCall, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
+import { IncomingCall, RoomChip, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
 import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
 import { startOrg } from './org/store.ts';
 import { startWork } from './work/store.ts';
-import { WorkClock } from './work/WorkUi.tsx';
+import { DayArc, DayMenu } from './work/WorkUi.tsx';
 import { startCalendar } from './calendar/store.ts';
 import { ShareDialog, parseShare } from './views/ShareDialog.tsx';
 import { ShortcutsSheet } from './views/Shortcuts.tsx';
@@ -266,7 +266,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startOrg();
     startPolicy();
     startEmoji();
-    void startWork();
+    void startWork(session.me.id);
     void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
@@ -444,11 +444,11 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         <div className="brand"><img src={logo} alt="" /><span>Dexterity Connect</span></div>
         <div className="titlebar-mid">
           <LensBar lens={lens} setLens={(l) => { setLens(l); setSheet(null); }} onGoTo={() => setPalette(true)} />
+          <RoomChip />
           <button className="goto goto-phone" onClick={() => setPalette(true)} aria-label="Go to a person, conversation or command"><span className="goto-label">Go to</span><span className="goto-caret" aria-hidden="true">▸</span></button>
         </div>
         <div className="titlebar-right">
           <UpdatePill state={state} />
-          <WorkClock meId={session.me.id} live={live} role={session.me.role} />
           <span className={`conn${conn.warn ? ' warn' : ''}${state.via === 'remote' && !conn.warn ? ' remote' : ''}`} aria-label={conn.text}
             title={state.via === 'remote' ? 'Outside the office: connected through the internet gateway, encrypted to the hub' : state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
             {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
@@ -456,6 +456,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           <div className="me-wrap">
             <button className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You: status, Preferences">
               <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} size="sm" />
+              {session.me.role !== 'guest' && session.me.role !== 'bot' && <DayArc size={28} />}
               {isAdmin && pendingCount > 0 && <span className="badge me-badge">{pendingCount}</span>}
             </button>
             {menu && (
@@ -467,6 +468,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                     <div className="faint" style={{ fontSize: 12 }}>{session.me.statusText ?? session.me.title ?? session.me.account}</div>
                   </div>
                 </div>
+                {session.me.role !== 'guest' && session.me.role !== 'bot' && live && <><div className="menu-sep" /><DayMenu onClose={() => setMenu(false)} /><div className="menu-sep" /></>}
                 <div className="menu-label label">Show me as</div>
                 {AVAILABILITY.map((a) => (
                   <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => { setMenu(a.id !== 'available'); setAvailability(a.id); }}>
@@ -491,6 +493,17 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                   </button>
                 )}
                 <button role="menuitem" onClick={() => { void window.dex.checkForUpdates(); setSheet('preferences'); setMenu(false); }}><Icon name="refresh" size={16} />Check for updates</button>
+                {window.dex.addOffice && (
+                  <>
+                    <div className="menu-sep" />
+                    <div className="menu-label label">Offices</div>
+                    <button role="menuitemradio" aria-checked className="office-now"><Icon name="server" size={16} />{session.hub.name}<span className="kbd">Here</span></button>
+                    {(state.offices ?? []).map((o) => (
+                      <button key={o.id} role="menuitemradio" aria-checked={false} onClick={() => { setMenu(false); void window.dex.switchOffice!(o.id).then(() => location.reload()); }}><Icon name="server" size={16} />{o.name}</button>
+                    ))}
+                    <button role="menuitem" onClick={() => { setMenu(false); void window.dex.addOffice!(); }}><Icon name="plus" size={16} />Join another office…</button>
+                  </>
+                )}
               </div>
             )}
           </div>
