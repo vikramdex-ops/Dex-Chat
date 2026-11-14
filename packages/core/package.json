@@ -16,7 +16,9 @@
     "./e2e-client": "./src/e2e-client.ts",
     "./remote": "./src/remote.ts",
     "./dlp": "./src/dlp.ts",
-    "./restyle": "./src/restyle.ts"
+    "./restyle": "./src/restyle.ts",
+    "./flows": "./src/flows.ts",
+    "./flow-describe": "./src/flow-describe.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

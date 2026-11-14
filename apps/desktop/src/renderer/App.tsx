@@ -46,6 +46,7 @@ import { timeOpts } from './time.ts';
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
 // the Meet lens loads when it is first opened
 const MeetLens = lazy(() => import('./meet/MeetLens.tsx'));
+const AutomationsSheet = lazy(() => import('./flows/FlowsPanel.tsx').then((m) => ({ default: m.AutomationsSheet })));
 
 export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory' | 'meet';
 export type SheetName = 'preferences' | 'control' | 'search' | null;
@@ -552,6 +553,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       )}
 
+      <AutomationsHost session={session} />
       {shortcuts && <ShortcutsSheet onClose={() => setShortcuts(false)} />}
       {palette && (
         <CommandPalette
@@ -651,6 +653,18 @@ export function PopoutApp({ convId }: { convId: string }) {
         <Pane convId={convId} users={users} meId={session.me.id} isAdmin={session.me.role === 'owner' || session.me.role === 'admin'} online={new Set(session.online)}
           live={ready} onBack={() => void window.dex.showMain?.(convId)} session={session} />
       </div>
+      <AutomationsHost session={session} />
     </ToastHost>
   );
+}
+
+/** A conversation's header menu opens its Automations (in the main window and in pop-outs). */
+function AutomationsHost({ session }: { session: Session }) {
+  const [convId, setConvId] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setConvId(String((e as CustomEvent).detail));
+    window.addEventListener('dex-automations', on);
+    return () => window.removeEventListener('dex-automations', on);
+  }, []);
+  return convId ? <Suspense fallback={null}><AutomationsSheet convId={convId} session={session} onClose={() => setConvId(null)} /></Suspense> : null;
 }

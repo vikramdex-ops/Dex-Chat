@@ -5,7 +5,7 @@ import { MENTION_RE, hashtags, ulid } from '@dex/core';
 import { addWraps, isSealed } from '@dex/core/e2e';
 import { applyDlp, dlpBlockedMessage } from '@dex/core/dlp';
 import type { DlpRule } from '@dex/core/dlp';
-import type { Conversation, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
+import type { Conversation, FlowEvent, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
 import type { FileStore } from './files.ts';
 
 export class MsgError extends Error {}
@@ -140,6 +140,10 @@ export class Messaging {
   onReaction: ((messageId: string, convId: string, userId: string, emoji: string, on: boolean) => void) | null = null;
   /** After a message is posted; nothing waits for it (link previews warm their cache). */
   afterSend: ((msg: Message, author: PublicUser) => void) | null = null;
+  /** Automations hear about new messages, reactions and confirmed responses (src/flows.ts). */
+  observe: ((e: FlowEvent) => void) | null = null;
+  /** Tags Automations added to a message, kept when its text is indexed again. */
+  keptTags: (messageId: string) => string[] = () => [];
 
   /** Office data-loss rules on a message the hub can read: throws when blocked, returns it masked otherwise. */
   guardText(body: string, convId: string): string {
@@ -210,7 +214,7 @@ export class Messaging {
     // end-to-end encrypted text cannot be (and must not be) searched on the hub
     if (!body || isSealed(body)) return;
     const tagAt = Date.now();
-    for (const t of hashtags(body)) this.db.prepare('INSERT OR IGNORE INTO message_tags (message_id, conv_id, tag, created_at) VALUES (?, ?, ?, ?)').run(messageId, convId, t, tagAt);
+    for (const t of [...hashtags(body), ...this.keptTags(messageId)]) this.db.prepare('INSERT OR IGNORE INTO message_tags (message_id, conv_id, tag, created_at) VALUES (?, ?, ?, ?)').run(messageId, convId, t, tagAt);
     const names = new Map(this.users().map((u) => [u.id, u.displayName] as const));
     const text = body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${names.get(id) ?? ''}`);
     this.db.prepare('INSERT INTO messages_fts (body, message_id, conv_id) VALUES (?, ?, ?)').run(text, messageId, convId);
@@ -872,6 +876,7 @@ export class Messaging {
         const ins = this.db.prepare('INSERT INTO poll_votes (message_id, user_id, option) VALUES (?, ?, ?)');
         for (const o of picks) ins.run(msg.id, me.id, o);
         this.pushMessage('msg.updated', msg);
+        for (const o of picks) if (!poll.mine.includes(o)) this.observe?.({ kind: 'response.confirmed', messageId: msg.id, convId: msg.conv_id, userId: me.id, source: 'poll', choice: poll.options[o].text });
         return this.messageView(msg, me.id);
       }
 
@@ -943,6 +948,8 @@ export class Messaging {
         this.db.prepare('INSERT INTO form_responses (form_id, user_id, answers, at) VALUES (?, ?, ?, ?) ON CONFLICT(form_id, user_id) DO UPDATE SET answers = excluded.answers, at = excluded.at')
           .run(f.id, me.id, JSON.stringify(answers), Date.now());
         this.pushMessage('msg.updated', msg);
+        const picked = fields.find((q) => (q.type === 'choice' || q.type === 'multi') && answers[q.id] !== undefined);
+        this.observe?.({ kind: 'response.confirmed', messageId: msg.id, convId: msg.conv_id, userId: me.id, source: 'form', choice: picked ? [answers[picked.id]].flat().join(', ') : '', answers });
         return this.messageView(msg, me.id);
       }
 
@@ -1022,7 +1029,8 @@ export class Messaging {
         if (d.on === true) {
           const count = (this.db.prepare('SELECT COUNT(DISTINCT emoji) AS n FROM reactions WHERE message_id = ?').get(msg.id) as { n: number }).n;
           if (count >= 20) throw new MsgError('This message already has 20 different reactions.');
-          this.db.prepare('INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)').run(msg.id, me.id, emoji, Date.now());
+          const added = this.db.prepare('INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)').run(msg.id, me.id, emoji, Date.now());
+          if (added.changes) this.observe?.({ kind: 'reaction.added', messageId: msg.id, convId: msg.conv_id, userId: me.id, emoji });
         } else {
           this.db.prepare('DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?').run(msg.id, me.id, emoji);
         }
@@ -1177,6 +1185,7 @@ export class Messaging {
     if (!parentId) this.pushConv(c.id);
     if (!extra.forwarded) this.outOfOffice(c, me.id, (this.db.prepare('SELECT user_id FROM mentions WHERE message_id = ?').all(id) as Array<{ user_id: string }>).map((r) => r.user_id));
     if (this.afterSend) this.afterSend(this.messageView(row), me);
+    this.observe?.({ kind: 'message.new', messageId: id, convId: c.id, authorId: me.id });
     return this.messageView(row, me.id);
   }
 

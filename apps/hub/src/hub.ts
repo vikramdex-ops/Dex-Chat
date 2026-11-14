@@ -38,6 +38,7 @@ import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
 import { Meetings } from './meetings.ts';
+import { Flows, FlowError } from './flows.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
 import { Links, LinkError } from './links.ts';
@@ -129,6 +130,7 @@ export class Hub {
   readonly workspace: Workspace;
   readonly links: Links;
   readonly reactionInsights: ReactionInsights;
+  readonly flows: Flows;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -195,6 +197,14 @@ export class Hub {
       const u = this.store.userById(uid);
       return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
     });
+    this.flows = new Flows({
+      store: this.store, messaging: this.messaging, desk: this.desk, files: this.files, system: this.system,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      userAdded: (u) => this.emit('user.added', u),
+    });
+    this.messaging.observe = (e) => this.flows.onEvent(e);
+    this.messaging.keptTags = (id) => this.flows.tagsOf(id);
     this.relay = new Relay({
       // the address PCs use to reach this hub: the one it is bound to, or its office address
       announced: () => (this.opts.host && this.opts.host !== '0.0.0.0' ? this.opts.host : (lanAddresses(this.port)[0] ?? '127.0.0.1:0').split(':')[0]),
@@ -330,6 +340,8 @@ export class Hub {
     this.gateway.stop();
     await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
+    // let automations that are running finish before the database closes
+    await Promise.race([this.flows.idle(), new Promise((r) => setTimeout(r, 3000).unref())]);
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     this.store.close();
@@ -1109,6 +1121,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof CommandError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(flow\.|admin\.flows\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.flows.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof FlowError) throw new OpError(err.message);
             throw err;
           }
         }
