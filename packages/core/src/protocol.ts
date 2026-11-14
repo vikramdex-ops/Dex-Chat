@@ -118,6 +118,9 @@ export interface ProfileField {
   label: string;
 }
 
+/** An office emoji added by an administrator, used as :name:. */
+export interface CustomEmoji { name: string; fileId: string; createdBy: string; createdAt: number }
+
 /** Office rules set by an administrator. */
 export interface OfficePolicy {
   /** Minutes after sending that people can edit or delete their own messages; null = any time. */
@@ -602,6 +605,9 @@ export interface Ops {
   'ping': { req: void; res: { at: number } };
   'org.get': { req: void; res: OrgInfo };
   'policy.get': { req: void; res: OfficePolicy };
+  'emoji.list': { req: void; res: CustomEmoji[] };
+  'admin.emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
+  'admin.emoji.remove': { req: { name: string }; res: { ok: true } };
   'admin.policy.set': { req: Partial<OfficePolicy>; res: OfficePolicy };
   'admin.usage': { req: { days?: 7 | 30 | 90 }; res: UsageReport };
   /** Contact details anyone can keep up to date themselves. */
@@ -724,6 +730,7 @@ export interface Events {
   'user.added': PublicUser;
   'admin.pending': DeviceRecord;
   'policy.updated': OfficePolicy;
+  'emoji.updated': CustomEmoji[];
   'org.updated': OrgInfo;
   'device.updated': DeviceRecord;
   /** The viewer's copy of a conversation changed (new member, name, unread counts...). */

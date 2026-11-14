@@ -148,3 +148,32 @@ test('search filters: person, Direct or Spaces, dates, files, paging', async () 
   assert.equal((await ravi.request('search', { q: 'valve', kind: 'direct' })).messages.length, 0);
   assert.equal((await ravi.request('search', { q: '', convId: dm.id })).messages.length, 0);
 });
+
+test('custom emoji: admins add them, everyone can see the image and react with them', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), crypto.randomBytes(200)]);
+  const { info } = await upload(hub, owner, 'pipe.png', png, 'image/png');
+  const { info: mine } = await upload(hub, priya, 'mine.png', png, 'image/png');
+  await assert.rejects(priya.request('admin.emoji.add', { name: 'pipe', fileId: mine.id }), /administrators/);
+  await assert.rejects(owner.request('admin.emoji.add', { name: 'No Spaces', fileId: info.id }), /lowercase/);
+  await assert.rejects(owner.request('admin.emoji.add', { name: 'pipe', fileId: mine.id }), /Upload the image first/);
+  const updated = new Promise((r) => ravi.on('event', (n: string, d: unknown) => { if (n === 'emoji.updated') r(d); }));
+  const e = await owner.request('admin.emoji.add', { name: ':pipe:', fileId: info.id });
+  assert.equal(e.name, 'pipe');
+  assert.deepEqual((await updated as Array<{ name: string }>).map((x) => x.name), ['pipe']);
+  await assert.rejects(owner.request('admin.emoji.add', { name: 'pipe', fileId: info.id }), /already exists/);
+  // anyone can load the image, though it was never sent in a conversation they are in
+  assert.equal((await req(hub, 'GET', `/files/${info.id}`, ravi.session!.fileToken)).status, 200);
+  assert.equal((await req(hub, 'GET', `/files/${mine.id}`, ravi.session!.fileToken)).status, 404);
+  // reactions
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Emoji', members: [priya.session!.me.id] });
+  const m = await owner.request('msg.send', { convId: space.id, body: 'Pipe rack done :pipe:', clientId: 'e1' });
+  const r = await priya.request('msg.react', { messageId: m.id, emoji: ':pipe:', on: true });
+  assert.deepEqual(r.reactions[':pipe:'], [priya.session!.me.id]);
+  await assert.rejects(priya.request('msg.react', { messageId: m.id, emoji: ':nope:', on: true }), /not supported/);
+  // not removed by file clean-up while in use, and removable
+  assert.equal(hub.files.gc(Date.now() + 1000), 1, 'only the unused upload is cleaned up');
+  assert.ok(hub.files.info(info.id));
+  await owner.request('admin.emoji.remove', { name: 'pipe' });
+  assert.equal((await priya.request('emoji.list')).length, 0);
+});

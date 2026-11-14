@@ -23,6 +23,7 @@ import { Calendar, CalError } from './calendar.ts';
 import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
+import { Emoji, EmojiError } from './emoji.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
@@ -98,6 +99,7 @@ export class Hub {
   readonly guests: Guests;
   readonly compliance: Compliance;
   readonly policies: Policies;
+  readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
   private lastPurge = 0;
@@ -138,6 +140,9 @@ export class Hub {
     this.compliance = new Compliance(this.store, this.messaging, this.files);
     this.policies = new Policies(this.store, this.files, (p) => this.emit('policy.updated', p));
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
+    this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
+    this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
+    this.messaging.customEmoji = (name) => this.emoji.exists(name);
     this.commands = new Commands(this.store, this.messaging);
     this.workspace = new Workspace(this.store.db, this.messaging, (userIds, name, data) => this.deliver(userIds, name, data));
     this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
@@ -830,6 +835,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof WorkError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(emoji\.list|admin\.emoji\.(add|remove))$/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.emoji.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof EmojiError) throw new OpError(err.message);
             throw err;
           }
         }

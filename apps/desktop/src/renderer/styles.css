@@ -1570,3 +1570,11 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 /* above a full-screen call: the recording-ready dialog and toasts */
 .scrim:has(> .dialog[aria-label='Call recording ready']) { z-index: 40; }
 .toasts { z-index: 45; }
+
+/* office emoji */
+.custom-emoji { display: inline-block; vertical-align: -4px; object-fit: contain; }
+.md .custom-emoji, .msg-body .custom-emoji { margin: 0 1px; }
+.emoji-admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+.emoji-admin-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--stroke); font-size: 12.5px; }
+.emoji-admin-item .mono { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.emoji-pop button img.custom-emoji { vertical-align: middle; }

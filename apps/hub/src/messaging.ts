@@ -118,6 +118,8 @@ export class Messaging {
   beforeChange: ((msg: MsgRow, change: 'edit' | 'delete', actorId: string) => void) | null = null;
   /** The office policy: how long after sending an author may edit or delete (null: any time). */
   editWindowMs: () => number | null = () => null;
+  /** Does this office emoji exist (for :name: reactions)? */
+  customEmoji: (name: string) => boolean = () => false;
   private checkWindow(msg: MsgRow, what: 'edited' | 'deleted'): void {
     const w = this.editWindowMs();
     if (w !== null && Date.now() - msg.created_at > w) {
@@ -716,7 +718,8 @@ export class Messaging {
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
         this.requireMember(msg.conv_id, me.id);
         const emoji = typeof d.emoji === 'string' ? d.emoji : '';
-        if (!EMOJI_RE.test(emoji)) throw new MsgError('That reaction is not supported.');
+        const custom = /^:([a-z0-9][a-z0-9_-]{1,31}):$/.exec(emoji);
+        if (!EMOJI_RE.test(emoji) && !(custom && this.customEmoji(custom[1]))) throw new MsgError('That reaction is not supported.');
         if (d.on === true) {
           const count = (this.db.prepare('SELECT COUNT(DISTINCT emoji) AS n FROM reactions WHERE message_id = ?').get(msg.id) as { n: number }).n;
           if (count >= 20) throw new MsgError('This message already has 20 different reactions.');

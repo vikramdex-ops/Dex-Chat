@@ -1,6 +1,7 @@
 // Control room ▸ Policies (edit window, upload limit, PC-to-PC fallback, call recording) and
 // ▸ Usage (activity per day, busiest Spaces and people, storage, calls).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { EmojiImg, useCustomEmoji } from '../emoji.tsx';
 import type { OfficePolicy, PublicUser, UsageReport } from '@dex/core';
 import { Avatar, Icon, Segmented, Toggle, useToast } from '../ui.tsx';
 import { formatSize } from '../chat/files.tsx';
@@ -38,6 +39,7 @@ export function PoliciesAdmin() {
           <Toggle label="Direct messages pass straight between PCs" checked={p.peerFallback} onChange={(v) => save({ peerFallback: v })} />
         </div>
       </section>
+      <EmojiAdmin />
       <section className="card">
         <div className="eyebrow">Calls</div>
         <div className="setting" style={{ marginTop: 6 }}>
@@ -157,5 +159,50 @@ export function UsageAdmin({ users }: { users: PublicUser[] }) {
         </>
       )}
     </div>
+  );
+}
+
+function EmojiAdmin() {
+  const toast = useToast();
+  const list = useCustomEmoji();
+  const [name, setName] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pick = useRef<HTMLInputElement>(null);
+  const add = async () => {
+    if (!file) return;
+    if (file.size > 256 * 1024) { toast('Emoji images can be up to 256 KB.', true); return; }
+    setBusy(true);
+    try {
+      const info = await window.dex.uploadFile!(`emoji-${Date.now().toString(36)}`, { data: await file.arrayBuffer(), name: file.name, mime: file.type || undefined });
+      await window.dex.request('admin.emoji.add', { name, fileId: info.id });
+      toast(`:${name.toLowerCase()}: added`);
+      setName(''); setFile(null);
+    } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card">
+      <div className="eyebrow">Office emoji</div>
+      <p className="muted" style={{ marginTop: 0 }}>Small square images people can use in messages as <span className="mono">:name:</span> and as reactions. PNG, GIF, WebP or JPEG, up to 256 KB.</p>
+      {list.size > 0 && (
+        <div className="emoji-admin-grid">
+          {[...list.values()].map((e) => (
+            <div key={e.name} className="emoji-admin-item">
+              <EmojiImg name={e.name} size={28} />
+              <span className="mono">:{e.name}:</span>
+              <button className="icon-btn" title={`Remove :${e.name}:`} onClick={() => { if (confirm(`Remove :${e.name}:? Messages that use it show the name instead.`)) void window.dex.request('admin.emoji.remove', { name: e.name }).catch((err: Error) => toast(err.message, true)); }}><Icon name="x" size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {window.dex.uploadFile && (
+        <div className="org-admin-add" style={{ marginTop: 10 }}>
+          <input className="input" placeholder="name, e.g. pipe-rack" maxLength={32} value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))} aria-label="Emoji name" />
+          <button className="btn" onClick={() => pick.current?.click()}><Icon name="paperclip" size={14} />{file ? file.name : 'Choose image'}</button>
+          <input ref={pick} type="file" hidden accept="image/png,image/gif,image/webp,image/jpeg" onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !name) setName(f.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)); e.target.value = ''; }} />
+          <button className="btn primary" disabled={busy || !file || name.length < 2} onClick={() => void add()}>{busy ? <span className="spinner" /> : <Icon name="plus" size={14} />}Add</button>
+        </div>
+      )}
+    </section>
   );
 }

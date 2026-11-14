@@ -3,6 +3,7 @@
 // Preferences and the Control room slide in as sheets from the right.
 import { setAlertPrefs } from './alerts.ts';
 import { startPolicy } from './policy.ts';
+import { startEmoji } from './emoji.tsx';
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
@@ -175,6 +176,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
     void startOrg();
     startPolicy();
+    startEmoji();
     void startWork();
     void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);

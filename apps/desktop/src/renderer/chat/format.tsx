@@ -1,6 +1,7 @@
 // Message formatting: a small, safe Markdown subset rendered straight to React elements
 // (never HTML strings). Supports **bold**, *italic*, ~~strike~~, `code`, ``` blocks ```,
 // > quotes, lists, links, <@mentions> and engineering line-number references.
+import { EmojiImg, customEmoji } from '../emoji.tsx';
 import type { ReactNode } from 'react';
 import type { PublicUser } from '@dex/core';
 
@@ -55,12 +56,14 @@ const INLINE: Inline[] = [
   { re: /https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k) => <a key={k} href={m[0]} target="_blank" rel="noreferrer noopener">{m[0]}</a> },
   // links for the other office tools become chips that open the tool
   { re: /(?:projectopener|dexterity|sleuth|datum|dexconnect):\/\/[^\s<>()]+[^\s<>().,;:!?'"\]]/y, render: (m, k) => <ToolLink key={k} url={m[0]} /> },
+  // office emoji, written :name:
+  { re: /:([a-z0-9][a-z0-9_-]{1,31}):/y, render: (m, k) => (customEmoji().has(m[1]) ? <EmojiImg key={k} name={m[1]} /> : m[0]) },
   { re: new RegExp(LINE_REF_RE.source, 'y'), render: (m, k) => <TagRef key={k} tag={m[0]} kind="line" /> },
   { re: new RegExp(DRAWING_RE.source, 'y'), render: (m, k) => <TagRef key={k} tag={m[0]} kind="drawing" /> },
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS]/;
+const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS:]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];

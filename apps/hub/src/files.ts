@@ -85,7 +85,11 @@ export class FileStore {
   }
 
   /** May this person read the file? Uploaders always can; others through a conversation they are in. */
+  /** Files everyone may read (custom emoji images). */
+  isPublic: (fileId: string) => boolean = () => false;
+
   canRead(userId: string, fileId: string): boolean {
+    if (this.isPublic(fileId)) return true;
     const own = this.db.prepare('SELECT 1 FROM files WHERE id = ? AND uploader_id = ?').get(fileId, userId);
     if (own) return true;
     return !!this.db.prepare(`SELECT 1 FROM message_files mf JOIN messages m ON m.id = mf.message_id
@@ -160,7 +164,8 @@ export class FileStore {
   gc(olderThan: number): number {
     const rows = this.db.prepare(`SELECT f.id, f.sha256 FROM files f WHERE f.created_at < ?
       AND NOT EXISTS (SELECT 1 FROM message_files mf JOIN messages m ON m.id = mf.message_id WHERE mf.file_id = f.id AND m.deleted = 0)
-      AND NOT EXISTS (SELECT 1 FROM scheduled s WHERE s.files LIKE '%' || f.id || '%') LIMIT 1000`).all(olderThan) as Array<{ id: string; sha256: string }>;
+      AND NOT EXISTS (SELECT 1 FROM scheduled s WHERE s.files LIKE '%' || f.id || '%')
+      AND NOT EXISTS (SELECT 1 FROM custom_emoji e WHERE e.file_id = f.id) LIMIT 1000`).all(olderThan) as Array<{ id: string; sha256: string }>;
     for (const r of rows) {
       this.db.prepare('DELETE FROM message_files WHERE file_id = ?').run(r.id);
       this.db.prepare('DELETE FROM files WHERE id = ?').run(r.id);

@@ -18,6 +18,7 @@ import { FormBuilder, FormCard } from './forms.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
+import { EmojiGlyph, EmojiImg, useCustomEmoji } from '../emoji.tsx';
 import { ClipRecorder, clipsSupported, screenClipsSupported } from './clips.tsx';
 import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
@@ -451,6 +452,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   }, [m.id]);
 
   const act = (p: Promise<unknown>, ok?: string) => p.then(() => ok && toast(ok)).catch((e: Error) => toast(e.message, true));
+  const custom = useCustomEmoji();
   const react = (emoji: string) => {
     const on = !(m.reactions[emoji] ?? []).includes(ctx.meId);
     setPicker(false);
@@ -484,7 +486,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           {Object.entries(m.reactions).map(([emoji, who]) => (
             <button key={emoji} className={`reaction${who.includes(ctx.meId) ? ' mine' : ''}`} onClick={() => react(emoji)}
               title={who.map((id) => (id === ctx.meId ? 'You' : ctx.users.get(id)?.displayName ?? 'Someone')).join(', ')}>
-              <span>{emoji}</span><span className="n">{who.length}</span>
+              <span><EmojiGlyph emoji={emoji} size={16} /></span><span className="n">{who.length}</span>
             </button>
           ))}
         </div>
@@ -544,6 +546,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           {picker && (
             <Popover anchor={pickBtn.current} onClose={() => setPicker(false)} className="emoji-pop">
               {EMOJI.map((e) => <button key={e} onClick={() => react(e)}>{e}</button>)}
+              {[...custom.keys()].map((n) => <button key={n} title={`:${n}:`} onClick={() => react(`:${n}:`)}><EmojiImg name={n} /></button>)}
             </Popover>
           )}
         </div>
@@ -615,6 +618,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null);
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
+  const custom = useCustomEmoji();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | null>(null);
   const [addMenu, setAddMenu] = useState(false);
@@ -822,7 +826,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
           <button className="icon-btn wide-only" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
             <div className="emoji-pop dock-emoji" onMouseLeave={() => setEmoji(false)}>
-              {EMOJI.map((e) => <button key={e} onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = text.slice(0, pos) + e + text.slice(pos); setText(v); setDraft(key, v); setEmoji(false); el.focus(); }}>{e}</button>)}
+              {[...EMOJI, ...[...custom.keys()].map((n) => `:${n}:`)].map((e) => <button key={e} title={e.startsWith(':') ? e : undefined} onClick={() => { const el = ref.current!; const pos = el.selectionStart; const ins = e.startsWith(':') ? `${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}${e} ` : e; const v = text.slice(0, pos) + ins + text.slice(pos); setText(v); setDraft(key, v); setEmoji(false); el.focus(); }}><EmojiGlyph emoji={e} /></button>)}
             </div>
           )}
         </div>
