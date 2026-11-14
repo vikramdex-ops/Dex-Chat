@@ -9,6 +9,7 @@ const state = {
   online: new Set(),
   current: null,
   messages: [],
+  reads: [],
   hasMore: false,
   oldestCursor: null,
   loadingOlder: false,
@@ -223,6 +224,20 @@ function connectEvents() {
     renderSidebar();
     renderMessages();
   });
+  es.addEventListener('read', (e) => {
+    const { channelId, userId, messageId } = JSON.parse(e.data);
+    if (!state.current || channelId !== state.current.id) return;
+    if (userId === state.me.id) return;
+    const msg = state.messages.find((m) => m.id === messageId);
+    const entry = state.reads.find((r) => r.userId === userId);
+    if (entry) {
+      entry.messageId = messageId;
+      if (msg) entry.readAt = msg.createdAt;
+    } else {
+      state.reads.push({ userId, messageId, name: '', readAt: msg ? msg.createdAt : Date.now() });
+    }
+    renderMessages();
+  });
   es.addEventListener('typing', (e) => {
     const { channelId, user } = JSON.parse(e.data);
     if (!state.current || channelId !== state.current.id) return;
@@ -250,6 +265,8 @@ function ping() {
 }
 
 function announce(message, ch) {
+  if (ch && ch.muted) return;
+  if (state.current && state.current.muted) return;
   ping();
   const hidden = document.hidden;
   if (!hidden || !state.prefs.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -274,10 +291,17 @@ function renderSidebar() {
       const other = otherMember(ch);
       btn.append(makeAvatar(other ? other.name : `#${chanName(ch)}`, other ? other.hue : null));
       btn.append(el('span', 'chan-name', (isDm ? '' : '#') + chanName(ch)));
-      if (ch.unread) {
+      if (ch.mentions) {
+        const badge = el('span', 'badge mention', `@${ch.mentions}`);
+        badge.setAttribute('aria-label', `${ch.mentions} mentions you`);
+        btn.append(badge);
+      } else if (ch.unread && !ch.muted) {
         const badge = el('span', 'badge', ch.unread > 99 ? '99+' : String(ch.unread));
         badge.setAttribute('aria-label', `${ch.unread} unread`);
         btn.append(badge);
+      } else if (ch.muted) {
+        const mute = el('span', 'mute-mark', 'muted');
+        btn.append(mute);
       }
       btn.onclick = () => openChannel(ch.id);
       li.append(btn);
@@ -352,6 +376,7 @@ async function openChannel(id) {
     const page = await api(`/api/channels/${id}/messages?limit=60`);
     if (!state.current || state.current.id !== id) return;
     state.messages = page.messages;
+    state.reads = page.reads || [];
     state.hasMore = page.hasMore;
     state.oldestCursor = page.oldestCursor;
     $('messages').dataset.unread = String(ch.unread || 0);
@@ -480,7 +505,7 @@ function renderMessages(append = false, jumpToBottom = false) {
 
     const body = el('div', 'msg-body');
     if (m.deleted) body.append(el('em', 'muted', 'Message removed'));
-    else body.innerHTML = linkify(esc(m.body));
+    else body.innerHTML = mentionify(linkify(esc(m.body)));
     if (m.editedAt) body.append(el('span', 'edited', ' (edited)'));
     if (m.pinned) body.append(el('span', 'pin-tag', 'Pinned'));
     main.append(body);
@@ -571,8 +596,15 @@ function renderMessages(append = false, jumpToBottom = false) {
     lastAt = m.createdAt;
   });
 
-  const pins = state.messages.filter((m) => m.pinned).length;
-  $('pin-count').textContent = String(pins);
+  const pinned = state.messages.filter((m) => m.pinned).length;
+  $('pin-count').textContent = String(pinned);
+
+  const seen = seenSummary();
+  if (seen) {
+    const node = document.getElementById(`m-${seen.messageId}`);
+    const main = node && node.querySelector('.msg-main');
+    if (main) main.append(el('div', 'seen', seen.seen ? `Seen by ${seen.seen} of ${seen.total}` : 'Not seen yet'));
+  }
 
   if (jumpToBottom) box.scrollTop = box.scrollHeight;
   else if (atBottom) box.scrollTop = box.scrollHeight;
@@ -582,6 +614,19 @@ function renderMessages(append = false, jumpToBottom = false) {
 
 function linkify(text) {
   return text.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer noopener">$1</a>');
+}
+
+function mentionify(html) {
+  return html.replace(/(^|[\s(])@([A-Za-z0-9._-]+)/g, (_all, pre, name) => `${pre}<span class="mention">@${name}</span>`);
+}
+
+function seenSummary() {
+  const mine = [...state.messages].reverse().find((m) => m.author.id === state.me.id && !m.deleted);
+  if (!mine) return null;
+  const others = state.reads.filter((r) => r.userId !== state.me.id);
+  if (!others.length) return null;
+  const seen = others.filter((r) => r.readAt && r.readAt >= mine.createdAt).length;
+  return { messageId: mine.id, seen, total: others.length };
 }
 
 function revealMessage(id) {
@@ -1000,6 +1045,22 @@ function openMembers() {
       list.append(row);
     }
     body.append(list);
+    if (ch.kind === 'channel') {
+      const mute = el('button', 'ghost-btn', ch.muted ? 'Unmute this channel' : 'Mute this channel');
+      mute.onclick = async () => {
+        try {
+          const { channel } = await api(`/api/channels/${ch.id}/mute`, { method: 'POST', json: { muted: !ch.muted } });
+          const idx = state.channels.findIndex((c) => c.id === channel.id);
+          if (idx >= 0) state.channels[idx] = channel;
+          if (state.current && state.current.id === channel.id) state.current = channel;
+          closeSheet();
+          renderSidebar();
+          toast(channel.muted ? `Muted #${channel.name}` : `Unmuted #${channel.name}`, 'ok');
+        } catch (err) { warn(err); }
+      };
+      body.append(el('div', 'sheet-actions'));
+      body.append(mute);
+    }
     if (ch.kind === 'channel' && ch.name !== 'general') {
       const leave = el('button', 'ghost-btn danger', `Leave #${ch.name}`);
       leave.onclick = async () => {

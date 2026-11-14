@@ -52,7 +52,13 @@ CREATE TABLE IF NOT EXISTS members (
   user_id TEXT NOT NULL,
   joined_at INTEGER NOT NULL,
   last_read TEXT,
+  muted INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (channel_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS mentions (
+  message_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  PRIMARY KEY (message_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -96,6 +102,7 @@ for (const sql of [
   'ALTER TABLE messages ADD COLUMN file_id TEXT',
   'ALTER TABLE messages ADD COLUMN forwarded_from TEXT',
   "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'",
+  'ALTER TABLE members ADD COLUMN muted INTEGER NOT NULL DEFAULT 0',
 ]) {
   try { db.exec(sql); } catch { /* column already present */ }
 }
@@ -186,6 +193,21 @@ const isAdmin = (u) => u && u.role === 'admin';
 const memberIds = (channelId) => db.prepare('SELECT user_id FROM members WHERE channel_id = ?').all(channelId).map((r) => r.user_id);
 const isMember = (channelId, userId) => memberIds(channelId).includes(userId);
 
+// @name or @first-name, matched against the people actually in the conversation
+function parseMentions(text, channelId) {
+  if (!text || !text.includes('@')) return [];
+  const lower = text.toLowerCase();
+  const hit = new Set();
+  for (const id of memberIds(channelId)) {
+    const row = db.prepare('SELECT name FROM users WHERE id = ?').get(id);
+    if (!row) continue;
+    const full = row.name.toLowerCase();
+    const first = full.split(/\s+/)[0];
+    if (lower.includes(`@${full}`) || lower.includes(`@${first}`)) hit.add(id);
+  }
+  return [...hit];
+}
+
 function channelView(channelId, viewerId) {
   const ch = db.prepare('SELECT * FROM channels WHERE id = ?').get(channelId);
   if (!ch) return null;
@@ -194,6 +216,20 @@ function channelView(channelId, viewerId) {
     .filter(Boolean)
     .map(publicUser);
   const membership = db.prepare('SELECT * FROM members WHERE channel_id = ? AND user_id = ?').get(channelId, viewerId);
+  let mentions = 0;
+  if (membership) {
+    const rows = db
+      .prepare(
+        `SELECT m.created_at AS at, m.id AS id FROM mentions mn
+           JOIN messages m ON m.id = mn.message_id
+          WHERE mn.user_id = ? AND m.channel_id = ? AND m.deleted = 0 AND m.author_id != ?`
+      )
+      .all(viewerId, channelId, viewerId);
+    const mark = membership.last_read ? db.prepare('SELECT created_at, id FROM messages WHERE id = ?').get(membership.last_read) : null;
+    mentions = mark
+      ? rows.filter((r) => r.at > mark.created_at || (r.at === mark.created_at && r.id > mark.id)).length
+      : rows.length;
+  }
   const last = db
     .prepare('SELECT id, created_at, body, deleted FROM messages WHERE channel_id = ? ORDER BY created_at DESC, id DESC LIMIT 1')
     .get(channelId);
@@ -214,6 +250,8 @@ function channelView(channelId, viewerId) {
     name: ch.name,
     topic: ch.topic,
     createdBy: ch.created_by,
+    muted: Boolean(membership && membership.muted),
+    mentions,
     unread,
     lastMessageAt: last ? last.created_at : null,
     preview: last && !last.deleted ? last.body.slice(0, 90) : '',
@@ -227,6 +265,7 @@ function hydrate(row) {
   const file = row.file_id ? db.prepare('SELECT * FROM files WHERE id = ?').get(row.file_id) : null;
   const reactions = db.prepare('SELECT emoji, user_id FROM reactions WHERE message_id = ?').all(row.id);
   const replyCount = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE reply_to = ? AND deleted = 0').get(row.id).n;
+  const mentions = db.prepare('SELECT user_id FROM mentions WHERE message_id = ?').all(row.id).map((r) => r.user_id);
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -239,6 +278,7 @@ function hydrate(row) {
     deleted: !!row.deleted,
     pinned: !!row.pinned,
     replyCount,
+    mentions,
     file: file ? { id: file.id, name: file.name, mime: file.mime, size: file.size, inline: file.mime.startsWith('image/') } : null,
     reactions,
   };
@@ -431,7 +471,8 @@ async function handler(req, res) {
     }
     db.prepare('INSERT OR IGNORE INTO members (channel_id, user_id, joined_at) VALUES (?,?,?)').run(general.id, id, now());
     publish('presence', { users: [...onlineIds()] });
-    res.setHeader('set-cookie', `lattice=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+    // No cookie: each browser profile keeps its own token, so two tabs (or two people
+    // sharing a machine) can never inherit each other's identity.
     log('info', 'user joined', { name, role });
     return json(res, 200, { token, user: publicUser({ id, name, device, hue: hueFor(name), role }) });
   }
@@ -512,8 +553,18 @@ async function handler(req, res) {
       : db.prepare('SELECT * FROM messages WHERE channel_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(channelId, limit + 1);
     const hasMore = rows.length > limit;
     const page = rows.slice(0, limit).reverse();
+    const reads = db
+      .prepare(
+        `SELECT mm.user_id AS userId, mm.last_read AS messageId, u.name AS name, x.created_at AS readAt
+           FROM members mm
+           JOIN users u ON u.id = mm.user_id
+           LEFT JOIN messages x ON x.id = mm.last_read
+          WHERE mm.channel_id = ?`
+      )
+      .all(channelId);
     return json(res, 200, {
       messages: page.map(hydrate),
+      reads,
       hasMore,
       oldestCursor: page.length ? encodeCursor(page[0]) : null,
     });
@@ -531,6 +582,9 @@ async function handler(req, res) {
     const ts = now();
     db.prepare('INSERT INTO messages (id, channel_id, author_id, body, file_id, reply_to, created_at) VALUES (?,?,?,?,?,?,?)')
       .run(id, channelId, user.id, text, fileId, body.replyTo || null, ts);
+    for (const mentioned of parseMentions(text, channelId)) {
+      db.prepare('INSERT OR IGNORE INTO mentions (message_id, user_id) VALUES (?,?)').run(id, mentioned);
+    }
     db.prepare('UPDATE members SET last_read = ? WHERE channel_id = ? AND user_id = ?').run(id, channelId, user.id);
     const message = hydrate(db.prepare('SELECT * FROM messages WHERE id = ?').get(id));
     publish('message', { message }, { toUsers: memberIds(channelId) });
@@ -597,6 +651,7 @@ async function handler(req, res) {
     if (!body.channelId || !body.messageId) return fail(res, 400, 'channelId and messageId are required.');
     if (!isMember(body.channelId, user.id)) return fail(res, 403, 'Not a member.');
     db.prepare('UPDATE members SET last_read = ? WHERE channel_id = ? AND user_id = ?').run(body.messageId, body.channelId, user.id);
+    publish('read', { channelId: body.channelId, userId: user.id, messageId: body.messageId }, { toUsers: memberIds(body.channelId) });
     return json(res, 200, { ok: true });
   }
 
@@ -659,7 +714,7 @@ async function handler(req, res) {
     return json(res, 201, { channel: channelView(id, user.id) });
   }
 
-  const chanMatch = pathname.match(/^\/api\/channels\/([^/]+)(?:\/(join|leave))?$/);
+  const chanMatch = pathname.match(/^\/api\/channels\/([^/]+)(?:\/(join|leave|mute|reads))?$/);
   if (chanMatch) {
     const ch = db.prepare('SELECT * FROM channels WHERE id = ?').get(chanMatch[1]);
     if (!ch) return fail(res, 404, 'Channel not found.');
@@ -669,6 +724,24 @@ async function handler(req, res) {
       db.prepare('INSERT OR IGNORE INTO members (channel_id, user_id, joined_at) VALUES (?,?,?)').run(ch.id, user.id, now());
       for (const m of memberIds(ch.id)) publish('channel', { channel: channelView(ch.id, m) }, { toUsers: [m] });
       return json(res, 200, { channel: channelView(ch.id, user.id) });
+    }
+    if (verb === 'mute' && req.method === 'POST') {
+      if (!isMember(ch.id, user.id)) return fail(res, 403, 'Not a member.');
+      const body = await readJson(req);
+      db.prepare('UPDATE members SET muted = ? WHERE channel_id = ? AND user_id = ?').run(body.muted ? 1 : 0, ch.id, user.id);
+      return json(res, 200, { channel: channelView(ch.id, user.id) });
+    }
+    if (verb === 'reads' && req.method === 'GET') {
+      if (!isMember(ch.id, user.id)) return fail(res, 403, 'Not a member.');
+      const rows = db
+        .prepare(
+          `SELECT mm.user_id AS userId, u.name AS name, mm.last_read AS messageId, x.created_at AS readAt
+             FROM members mm JOIN users u ON u.id = mm.user_id
+             LEFT JOIN messages x ON x.id = mm.last_read
+            WHERE mm.channel_id = ?`
+        )
+        .all(ch.id);
+      return json(res, 200, { reads: rows });
     }
     if (verb === 'leave' && req.method === 'POST') {
       if (ch.kind === 'channel' && ch.name === 'general') return fail(res, 400, 'You cannot leave #general.');

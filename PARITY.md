@@ -47,10 +47,10 @@ or a media server by nature.
 | Forwarding | yes | **Done** | Pick one or many conversations |
 | Reactions | yes | **Done** | 👍 ✅ 👀 toggles with counts |
 | Pins / starred | yes | **Done** | Pins with a per-conversation list |
-| Mentions / @notifications | yes | **Planned** | Next: highlight + directed notifications |
+| Mentions / @notifications | yes | **Done** | Highlighted in the message, counted as an `@n` badge. Matched by name; unique handles are the next refinement |
 | Typing indicators | yes | **Done** | |
 | Presence / availability | yes | **Partial** | Online/away from the live connection; no manual status text |
-| Read receipts | yes | **Partial** | Read state drives unread counts; a "seen by" line is planned |
+| Read receipts | yes | **Done** | "Seen by n of m" under your latest message, updated live over SSE |
 | Search | yes | **Done** | Scoped to your conversations, optional current-channel filter |
 | Message scheduling | yes | **Planned** | |
 | Reminders | yes | **Planned** | |
@@ -58,7 +58,8 @@ or a media server by nature.
 | Voice notes | yes | **Planned** | MediaRecorder + the existing upload path |
 | Broadcast messages | yes | **Planned** | |
 | Quick replies / templates | yes | **Planned** | |
-| Chat mute / archive | yes | **Planned** | |
+| Chat mute | yes | **Done** | Per-person mute; the unread badge hides but mentions still count |
+| Chat archive | yes | **Planned** | |
 
 ## C. Files and media
 
@@ -104,13 +105,14 @@ or a media server by nature.
 
 ## Definition of done for v2
 
-1. Mentions and directed notifications, plus a "seen by" line.
-2. Muted conversations and an archive.
-3. Mentions, scheduling, reminders and polls.
+1. ~~Mentions and directed notifications, plus a "seen by" line.~~ done
+2. ~~Muted conversations.~~ done — archive still to do.
+3. Scheduling, reminders and polls.
 4. Voice notes.
 5. Bots and slash commands over a documented local API.
 6. Multi-server switcher in the desktop shell.
 7. Retention settings and an audit log.
+8. Unique @handles (names can repeat in a real office).
 
 Calls and third-party integrations stay out of scope because they contradict the constraint that
 started this project: everything works with the internet cable unplugged.

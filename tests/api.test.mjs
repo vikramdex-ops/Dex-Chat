@@ -359,6 +359,65 @@ test('server-sent events deliver live messages', async () => {
   ctrl.abort();
 });
 
+test('mentions are detected, counted and scoped to the conversation', async () => {
+  const b = await expectOk('/api/bootstrap', { token: member.token });
+  const general = b.channels.find((c) => c.name === 'general');
+  await expectOk('/api/read-all', { method: 'POST', token: member.token, json: {} });
+
+  const sent = await expectOk(`/api/channels/${general.id}/messages`, {
+    method: 'POST', token: admin.token, json: { body: `@${member.user.name} please review the line list` },
+  });
+  assert.ok(sent.message.mentions.includes(member.user.id), 'the mentioned person is recorded');
+
+  const fresh = await expectOk('/api/bootstrap', { token: member.token });
+  assert.ok(fresh.channels.find((c) => c.id === general.id).mentions >= 1);
+
+  const nobody = await expectOk(`/api/channels/${general.id}/messages`, {
+    method: 'POST', token: admin.token, json: { body: '@SomeoneNotHere hello' },
+  });
+  assert.equal(nobody.message.mentions.length, 0, 'unknown names are not mentions');
+});
+
+test('a channel can be muted by one person without affecting others', async () => {
+  const b = await expectOk('/api/bootstrap', { token: member.token });
+  const general = b.channels.find((c) => c.name === 'general');
+
+  const muted = await expectOk(`/api/channels/${general.id}/mute`, { method: 'POST', token: member.token, json: { muted: true } });
+  assert.equal(muted.channel.muted, true);
+
+  const mine = await expectOk('/api/bootstrap', { token: member.token });
+  assert.equal(mine.channels.find((c) => c.id === general.id).muted, true);
+
+  const theirs = await expectOk('/api/bootstrap', { token: admin.token });
+  assert.equal(theirs.channels.find((c) => c.id === general.id).muted, false, 'mute is per person');
+
+  const unmuted = await expectOk(`/api/channels/${general.id}/mute`, { method: 'POST', token: member.token, json: { muted: false } });
+  assert.equal(unmuted.channel.muted, false);
+});
+
+test('read receipts report who has caught up, and stay private', async () => {
+  const b = await expectOk('/api/bootstrap', { token: admin.token });
+  const general = b.channels.find((c) => c.name === 'general');
+  const dm = await expectOk('/api/channels', { method: 'POST', token: admin.token, json: { kind: 'dm', memberIds: [member.user.id] } });
+
+  const sent = await expectOk(`/api/channels/${general.id}/messages`, {
+    method: 'POST', token: admin.token, json: { body: 'read receipt check' },
+  });
+
+  const page = await expectOk(`/api/channels/${general.id}/messages`, { token: admin.token });
+  assert.ok(Array.isArray(page.reads), 'message pages carry read state');
+  assert.ok(page.reads.every((r) => 'userId' in r && 'messageId' in r));
+
+  await expectOk('/api/read', { method: 'POST', token: member.token, json: { channelId: general.id, messageId: sent.message.id } });
+  const reads = await expectOk(`/api/channels/${general.id}/reads`, { token: admin.token });
+  const theirs = reads.reads.find((r) => r.userId === member.user.id);
+  assert.equal(theirs.messageId, sent.message.id);
+  assert.ok(theirs.readAt >= sent.message.createdAt);
+
+  const outsider = await call(`/api/channels/${dm.channel.id}/reads`, { token: third.token });
+  assert.equal(outsider.status, 403, 'outsiders cannot read a private conversation\'s receipts');
+});
+
 test('discovery reports this server', async () => {
   const p = await expectOk('/api/peers');
   assert.ok(p.self.hostname);

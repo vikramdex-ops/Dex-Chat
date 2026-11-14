@@ -178,6 +178,29 @@ h1, h2, h3, p { margin: 0; }
   font-weight: 600;
 }
 .chan.active .badge { background: #fff; color: var(--accent); }
+.badge.mention { background: var(--ink-900); color: #fff; }
+.chan.active .badge.mention { background: #fff; color: var(--ink-900); }
+.mute-mark {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .04em;
+  color: var(--ink-400);
+  text-transform: uppercase;
+}
+.chan.active .mute-mark { color: #ffffffb0; }
+.mention {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 560;
+}
+.seen {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-400);
+  margin-top: 3px;
+}
 
 .person {
   width: 100%;
