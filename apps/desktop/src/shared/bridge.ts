@@ -110,6 +110,64 @@ export interface JoinRequest {
   pairCode?: string;
 }
 
+/** What "Send diagnostics" packs for IT (see src/main/assist/diagnostics.ts); shown in full before it is sent. */
+export interface DiagnosticsReport {
+  kind: 'dexconnect-diagnostics';
+  version: 1;
+  createdAt: string;
+  app: { version: string; channel: UpdateChannel; platform: string; arch: string; electron: string; chrome: string; packaged: boolean; locale: string };
+  os: { name: string; release: string; version: string; arch: string; uptimeHours: number };
+  cpu: { model: string; cores: number; speedMHz: number; load1m: number | null };
+  memory: { totalMb: number; freeMb: number; appMb: number };
+  disk: { path: string; totalGb: number | null; freeGb: number | null };
+  displays: Array<{ id: string; primary: boolean; x: number; y: number; width: number; height: number; scale: number; rotation: number; internal: boolean }>;
+  network: {
+    route: 'office network' | 'internet gateway' | 'not connected';
+    hub: { address: string | null; reachable: boolean; latencyMs: number[]; medianMs: number | null };
+    gateway: string | null;
+    turn: Array<{ url: string; transport: string; reachable: boolean; ms: number | null; note: string | null }>;
+  };
+  log: Array<{ at: number; level: 'info' | 'warn' | 'error'; source: string; msg: string; extra?: Record<string, string | number | boolean | null> }>;
+  rendererErrors: Array<{ at: number; message: string; source?: string }>;
+}
+
+/** What this PC can do in a support session. */
+export interface AssistCaps {
+  /** The technician may be given the mouse and keyboard (Windows; Linux with xdotool). */
+  control: boolean;
+  /** Why not, in words for the requester (macOS, Wayland, no xdotool). */
+  reason: string | null;
+  platform: NodeJS.Platform;
+}
+
+/** The share bar on the requester's screen (an always-on-top window of its own). */
+export interface ShareBarState { tech: string; scope: 'screen' | 'window'; control: boolean; hotkey: string }
+
+export interface AssistBridge {
+  caps(): Promise<AssistCaps>;
+  /**
+   * What the requester allows now, as this PC enforces it. Sharing a whole screen ('screen:' source)
+   * draws an amber frame around it and a share bar on top; control injects the technician's input.
+   */
+  consent(c: { screen: boolean; sourceId?: string | null; scope?: 'screen' | 'window'; control: boolean; tech: string }): Promise<{ screen: boolean; control: boolean; error: string | null }>;
+  /** A message of input events from the technician (checked and limited in the main process). */
+  input(msg: unknown): void;
+  /** The requester stopped something from the share bar or with the stop hotkey. */
+  onStop(cb: (what: 'control' | 'screen' | 'session') => void): () => void;
+  diagnostics(rendererErrors: Array<{ at: number; message: string; source?: string }>): Promise<DiagnosticsReport>;
+  /** A picture of this screen (the app steps aside while it is taken), for a Help Me request. */
+  screenshot(): Promise<{ data: ArrayBuffer; name: string } | null>;
+  /** The presenter's own screen shows everyone's pointers in a click-through window. */
+  pointers(state: { on: boolean; sourceId?: string | null }): void;
+  pointer(msg: { from: string; name: string; color: string; presenter: boolean; m: unknown }): void;
+}
+
+/** In the share bar and pointer windows only. */
+export interface OverlayBridge {
+  onState(cb: (state: unknown) => void): () => void;
+  action(a: 'stop-control' | 'stop-screen' | 'end'): void;
+}
+
 export interface DexBridge {
   getState(): Promise<AppState>;
   /** Desktop: open a conversation in a window of its own, or bring the main window forward. */
@@ -156,6 +214,9 @@ export interface DexBridge {
   /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
   listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
   chooseScreen?(id: string): Promise<void>;
+  /** Help desk sessions (desktop): screen consent, control, diagnostics, screenshots, the pointer overlay. */
+  assist?: AssistBridge;
+  overlay?: OverlayBridge;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   installUpdate(): Promise<void>;

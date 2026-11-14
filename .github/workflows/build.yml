@@ -179,6 +179,25 @@ jobs:
         if: needs.prepare.outputs.publish == 'true'
         run: gh release upload "v$VERSION" apk/*.apk --repo "$PUBLIC_REPO" --clobber
 
+  # The remote-control helper (docs/HELP-DESK.md) can only run on Windows: compile it with Add-Type
+  # and move the pointer through its JSON protocol. A job of its own that nothing depends on, so
+  # it cannot hold up a release.
+  assist-helper:
+    name: input helper (windows)
+    needs: test
+    runs-on: windows-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Compile the helper, move the pointer and read it back
+        run: node apps/desktop/scripts/assist-helper-smoke.ts
+
   publish:
     name: publish (${{ needs.prepare.outputs.channel }})
     needs: [prepare, desktop, hub, android]

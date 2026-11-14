@@ -15,6 +15,8 @@ import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
 import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
+import { appLog } from './applog.ts';
+import { wireAssist } from './assist/index.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -131,6 +133,12 @@ function createWindow(startHidden: boolean): void {
   if (devUrl) void win.loadURL(devUrl);
   else void win.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'));
 
+  // errors in the window go into the app's log (for diagnostics); never the page's content
+  win.webContents.on('console-message', (e: Electron.Event & { level?: string | number; message?: string; sourceId?: string }, level?: number, message?: string, _line?: number, sourceId?: string) => {
+    const lv = e.level ?? level;
+    if (lv === 'error' || lv === 3) appLog.error('renderer', String(e.message ?? message ?? ''), { source: String(e.sourceId ?? sourceId ?? '').split('/').pop() ?? '' });
+  });
+  win.webContents.on('render-process-gone', (_e, d) => appLog.error('renderer', 'the window stopped', { reason: d.reason, exitCode: d.exitCode }));
   win.webContents.on('did-finish-load', () => {
     win?.webContents.setZoomFactor((controller?.settings.textSize ?? 100) / 100);
     if (pendingDeepLink) { routeDeepLink(pendingDeepLink); pendingDeepLink = null; }
@@ -189,6 +197,7 @@ function buildTray(): void {
     tray?.setContextMenu(Menu.buildFromTemplate([
       { label: 'Open Dexterity Connect', click: showWindow },
       { label: status, enabled: false },
+      { label: 'Help me…', enabled: s?.phase === 'ready', click: () => { showWindow(); routeDeepLink(`${PROTOCOL}://help`); } },
       { type: 'separator' },
       {
         label: 'Start when I sign in to Windows', type: 'checkbox', checked: controller?.settings.startAtLogin ?? true,
@@ -345,6 +354,8 @@ app.on('window-all-closed', () => { /* stay in the tray */ });
 app.on('open-url', (e, url) => { e.preventDefault(); showWindow(); routeDeepLink(url); });
 
 void app.whenReady().then(async () => {
+  appLog.toFile(path.join(app.getPath('userData'), 'logs', 'connect.log'));
+  process.on('uncaughtExceptionMonitor', (err) => appLog.error('main', err.message, { name: err.name }));
   const config = loadConfig();
   const identity = loadIdentity();
   const account = await detectAccount();
@@ -394,6 +405,43 @@ void app.whenReady().then(async () => {
     if (Date.now() - last > 30 * 60 * 1000) void updater?.check(false);
   });
   wireIpc(controller);
+  // what happened on this PC, for "Send diagnostics" (no message content is ever logged)
+  appLog.info('main', 'app started', { version, platform: process.platform, packaged: app.isPackaged });
+  let lastPhase = '';
+  controller.on('state', (s: { phase: string; via?: string; error: string | null }) => {
+    if (s.phase === lastPhase) return;
+    const was = lastPhase;
+    lastPhase = s.phase;
+    appLog.write(s.phase === 'offline' || s.phase === 'rejected' || s.phase === 'mismatch' ? 'warn' : 'info', 'hub', `connection: ${s.phase}`, { via: s.via ?? '', error: s.error ?? '' });
+    // a support session cannot be audited without the hub: whatever was shared stops
+    if (was === 'ready' && s.phase !== 'ready') { assist.stopAll('the hub connection was lost'); win?.webContents.send('assist:stop', 'session'); }
+  });
+  controller.on('warning', (err: Error) => appLog.warn('hub', err.message));
+  let lastUpdate = '';
+  updater.on('state', () => {
+    const u = updater!.state;
+    if (u.phase === lastUpdate) return;
+    lastUpdate = u.phase;
+    appLog.write(u.phase === 'error' ? 'warn' : 'info', 'update', `update: ${u.phase}`, { version: u.available?.version ?? '', error: u.error ?? '' });
+  });
+  const assist = wireAssist({
+    win: () => win,
+    load: (w, hash) => { if (devUrl) void w.loadURL(`${devUrl}#${hash}`); else void w.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'), { hash }); },
+    preload: path.join(__dirname, 'preload.cjs'),
+    version,
+    channel: () => config.settings.updateChannel,
+    hub: () => {
+      const s = controller!.state();
+      const ep = controller!.hubEndpoint();
+      return {
+        address: ep ? `${ep.host}:${ep.port}` : null,
+        route: s.phase !== 'ready' ? 'not connected' : controller!.viaGateway ? 'internet gateway' : 'office network',
+        gateway: s.hub?.gateway ? (() => { try { return new URL(s.hub!.gateway!).host; } catch { return null; } })() : null,
+      };
+    },
+    ping: async () => { await controller!.request('ping'); },
+    iceUrls: async () => (await controller!.request('room.ice')).iceServers.flatMap((x) => [x.urls].flat()),
+  });
   // Ctrl+Alt+D from anywhere in Windows brings Dexterity Connect forward (or hides it again)
   try {
     globalShortcut.register('CommandOrControl+Alt+D', () => {
@@ -412,6 +460,10 @@ void app.whenReady().then(async () => {
   nativeTheme.on('updated', () => applyTheme(controller!.settings));
 
   createWindow(process.argv.includes('--hidden'));
+  // a reloaded window has forgotten what it shared: stop sharing and control
+  win?.webContents.on('did-start-navigation', (e: Electron.Event & { isSameDocument?: boolean; isMainFrame?: boolean }, _url?: string, inPlace?: boolean, mainFrame?: boolean) => {
+    if ((e.isMainFrame ?? mainFrame) && !(e.isSameDocument ?? inPlace)) assist.stopAll('the window reloaded');
+  });
   buildTray();
   controller.start();
   updater.start();
