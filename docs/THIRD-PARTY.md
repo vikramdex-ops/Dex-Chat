@@ -22,6 +22,9 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | mediasoup (hub) and mediasoup-client (apps) | The relay for Rooms of more than 8 people | ISC |
 | MediaPipe Tasks Vision (@mediapipe/tasks-vision) | Background blur in calls, on the PC | Apache-2.0 |
 | MediaPipe selfie segmentation model (`selfie_segmenter.tflite`) | Background blur in calls | Apache-2.0 |
+| Transformers.js (@huggingface/transformers), with @huggingface/tokenizers and @huggingface/jinja | Drafting automations from plain words, on the PC | Apache-2.0 (tokenizers, Transformers.js), MIT (jinja) |
+| ONNX Runtime Web (onnxruntime-web, onnxruntime-common) | Running the drafting model on the PC (WebAssembly) | MIT |
+| all-MiniLM-L6-v2 sentence model (sentence-transformers; ONNX, quantized, from Xenova/all-MiniLM-L6-v2 revision 751bff3) | Drafting automations from plain words | Apache-2.0 |
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
 | WinSW | Running the hub as a Windows service | MIT |
 

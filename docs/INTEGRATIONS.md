@@ -117,6 +117,13 @@ Authorization: Bearer <token>
 Send the same `key` again to update it, or `{ "key": "plotter", "remove": true }` to take it down.
 Up to 8 lines of 200 characters. Revoking the integration removes its widgets.
 
+### Automations
+
+Rules in a conversation (or for every Space) can call your tool's webhook when something happens
+there, for example when a drawing is shared, with the PDF's title and revision in the body. The
+request format, the values a body can use and the safety rules (office-network addresses only when
+an administrator allows them) are in [`AUTOMATIONS.md`](AUTOMATIONS.md#webhooks).
+
 ## 4. Links that open Dexterity Connect
 
 | Link | Opens |
