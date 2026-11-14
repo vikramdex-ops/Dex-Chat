@@ -1,5 +1,6 @@
 // Shared UI building blocks: icons, avatars, controls, toasts and formatting helpers.
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { PublicUser } from '@dex/core';
 
@@ -58,6 +59,16 @@ const PATHS = {
   send: 'M4.5 12 20 4.5 15.5 20l-3.5-6.5zM12 13.5l8-9',
   chat: 'M4.5 5.5h15v10h-8l-4.5 4v-4h-2.5z',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  star: 'M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.7l-5.1 2.7 1-5.6-4.1-4 5.7-.8z',
+  alarm: 'M12 20.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm0-11v3.5l2.5 1.5M4 5.5 6.5 3M20 5.5 17.5 3',
+  forward: 'M14 7l5 5-5 5M19 12h-9a5 5 0 0 0-5 5v1',
+  poll: 'M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8',
+  calendar: 'M4.5 6h15v14h-15zM4.5 10.5h15M8.5 3.5v4M15.5 3.5v4',
+  desk: 'M3.5 9h17M5 9v10.5M19 9v10.5M5 14h6M8 4.5h8L18 9H6z',
+  unread: 'M4.5 6.5h15v11h-15zM4.5 7l7.5 6 7.5-6',
+  more: 'M6 12h.01M12 12h.01M18 12h.01',
+  schedule: 'M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm0-12v4.5l3 2M3.5 20.5l3-3',
+  repeat: 'M5 10a6 6 0 0 1 10.5-4L18 8.5M18 4.5v4h-4M19 14a6 6 0 0 1-10.5 4L6 15.5M6 19.5v-4h4',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -158,6 +169,72 @@ export function relativeTime(ts: number | null, now = Date.now()): string {
 /** Short, human-checkable code for a device so admins can confirm who they approve. */
 export function deviceCode(deviceId: string): string {
   return deviceId.slice(0, 8).toUpperCase().replace(/(.{4})/, '$1 ');
+}
+
+/** A centred dialog over a blurred scrim, rendered at the top of the document. */
+export function Dialog({ title, children, onClose, narrow }: { title: string; children: ReactNode; onClose: () => void; narrow?: boolean }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [onClose]);
+  return createPortal(
+    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
+          <h2 style={{ flex: 1 }}>{title}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * A menu or picker anchored to a button, rendered at the top of the document so a
+ * scrolling or clipped container never cuts it off. Flips above the anchor near the bottom.
+ */
+export function Popover({ anchor, onClose, className, children, align = 'end' }: {
+  anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode; align?: 'start' | 'end';
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!anchor || !el) return;
+    const a = anchor.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let left = align === 'end' ? a.right - w : a.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    let top = a.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, a.top - h - 6);
+    setPos({ left, top });
+  }, [anchor, align]);
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (ref.current?.contains(e.target as Node) || anchor?.contains(e.target as Node)) return;
+      onClose();
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const scroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    window.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key);
+    window.addEventListener('scroll', scroll, true);
+    window.addEventListener('resize', onClose);
+    return () => {
+      window.removeEventListener('mousedown', down);
+      window.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', scroll, true);
+      window.removeEventListener('resize', onClose);
+    };
+  }, [anchor, onClose]);
+  return createPortal(
+    <div ref={ref} className={`popover ${className}`} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
+    document.body,
+  );
 }
 
 // ------------------------------------------------------------------ toasts

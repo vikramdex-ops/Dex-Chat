@@ -1,9 +1,8 @@
 // The Direct and Spaces lenses: Switchboard on the left, the open conversation beside it.
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { Conversation, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
-import { Icon, Segmented, Toggle, useToast } from '../ui.tsx';
+import { Dialog, Icon, Segmented, Toggle, useToast } from '../ui.tsx';
 import { Pane, PeoplePicker } from './Pane.tsx';
 import { Switchboard } from './Switchboard.tsx';
 import { addConversation, useChat } from './store.ts';
@@ -52,26 +51,6 @@ export function ChatView({ kind, state, session, openId, setOpenId }: {
         onClose={() => setDialog(null)} onCreated={(c) => { addConversation(c); setOpenId(c.id); setDialog(null); }} />}
       {dialog === 'browse' && <BrowseSpaces onClose={() => setDialog(null)} onJoined={(c) => { addConversation(c); setOpenId(c.id); setDialog(null); }} />}
     </div>
-  );
-}
-
-function Dialog({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
-  return createPortal(
-    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="dialog wide" role="dialog" aria-modal="true" aria-label={title}>
-        <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
-          <h2 style={{ flex: 1 }}>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body,
   );
 }
 

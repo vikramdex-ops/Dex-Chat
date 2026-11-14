@@ -8,6 +8,7 @@ import { Avatar, Icon, useToast } from '../ui.tsx';
 import { useChat } from '../chat/store.ts';
 import { ConvTile, convTitle, shortTime } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
+import { describeWhen, useDesk } from '../desk/store.ts';
 
 function greeting(d = new Date()): string {
   const h = d.getHours();
@@ -33,6 +34,13 @@ export function Home({ state, session, pendingCount, go, open }: {
     .sort((a, b) => (b.mentions - a.mentions) || ((b.lastMessage?.createdAt ?? 0) - (a.lastMessage?.createdAt ?? 0)))
     .slice(0, 8), [conversations]);
 
+  // reminders that are due, or due later today
+  const reminders = useDesk((s) => s.reminders);
+  const dueToday = useMemo(() => {
+    const end = new Date(); end.setHours(23, 59, 59, 999);
+    return [...reminders.values()].filter((r) => r.userId === session.me.id && !r.done && r.dueAt <= end.getTime()).sort((a, b) => a.dueAt - b.dueAt).slice(0, 5);
+  }, [reminders, session.me.id]);
+
   const saveStatus = async (value: string | null) => {
     try {
       await window.dex.request('me.update', { statusText: value });
@@ -51,10 +59,24 @@ export function Home({ state, session, pendingCount, go, open }: {
       </div>
 
       <section className="pulse-section">
-        <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length ? ` · ${needsYou.length}` : ''}</div>
-        {needsYou.length === 0 ? (
+        <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length + dueToday.length ? ` · ${needsYou.length + dueToday.length}` : ''}</div>
+        {dueToday.length > 0 && (
+          <div className="list" style={{ marginBottom: needsYou.length ? 10 : 0 }}>
+            {dueToday.map((r) => (
+              <button key={r.id} className="list-row pulse-row" onClick={() => go('desk')}>
+                <span className="pal-icon pulse-alarm"><Icon name="alarm" size={16} /></span>
+                <span className="sb-main">
+                  <span className="sb-title"><span className="sb-name">{r.text}</span></span>
+                  <span className="sb-preview">{r.message ? plainPreview(r.message.body, users) : r.createdBy !== session.me.id ? `From ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : 'Reminder'}</span>
+                </span>
+                <span className="sb-meta"><span className={`chip${r.dueAt <= Date.now() ? ' warn' : ''}`}>{describeWhen(r.dueAt)}</span></span>
+              </button>
+            ))}
+          </div>
+        )}
+        {needsYou.length === 0 && dueToday.length === 0 ? (
           <div className="empty pulse-empty"><Icon name="check" size={28} /><span>You're all caught up.</span></div>
-        ) : (
+        ) : needsYou.length === 0 ? null : (
           <div className="list">
             {needsYou.map((c) => {
               const last = c.lastMessage;

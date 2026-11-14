@@ -129,6 +129,61 @@ export interface Message {
   lastReplyAt: number | null;
   clientId: string | null;
   files: FileInfo[];
+  /** Set when this message was forwarded from another conversation. */
+  forwardedFrom: { authorId: string; convId: string; messageId: string; createdAt: number } | null;
+  poll: PollView | null;
+}
+
+export interface PollView {
+  question: string;
+  options: Array<{ text: string; votes: number; /** empty for anonymous polls */ voters: string[] }>;
+  multi: boolean;
+  anonymous: boolean;
+  closed: boolean;
+  closesAt: number | null;
+  /** How many people voted. */
+  voterCount: number;
+  /** The viewer's own choices. */
+  mine: number[];
+}
+
+// ---------------------------------------------------------------- desk (personal productivity)
+export type RepeatRule = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly';
+
+export interface Reminder {
+  id: string;
+  /** Who is reminded. */
+  userId: string;
+  /** Who set it (the same person, or a colleague). */
+  createdBy: string;
+  text: string;
+  dueAt: number;
+  repeat: RepeatRule;
+  done: boolean;
+  doneAt: number | null;
+  /** When it last went off. */
+  firedAt: number | null;
+  createdAt: number;
+  /** The message it is about, if any (null once the viewer cannot see it). */
+  message: Message | null;
+  convId: string | null;
+}
+
+export interface ScheduledMessage {
+  id: string;
+  convId: string;
+  parentId: string | null;
+  body: string;
+  files: FileInfo[];
+  sendAt: number;
+  createdAt: number;
+  status: 'pending' | 'failed';
+  error: string | null;
+}
+
+export interface SavedMessage {
+  message: Message;
+  savedAt: number;
 }
 
 /** Mention markup inside message bodies: <@USERID> or <@all>. */
@@ -243,6 +298,25 @@ export interface Ops {
   'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
   'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
+  'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
+  'msg.forward': { req: { messageId: string; convIds: string[]; note?: string }; res: Message[] };
+  'msg.star': { req: { messageId: string; on: boolean }; res: { ok: true } };
+  'poll.create': {
+    req: { convId: string; question: string; options: string[]; multi?: boolean; anonymous?: boolean; closesAt?: number | null; parentId?: string; clientId: string };
+    res: Message;
+  };
+  'poll.vote': { req: { messageId: string; options: number[] }; res: Message };
+  'poll.close': { req: { messageId: string }; res: Message };
+  'desk.saved': { req: void; res: SavedMessage[] };
+  'remind.create': { req: { text?: string; messageId?: string; dueAt: number; repeat?: RepeatRule; forUserId?: string }; res: Reminder };
+  'remind.list': { req: { includeDone?: boolean } | void; res: Reminder[] };
+  'remind.update': { req: { id: string; text?: string; dueAt?: number; repeat?: RepeatRule; done?: boolean }; res: Reminder };
+  'remind.delete': { req: { id: string }; res: { ok: true } };
+  'sched.create': { req: { convId: string; body: string; parentId?: string; files?: string[]; sendAt: number }; res: ScheduledMessage };
+  'sched.list': { req: void; res: ScheduledMessage[] };
+  'sched.update': { req: { id: string; body?: string; sendAt?: number }; res: ScheduledMessage };
+  'sched.cancel': { req: { id: string }; res: { ok: true } };
+  'sched.sendNow': { req: { id: string }; res: Message };
   'search': {
     req: { q: string; convId?: string; limit?: number };
     res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string }> };
@@ -269,5 +343,12 @@ export interface Events {
   'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number };
   'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
   'room.busy': { userId: string; inRoom: boolean };
+  'star.updated': { messageId: string; on: boolean };
+  /** A reminder went off (to the person reminded). */
+  'reminder.due': Reminder;
+  'reminder.updated': Reminder;
+  'reminder.removed': { id: string };
+  'sched.updated': ScheduledMessage;
+  'sched.removed': { id: string; sentMessageId: string | null };
 }
 export type EventName = keyof Events;

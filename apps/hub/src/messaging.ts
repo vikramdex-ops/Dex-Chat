@@ -2,10 +2,19 @@
 // typing, stored on the hub (SQLite). Every operation is authorised by membership.
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, ulid } from '@dex/core';
-import type { Conversation, Message, MessagePreview, Ops, PublicUser } from '@dex/core';
+import type { Conversation, Message, MessagePreview, Ops, PollView, PublicUser } from '@dex/core';
 import type { FileStore } from './files.ts';
 
 export class MsgError extends Error {}
+
+const cleanBody = (v: unknown) => (typeof v === 'string' ? v.replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim() : '');
+
+function parseForward(raw: string): Message['forwardedFrom'] {
+  try {
+    const f = JSON.parse(raw) as NonNullable<Message['forwardedFrom']>;
+    return typeof f.authorId === 'string' ? f : null;
+  } catch { return null; }
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
@@ -57,11 +66,26 @@ CREATE TABLE IF NOT EXISTS mentions (
   PRIMARY KEY (message_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_mentions_user ON mentions(user_id, conv_id, message_id);
+CREATE TABLE IF NOT EXISTS polls (
+  message_id TEXT PRIMARY KEY,
+  question TEXT NOT NULL,
+  options TEXT NOT NULL,
+  multi INTEGER NOT NULL DEFAULT 0,
+  anonymous INTEGER NOT NULL DEFAULT 0,
+  closes_at INTEGER,
+  closed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS poll_votes (
+  message_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  option INTEGER NOT NULL,
+  PRIMARY KEY (message_id, user_id, option)
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNINDEXED, conv_id UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number }
-interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null }
+interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null }
 
 const MAX_BODY = 8000;
 const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Component}‍️]{1,16}$/u;
@@ -79,6 +103,9 @@ export class Messaging {
     this.users = users;
     this.files = files;
     db.exec(SCHEMA);
+    // hubs from before forwarding existed
+    const cols = (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
+    if (!cols.includes('forwarded')) db.exec('ALTER TABLE messages ADD COLUMN forwarded TEXT');
     // hubs upgraded from a version without search: index what is already there
     const indexed = (db.prepare('SELECT COUNT(*) AS n FROM messages_fts').get() as { n: number }).n;
     if (!indexed) {
@@ -104,7 +131,7 @@ export class Messaging {
     return (this.db.prepare('SELECT user_id FROM conv_members WHERE conv_id = ? ORDER BY joined_at').all(convId) as Array<{ user_id: string }>).map((r) => r.user_id);
   }
 
-  private isMember(convId: string, userId: string): boolean {
+  isMember(convId: string, userId: string): boolean {
     return !!this.db.prepare('SELECT 1 FROM conv_members WHERE conv_id = ? AND user_id = ?').get(convId, userId);
   }
 
@@ -123,6 +150,7 @@ export class Messaging {
       .get(convId) as { id: string; author_id: string; body: string; created_at: number; deleted: number } | undefined;
     if (!r) return null;
     let body = r.deleted ? '' : r.body.slice(0, 280);
+    if (!r.deleted && this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(r.id)) body = `📊 ${body}`;
     if (!r.deleted && !body) {
       const names = this.files.forMessage(r.id).map((f) => f.name);
       body = names.length ? `📎 ${names.length === 1 ? names[0] : `${names.length} files`}` : '';
@@ -145,7 +173,35 @@ export class Messaging {
     };
   }
 
-  private messageView(r: MsgRow): Message {
+  private pollView(messageId: string, viewer: string | null): PollView | null {
+    const p = this.db.prepare('SELECT * FROM polls WHERE message_id = ?').get(messageId) as { question: string; options: string; multi: number; anonymous: number; closes_at: number | null; closed: number } | undefined;
+    if (!p) return null;
+    let texts: string[] = [];
+    try { texts = JSON.parse(p.options) as string[]; } catch { /* corrupt row: show no options */ }
+    const votes = this.db.prepare('SELECT user_id, option FROM poll_votes WHERE message_id = ? ORDER BY rowid').all(messageId) as Array<{ user_id: string; option: number }>;
+    const options = texts.map((text) => ({ text, votes: 0, voters: [] as string[] }));
+    const people = new Set<string>();
+    const mine: number[] = [];
+    for (const v of votes) {
+      const o = options[v.option];
+      if (!o) continue;
+      o.votes++;
+      people.add(v.user_id);
+      if (!p.anonymous) o.voters.push(v.user_id);
+      if (v.user_id === viewer) mine.push(v.option);
+    }
+    const closed = !!p.closed || (p.closes_at !== null && p.closes_at <= Date.now());
+    return { question: p.question, options, multi: !!p.multi, anonymous: !!p.anonymous, closed, closesAt: p.closes_at, voterCount: people.size, mine };
+  }
+
+  /** A message as a given person sees it (null when they cannot). */
+  messageFor(id: string, viewer: string): Message | null {
+    const r = this.message(id);
+    if (!r || !this.isMember(r.conv_id, viewer)) return null;
+    return this.messageView(r, viewer);
+  }
+
+  private messageView(r: MsgRow, viewer: string | null = null): Message {
     const reactions: Record<string, string[]> = {};
     for (const x of this.db.prepare('SELECT emoji, user_id FROM reactions WHERE message_id = ? ORDER BY created_at').all(r.id) as Array<{ emoji: string; user_id: string }>) {
       (reactions[x.emoji] ??= []).push(x.user_id);
@@ -158,7 +214,16 @@ export class Messaging {
       mentions: r.body.includes('<@all>') && !r.deleted ? ['all', ...mentions] : mentions,
       replyCount: replies?.n ?? 0, lastReplyAt: replies?.last ?? null, clientId: r.client_id,
       files: r.deleted ? [] : this.files.forMessage(r.id),
+      forwardedFrom: r.forwarded && !r.deleted ? parseForward(r.forwarded) : null,
+      poll: r.deleted ? null : this.pollView(r.id, viewer),
     };
+  }
+
+  /** Find the conversation for a message the viewer can see. */
+  private visibleMessage(id: unknown, viewer: string): MsgRow {
+    const msg = typeof id === 'string' ? this.message(id) : undefined;
+    if (!msg || msg.deleted || !this.isMember(msg.conv_id, viewer)) throw new MsgError('Message not found.');
+    return msg;
   }
 
   private message(id: string): MsgRow | undefined {
@@ -175,7 +240,8 @@ export class Messaging {
   private pushMessage(name: 'msg.new' | 'msg.updated', msg: MsgRow): void {
     const view = this.messageView(msg);
     const members = this.members(msg.conv_id);
-    this.deliver(members, name, () => view);
+    // polls carry each person's own vote
+    this.deliver(members, name, view.poll ? (uid) => this.messageView(msg, uid) : () => view);
     // a reply also changes the parent's reply count
     if (msg.parent_id) {
       const parent = this.message(msg.parent_id);
@@ -328,7 +394,7 @@ export class Messaging {
           ? this.db.prepare('SELECT * FROM messages WHERE conv_id = ? AND parent_id = ? AND id < ? ORDER BY id DESC LIMIT ?').all(c.id, parent, before, limit + 1)
           : this.db.prepare('SELECT * FROM messages WHERE conv_id = ? AND parent_id IS NULL AND id < ? ORDER BY id DESC LIMIT ?').all(c.id, before, limit + 1)) as unknown as MsgRow[];
         const hasMore = rows.length > limit;
-        return { messages: rows.slice(0, limit).reverse().map((r) => this.messageView(r)), hasMore } satisfies Ops['msg.list']['res'];
+        return { messages: rows.slice(0, limit).reverse().map((r) => this.messageView(r, me.id)), hasMore } satisfies Ops['msg.list']['res'];
       }
 
       case 'file.list': {
@@ -339,41 +405,78 @@ export class Messaging {
 
       case 'msg.pins': {
         const c = this.requireMember(String(d.convId), me.id);
-        return (this.db.prepare('SELECT * FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0 ORDER BY id DESC LIMIT 50').all(c.id) as unknown as MsgRow[]).map((r) => this.messageView(r));
+        return (this.db.prepare('SELECT * FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0 ORDER BY id DESC LIMIT 50').all(c.id) as unknown as MsgRow[]).map((r) => this.messageView(r, me.id));
       }
 
       case 'msg.send': {
         const c = this.requireMember(String(d.convId), me.id);
-        const body = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim() : '';
         const fileIds = Array.isArray(d.files) ? [...new Set(d.files.filter((f): f is string => typeof f === 'string'))].slice(0, 21) : [];
-        if (fileIds.length > 20) throw new MsgError('Attach up to 20 files at a time.');
-        for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
-        if (!body && !fileIds.length) throw new MsgError('Write something first.');
-        if (body.length > MAX_BODY) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
-        if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
-        const clientId = typeof d.clientId === 'string' ? d.clientId.slice(0, 64) : null;
-        if (clientId) {
-          const dup = this.db.prepare('SELECT * FROM messages WHERE author_id = ? AND client_id = ?').get(me.id, clientId) as MsgRow | undefined;
-          if (dup) return this.messageView(dup); // a retry after a dropped connection
+        return this.sendAs(me, c, cleanBody(d.body), d.parentId, fileIds, d.clientId, {});
+      }
+
+      case 'msg.forward': {
+        const src = this.visibleMessage(d.messageId, me.id);
+        const targets = Array.isArray(d.convIds) ? [...new Set(d.convIds.filter((x): x is string => typeof x === 'string'))] : [];
+        if (!targets.length) throw new MsgError('Choose where to forward it.');
+        if (targets.length > 10) throw new MsgError('Forward to up to 10 conversations at a time.');
+        const convs = targets.map((id) => this.requireMember(id, me.id));
+        const note = cleanBody(d.note);
+        const files = this.files.forMessage(src.id).map((f) => f.id);
+        const forwarded = JSON.stringify({ authorId: src.forwarded ? (parseForward(src.forwarded)?.authorId ?? src.author_id) : src.author_id, convId: src.conv_id, messageId: src.id, createdAt: src.created_at });
+        const stamp = `${Date.now().toString(36)}-${src.id}`;
+        const out: Message[] = [];
+        for (const c of convs) {
+          if (note) this.sendAs(me, c, note, undefined, [], `fwdnote-${stamp}-${c.id}`, {});
+          const poll = this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(src.id);
+          out.push(this.sendAs(me, c, poll ? `📊 ${src.body}` : src.body, undefined, files, `fwd-${stamp}-${c.id}`, { forwarded, skipFileCheck: true }));
         }
-        let parentId: string | null = null;
-        if (typeof d.parentId === 'string') {
-          const parent = this.message(d.parentId);
-          if (!parent || parent.conv_id !== c.id || parent.parent_id) throw new MsgError('That message cannot be replied to.');
-          parentId = parent.id;
-        }
-        const id = ulid();
-        this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(id, c.id, me.id, body, parentId, Date.now(), clientId);
-        this.recordMentions(id, c.id, body);
-        this.index(id, c.id, body);
-        if (fileIds.length) this.files.link(id, c.id, fileIds);
-        // sending implies you have read up to here
-        if (!parentId) this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(id, c.id, me.id);
-        const row = this.message(id)!;
-        this.pushMessage('msg.new', row);
-        if (!parentId) this.pushConv(c.id);
-        return this.messageView(row);
+        return out satisfies Ops['msg.forward']['res'];
+      }
+
+      case 'poll.create': {
+        const c = this.requireMember(String(d.convId), me.id);
+        const question = str(d.question, 300);
+        if (!question) throw new MsgError('Ask a question.');
+        const options = Array.isArray(d.options) ? d.options.map((o) => str(o, 120)).filter(Boolean) : [];
+        if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) throw new MsgError('Each choice must be different.');
+        if (options.length < 2) throw new MsgError('A poll needs at least two choices.');
+        if (options.length > 10) throw new MsgError('A poll can have up to 10 choices.');
+        const closesAt = typeof d.closesAt === 'number' && Number.isFinite(d.closesAt) ? Math.floor(d.closesAt) : null;
+        if (closesAt !== null && closesAt <= Date.now()) throw new MsgError('The closing time has already passed.');
+        return this.sendAs(me, c, question, d.parentId, [], d.clientId, { poll: { options, multi: d.multi === true, anonymous: d.anonymous === true, closesAt } });
+      }
+
+      case 'poll.vote': {
+        const msg = this.visibleMessage(d.messageId, me.id);
+        const poll = this.pollView(msg.id, me.id);
+        if (!poll) throw new MsgError('That message is not a poll.');
+        if (poll.closed) throw new MsgError('This poll has closed.');
+        const picks = Array.isArray(d.options) ? [...new Set(d.options.filter((o): o is number => Number.isInteger(o) && o >= 0 && o < poll.options.length))] : [];
+        if (!poll.multi && picks.length > 1) throw new MsgError('Choose one option.');
+        this.db.prepare('DELETE FROM poll_votes WHERE message_id = ? AND user_id = ?').run(msg.id, me.id);
+        const ins = this.db.prepare('INSERT INTO poll_votes (message_id, user_id, option) VALUES (?, ?, ?)');
+        for (const o of picks) ins.run(msg.id, me.id, o);
+        this.pushMessage('msg.updated', msg);
+        return this.messageView(msg, me.id);
+      }
+
+      case 'poll.close': {
+        const msg = this.visibleMessage(d.messageId, me.id);
+        if (!this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(msg.id)) throw new MsgError('That message is not a poll.');
+        if (msg.author_id !== me.id && !isAdmin) throw new MsgError('Only the person who asked can close this poll.');
+        this.db.prepare('UPDATE polls SET closed = 1 WHERE message_id = ?').run(msg.id);
+        this.pushMessage('msg.updated', msg);
+        return this.messageView(msg, me.id);
+      }
+
+      case 'conv.markUnread': {
+        const c = this.requireMember(String(d.convId), me.id);
+        const msg = typeof d.messageId === 'string' ? this.message(d.messageId) : undefined;
+        if (!msg || msg.conv_id !== c.id || msg.parent_id) throw new MsgError('Message not found.');
+        const prev = this.db.prepare('SELECT id FROM messages WHERE conv_id = ? AND parent_id IS NULL AND id < ? ORDER BY id DESC LIMIT 1').get(c.id, msg.id) as { id: string } | undefined;
+        this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(prev?.id ?? null, c.id, me.id);
+        this.pushConv(c.id, [me.id]);
+        return this.view(c, me.id);
       }
 
       case 'msg.edit': {
@@ -452,7 +555,7 @@ export class Messaging {
           FROM messages_fts f JOIN conv_members cm ON cm.conv_id = f.conv_id AND cm.user_id = ?
           WHERE messages_fts MATCH ? ${scope ? 'AND f.conv_id = ?' : ''} ORDER BY f.message_id DESC LIMIT ?`)
           .all(...(scope ? [me.id, match, scope, limit] : [me.id, match, limit])) as Array<{ message_id: string; snip: string }>;
-        const messages = rows.map((r) => ({ message: this.messageView(this.message(r.message_id)!), snippet: r.snip })).filter((x) => !x.message.deleted);
+        const messages = rows.map((r) => ({ message: this.messageView(this.message(r.message_id)!, me.id), snippet: r.snip })).filter((x) => !x.message.deleted);
         const like = `%${terms.join('%')}%`;
         const files = this.db.prepare(`SELECT f.*, mf.message_id, mf.conv_id FROM files f JOIN message_files mf ON mf.file_id = f.id
           JOIN conv_members cm ON cm.conv_id = mf.conv_id AND cm.user_id = ? JOIN messages m ON m.id = mf.message_id
@@ -472,6 +575,48 @@ export class Messaging {
       }
     }
     return undefined;
+  }
+
+  /** Post a message as someone (the person, a scheduled send, a bot or a forward). */
+  sendAs(me: PublicUser, c: ConvRow, body: string, rawParent: unknown, fileIds: string[], rawClientId: unknown,
+    extra: { forwarded?: string; skipFileCheck?: boolean; poll?: { options: string[]; multi: boolean; anonymous: boolean; closesAt: number | null } }): Message {
+    if (fileIds.length > 20) throw new MsgError('Attach up to 20 files at a time.');
+    if (!extra.skipFileCheck) for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
+    if (!body && !fileIds.length) throw new MsgError('Write something first.');
+    if (body.length > MAX_BODY) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+    if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
+    const clientId = typeof rawClientId === 'string' ? rawClientId.slice(0, 96) : null;
+    if (clientId) {
+      const dup = this.db.prepare('SELECT * FROM messages WHERE author_id = ? AND client_id = ?').get(me.id, clientId) as MsgRow | undefined;
+      if (dup) return this.messageView(dup, me.id); // a retry after a dropped connection
+    }
+    let parentId: string | null = null;
+    if (typeof rawParent === 'string') {
+      const parent = this.message(rawParent);
+      if (!parent || parent.conv_id !== c.id || parent.parent_id) throw new MsgError('That message cannot be replied to.');
+      parentId = parent.id;
+    }
+    const id = ulid();
+    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id, forwarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, c.id, me.id, body, parentId, Date.now(), clientId, extra.forwarded ?? null);
+    if (extra.poll) {
+      this.db.prepare('INSERT INTO polls (message_id, question, options, multi, anonymous, closes_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, body, JSON.stringify(extra.poll.options), extra.poll.multi ? 1 : 0, extra.poll.anonymous ? 1 : 0, extra.poll.closesAt);
+    }
+    this.recordMentions(id, c.id, body);
+    this.index(id, c.id, extra.poll ? `${body} ${extra.poll.options.join(' ')}` : body);
+    if (fileIds.length) this.files.link(id, c.id, fileIds);
+    // sending implies you have read up to here
+    if (!parentId) this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(id, c.id, me.id);
+    const row = this.message(id)!;
+    this.pushMessage('msg.new', row);
+    if (!parentId) this.pushConv(c.id);
+    return this.messageView(row, me.id);
+  }
+
+  /** The conversation row for a member (throws otherwise). */
+  memberConv(convId: string, userId: string): ConvRow {
+    return this.requireMember(convId, userId);
   }
 
   private recordMentions(messageId: string, convId: string, body: string): void {

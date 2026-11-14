@@ -35,7 +35,13 @@ const listeners = new Set<() => void>();
 /** The conversation currently on screen (no notification for it while the window is focused). */
 let activeConv: string | null = null;
 let directory: () => PublicUser[] = () => [];
-export function setActiveConversation(id: string | null): void { activeConv = id; }
+/** Conversations the reader marked unread: not marked read again until they leave and come back. */
+const held = new Set<string>();
+export function setActiveConversation(id: string | null): void {
+  if (activeConv && activeConv !== id) held.delete(activeConv);
+  activeConv = id;
+}
+export function holdUnread(convId: string): void { held.add(convId); }
 let snapshot = { ...state };
 
 let lastBadge = -1;
@@ -188,11 +194,12 @@ export async function loadOlder(convId: string): Promise<void> {
 const newClientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export async function sendMessage(convId: string, body: string, parentId?: string | null, files: FileInfo[] = []): Promise<void> {
+  held.delete(convId);
   const clientId = newClientId();
   const optimistic: PendingMessage = {
     id: `~${clientId}`, convId, authorId: state.meId, body, parentId: parentId ?? null, createdAt: Date.now(),
     editedAt: null, deleted: false, pinned: false, reactions: {}, mentions: [], replyCount: 0, lastReplyAt: null,
-    clientId, pending: true, files,
+    clientId, pending: true, files, forwardedFrom: null, poll: null,
   };
   const key = tlKey(convId, parentId);
   const tl = state.timelines.get(key) ?? { messages: [], hasMore: false, loaded: true, loading: false };
@@ -250,6 +257,7 @@ export function notifyTyping(convId: string, parentId?: string | null): void {
 }
 
 export function markRead(convId: string): void {
+  if (held.has(convId)) return;
   const c = state.conversations.get(convId);
   const tl = state.timelines.get(convId);
   const last = tl?.messages.filter((m) => !('pending' in m)).at(-1);

@@ -543,7 +543,7 @@ select.input { padding-right: 6px; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--accent-soft); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
 
 /* -------------------------------------------------------------- toasts */
-.toasts { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 10; }
+.toasts { position: fixed; right: 20px; bottom: 96px; display: grid; gap: 8px; z-index: 10; }
 .toast {
   display: flex;
   align-items: center;
@@ -1009,3 +1009,108 @@ select.input { padding-right: 6px; }
 .api-help { margin-top: 18px; }
 .api-help summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
 .bot-chip { height: 18px; font-size: 10.5px; padding: 0 7px; }
+
+/* ------------------------------------------------------------------ Desk & productivity */
+.msg-tools > button.on { color: var(--amber-ink); background: var(--amber-soft); }
+.msg-menu { min-width: 210px; }
+.menu button.danger { color: var(--danger); }
+.menu button.danger:hover { background: var(--danger-soft); }
+.pin-flag { display: inline-flex; gap: 3px; }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.dock-later { width: 32px; height: 32px; border-radius: 16px; flex: none; align-self: flex-end; margin-bottom: 1px; }
+.dock-later:disabled { opacity: .35; pointer-events: none; }
+.dock-hint { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sched-note { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-ink); font-weight: 600; }
+
+.dialog.narrow { width: min(440px, calc(100% - 32px)); }
+.dialog-actions { display: flex; align-items: center; gap: 8px; width: 100%; }
+.dialog-actions > :first-child { flex: 1; font-size: 12.5px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-error { font-size: 12px; color: var(--danger); }
+.quote { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--subtle); border-radius: 0 var(--radius-m) var(--radius-m) 0; max-height: 120px; overflow: auto; font-size: 13.5px; color: var(--text-2); }
+select.input { appearance: auto; }
+
+.when { display: grid; gap: 12px; }
+.when-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.when-chip { height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid var(--stroke-strong); background: var(--card); color: var(--text-2); font-size: 12.5px; font-weight: 600; transition: background var(--fast), color var(--fast), border-color var(--fast); }
+.when-chip:hover { background: var(--card-hover); color: var(--text); }
+.when-chip.on { background: var(--accent); border-color: transparent; color: var(--accent-text); }
+
+/* polls: a ruled card with bars that fill like a drafting scale */
+.poll { margin: 4px 0 2px; max-width: 460px; padding: 12px 14px 10px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-l); background: var(--card);
+  background-image: repeating-linear-gradient(90deg, transparent 0 23px, var(--subtle) 23px 24px); }
+.poll-head { display: flex; align-items: center; gap: 6px; color: var(--accent-ink); }
+.poll-q { font-weight: 600; font-size: 15px; margin: 6px 0 10px; }
+.poll-options { display: grid; gap: 6px; }
+.poll-opt { position: relative; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m);
+  background: var(--layer-solid); color: var(--text); text-align: left; overflow: hidden; transition: border-color var(--fast), transform var(--fast); }
+.poll-opt:hover:not(:disabled) { border-color: var(--accent); }
+.poll-opt:active:not(:disabled) { transform: translateY(1px); }
+.poll-opt:disabled { cursor: default; }
+.poll-opt.mine { border-color: var(--accent); }
+.poll-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); transition: width 420ms var(--ease); }
+.poll-opt.lead .poll-fill { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.poll-mark { position: relative; width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.6px solid var(--stroke-strong); display: grid; place-items: center; color: var(--accent-text); }
+.poll-mark.square { border-radius: 4px; }
+.poll-opt.mine .poll-mark { background: var(--accent); border-color: var(--accent); }
+.poll-text { position: relative; flex: 1; }
+.poll-count { position: relative; display: inline-flex; align-items: center; gap: 8px; font: 600 12px/1 var(--font-mono); color: var(--text-2); }
+.poll-faces { display: inline-flex; }
+.poll-face { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--layer-solid); margin-left: -4px; }
+.poll-foot { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; }
+.poll-foot .link { margin-left: auto; font-size: 12px; }
+.poll.closed .poll-head { color: var(--text-3); }
+.poll-edit { display: grid; gap: 6px; }
+.poll-edit-row { display: flex; align-items: center; gap: 10px; }
+.poll-edit-row .input { flex: 1; }
+
+.fwd-tag { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); margin: 2px 0 4px; padding-left: 10px; border-left: 2px solid var(--stroke-strong); }
+.fwd-tag b { color: var(--text-2); font-weight: 600; }
+
+/* the Desk lens */
+.desk .seg { margin-bottom: 18px; }
+.desk-body { display: grid; gap: 22px; }
+.desk-group { display: grid; gap: 6px; }
+.desk-group > h3.label { margin: 0 0 4px; }
+.desk-group > h3.label.due { color: var(--amber-ink); }
+.desk-group > .link.label { justify-self: start; text-decoration: none; }
+.desk-row { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius-m); transition: background var(--fast), border-color var(--fast); animation: enter var(--med) var(--ease); }
+.desk-row:hover { background: var(--card-hover); border-color: var(--stroke-strong); }
+.desk-row.overdue { border-left: 3px solid var(--amber); }
+.desk-row.done { opacity: .62; }
+.desk-row.done .desk-text { text-decoration: line-through; }
+.desk-main { flex: 1; min-width: 0; display: grid; gap: 6px; text-align: left; }
+.desk-open { border: 0; background: none; padding: 0; color: inherit; }
+.desk-text { font-weight: 600; overflow-wrap: anywhere; }
+.desk-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.desk-quote { display: grid; gap: 2px; text-align: left; border: 0; border-left: 2px solid var(--accent); background: var(--subtle); color: var(--text-2); padding: 6px 10px; border-radius: 0 var(--radius-s) var(--radius-s) 0; font-size: 12.5px; }
+.desk-quote:hover { background: var(--subtle-2); }
+.desk-quote-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.desk-where { justify-self: start; font-size: 12px; text-decoration: none; }
+.desk-actions { position: relative; display: flex; align-items: center; gap: 4px; }
+.desk-menu { min-width: 200px; }
+.desk-empty { padding: 48px 24px; }
+.check-ring { width: 22px; height: 22px; flex: none; margin-top: 1px; border-radius: 50%; border: 1.6px solid var(--stroke-strong); background: none; display: grid; place-items: center; color: var(--accent-text); transition: background var(--fast), border-color var(--fast); }
+.check-ring:hover:not(:disabled) { border-color: var(--accent); }
+.check-ring.on { background: var(--ok); border-color: var(--ok); }
+.check-ring:disabled { opacity: .4; }
+
+/* a reminder going off: an amber card above the toasts */
+.reminder-cards { position: fixed; right: 20px; top: calc(var(--titlebar) + 12px); z-index: 12; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); }
+.reminder-card { padding: 14px; border-radius: var(--radius-l); background: var(--layer-solid); border: 1px solid var(--stroke); border-top: 3px solid var(--amber); box-shadow: var(--shadow-2); animation: rise 320ms var(--ease); display: grid; gap: 12px; }
+.reminder-top { display: flex; gap: 12px; align-items: flex-start; }
+.reminder-icon { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--amber-soft); color: var(--amber-ink); animation: beacon 1.8s var(--ease) 2; }
+.reminder-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+.reminder-actions .faint { flex: 1; font-size: 12px; }
+@media (max-width: 720px) {
+  .form-row { grid-template-columns: 1fr; }
+  .reminder-cards { right: 16px; left: 16px; width: auto; }
+  .desk-row { flex-wrap: wrap; }
+  .desk-actions { width: 100%; justify-content: flex-end; }
+}
+.dock-hint:has(.sched-note) { opacity: 1; }
+/* menus and pickers float above everything, anchored to the button that opened them */
+.popover { position: fixed; z-index: 40; animation: drop 140ms var(--ease); }
+.popover.menu { position: fixed; right: auto; }
+.popover.emoji-pop { position: fixed; top: auto; right: auto; }
+.pulse-alarm { background: var(--amber-soft); color: var(--amber-ink); }

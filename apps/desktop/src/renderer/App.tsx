@@ -19,9 +19,11 @@ import { ChatView } from './chat/ChatView.tsx';
 import { addConversation, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
 import { IncomingCall, RoomStage } from './rooms/RoomUi.tsx';
+import { Desk, ReminderCards } from './views/Desk.tsx';
+import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 
-export type Lens = 'pulse' | 'direct' | 'spaces' | 'directory';
+export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'directory';
 export type SheetName = 'preferences' | 'control' | null;
 /** Kept for older call sites: a section is a lens or a sheet. */
 export type Section = Lens | 'admin' | 'settings' | 'home' | 'people';
@@ -82,14 +84,17 @@ const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'pulse', label: 'Pulse', icon: 'pulse' },
   { id: 'direct', label: 'Direct', icon: 'chat' },
   { id: 'spaces', label: 'Spaces', icon: 'grid' },
+  { id: 'desk', label: 'Desk', icon: 'desk' },
   { id: 'directory', label: 'Directory', icon: 'people' },
 ];
 
 /** Badges on lenses: amber count of mentions, teal dot for unread. */
 function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
   const conversations = useChat((s) => s.conversations);
+  const due = useDesk((s) => s.ringing.length);
   const out: Record<Lens, { mentions: number; unread: boolean }> = {
-    pulse: { mentions: 0, unread: false }, direct: { mentions: 0, unread: false }, spaces: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false },
+    pulse: { mentions: 0, unread: false }, direct: { mentions: 0, unread: false }, spaces: { mentions: 0, unread: false },
+    desk: { mentions: due, unread: false }, directory: { mentions: 0, unread: false },
   };
   for (const c of conversations.values()) {
     const k: Lens = c.kind === 'space' ? 'spaces' : 'direct';
@@ -141,6 +146,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   useEffect(() => {
     if (state.phase !== 'ready') return;
     void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
+    void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
   }, [state.phase, session.me.id, session.deviceId]);
@@ -148,6 +154,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const openConversation = (id: string, kind: 'direct' | 'space') => {
     if (kind === 'space') { setOpenSpace(id); setLens('spaces'); } else { setOpenDirect(id); setLens('direct'); }
     setSheet(null);
+  };
+  /** Open a conversation and scroll to (or open the side-track of) a message. */
+  const jump = (convId: string, messageId?: string, parentId?: string | null) => {
+    const c = conversations.get(convId);
+    if (!c) return;
+    openConversation(c.id, c.kind);
+    if (messageId) setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId, messageId, parentId: parentId ?? null } })), 120);
   };
   const messagePerson = async (userId: string) => {
     if (userId === session.me.id) return;
@@ -203,13 +216,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else if (target === 'admin' && isAdmin) setSheet('control');
     else if (target === 'settings') setSheet('preferences');
     else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
+    else if (target === 'desk') { setLens('desk'); setSheet(null); }
     else setLens('pulse');
   }), [isAdmin, conversations]);
 
   const go = (s: Section) => {
     if (s === 'admin') setSheet('control');
     else if (s === 'settings') setSheet('preferences');
-    else setLens(s === 'people' || s === 'directory' ? 'directory' : 'pulse');
+    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' ? 'desk' : 'pulse');
   };
 
   const conn = state.phase === 'ready'
@@ -226,6 +240,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     })),
     { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
+    { id: 'go-desk', label: 'Go to Desk: reminders, saved, scheduled', icon: 'desk' as IconName, run: () => setLens('desk') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'people' as IconName, run: () => setLens('directory') },
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
@@ -288,6 +303,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} />}
         {lens === 'direct' && <ChatView kind="direct" state={state} session={session} openId={openDirect} setOpenId={setOpenDirect} />}
         {lens === 'spaces' && <ChatView kind="space" state={state} session={session} openId={openSpace} setOpenId={setOpenSpace} />}
+        {lens === 'desk' && <Desk session={session} jump={jump} />}
         {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} onMessage={(id) => void messagePerson(id)} />}
       </main>
 
@@ -322,18 +338,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           onClose={() => setPalette(false)}
           onPerson={(id) => { if (id === session.me.id) { setLens('directory'); setFocusUser(id); } else void messagePerson(id); }}
           convName={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }}
-          onMessage={(m) => {
-            const c = conversations.get(m.convId);
-            if (!c) return;
-            openConversation(c.id, c.kind);
-            setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId: m.convId, messageId: m.id, parentId: m.parentId } })), 120);
-          }}
+          onMessage={(m) => jump(m.convId, m.id, m.parentId)}
         />
       )}
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
+      <ReminderCards users={users} meId={session.me.id} jump={jump} />
       <RequiredUpdate state={state} />
     </div>
   );

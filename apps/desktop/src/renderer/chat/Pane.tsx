@@ -5,7 +5,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Conversation, FileInfo, PublicUser } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
-import { Avatar, Icon, colorFor, useToast, presenceFor } from '../ui.tsx';
+import { Avatar, Icon, Popover, colorFor, useToast, presenceFor } from '../ui.tsx';
 import { isEmojiOnly, renderBody } from './format.tsx';
 import {
   chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
@@ -14,6 +14,8 @@ import {
 import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, convTitle } from './Switchboard.tsx';
 import { CallButtons } from '../rooms/RoomUi.tsx';
+import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
+import { describeWhen, toggleSaved, useDesk } from '../desk/store.ts';
 
 const QUICK = ['👍', '✅', '👀', '🙏', '🎉', '😂'];
 const EMOJI = ['👍', '👎', '✅', '❌', '👀', '🙏', '🎉', '😂', '😊', '😅', '🤔', '😮', '😢', '🔥', '💯', '👏', '🙌', '💪', '🚀', '⚠️', '📌', '📎', '📐', '🛠️', '☕', '🍕', '⏰', '📅', '❤️', '⭐'];
@@ -263,6 +265,11 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [more, setMore] = useState(false);
+  const moreBtn = useRef<HTMLButtonElement>(null);
+  const pickBtn = useRef<HTMLButtonElement>(null);
+  const [dialog, setDialog] = useState<'remind' | 'forward' | null>(null);
+  const saved = useDesk((s) => s.saved.has(m.id));
   const pending = 'pending' in m;
   const failed = pending ? (m as PendingMessage).failed : undefined;
   const mine = m.authorId === ctx.meId;
@@ -287,7 +294,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
 
   return (
     <div data-mid={m.id} className={`msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
-      {editing ? (
+      {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
+      {m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
       ) : (
         m.body ? (
@@ -333,20 +341,35 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
       {!pending && !editing && (
         <div className="msg-tools" role="toolbar" aria-label="Message actions">
           {QUICK.slice(0, 3).map((e) => <button key={e} onClick={() => react(e)} title={`React ${e}`}>{e}</button>)}
-          <button onClick={() => setPicker(!picker)} title="More reactions"><Icon name="smile" size={16} /></button>
+          <button ref={pickBtn} onClick={() => setPicker(!picker)} title="More reactions"><Icon name="smile" size={16} /></button>
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Reply in a side-track"><Icon name="reply" size={16} /></button>}
-          <button onClick={() => void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned')} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="pin" size={16} /></button>
-          {m.body && <button onClick={() => { void navigator.clipboard.writeText(m.body); toast('Copied'); }} title="Copy text"><Icon name="copy" size={16} /></button>}
-          {mine && m.body && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
-          {canDelete && <button className="danger" onClick={() => { if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id })); }} title="Delete"><Icon name="trash" size={16} /></button>}
+          <button className={saved ? 'on' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Saved to your Desk' : 'Removed from your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Remove from saved' : 'Save for later'} aria-pressed={saved}><Icon name="star" size={16} /></button>
+          <button onClick={() => setDialog('remind')} title="Remind me about this"><Icon name="alarm" size={16} /></button>
+          {mine && m.body && !m.poll && <button onClick={() => setEditing(true)} title="Edit"><Icon name="edit" size={16} /></button>}
+          <button ref={moreBtn} onClick={() => setMore(!more)} title="More" aria-haspopup="menu" aria-expanded={more}><Icon name="more" size={16} /></button>
+          {more && (
+            <Popover anchor={moreBtn.current} onClose={() => setMore(false)} className="menu msg-menu">
+              <button role="menuitem" onClick={() => { setMore(false); setDialog('forward'); }}><Icon name="forward" size={16} />Forward</button>
+              <button role="menuitem" onClick={() => { setMore(false); void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned for everyone here'); }}><Icon name="pin" size={16} />{m.pinned ? 'Unpin' : 'Pin'}</button>
+              {!inTrack && !m.parentId && <button role="menuitem" onClick={() => { setMore(false); void act(markUnreadFrom(m), 'Marked as unread from here'); }}><Icon name="unread" size={16} />Mark unread from here</button>}
+              {m.body && <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(m.body); toast('Copied'); }}><Icon name="copy" size={16} />Copy text</button>}
+              {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => { setMore(false); if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id })); }}><Icon name="trash" size={16} />Delete</button></>}
+            </Popover>
+          )}
           {picker && (
-            <div className="emoji-pop" onMouseLeave={() => setPicker(false)}>
+            <Popover anchor={pickBtn.current} onClose={() => setPicker(false)} className="emoji-pop">
               {EMOJI.map((e) => <button key={e} onClick={() => react(e)}>{e}</button>)}
-            </div>
+            </Popover>
           )}
         </div>
       )}
-      {m.pinned && <span className="pin-flag" title="Pinned"><Icon name="pin" size={12} /></span>}
+      {(m.pinned || saved) && (
+        <span className="pin-flag" title={[m.pinned && 'Pinned', saved && 'Saved'].filter(Boolean).join(' · ')}>
+          {m.pinned && <Icon name="pin" size={12} />}{saved && <Icon name="star" size={12} />}
+        </span>
+      )}
+      {dialog === 'remind' && <RemindDialog message={m} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
+      {dialog === 'forward' && <ForwardDialog message={m} users={ctx.users} meId={ctx.meId} online={ctx.online} onClose={() => setDialog(null)} />}
     </div>
   );
 }
@@ -408,6 +431,10 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | null>(null);
+  const scheduledAll = useDesk((s) => s.scheduled);
+  const scheduledHere = useMemo(() => [...scheduledAll.values()].filter((x) => x.convId === convId && (x.parentId ?? null) === parentId).sort((a, b) => a.sendAt - b.sendAt), [scheduledAll, convId, parentId]);
+  const toast = useToast();
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const canAttach = filesSupported() && live;
@@ -482,6 +509,19 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
     setMention(null);
   };
 
+  const schedule = async (at: number) => {
+    const body = toWire(text, ctx.users, ctx.conv);
+    try {
+      await window.dex.request('sched.create', { convId, body, parentId: parentId ?? undefined, files: ready.map((a) => a.info!.id), sendAt: at });
+      toast(`Scheduled for ${describeWhen(at)}`);
+      for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
+      setAttachments([]);
+      setText('');
+      setDraft(key, '');
+      setDockDialog(null);
+    } catch (e) { toast((e as Error).message, true); }
+  };
+
   const onKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (mention && candidates.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMIndex((i) => (i + 1) % candidates.length); return; }
@@ -522,6 +562,7 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
             </>
           )}
           <button className="icon-btn" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
+          <button className="icon-btn" title="Poll" disabled={!live} onClick={() => setDockDialog('poll')}><Icon name="poll" size={18} /></button>
           <button className="icon-btn" title="Mention someone (@)" onClick={() => { const el = ref.current!; const pos = el.selectionStart; const v = `${text.slice(0, pos)}${pos && !/\s$/.test(text.slice(0, pos)) ? ' ' : ''}@${text.slice(pos)}`; update(v, v.length - text.slice(pos).length); el.focus(); }}><Icon name="at" size={18} /></button>
           {emoji && (
             <div className="emoji-pop dock-emoji" onMouseLeave={() => setEmoji(false)}>
@@ -540,11 +581,16 @@ function Dock({ convId, parentId, ctx, live, placeholder }: { convId: string; pa
           onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length && canAttach) { e.preventDefault(); addFiles(files); } }}
           aria-label={placeholder}
         />
+        <button className="icon-btn dock-later" onClick={() => setDockDialog('schedule')} disabled={(!text.trim() && !ready.length) || !live || uploading}
+          title="Send later" aria-label="Schedule message"><Icon name="schedule" size={17} /></button>
         <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
           <Icon name="send" size={18} />
         </button>
       </div>
+      {dockDialog === 'poll' && <PollDialog conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
+      {dockDialog === 'schedule' && <ScheduleDialog preview={toWire(text, ctx.users, ctx.conv)} users={ctx.users} meId={ctx.meId} onPick={schedule} onClose={() => setDockDialog(null)} />}
       <div className="dock-hint faint">
+        {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 message scheduled · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} messages scheduled`} · see Desk</span>}
         <span><b>Enter</b> send · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <b>**bold**</b> <i>*italic*</i> <code>`code`</code></span>
       </div>
     </div>
