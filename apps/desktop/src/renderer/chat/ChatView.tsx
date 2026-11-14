@@ -48,7 +48,7 @@ export function ChatView({ kind, state, session, openId, setOpenId }: {
             </div>
           </div>
         )}
-      {dialog === 'new' && <NewConversation kind={kind} users={session.users.filter((u) => u.id !== meId)} online={online}
+      {dialog === 'new' && <NewConversation kind={kind} users={session.users.filter((u) => u.id !== meId && u.role !== 'bot')} online={online}
         onClose={() => setDialog(null)} onCreated={(c) => { addConversation(c); setOpenId(c.id); setDialog(null); }} />}
       {dialog === 'browse' && <BrowseSpaces onClose={() => setDialog(null)} onJoined={(c) => { addConversation(c); setOpenId(c.id); setDialog(null); }} />}
     </div>

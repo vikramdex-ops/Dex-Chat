@@ -19,7 +19,8 @@ export function Home({ state, session, pendingCount, go, open }: {
 }) {
   const toast = useToast();
   const online = new Set(session.online);
-  const onlineUsers = session.users.filter((u) => online.has(u.id));
+  const people = session.users.filter((u) => u.role !== 'bot');
+  const onlineUsers = people.filter((u) => online.has(u.id));
   const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
   const firstName = session.me.displayName.split(/\s+/)[0];
   const isAdmin = session.me.role === 'owner' || session.me.role === 'admin';
@@ -45,7 +46,7 @@ export function Home({ state, session, pendingCount, go, open }: {
       <div className="view-head">
         <div>
           <h1>{greeting()}, {firstName}</h1>
-          <p className="label">Pulse · {onlineUsers.length} of {session.users.length} online · {session.hub.name}</p>
+          <p className="label">Pulse · {onlineUsers.length} of {people.length} online · {session.hub.name}</p>
         </div>
       </div>
 

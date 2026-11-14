@@ -1002,3 +1002,10 @@ select.input { padding-right: 6px; }
   .room-grid.n3, .room-grid.n4, .room-grid.n5, .room-grid.n6 { grid-template-columns: 1fr 1fr; }
   .round { width: 50px; height: 50px; }
 }
+
+.integrations .setting .input { height: 32px; }
+.token-card { margin-top: 12px; display: grid; gap: 10px; border-color: var(--amber); }
+.token-card pre { margin: 0; }
+.api-help { margin-top: 18px; }
+.api-help summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
+.bot-chip { height: 18px; font-size: 10.5px; padding: 0 7px; }

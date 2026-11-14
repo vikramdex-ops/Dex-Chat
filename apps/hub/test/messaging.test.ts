@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createIdentity } from '@dex/core';
+import https from 'node:https';
 import type { Conversation, Message } from '@dex/core';
 import { HubClient } from '@dex/core/client';
 import type { ClientState } from '@dex/core/client';
@@ -244,4 +245,40 @@ test('Rooms: ring, join, relay signals device-to-device, busy state, decline and
   const missed = nextEvent<{ missed: boolean }>(owner, 'room.ended');
   await priya.request('room.decline', { roomId: r2.id });
   assert.equal((await missed).missed, true);
+});
+
+test('integrations: admins mint bot tokens; bots message people by Windows sign-in and post to Spaces', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  await assert.rejects(priya.request('admin.bots.create', { name: 'Hopper' }), /Only administrators/);
+  const { bot, token } = await owner.request('admin.bots.create', { name: 'Hopper' });
+  assert.equal(bot.role, 'bot');
+  assert.match(token, /^dxc_/);
+  await owner.request('conv.create', { kind: 'space', name: 'Piping P-12', members: [me(priya)] });
+
+  const post = (t: string, payload: unknown) => new Promise<{ status: number; body: { ok: boolean; delivered: string[]; unknown: string[] } }>((resolve, reject) => {
+    const data = Buffer.from(JSON.stringify(payload));
+    const r = https.request({ host: '127.0.0.1', port: hub.port, path: '/api/bot/message', method: 'POST', rejectUnauthorized: false,
+      headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json', 'content-length': data.length } }, (res) => {
+      let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(b) }));
+    });
+    r.on('error', reject); r.end(data);
+  });
+
+  const incoming = nextEvent<Message>(priya, 'msg.new', (m) => m.authorId === bot.id);
+  const r = await post(token, { text: 'Vikram sent you 3 files (12 MB)', to: ['priya', 'DEX\\ravi', 'nobody'], card: { title: 'Saved to your Hopper Inbox', lines: ['ISO-1001.pdf'] } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.delivered.sort(), ['dex\\priya', 'dex\\ravi']);
+  assert.deepEqual(r.body.unknown, ['nobody']);
+  const m = await incoming;
+  assert.match(m.body, /\*\*Saved to your Hopper Inbox\*\*\n- ISO-1001.pdf/);
+  assert.ok((await ravi.request('conv.list')).some((c) => c.kind === 'direct' && c.members.includes(bot.id)));
+
+  const toSpace = await post(token, { text: 'Link P-12 transmittal closes in 2 days', space: 'piping p-12' });
+  assert.deepEqual(toSpace.body.delivered, ['space:piping p-12']);
+  assert.equal((await post('dxc_wrong', { text: 'x', to: ['priya'] })).status, 401);
+  assert.equal((await post(token, { to: ['priya'] })).status, 400);
+
+  await owner.request('admin.bots.revoke', { userId: bot.id });
+  assert.equal((await post(token, { text: 'after revoke', to: ['priya'] })).status, 401);
+  assert.equal((await owner.request('admin.bots'))[0].active, false);
 });

@@ -3,9 +3,10 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AuditEntry, DeviceRecord, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
+import { Integrations } from './Integrations.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'integrations' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -20,6 +21,8 @@ const AUDIT_TEXT: Record<string, string> = {
   'device.rejected': 'declined a device',
   'device.revoked': 'removed a device',
   'user.role': 'changed a role',
+  'bot.created': 'created an integration token',
+  'bot.revoked': 'revoked an integration token',
 };
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
@@ -68,6 +71,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'approvals', label: 'Approvals', icon: 'check', badge: pending.length },
           { value: 'devices', label: 'Devices', icon: 'laptop' },
           { value: 'roles', label: 'People & roles', icon: 'people' },
+          { value: 'integrations', label: 'Integrations', icon: 'grid' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
       </div>
@@ -128,7 +132,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'roles' && (
         <div className="list">
           <div className="list-row roles list-head"><span /><span>Person</span><span>Windows account</span><span>Role</span></div>
-          {session.users.map((u: PublicUser) => {
+          {session.users.filter((u) => u.role !== 'bot').map((u: PublicUser) => {
             const locked = u.role === 'owner' || u.id === session.me.id || (u.role === 'admin' && session.me.role !== 'owner');
             return (
               <div key={u.id} className="list-row roles">
@@ -148,6 +152,8 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           })}
         </div>
       )}
+
+      {tab === 'integrations' && <Integrations state={state} />}
 
       {tab === 'audit' && (audit.length === 0 ? (
         <div className="card empty"><Icon name="list" size={36} /><span>Nothing recorded yet.</span></div>

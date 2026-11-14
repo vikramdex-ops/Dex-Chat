@@ -6,7 +6,7 @@ export const APP_ID = 'dexconnect';
 export const DEFAULT_HUB_PORT = 47900;
 export const DISCOVERY_PORT = 47901;
 
-export type Role = 'owner' | 'admin' | 'member' | 'guest';
+export type Role = 'owner' | 'admin' | 'member' | 'guest' | 'bot';
 export type DeviceStatus = 'pending' | 'approved' | 'rejected' | 'revoked';
 /** Chosen by the person. 'invisible' appears offline to everyone else. */
 export type Availability = 'available' | 'busy' | 'dnd' | 'invisible';
@@ -206,10 +206,13 @@ export interface Ops {
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
   'admin.devices': { req: void; res: DeviceRecord[] };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
-  'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner'> }; res: PublicUser };
+  'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner' | 'bot'> }; res: PublicUser };
   'admin.revoke': { req: { deviceId: string }; res: DeviceRecord };
   'admin.audit': { req: { limit?: number } | void; res: AuditEntry[] };
   'admin.updates': { req: { refresh?: boolean } | void; res: UpdateMirrorInfo };
+  'admin.bots': { req: void; res: Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> };
+  'admin.bots.create': { req: { name: string }; res: { bot: PublicUser; token: string } };
+  'admin.bots.revoke': { req: { userId: string }; res: { ok: true } };
   'ping': { req: void; res: { at: number } };
 
   'conv.list': { req: void; res: Conversation[] };

@@ -183,6 +183,16 @@ export class Messaging {
     }
   }
 
+  /** For integrations: an open or private Space by name. */
+  spaceByName(name: string): string | null {
+    const r = this.db.prepare(`SELECT id FROM conversations WHERE kind = 'space' AND name = ? COLLATE NOCASE`).get(name) as { id: string } | undefined;
+    return r?.id ?? null;
+  }
+
+  ensureMember(convId: string, userId: string): void {
+    if (!this.isMember(convId, userId)) { this.addMember(convId, userId); this.pushConv(convId); }
+  }
+
   // ------------------------------------------------------------ lifecycle
   /** The office-wide space: created once, everyone approved is a member. */
   ensureEveryoneSpace(ownerId: string): string {

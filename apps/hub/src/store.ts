@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS audit (
   detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at);
+CREATE TABLE IF NOT EXISTS bot_tokens (
+  user_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used INTEGER
+);
 `;
 
 export const toPublicUser = (r: UserRow): PublicUser => ({
@@ -97,9 +104,9 @@ export class Store {
     return r ? toPublicUser(r) : null;
   }
 
-  /** Users with at least one approved device: the people colleagues can see. */
+  /** People with at least one approved device, plus integrations (bots): who colleagues can see. */
   activeUsers(): PublicUser[] {
-    const rows = this.db.prepare(`SELECT * FROM users u WHERE EXISTS
+    const rows = this.db.prepare(`SELECT * FROM users u WHERE u.role = 'bot' OR EXISTS
       (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') ORDER BY display_name COLLATE NOCASE`).all() as unknown as UserRow[];
     return rows.map(toPublicUser);
   }
@@ -160,6 +167,37 @@ export class Store {
 
   touchDevice(id: string): void {
     this.db.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').run(Date.now(), id);
+  }
+
+  // ------------------------------------------------------------- bots
+  createBotToken(userId: string, tokenHash: string, by: string): void {
+    this.db.prepare('INSERT INTO bot_tokens (user_id, token_hash, created_by, created_at) VALUES (?, ?, ?, ?)').run(userId, tokenHash, by, Date.now());
+  }
+
+  botByTokenHash(tokenHash: string): PublicUser | null {
+    const r = this.db.prepare('SELECT user_id FROM bot_tokens WHERE token_hash = ?').get(tokenHash) as { user_id: string } | undefined;
+    if (!r) return null;
+    this.db.prepare('UPDATE bot_tokens SET last_used = ? WHERE token_hash = ?').run(Date.now(), tokenHash);
+    return this.userById(r.user_id);
+  }
+
+  bots(): Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> {
+    const rows = this.db.prepare(`SELECT u.*, MIN(t.created_at) AS t_created, MAX(t.last_used) AS t_used, COUNT(t.token_hash) AS n
+      FROM users u LEFT JOIN bot_tokens t ON t.user_id = u.id WHERE u.role = 'bot' GROUP BY u.id ORDER BY u.display_name`).all() as unknown as Array<UserRow & { t_created: number | null; t_used: number | null; n: number }>;
+    return rows.map((r) => ({ bot: toPublicUser(r), createdAt: r.t_created ?? r.created_at, lastUsed: r.t_used, active: r.n > 0 }));
+  }
+
+  revokeBotTokens(userId: string): void {
+    this.db.prepare('DELETE FROM bot_tokens WHERE user_id = ?').run(userId);
+  }
+
+  /** Resolve "DOMAIN\\user" or a bare "user" to one person (bare names must be unambiguous). */
+  userForAccount(input: string): PublicUser | null {
+    const v = input.trim().toLowerCase();
+    if (!v) return null;
+    if (v.includes('\\')) return this.userByAccount(v);
+    const rows = this.db.prepare(`SELECT * FROM users WHERE role != 'bot' AND (account LIKE ? ESCAPE '!')`).all(`%!\\${v.replace(/[!%_]/g, (c) => `!${c}`)}`) as unknown as UserRow[];
+    return rows.length === 1 ? toPublicUser(rows[0]) : null;
   }
 
   // ------------------------------------------------------------- audit

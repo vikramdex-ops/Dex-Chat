@@ -140,7 +140,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   );
 }
 
-export const ROLE_LABEL: Record<PublicUser['role'], string> = { owner: 'Owner', admin: 'Admin', member: 'Member', guest: 'Guest' };
+export const ROLE_LABEL: Record<PublicUser['role'], string> = { owner: 'Owner', admin: 'Admin', member: 'Member', guest: 'Guest', bot: 'Integration' };
 
 export function relativeTime(ts: number | null, now = Date.now()): string {
   if (!ts) return 'never';

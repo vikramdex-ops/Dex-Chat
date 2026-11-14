@@ -42,6 +42,7 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
     const people = users
+      .filter((u) => u.role !== 'bot')
       .filter((u) => !s || [u.displayName, u.account, u.title ?? '', u.statusText ?? ''].some((f) => f.toLowerCase().includes(s)))
       .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName))
       .slice(0, 8)

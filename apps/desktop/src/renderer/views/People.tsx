@@ -15,6 +15,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
   const people = useMemo(() => {
     const q = query.trim().toLowerCase();
     return session.users
+      .filter((u) => u.role !== 'bot')
       .filter((u) => filter === 'all' || (filter === 'online' ? online.has(u.id) : u.role === 'owner' || u.role === 'admin'))
       .filter((u) => !q || [u.displayName, u.account, u.title ?? '', u.statusText ?? ''].some((f) => f.toLowerCase().includes(q)))
       .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName));
@@ -30,7 +31,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
       <div className="view-head">
         <div>
           <h1>Directory</h1>
-          <p className="label">{session.users.length} people · {online.size} online</p>
+          <p className="label">{session.users.filter((u) => u.role !== 'bot').length} people · {online.size} online</p>
         </div>
       </div>
       <div className="toolbar">

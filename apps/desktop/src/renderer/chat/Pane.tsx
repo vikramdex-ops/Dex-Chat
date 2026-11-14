@@ -244,6 +244,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
       <div className="run-body">
         <div className="run-head">
           <span className="run-name" style={mine ? undefined : { color: colorFor(author) }}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
+          {u?.role === 'bot' && <span className="chip accent bot-chip">Integration</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
         {msgs.map((m) => (
@@ -625,7 +626,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const [adding, setAdding] = useState(false);
   const c = ctx.conv;
   const members = c.members.map((id) => ctx.users.get(id)).filter(Boolean) as PublicUser[];
-  const candidates = [...ctx.users.values()].filter((u) => !c.members.includes(u.id));
+  const candidates = [...ctx.users.values()].filter((u) => !c.members.includes(u.id) && u.role !== 'bot');
   return (
     <aside className="side-panel" aria-label="People">
       <header className="side-head"><span className="label">People · {members.length}</span><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button></header>

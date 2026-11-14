@@ -168,6 +168,7 @@ export class Hub {
   private http(req: IncomingMessage, res: ServerResponse): void {
     if (this.mirror?.handle(req, res)) return;
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -185,6 +186,64 @@ export class Hub {
     }
     res.writeHead(404, headers);
     res.end(JSON.stringify({ error: 'not found' }));
+  }
+
+  /**
+   * Bot API for office tools (Hopper, Sheets, Sleuth…):
+   *   POST /api/bot/message   Authorization: Bearer <token>
+   *   { "text": "…", "to": ["DEXTERITY\\\\priya.raman" | "priya.raman"], "space": "Piping P-12",
+   *     "card": { "title": "…", "lines": ["…"], "url": "https://…" } }
+   * Delivers a Direct message from the bot to each person in "to", and/or posts into the Space.
+   */
+  private async botRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const reply = (code: number, body: unknown) => {
+      res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(body));
+    };
+    const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : '';
+    const bot = token ? this.store.botByTokenHash(crypto.createHash('sha256').update(token).digest('hex')) : null;
+    if (!bot || bot.role !== 'bot') { req.resume(); reply(401, { ok: false, error: 'Unknown or revoked integration token.' }); return; }
+    if (req.method !== 'POST' || req.url?.split('?')[0] !== '/api/bot/message') { req.resume(); reply(404, { ok: false, error: 'not found' }); return; }
+    let raw = '';
+    try {
+      for await (const c of req) { raw += c; if (raw.length > 64 * 1024) throw new Error('too large'); }
+    } catch { reply(413, { ok: false, error: 'Message too large.' }); return; }
+    let body: { text?: unknown; to?: unknown; space?: unknown; card?: { title?: unknown; lines?: unknown; url?: unknown } };
+    try { body = JSON.parse(raw); } catch { reply(400, { ok: false, error: 'Invalid JSON.' }); return; }
+
+    const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
+    const card = body.card && typeof body.card === 'object' ? body.card : null;
+    const cardLines: string[] = [];
+    if (card) {
+      if (typeof card.title === 'string' && card.title.trim()) cardLines.push(`**${card.title.trim().slice(0, 200)}**`);
+      if (Array.isArray(card.lines)) for (const l of card.lines.slice(0, 12)) if (typeof l === 'string' && l.trim()) cardLines.push(`- ${l.trim().slice(0, 300)}`);
+      if (typeof card.url === 'string' && /^https?:\/\/\S+$/.test(card.url)) cardLines.push(card.url);
+    }
+    const message = [text, cardLines.join('\n')].filter(Boolean).join('\n\n');
+    if (!message) { reply(400, { ok: false, error: 'Nothing to send: give "text" or a "card".' }); return; }
+
+    const delivered: string[] = [];
+    const unknown: string[] = [];
+    const clientId = () => `bot-${crypto.randomBytes(8).toString('hex')}`;
+    const recipients = Array.isArray(body.to) ? body.to.filter((x): x is string => typeof x === 'string').slice(0, 50) : [];
+    for (const who of recipients) {
+      const person = this.store.userForAccount(who);
+      if (!person || person.role === 'bot') { unknown.push(who); continue; }
+      const conv = this.messaging.handle('conv.create', bot, { kind: 'direct', members: [person.id] }) as { id: string };
+      this.messaging.handle('msg.send', bot, { convId: conv.id, body: message, clientId: clientId() });
+      delivered.push(person.account);
+    }
+    if (typeof body.space === 'string' && body.space.trim()) {
+      const space = this.messaging.spaceByName(body.space.trim());
+      if (!space) unknown.push(`space:${body.space}`);
+      else {
+        this.messaging.ensureMember(space, bot.id);
+        this.messaging.handle('msg.send', bot, { convId: space, body: message, clientId: clientId() });
+        delivered.push(`space:${body.space.trim()}`);
+      }
+    }
+    this.log('info', 'bot message', { bot: bot.displayName, delivered: delivered.length, unknown: unknown.length });
+    reply(delivered.length ? 200 : 404, { ok: delivered.length > 0, delivered, unknown });
   }
 
   /** POST /files?name=…&type=…  and  GET /files/<id>[?download=1], authorised by a session file token. */
@@ -523,6 +582,33 @@ export class Hub {
         this.requireAdmin(conn);
         const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(1000, d.limit)) : 200;
         return this.store.auditTrail(limit);
+      }
+
+      case 'admin.bots':
+        this.requireAdmin(conn);
+        return this.store.bots();
+
+      case 'admin.bots.create': {
+        const me = this.requireAdmin(conn);
+        const name = clean(d.name, 40);
+        if (!name) throw new OpError('Give the integration a name.');
+        const key = `bot\\${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        const bot = this.store.userByAccount(key) ?? this.store.createUser(key, name, 'bot');
+        if (bot.role !== 'bot') throw new OpError('That name is taken.');
+        const token = `dxc_${crypto.randomBytes(24).toString('base64url')}`;
+        this.store.createBotToken(bot.id, crypto.createHash('sha256').update(token).digest('hex'), me.id);
+        this.store.audit(me.id, 'bot.created', bot.id, { name });
+        this.emit('user.added', bot);
+        return { bot, token } satisfies Ops['admin.bots.create']['res'];
+      }
+
+      case 'admin.bots.revoke': {
+        const me = this.requireAdmin(conn);
+        const bot = typeof d.userId === 'string' ? this.store.userById(d.userId) : null;
+        if (!bot || bot.role !== 'bot') throw new OpError('Integration not found.');
+        this.store.revokeBotTokens(bot.id);
+        this.store.audit(me.id, 'bot.revoked', bot.id, { name: bot.displayName });
+        return { ok: true } satisfies Ops['admin.bots.revoke']['res'];
       }
 
       case 'admin.updates': {
