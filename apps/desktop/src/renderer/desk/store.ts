@@ -36,6 +36,7 @@ export async function startDesk(me: string, users: () => PublicUser[]): Promise<
     window.dex.onHubEvent((name, data) => onEvent(name, data));
   }
   await refreshDesk();
+  void refreshNextMeeting();
 }
 
 export async function refreshDesk(): Promise<void> {
@@ -141,33 +142,81 @@ export function dismissRinging(id: string): void {
 }
 
 // ------------------------------------------------------------------ times
+// Presets read like the office day, not a stopwatch: after lunch, before you leave, first thing.
 export interface WhenPreset { id: string; label: string; at: () => number }
 
-const at = (days: number, hour: number, minute = 0) => {
-  const d = new Date();
+/** Lunch ends and the office empties at these times (hour, minute). */
+const AFTER_LUNCH: [number, number] = [14, 0];
+const BEFORE_LEAVING: [number, number] = [17, 15];
+const FIRST_THING: [number, number] = [9, 30];
+
+const hm = (h: number, m: number) => new Date(2000, 0, 1, h, m).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+
+const at = (days: number, [hour, minute]: [number, number], from = new Date()) => {
+  const d = new Date(from);
   d.setDate(d.getDate() + days);
   d.setHours(hour, minute, 0, 0);
   return d.getTime();
 };
 
-function nextMonday(hour: number): number {
-  const d = new Date();
+function nextMonday([hour, minute]: [number, number], from = new Date()): number {
+  const d = new Date(from);
   d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7));
-  d.setHours(hour, 0, 0, 0);
+  d.setHours(hour, minute, 0, 0);
   return d.getTime();
 }
 
-export function whenPresets(kind: 'remind' | 'send'): WhenPreset[] {
+// The next meeting you are in today, from the Calendar, so "Before my next meeting" can offer it.
+let nextMeeting: { startAt: number; title: string } | null = null;
+let meetingCheckedAt = 0;
+let calWired = false;
+
+export async function refreshNextMeeting(): Promise<void> {
+  meetingCheckedAt = Date.now();
+  if (!calWired) {
+    calWired = true;
+    window.dex.onHubEvent((name) => { if (name === 'cal.updated' || name === 'cal.removed' || name === 'cal.invited') void refreshNextMeeting(); });
+  }
+  try {
+    const now = Date.now();
+    const end = new Date(); end.setHours(23, 59, 59, 999);
+    const list = await window.dex.request('cal.list', { from: now, to: Math.max(end.getTime(), now + 60_000) });
+    const next = list.find((o) => !o.event.allDay && !o.event.cancelled && o.startAt > now + 10 * 60_000
+      && o.event.attendees.find((a) => a.userId === meId)?.response !== 'no');
+    nextMeeting = next ? { startAt: next.startAt, title: next.event.title } : null;
+  } catch { /* offline: keep the last answer */ }
+}
+
+/** Ten minutes before your next meeting today, or null. */
+function beforeNextMeeting(): number | null {
+  if (Date.now() - meetingCheckedAt > 5 * 60_000) void refreshNextMeeting();
+  if (!nextMeeting) return null;
+  const t = nextMeeting.startAt - 10 * 60_000;
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  return t > Date.now() + 60_000 && t <= end.getTime() ? t : null;
+}
+
+export function whenPresets(_kind: 'remind' | 'send'): WhenPreset[] {
   const now = new Date();
   const list: WhenPreset[] = [];
-  if (kind === 'remind') {
-    list.push({ id: '20m', label: 'In 20 minutes', at: () => Date.now() + 20 * 60_000 });
-    list.push({ id: '1h', label: 'In 1 hour', at: () => Date.now() + 3600_000 });
-    list.push({ id: '3h', label: 'In 3 hours', at: () => Date.now() + 3 * 3600_000 });
-  }
-  if (now.getHours() < 16) list.push({ id: 'evening', label: 'This evening at 5:00 PM', at: () => at(0, 17) });
-  list.push({ id: 'tomorrow', label: 'Tomorrow at 9:30 AM', at: () => at(1, 9, 30) });
-  list.push({ id: 'monday', label: 'Monday at 9:30 AM', at: () => nextMonday(9) + 30 * 60_000 });
+  const meeting = beforeNextMeeting();
+  if (meeting) list.push({ id: 'meeting', label: `Before my next meeting · ${hm(new Date(meeting).getHours(), new Date(meeting).getMinutes())}`, at: () => meeting });
+  if (at(0, AFTER_LUNCH, now) > now.getTime() + 5 * 60_000) list.push({ id: 'lunch', label: `After lunch · ${hm(...AFTER_LUNCH)}`, at: () => at(0, AFTER_LUNCH) });
+  if (at(0, BEFORE_LEAVING, now) > now.getTime() + 5 * 60_000) list.push({ id: 'leave', label: `Before I leave · ${hm(...BEFORE_LEAVING)}`, at: () => at(0, BEFORE_LEAVING) });
+  const tomorrow = new Date(at(1, FIRST_THING, now));
+  const weekend = tomorrow.getDay() === 0 || tomorrow.getDay() === 6;
+  if (!weekend) list.push({ id: 'tomorrow', label: `Tomorrow, first thing · ${hm(...FIRST_THING)}`, at: () => at(1, FIRST_THING) });
+  if (tomorrow.getDay() !== 1) list.push({ id: 'monday', label: `Monday, first thing · ${hm(...FIRST_THING)}`, at: () => nextMonday(FIRST_THING) });
+  return list;
+}
+
+/** Snooze choices for a reminder that went off: a short one, the rest of the day, tomorrow. */
+export function snoozePresets(): WhenPreset[] {
+  const now = new Date();
+  const list: WhenPreset[] = [{ id: '15m', label: '15 min', at: () => Date.now() + 15 * 60_000 }];
+  if (at(0, AFTER_LUNCH, now) > now.getTime() + 20 * 60_000) list.push({ id: 'lunch', label: 'After lunch', at: () => at(0, AFTER_LUNCH) });
+  else if (at(0, BEFORE_LEAVING, now) > now.getTime() + 20 * 60_000) list.push({ id: 'leave', label: 'Before I leave', at: () => at(0, BEFORE_LEAVING) });
+  list.push({ id: 'tomorrow', label: `Tomorrow ${hm(...FIRST_THING)}`, at: () => at(1, FIRST_THING) });
   return list;
 }
 
