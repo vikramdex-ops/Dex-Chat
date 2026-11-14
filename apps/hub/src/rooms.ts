@@ -215,6 +215,8 @@ export class Rooms {
     const rule = r.meeting?.settings.lobby ?? 'off';
     if (rule === 'off') return false;
     if (rule === 'everyone') return true;
+    // someone rung into the Room was called in by a person inside it
+    if (r.ringing.includes(me.id)) return false;
     return me.role === 'guest' || !r.meeting || !this.host.meetings?.insider(r.meeting, me.id);
   }
 

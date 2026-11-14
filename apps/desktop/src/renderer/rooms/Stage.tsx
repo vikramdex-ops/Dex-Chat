@@ -72,8 +72,10 @@ interface TileProps {
 
 const Tile = memo(function Tile({ deviceId, userId, name, me, muted, camera, zone, hand, spotlit, pinned, onMenu, className }: TileProps) {
   const stream = useCall((s) => (me ? s.local : s.peers.get(deviceId)?.streams[0] ?? null));
+  // a camera turned on mid-call adds a track to the same stream: follow the track count too
+  const tracks = useCall((s) => (me ? s.local : s.peers.get(deviceId)?.streams[0])?.getVideoTracks().length ?? 0);
   const speaking = useSpeaking(me ? `self:${deviceId}` : deviceId) && !muted;
-  const hasVideo = camera && !!stream?.getVideoTracks().length;
+  const hasVideo = camera && tracks > 0 && !!stream;
   const menuBtn = useRef<HTMLButtonElement>(null);
   return (
     <div className={`room-tile${speaking ? ' speaking' : ''}${hasVideo ? ' has-video' : ''}${hand ? ' hand-up' : ''}${className ? ` ${className}` : ''}`} style={{ ['--tint' as string]: colorFor(userId) }}
@@ -582,7 +584,7 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
             {waiting.map((l) => (
               <li key={l.deviceId}>
                 <Avatar user={{ id: l.userId, displayName: nameOf(l.userId) }} size="sm" />
-                <span className="who"><b>{nameOf(l.userId)}</b><small>{users.get(l.userId)?.role === 'guest' ? 'Guest' : conv && !conv.members.includes(l.userId) ? 'From outside the meeting' : 'In the conversation'} · since {clock(l.at)}</small></span>
+                <span className="who"><b>{nameOf(l.userId)}</b><small>{users.get(l.userId)?.role === 'guest' ? 'Guest' : conv && !conv.members.includes(l.userId) ? 'From outside' : 'Member'} · waiting since {clock(l.at)}</small></span>
                 <button className="btn sm ghost" onClick={() => run(host('room.admit', { deviceIds: [l.deviceId], allow: false }))}>Deny</button>
                 <button className="btn sm primary" onClick={() => run(host('room.admit', { deviceIds: [l.deviceId], allow: true }))}>Admit</button>
               </li>

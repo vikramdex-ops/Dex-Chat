@@ -84,7 +84,7 @@ function blueprint(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = 'rgba(214, 233, 255, 0.6)';
   ctx.lineWidth = 2;
   // a pipe run in isometric: header, a riser and a flanged branch
-  const iso = (x: number, y: number, z: number): [number, number] => [140 + (x - y) * 0.866, 560 + (x + y) * 0.5 - z];
+  const iso = (x: number, y: number, z: number): [number, number] => [220 + (x - y) * 0.866, 540 + (x + y) * 0.5 - z];
   const run = (pts: Array<[number, number, number]>) => { ctx.beginPath(); pts.forEach((p, i) => { const [x, y] = iso(...p); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke(); };
   run([[0, 0, 0], [300, 0, 0], [300, 0, 220], [300, -260, 220]]);
   run([[150, 0, 0], [150, 180, 0]]);
@@ -101,7 +101,7 @@ function blueprint(ctx: CanvasRenderingContext2D): void {
   dimension(ctx, 1010, 1150, 290, 'Ø 140');
   ctx.textAlign = 'left';
   ctx.font = `600 13px ${MONO}`;
-  ctx.fillText('LINE 6"-P-1042-A1', 60, 660);
+  ctx.fillText('LINE 6"-P-1042-A1', 150, 640);
 }
 
 function studio(ctx: CanvasRenderingContext2D): void {
