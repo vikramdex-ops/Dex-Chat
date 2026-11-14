@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Simplified mark for 16-32px (tray, favicon): thicker strokes, no gradients -->
+  <rect x="1" y="1" width="30" height="30" rx="8" fill="#1c7680"/>
+  <path fill="#fff" fill-rule="evenodd" d="M8 6.5h9.2C22.6 6.5 26 10.6 26 16s-3.4 9.5-8.8 9.5H13L8 29Z M12.6 11v10h4.4c3 0 4.6-2.1 4.6-5s-1.6-5-4.6-5Z"/>
+  <circle cx="17" cy="16" r="2.8" fill="#f7af44"/>
+</svg>

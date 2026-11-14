@@ -51,4 +51,4 @@ brand/          Dexterity International logo files and colour tokens
 docs/           blueprint and Cliq feature inventory
 ```
 
-Internal use only. © Dexterity International.
+Internal software. © Dexterity Design Services Pvt. Ltd. All rights reserved.

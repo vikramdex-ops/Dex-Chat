@@ -1,6 +1,6 @@
 # Dexterity Connect — product & engineering blueprint
 
-Status: **approved scope, pre-build** · Date: 2026-11-14 · Owner: Dexterity International
+Status: **approved scope, pre-build** · Date: 2026-11-14 · Owner: Dexterity Design Services Pvt. Ltd.
 
 Dexterity Connect is an internal messenger for Dexterity's office. It has **every non-AI capability of Zoho
 Cliq** and works with the internet unplugged. This document is the single source of truth for what we are
@@ -23,7 +23,7 @@ building, why, and in what order.
 | Area | Decision |
 | --- | --- |
 | Name | **Dexterity Connect** |
-| Brand | Dexterity International (teal diamond, amber D). Tokens in `brand/BRAND.md`. |
+| Brand | Dexterity International palette (teal, amber) with our own product icon. Publisher and copyright: **Dexterity Design Services Pvt. Ltd.**, matching the rest of the internal tool suite. |
 | Platforms | **Windows 10/11 desktop** plus **phone browser on office Wi-Fi** (installable web app, v1). |
 | Scale | 25–100 users. Design headroom: 500. |
 | Network | **Hybrid**: a hub on a dedicated always-on PC, with automatic direct PC-to-PC fallback when the hub is down, and resync when it returns. |
@@ -33,7 +33,14 @@ building, why, and in what order.
 | AI | **Excluded entirely.** |
 | v1 modules | Everything: remote-work check-in/out, org directory & chart, calendar & meetings, polls/forms/notes, bots/slash commands/webhooks, whiteboard, guest users, compliance suite. |
 | Disk rule | Development artefacts never on `C:` (this project is built in the cloud and in CI; nothing is written to the developer's `C:`). The installed app uses normal Windows locations. |
-| Look & feel | **Windows 11 native**: Mica/acrylic surfaces, follows system light/dark, Dexterity teal as the accent, Fluent-style motion. Deliberately unlike Cliq. |
+| Look & feel | **Windows 11 native**: Mica/acrylic surfaces, follows system light/dark, Dexterity teal as the accent, Fluent-style motion. A design language of our own: no layout, iconography, wording or interaction pattern borrowed from Cliq. |
+| Platforms (revised) | Windows **and macOS** desktop, **Android APK**, plus the phone browser. Every push builds every installer in GitHub Actions. |
+| Distribution | Source stays in this repository, which must be private. Installers, release notes and the 3D landing page are published to the public repository **dexterity-admin/dexterity-connect** (GitHub Pages: dexterity-admin.github.io/dexterity-connect). |
+| Release channels | Pushes to `main` = **stable** (everyone). Other branches = **beta** (only people who opt in). |
+| Updates | In-app updater on every platform: checks on open, on a timer and on demand, then downloads, verifies, installs and relaunches inside the app. Offline offices update from the hub's mirror. |
+| Feel | Lighter and faster than Cliq: performance budgets enforced in CI (see section 8). |
+| Ecosystem | Dexterity's own tools are wired in **on both sides**: Connect gets cards, launchers and an open bot/webhook API, and each tool gets small hooks (`dexterity://` links, "share to Connect"). Hopper's alerts move from its Zoho Cliq bot to Connect. |
+| Identity | Custom app icon (`brand/icon/`): a "D" that is a speech bubble, with an amber spark. Used everywhere: app, tray, installers, landing page, Android. |
 
 ## 3. Architecture
 
@@ -162,6 +169,57 @@ Each phase ends with installers built by CI, a test pass, and a short demo note.
 | **P4 Productivity** | Reminders, scheduled messages, polls, forms, notes, calendar and rooms, remote work, org directory and chart | — |
 | **P5 Platform & governance** | Bots, slash commands, webhooks, REST API, whiteboard, guests, admin console, compliance suite | — |
 | **P6 Mobile & polish** | Phone PWA, accessibility audit, performance budget (cold start < 1.5 s, chat switch < 50 ms), hub-pushed updates | v1.0 |
+
+## 8. Distribution, updates and performance
+
+### Release flow
+| Trigger | Result |
+| --- | --- |
+| Any push | Tests, then Windows installer, macOS DMGs, Android APK and hub package as build artefacts |
+| Push to `main` | Same, plus a release in the public repository; every installed app is offered the update |
+| Other branches | Optional *beta* channel for testers (opt-in in Settings) |
+
+### In-app updater (desktop and Android)
+- **When it checks:** at start-up, every 4 hours while running, and when you click "Check for updates".
+  It checks quietly while you're in a call and holds the prompt until the call ends.
+- **Where it checks:** the public release repository when the PC has internet. Otherwise the hub's update
+  mirror, which the hub refreshes whenever it has internet, or which an admin fills by uploading an installer
+  from the admin console. Offices that never connect still update.
+- **Flow:** "Update available" → background download with progress (resumable, so a dropped download
+  continues) → SHA-512 check against the release manifest → "Restart to update" (or install on quit) → the app
+  relaunches into the new version and shows what changed.
+- **Edge cases handled:** no network, a hub without the mirror, a corrupted or partial download, a
+  version older than the installed one (refused), the disk full, a second instance running, an update
+  arriving mid-download, admin-pinned versions (hold everyone on a known-good build), and mandatory
+  security updates.
+- **macOS caveat:** Apple only allows silent self-replacement for signed apps. Unsigned builds
+  download the new DMG and walk the user through a two-click replace, until an Apple Developer ID is added.
+- **Android:** downloads the new APK and hands it to Android's installer (one tap to confirm).
+  Every build is signed with the same key so Android accepts it as an update.
+
+### Performance budgets (enforced in CI)
+| Metric | Budget |
+| --- | --- |
+| Cold start to usable window | < 1.5 s on an office PC |
+| Switching conversations | < 50 ms, no spinner for cached chats |
+| Typing latency | < 16 ms per keystroke (one frame) |
+| Scrolling 10,000 messages | 60 fps (virtualised list) |
+| Renderer JS (gzip) | < 350 KB initial; heavy views (calls, whiteboard) load on demand |
+| Idle memory | < 250 MB |
+
+## 9. Dexterity tool ecosystem
+
+| Tool | What it is | Connect integration |
+| --- | --- | --- |
+| **Hopper** | Office file manager with @mention file sending and client links | Its Cliq bot alerts (downloads, link expiry, DMs) move to a Connect bot. "Send to @person" shows as a rich transfer card in chat. Folder paths in messages get "Open in Hopper". Shared directory and presence. |
+| **Dexterity Sheets** | Live co-authored spreadsheets on an office server | Sheets links unfurl into cards (who is editing, last change). Cell @mentions arrive as Connect messages. Named versions ("Issued Rev B") attach to threads. Automation-rule outputs become reminders. |
+| **Project Opener** | One-click project launch sets | A project shared into chat becomes a card with "Open all". Each project can have its own channel. Path-offline alerts post to the channel. Its team-hub presence and announcements merge into Connect. |
+| **Slate** | Lightweight co-editing text/CSV editor | Notes in every chat and channel open and co-edit in Slate. Text/CSV attachments get "Open in Slate". Revised files posted in chat get a side-by-side diff. CSVs preview as grids. |
+| **Sleuth** | OCR search for tags inside drawings | Line numbers and tags in messages (6"-P-1001-A1B) become links to the drawing with the tag ringed. `/find <tag>` searches the shared index. Revision change reports post to project channels. |
+| **Datum** | Offline piping data book and calculators | `/datum 6" 300# WN` posts a component card with key dimensions. Shared selections open in Datum. Its QR-from-PC install pattern distributes Connect's Android app too. |
+
+Common plumbing: a `dexterity://<tool>/<action>?…` link scheme, a local webhook/bot API on the hub (also the
+replacement for Hopper's Cliq bot), and a launcher panel in Connect that shows which tools are installed.
 
 ## 6. What Dexterity needs to provide
 

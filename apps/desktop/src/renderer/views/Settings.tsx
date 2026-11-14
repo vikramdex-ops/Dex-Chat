@@ -102,7 +102,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           <h3>About</h3>
           <div className="setting">
             <Icon name="info" className="lead" />
-            <div className="txt"><div>Dexterity Connect {state.version}</div><div className="faint">Dexterity International · works entirely on the office network</div></div>
+            <div className="txt"><div>Dexterity Connect {state.version}</div><div className="faint">Dexterity Design Services Pvt. Ltd. · works entirely on the office network</div></div>
           </div>
         </section>
       </div>

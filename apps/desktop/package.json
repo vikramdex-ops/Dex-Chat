@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "description": "Dexterity Connect desktop app",
-  "author": "Dexterity International",
+  "author": "Dexterity Design Services Pvt. Ltd.",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "build": "node scripts/build.mjs && vite build",
@@ -31,7 +31,7 @@
   "build": {
     "appId": "in.co.dexteritydesign.connect",
     "productName": "Dexterity Connect",
-    "copyright": "Dexterity International",
+    "copyright": "\u00a9 Dexterity Design Services Pvt. Ltd.",
     "asar": true,
     "directories": {
       "output": "release",
@@ -46,6 +46,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "build/tray.png",
+        "to": "tray.png"
       }
     ],
     "protocols": [

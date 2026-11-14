@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
-import logo from '../../build/icon.png';
+import logo from './app-icon.svg';
 import { Icon, ToastHost } from './ui.tsx';
 import type { IconName } from './ui.tsx';
 import { Onboarding } from './views/Onboarding.tsx';

@@ -35,9 +35,10 @@ if (process.defaultApp && process.argv[1]) {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
 
-const iconPath = () => app.isPackaged
-  ? path.join(process.resourcesPath, 'icon.png')
-  : path.join(__dirname, '..', 'build', 'icon.png');
+const resource = (name: string) => app.isPackaged
+  ? path.join(process.resourcesPath, name)
+  : path.join(__dirname, '..', 'build', name);
+const iconPath = () => resource('icon.png');
 
 function applyTheme(settings: Settings): void {
   nativeTheme.themeSource = settings.theme;
@@ -120,7 +121,7 @@ function notify(title: string, body: string): void {
 }
 
 function buildTray(): void {
-  const image = nativeImage.createFromPath(iconPath()).resize({ width: 16, height: 16, quality: 'best' });
+  const image = nativeImage.createFromPath(resource('tray.png')).resize({ width: 16, height: 16, quality: 'best' });
   tray = new Tray(image);
   tray.setToolTip('Dexterity Connect');
   const refresh = () => {

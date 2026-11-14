@@ -2,7 +2,7 @@
 // or recover from a declined device or a hub whose certificate changed.
 import { useEffect, useState } from 'react';
 import type { AppState } from '../../shared/bridge.ts';
-import logo from '../../../build/icon.png';
+import logo from '../app-icon.svg';
 import { Icon, deviceCode } from '../ui.tsx';
 
 export function Onboarding({ state }: { state: AppState }) {
