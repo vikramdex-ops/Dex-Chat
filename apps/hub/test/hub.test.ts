@@ -89,7 +89,7 @@ test('new devices wait for approval, then join live; presence and directory foll
 
   // members cannot see people who are not yet approved
   const list = await owner.request('directory.list');
-  assert.equal(list.users.length, 1);
+  assert.equal(list.users.filter((u) => u.role !== 'bot').length, 1, 'only approved people (and the system bot)');
 
   const presence = nextEvent(owner, 'presence');
   const added = nextEvent(owner, 'user.added');
@@ -98,7 +98,7 @@ test('new devices wait for approval, then join live; presence and directory foll
   assert.equal(ready.kind === 'ready' && ready.session.me.role, 'member');
   assert.equal((await added as { account: string }).account, 'dexterity\\priya');
   assert.deepEqual(await presence, { userId: ready.kind === 'ready' ? ready.session.me.id : '', online: true, away: false });
-  assert.equal(owner.session!.users.length, 2);
+  assert.equal(owner.session!.users.filter((u) => u.role !== 'bot').length, 2);
   assert.equal(owner.session!.online.length, 2);
 
   // going offline is broadcast

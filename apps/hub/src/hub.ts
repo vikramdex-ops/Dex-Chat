@@ -24,6 +24,7 @@ import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
 import { Pairing, lanAddresses } from './pairing.ts';
+import { SystemBot } from './systembot.ts';
 import { ipAllowed } from '@dex/core/dlp';
 import { pairCode, pairLink } from '@dex/core/remote';
 import { Emoji, EmojiError } from './emoji.ts';
@@ -113,6 +114,7 @@ export class Hub {
   readonly compliance: Compliance;
   readonly policies: Policies;
   readonly pairing: Pairing;
+  readonly system: SystemBot;
   readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
@@ -160,6 +162,7 @@ export class Hub {
       }
     });
     this.pairing = new Pairing(this.store);
+    this.system = new SystemBot(this.store, this.messaging);
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
     this.messaging.dlpRules = () => this.policies.get().dlp ?? [];
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
@@ -688,6 +691,7 @@ export class Hub {
     this.store.audit(user.id, 'device.paired', device.id, { kind: r.kind, hostname: label, ip: conn.ip, remote: !!conn.remote });
     this.log('info', 'device paired', { user: user.account, kind: r.kind, hostname: label });
     this.emit('me.devicePaired', device, (c) => c.userId === user.id);
+    this.system.tell(user.id, `**${label}** was added to your account with a pairing code (${conn.remote ? 'from outside the office' : 'on the office network'}). If that wasn't you, remove it now in **Preferences → Your devices**.`, `paired-${device.id}`);
     this.emit('device.updated', device, (c) => this.isAdminConn(c));
     conn.deviceId = device.id;
     conn.userId = user.id;
@@ -905,6 +909,7 @@ export class Hub {
         if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
         const updated = this.store.setDeviceStatus(device.id, 'revoked', me.id);
         this.store.audit(me.id, 'device.revoked', device.id, { account: device.account });
+        if (device.status === 'approved') this.system.tell(device.userId, `An administrator removed **${device.hostname}** from your account. It is signed out and can't be used to sign in again.`, `revoked-${device.id}`);
         for (const c of [...this.conns]) {
           if (c.deviceId === device.id) {
             this.send(c, { t: 'rejected', reason: 'This device was removed by an administrator.' });
@@ -926,6 +931,7 @@ export class Hub {
         if (target.role === 'admin' && me.role !== 'owner') throw new OpError('Only the owner can change an administrator.');
         const user = this.store.updateUser(target.id, { role });
         this.store.audit(me.id, 'user.role', target.id, { from: target.role, to: role });
+        this.system.tell(target.id, role === 'admin' ? 'You are now an **administrator**: the Control room is in your tile menu.' : role === 'member' ? (target.role === 'guest' ? 'You are now a **member** of the office: you can see open Spaces and the whole Directory.' : 'You are no longer an administrator.') : 'Your account is now a **guest** account: you see only the Spaces you were invited to.', `role-${target.id}-${Date.now()}`);
         this.emit('user.updated', user);
         return user;
       }

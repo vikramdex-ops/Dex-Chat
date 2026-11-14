@@ -59,3 +59,18 @@ test('expired codes, guests and the office policy', async () => {
   const ok = await ravi.request('pair.create', { kind: 'laptop' });
   assert.equal(parsePairCode(ok.code)!.kind, 'laptop');
 });
+
+test('the system bot writes to you when a device is added or removed, or your role changes', async () => {
+  const { hub, owner, priya } = await office();
+  const made = await priya.request('pair.create', { kind: 'laptop' });
+  const lap = device(hub, parsePairCode(made.code)!.token, 'HOME-LAPTOP');
+  await until(lap.c, (s) => s.kind === 'ready');
+  await owner.request('admin.revoke', { deviceId: lap.identity.deviceId });
+  await owner.request('admin.setRole', { userId: me(priya), role: 'admin' });
+  const dm = (await priya.request('conv.list')).find((c) => c.kind === 'direct' && c.members.includes(hub.system.id))!;
+  const texts = (await priya.request('msg.list', { convId: dm.id })).messages.map((m) => m.body);
+  assert.match(texts.join('\n'), /HOME-LAPTOP\*\* was added to your account/);
+  assert.match(texts.join('\n'), /administrator removed \*\*HOME-LAPTOP/);
+  assert.match(texts.join('\n'), /now an \*\*administrator/);
+  assert.ok(!(await owner.request('admin.bots')).some((b) => b.bot.id === hub.system.id), 'not listed as an integration');
+});
