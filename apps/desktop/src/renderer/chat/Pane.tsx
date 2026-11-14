@@ -18,6 +18,7 @@ import { FormBuilder, FormCard } from './forms.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
+import { ClipRecorder, clipsSupported, screenClipsSupported } from './clips.tsx';
 import type { Board } from '@dex/core';
 import { ForwardDialog, ForwardedTag, PollCard, PollDialog, RemindDialog, ScheduleDialog, markUnreadFrom } from './extras.tsx';
 import { describeWhen, deskState, toggleSaved, useDesk } from '../desk/store.ts';
@@ -617,6 +618,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | null>(null);
   const [addMenu, setAddMenu] = useState(false);
+  const [clipMode, setClipMode] = useState<'camera' | 'screen' | null>(null);
   const [recording, setRecording] = useState(false);
   const addBtn = useRef<HTMLButtonElement>(null);
   const [slashIndex, setSlashIndex] = useState(0);
@@ -805,9 +807,11 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
             </>
           )}
           <button className="icon-btn wide-only" title="Emoji" onClick={() => setEmoji(!emoji)}><Icon name="smile" size={18} /></button>
-          <button ref={addBtn} className="icon-btn" title="Add a poll, form, note or whiteboard" disabled={!live || direct} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
+          <button ref={addBtn} className="icon-btn" title="Add a video, poll, form, note or whiteboard" disabled={!live || direct} onClick={() => setAddMenu(!addMenu)} aria-haspopup="menu" aria-expanded={addMenu}><Icon name="plus" size={18} /></button>
           {addMenu && (
             <Popover anchor={addBtn.current} onClose={() => setAddMenu(false)} className="menu add-menu" align="start">
+              {clipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('camera'); }}><Icon name="video" size={16} />Video message</button>}
+              {screenClipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('screen'); }}><Icon name="screen" size={16} />Screen recording</button>}
               <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('poll'); }}><Icon name="poll" size={16} />Poll</button>
               {ctx.users.get(ctx.meId)?.role !== 'guest' && <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('form'); }}><Icon name="list" size={16} />Form</button>}
               <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-side', { detail: { convId, side: 'notes-new' } })); }}><Icon name="doc" size={16} />Note</button>
@@ -823,6 +827,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
           )}
         </div>
         {live && !direct && <VoiceRecorder convId={convId} parentId={parentId} onActive={setRecording} />}
+        {clipMode && <ClipRecorder mode={clipMode} convId={convId} parentId={parentId} onClose={() => setClipMode(null)} />}
         <textarea
           ref={ref}
           hidden={recording}

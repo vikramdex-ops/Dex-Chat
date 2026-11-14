@@ -6,6 +6,7 @@ import type { FileInfo } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { VoicePlayer } from './voice.tsx';
+import { VideoClip } from './clips.tsx';
 
 export const filesSupported = () => typeof window.dex.uploadFile === 'function';
 export const fileSrc = (id: string) => `dexfile://f/${id}`;
@@ -73,7 +74,8 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
   const images = files.filter(isImage);
   const showImages = filesSupported();
   const audio = showImages ? files.filter((f) => f.mime.startsWith('audio/')) : [];
-  const others = files.filter((f) => !isImage(f) && !audio.includes(f));
+  const videos = showImages ? files.filter((f) => f.mime === 'video/webm' || f.mime === 'video/mp4') : [];
+  const others = files.filter((f) => !isImage(f) && !audio.includes(f) && !videos.includes(f));
   return (
     <div className="msg-files">
       {showImages && images.length > 0 && (
@@ -87,6 +89,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
         </div>
       )}
       {audio.map((f) => <VoicePlayer key={f.id} f={f} />)}
+      {videos.map((f) => <VideoClip key={f.id} f={f} />)}
       {[...(showImages ? [] : images), ...others].map((f) => {
         const k = kind(f);
         return (

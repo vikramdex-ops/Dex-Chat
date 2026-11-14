@@ -137,7 +137,7 @@ export function RoomStage({ users, title, onOpenConversation, meDevice, meId }: 
   );
 }
 
-function ScreenPicker({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
+export function ScreenPicker({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
   const [sources, setSources] = useState<Array<{ id: string; name: string; thumbnail: string }> | null>(null);
   useEffect(() => { void window.dex.listScreens?.().then(setSources).catch(() => setSources([])); }, []);
   return (

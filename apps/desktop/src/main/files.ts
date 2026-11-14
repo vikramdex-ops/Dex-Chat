@@ -72,10 +72,21 @@ const cacheDir = () => path.join(app.getPath('userData'), 'file-cache');
 const safeName = (n: string) => n.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 150) || 'file';
 
 /** Download a file into the local cache (once) and return its path. */
-async function fetchToCache(access: HubAccess, id: string, name: string): Promise<string> {
-  const dir = path.join(cacheDir(), id);
-  const target = path.join(dir, safeName(name));
-  if (fs.existsSync(target)) return target;
+/** Downloads in progress, so two requests for one file (a video asks more than once) share one. */
+const inFlight = new Map<string, Promise<string>>();
+
+function fetchToCache(access: HubAccess, id: string, name: string): Promise<string> {
+  const target = path.join(cacheDir(), id, safeName(name));
+  if (fs.existsSync(target)) return Promise.resolve(target);
+  const running = inFlight.get(target);
+  if (running) return running;
+  const p = download(access, id, target).finally(() => inFlight.delete(target));
+  inFlight.set(target, p);
+  return p;
+}
+
+async function download(access: HubAccess, id: string, target: string): Promise<string> {
+  const dir = path.dirname(target);
   await fsp.mkdir(dir, { recursive: true });
   const { req, res } = await pinnedRequest(access, 'GET', `/files/${id}?download=1`);
   req.end();
@@ -117,14 +128,29 @@ export async function saveFile(access: HubAccess, id: string, name: string): Pro
 /** dexfile://f/<id> → the cached file (images shown inline in conversations). */
 export function handleFileScheme(getAccess: () => HubAccess | null): void {
   protocol.handle(FILE_SCHEME, async (request) => {
-    const m = new URL(request.url).pathname.match(/^\/([0-9A-Z]{26})$/);
+    const u = new URL(request.url);
+    const m = u.pathname.match(/^\/([0-9A-Z]{26})$/);
     const access = getAccess();
     if (!m || !access) return new Response('not found', { status: 404 });
     try {
       const p = await fetchToCache(access, m[1], 'image');
-      const ext = (await sniffImage(p)) ?? 'application/octet-stream';
+      let ext = (await sniffImage(p)) ?? 'application/octet-stream';
+      const size = (await fsp.stat(p)).size;
+      // video messages and screen recordings: the same containers as audio, played as video
+      if (u.searchParams.get('as') === 'video' && (ext === 'audio/webm' || ext === 'audio/mp4')) ext = ext.replace('audio/', 'video/');
+      // byte ranges, so audio and video can seek
+      const range = request.headers.get('range')?.match(/^bytes=(\d*)-(\d*)$/);
+      if (range && size > 0) {
+        const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+        if (start > end || start >= size) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+        return new Response(Readable.toWeb(fs.createReadStream(p, { start, end })) as ReadableStream, {
+          status: 206,
+          headers: { 'content-type': ext, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(end - start + 1), 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=31536000, immutable' },
+        });
+      }
       return new Response(Readable.toWeb(fs.createReadStream(p)) as ReadableStream, {
-        headers: { 'content-type': ext, 'cache-control': 'private, max-age=31536000, immutable' },
+        headers: { 'content-type': ext, 'content-length': String(size), 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=31536000, immutable' },
       });
     } catch {
       return new Response('unavailable', { status: 502 });
