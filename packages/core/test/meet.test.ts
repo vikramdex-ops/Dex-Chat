@@ -90,3 +90,30 @@ test('without a guest link the invitation is for colleagues only', () => {
   assert.doesNotMatch(ics, /\r\nURL:/);
   assert.match(ics, /\r\nLOCATION:dexconnect:\/\/meet\/482-913-207\r\n/);
 });
+
+test('a meeting report and the office totals as CSV', async () => {
+  const { reportCsv, usageCsv } = await import('../src/meet-csv.ts');
+  const { parseCsv } = await import('../src/csv.ts');
+  const t0 = Date.UTC(2026, 10, 14, 4, 30);
+  const csv = reportCsv({
+    roomId: 'R1', meetingId: '482913207', title: 'Review, rev C', kind: 'instant', hostId: 'U1', startedAt: t0, endedAt: t0 + 3600_000, durationMs: 3600_000,
+    people: [
+      { userId: 'U1', name: 'Priya Raman', guest: false, firstJoin: t0, lastLeave: t0 + 3600_000, totalMs: 3600_000, joins: 1, hands: 0, reactions: 2 },
+      { userId: 'guest:1', name: '=HYPERLINK("x")', guest: true, firstJoin: t0 + 60_000, lastLeave: t0 + 1800_000, totalMs: 1500_000, joins: 2, hands: 1, reactions: 0 },
+    ],
+    peak: 2, hands: 1, reactions: { '👏': 2 }, polls: [{ question: 'Ship?', options: [{ text: 'Yes', votes: 1 }, { text: 'No', votes: 0 }], voters: 1 }],
+    recordings: [], breakouts: 0,
+  });
+  assert.ok(csv.startsWith('﻿'));
+  const rows = parseCsv(csv);
+  assert.deepEqual(rows[0], ['Meeting', 'Review, rev C']);
+  const head = rows.findIndex((r) => r[0] === 'Name');
+  assert.deepEqual(rows[head + 1], ['Priya Raman', 'no', '2026-11-14 04:30:00', '2026-11-14 05:30:00', '60', '1', '0', '2']);
+  // a name that looks like a formula is written as text
+  assert.equal(rows[head + 2][0], `'=HYPERLINK("x")`);
+  assert.equal(rows[head + 2][4], '25');
+  assert.ok(rows.some((r) => r[0] === 'Poll' && r[1] === 'Ship?'));
+  const u = parseCsv(usageCsv({ days: 28, from: t0, weeks: [{ week: '2026-11-09', meetings: 3, hours: 2.5, averageSize: 4.3, guests: 1 }], totals: { meetings: 3, hours: 2.5, averageSize: 4.3, guests: 1, recordings: 1, recordingBytes: 10 } }));
+  assert.deepEqual(u[1], ['2026-11-09', '3', '2.5', '4.3', '1']);
+  assert.deepEqual(u[2], ['Total', '3', '2.5', '4.3', '1']);
+});

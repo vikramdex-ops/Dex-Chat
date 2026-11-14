@@ -8,6 +8,7 @@ import type { BackdropSpec, Blurred } from './blur.ts';
 import { customBackground, officeBackground } from './backgrounds.ts';
 import type { BackgroundId } from './backgrounds.ts';
 import { stopVoices } from './speech.ts';
+import { isProcessed, processMic, rawMic, releaseNoise, setNoisePref, suppressNoise } from './noise.ts';
 import { useSyncExternalStore } from 'react';
 import type { MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
 import { timeOpts } from '../time.ts';
@@ -120,6 +121,26 @@ export async function setBackground(id: BackgroundId): Promise<void> {
 }
 export const toggleBlur = (): Promise<void> => setBackground(state.background === 'blur' ? 'none' : 'blur');
 
+/** Strong noise suppression on or off, now (in a Room) and for the next Rooms. */
+export async function setNoiseSuppression(on: boolean): Promise<void> {
+  setNoisePref(on);
+  const local = state.local;
+  const cur = local?.getAudioTracks()[0];
+  if (!local || !cur) return;
+  if (on && !isProcessed(cur)) {
+    const out = await processMic(cur);
+    out.enabled = cur.enabled;
+    swapVideo(local, cur, out);
+  } else if (!on && isProcessed(cur)) {
+    const raw = rawMic();
+    if (!raw) return;
+    raw.enabled = cur.enabled;
+    swapVideo(local, cur, raw);
+    releaseNoise(false);
+  }
+  set({ local: new MediaStream(local.getTracks()) });
+}
+
 export function setLayout(layout: Layout): void {
   if (layout !== 'presentation') { try { localStorage.setItem(LAYOUT_KEY, layout); } catch { /* private mode */ } }
   set({ layout });
@@ -129,7 +150,8 @@ export function setPinned(deviceId: string | null): void { set({ pinned: deviceI
 
 const listeners = new Set<() => void>();
 const set = (patch: Partial<CallState>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
-const tell = (text: string) => set({ notice: { text, at: Date.now() } });
+/** Tell the person something as a toast (also used by the meeting's live events, meet/live.ts). */
+export const tell = (text: string) => set({ notice: { text, at: Date.now() } });
 export const useCall = <T,>(sel: (s: CallState) => T): T => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => sel(state));
 export const callState = () => state;
 
@@ -194,7 +216,8 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
   myDevice = deviceId;
   if (wired) return;
   wired = true;
-  void window.dex.request('room.list').then((rooms) => set({ active: new Map(rooms.map((r) => [r.convId, r])) })).catch(() => {});
+  // breakout rooms are not "the" Room of their conversation (meet/Breakouts.tsx shows them)
+  void window.dex.request('room.list').then((rooms) => set({ active: new Map(rooms.filter((r) => !r.parentId).map((r) => [r.convId, r])) })).catch(() => {});
   window.dex.onHubEvent((name, data) => {
     if (name === 'room.ring') {
       const d = data as { room: RoomInfo; from: string };
@@ -204,7 +227,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (!document.hasFocus()) notify(`${nameOf(d.from)} is opening a Room`, `${d.room.video ? 'Video' : 'Voice'} Room · join with voice or video`);
     } else if (name === 'room.updated') {
       const r = data as RoomInfo;
-      const active = new Map(state.active).set(r.convId, r);
+      const active = r.parentId ? state.active : new Map(state.active).set(r.convId, r);
       if (state.room?.id === r.id) {
         // close links to devices that left
         for (const [dev] of links) if (!r.participants.some((p) => p.deviceId === dev)) dropLink(dev);
@@ -220,9 +243,14 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
         stopRing();
         set({ incoming: null, active });
       } else set({ active });
+    } else if (name === 'room.moved') {
+      // a host moved this PC to another Room of the meeting (a breakout, or back to the main Room)
+      const d = data as { from: string; room: RoomInfo };
+      if (state.room?.id === d.from) moveTo(d.room);
     } else if (name === 'room.ended') {
       const d = data as { roomId: string; convId: string; missed: boolean; startedBy: string; endedBy?: string };
-      const active = new Map(state.active); active.delete(d.convId);
+      const active = new Map(state.active);
+      if (state.active.get(d.convId)?.id === d.roomId || state.room?.id === d.roomId) active.delete(d.convId);
       if (state.incoming?.room.id === d.roomId) {
         stopRing();
         if (d.missed && !document.hasFocus()) notify(`You missed ${nameOf(d.startedBy)}'s Room · ${clock(state.incoming.room.startedAt)}`, 'Open the conversation to ring back');
@@ -334,6 +362,8 @@ const cameraAllowed = (video: boolean) => video && policyNow().cameraConsent !==
 /** Media for a Room: the microphone, the camera when asked for, and the chosen background. */
 async function prepareMedia(video: boolean): Promise<MediaStream> {
   const [local] = await Promise.all([getMedia(cameraAllowed(video)), refreshIce()]);
+  // strong noise suppression (RNNoise, on this PC), unless turned off in the Room's sound menu
+  await suppressNoise(local).catch(() => {});
   if (state.background !== 'none' && local.getVideoTracks().length) await applyBackground(local, state.background).catch(() => {});
   return local;
 }
@@ -350,6 +380,18 @@ function enter(room: RoomInfo, local: MediaStream): void {
   else if (room.ringing.length) startRing(true);
   void announceMedia();
 }
+/** Into another Room of the same meeting: the same microphone and camera, new connections. */
+function moveTo(room: RoomInfo): void {
+  for (const dev of [...links.keys()]) dropLink(dev);
+  relay?.close();
+  relay = null;
+  // a shared screen stays with the Room it was shared in
+  if (state.screen) { state.screen.getTracks().forEach((t) => t.stop()); state.screen = null; }
+  set({ room, screen: null, peers: new Map(), pinned: null, unmuteAsk: null, layout: state.layout === 'presentation' ? layoutPref() : state.layout, minimized: false });
+  connectRoom(room);
+  void announceMedia();
+}
+
 /** When this PC came into its current Room (for measuring how fast the first picture arrives). */
 let joinedAt = 0;
 export const roomJoinedAt = () => joinedAt;
@@ -422,6 +464,7 @@ export function leaveLobby(tellHub = true): void {
 
 function dropMedia(local: MediaStream | null): void {
   if (!local || (local === state.local && state.room)) return;
+  releaseNoise();
   stopCameraTracks(local);
   local.getTracks().forEach((t) => t.stop());
 }
@@ -469,6 +512,7 @@ function cleanup(): void {
   if (state.local) stopCameraTracks(state.local);
   state.local?.getTracks().forEach((t) => t.stop());
   state.screen?.getTracks().forEach((t) => t.stop());
+  releaseNoise();
   stopVoices();
   set({ room: null, local: null, screen: null, peers: new Map(), camera: false, muted: false, minimized: false, unmuteAsk: null, pinned: null, layout: state.layout === 'presentation' ? layoutPref() : state.layout });
 }

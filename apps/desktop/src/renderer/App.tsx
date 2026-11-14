@@ -39,6 +39,8 @@ import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { joinMeeting, setSelfUser, startCalls } from './rooms/engine.ts';
+import { startMeetLive } from './meet/live.ts';
+import { openRecording } from './meet/shelf.ts';
 import { parseMeetingId } from '@dex/core';
 import { timeOpts } from './time.ts';
 
@@ -274,6 +276,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
+    startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
   }, [state.phase, session.me.id, session.deviceId]);
 
   const openConversation = (id: string, kind: 'direct' | 'space') => {
@@ -289,6 +292,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     openConversation(c.id, c.kind);
     if (messageId) setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId, messageId, parentId: parentId ?? null } })), 120);
   };
+  // a recording kept on the hub (or another meeting surface) asks for the Meet lens
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent).detail === 'meet') { setLens('meet'); setSheet(null); } };
+    window.addEventListener('dex-open-lens', on);
+    return () => window.removeEventListener('dex-open-lens', on);
+  });
   // the Control room's Reports opens the reported message
   useEffect(() => {
     const on = (e: Event) => { const d = (e as CustomEvent).detail as { convId: string; messageId: string }; if (chatState().conversations.has(d.convId)) jump(d.convId, d.messageId); else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'You are not in that conversation' })); };
@@ -409,6 +418,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
     else if (target === 'desk') { setLens('desk'); setSheet(null); }
     else if (target === 'calendar') { setLens('calendar'); setSheet(null); }
+    else if (target === 'recording' && m[2]) { setLens('meet'); setSheet(null); openRecording({ token: m[2] }); }
     else if (target === 'meet') {
       setLens('meet'); setSheet(null);
       const id = parseMeetingId(m[2] ?? '');

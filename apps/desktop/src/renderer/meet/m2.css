@@ -1,0 +1,215 @@
+/* Meetings M2 in the drawing-sheet language: guest links and invitations, the meeting chat's two
+   sheets, breakout rooms (setup columns, the host's register, the banner and countdown), the
+   sound menu, the recording shelf and its viewer (chapters as a schedule and a strip), reports,
+   and the Control room's meeting totals. Tokens only; amber where someone must act. */
+
+/* ------------------------------------------------------------------ a ruled progress scale */
+.ruled-progress { display: flex; align-items: flex-end; gap: 2px; width: 100%; height: 22px; padding: 3px 4px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer); }
+.ruled-progress i { flex: 1; height: 45%; background: var(--stroke-strong); transition: background var(--fast); }
+.ruled-progress i.major { height: 100%; }
+.ruled-progress i.on { background: var(--accent); }
+.dialog:has(.rec-keep) { width: min(560px, calc(100% - 32px)); }
+.rec-keep { width: 100%; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--stroke); border-radius: var(--radius-s); background: var(--layer); font-size: 13px; }
+.rec-keep p { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rec-keep-head { display: flex; justify-content: space-between; align-items: center; }
+.rec-keep-head .label { font-size: 10px; }
+.rec-keep .icon { color: var(--accent); }
+
+/* ------------------------------------------------------------------ guest links and invitations */
+.guest-link { display: grid; gap: 8px; width: 100%; }
+.guest-row, .sound-row { display: flex; align-items: center; gap: 12px; }
+.guest-row .txt, .sound-row .txt { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; }
+.guest-row .txt .faint, .sound-row .txt .faint { font-size: 12px; }
+.guest-problem { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 7px 10px; font-size: 12.5px; color: var(--amber-ink); background: var(--amber-soft); border-left: 3px solid var(--amber); }
+.guest-problem svg { flex: none; margin-top: 2px; }
+.guest-cells { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.guest-cells th, .guest-cells td { padding: 6px 8px; border: 1px solid var(--stroke-strong); text-align: left; vertical-align: middle; }
+.guest-cells th { width: 82px; font-size: 9.5px; background: var(--layer); }
+.guest-cells td:last-child { width: 1%; white-space: nowrap; }
+.guest-pass { font-size: 15px !important; font-weight: 700; letter-spacing: .14em; }
+.guest-url { max-width: 0; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--accent-ink); font-size: 11.5px !important; }
+.guest-cells .tb-link { display: inline-flex; align-items: center; gap: 5px; height: 26px; }
+.meet-invite-block { display: grid; gap: 10px; width: 100%; }
+.invite-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.invite-actions .mono { margin-right: auto; font-size: 11px; letter-spacing: .06em; }
+.guest-settings { padding-bottom: 10px; }
+.guest-settings .meet-invite-block, .guest-settings .guest-link { padding-top: 4px; }
+.meet-guests { padding: 0 14px 12px; display: grid; gap: 8px; }
+.meet-guests summary { cursor: pointer; font-size: 10px; list-style: none; display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.meet-guests summary::-webkit-details-marker { display: none; }
+.meet-guests summary::before { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--fast); }
+.meet-guests[open] summary::before { transform: rotate(45deg); }
+
+/* ------------------------------------------------------------------ the meeting chat's two sheets */
+.meet-chat-switch { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.meet-chat-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--stroke-strong); }
+.meet-chat-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border: 0; background: var(--layer); font: 600 12px/1 var(--font-body); color: var(--text-2); }
+.meet-chat-tabs button + button { border-left: 1px solid var(--stroke-strong); }
+.meet-chat-tabs button[aria-selected='true'] { background: var(--layer-solid); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.meet-chat-tabs .mono { font-size: 10px; color: var(--text-3); }
+.room-chat .role-tag { margin-left: 2px; }
+
+/* ------------------------------------------------------------------ breakout rooms */
+.dialog:has(.bo-setup) { width: min(980px, calc(100% - 32px)); }
+.bo-setup { display: grid; gap: 12px; width: 100%; }
+.bo-options { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.bo-options .room-setting { display: grid; gap: 4px; min-width: 120px; }
+.bo-hint { margin: 0; font-size: 12.5px; }
+.bo-columns { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 10px; max-height: 52vh; overflow: auto; padding: 2px; }
+.bo-col { display: flex; flex-direction: column; min-height: 140px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer); transition: border-color var(--fast), box-shadow var(--fast); }
+.bo-col.main { background: var(--subtle); }
+.bo-col.over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.bo-col-head { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-bottom: 1px solid var(--stroke-strong); background: var(--layer-solid); }
+.bo-col-head .mono { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--accent-ink); }
+.bo-col-head .mono.faint { margin-left: auto; color: var(--text-3); }
+.bo-col-name { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; }
+input.bo-col-name { height: 24px; padding: 0 6px; border-color: transparent; background: none; box-shadow: none; }
+input.bo-col-name:hover, input.bo-col-name:focus { border-color: var(--stroke-strong); background: var(--layer); }
+.bo-col ul { list-style: none; margin: 0; padding: 6px; display: grid; gap: 4px; align-content: start; flex: 1; }
+.bo-col li { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 4px 0 6px; border: 1px solid var(--stroke); border-radius: var(--radius-s); background: var(--layer-solid); font-size: 12.5px; cursor: grab; }
+.bo-col li.bo-empty { border-style: dashed; justify-content: center; cursor: default; background: none; font-size: 12px; }
+.bo-grip { color: var(--text-3); font-size: 12px; }
+.bo-who { flex: 1; min-width: 0; display: grid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bo-col .bo-who { display: block; }
+.bo-move { height: 24px; padding: 0 2px; font: 600 11px/1 var(--font-mono); border: 1px solid var(--stroke); border-radius: 3px; background: var(--layer); color: var(--text-2); }
+.bo-open { margin: 8px 12px 0; justify-self: start; }
+.bo-host { border-top: 1px solid var(--stroke-strong); margin-top: 8px; }
+.bo-list { list-style: none; margin: 0; padding: 0; }
+.bo-list li { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 12px; border-bottom: 1px solid var(--stroke); }
+.bo-list li.here { box-shadow: inset 3px 0 0 var(--accent); }
+.bo-list .mono { width: 34px; font-size: 11px; font-weight: 700; color: var(--accent-ink); }
+.bo-list .bo-who b { font-weight: 600; font-size: 13px; }
+.bo-list .bo-who small { font-size: 11.5px; }
+.bo-note { display: flex; gap: 6px; padding: 8px 12px; }
+.bo-note .input { flex: 1; min-width: 0; height: 30px; }
+.bo-callback { margin: 0 12px 8px; }
+.bo-returning { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 6px 10px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: var(--amber-ink); font-size: 12.5px; }
+.bo-returning .mono { font-weight: 700; }
+.bo-banner { position: absolute; z-index: 3; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 40px); padding: 6px 12px; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); box-shadow: var(--shadow-1); font-size: 12.5px; }
+.bo-banner .mono { font-weight: 700; font-size: 11.5px; letter-spacing: .08em; color: var(--accent-ink); }
+.bo-banner.amber { border-left-color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--layer-solid)); }
+.bo-banner.amber .mono { color: var(--amber-ink); }
+.bo-big { font-size: 18px !important; }
+.bo-note-text { flex-basis: 100%; color: var(--text-2); }
+
+/* ------------------------------------------------------------------ the sound menu */
+.room-sound-menu { width: 320px; padding-bottom: 10px; }
+.room-sound-menu .sound-row { padding: 6px 12px; }
+.sound-state { padding: 0 12px; font-size: 10.5px; letter-spacing: .1em; }
+.room-sound-menu .field-error { margin: 6px 12px 0; font-size: 12px; }
+
+/* ------------------------------------------------------------------ the recordings shelf */
+.rec-shelf { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rec-shelf th { padding: 6px 10px; text-align: left; font: 600 9.5px/1.2 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--stroke-strong); }
+.rec-shelf td { padding: 8px 10px; border-top: 1px solid var(--stroke); vertical-align: middle; white-space: nowrap; }
+.rec-shelf th:first-child, .rec-shelf td:first-child { padding-left: 14px; }
+.rec-shelf th:last-child, .rec-shelf td:last-child { padding-right: 14px; }
+.rec-shelf .num { text-align: right; }
+.rec-shelf .mono { font-size: 11.5px; }
+.rec-shelf .rec-title { max-width: 0; width: 100%; display: table-cell; }
+.rec-shelf .rec-title b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.rec-shelf .rec-title .faint { display: block; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.rec-shelf tr.uploading td { color: var(--text-3); }
+.rec-shelf .act { text-align: right; }
+.rec-open-link .input { flex: 1; min-width: 0; height: 30px; font-size: 12px; }
+
+/* ------------------------------------------------------------------ the recording viewer and the report */
+.rec-viewer { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 22px; background: color-mix(in srgb, var(--window) 82%, transparent); backdrop-filter: blur(6px); animation: fade var(--med) var(--ease); }
+.rec-sheet, .rep-sheet {
+  position: relative; width: min(1180px, 100%); height: min(760px, 100%); display: grid;
+  border: 1px solid var(--text-3); outline: 1px solid var(--stroke-strong); outline-offset: 5px; background: var(--layer-solid); box-shadow: var(--shadow-2);
+}
+.rec-sheet { grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; }
+.rep-sheet { grid-template-rows: minmax(0, 1fr) auto; }
+.rec-stage { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 6px; padding: 16px 18px 12px; min-width: 0; min-height: 0; }
+.rec-stage video { width: 100%; height: 100%; min-height: 0; background: #0b1416; border: 1px solid var(--stroke-strong); border-radius: 3px; object-fit: contain; }
+.rec-strip { position: relative; height: 18px; border: 1px solid var(--stroke-strong); background: repeating-linear-gradient(90deg, var(--stroke) 0 1px, transparent 1px 10%); }
+.rec-strip button { position: absolute; top: 2px; bottom: 2px; padding: 0; border: 0; background: color-mix(in srgb, var(--tint) 75%, transparent); border-right: 1px solid var(--layer-solid); cursor: pointer; }
+.rec-strip button.on { background: var(--tint); box-shadow: 0 0 0 1px var(--text); z-index: 1; }
+.rec-head { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; }
+.rec-scale { position: relative; height: 14px; font-size: 10px; color: var(--text-3); }
+.rec-scale span { position: absolute; transform: translateX(-50%); }
+.rec-scale span:first-child { transform: none; }
+.rec-scale span:last-child { transform: translateX(-100%); }
+.rec-side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--text-3); overflow: auto; }
+.rec-chapters { list-style: none; margin: 0; padding: 0; }
+.rec-chapters button { display: grid; grid-template-columns: 54px 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 4px 12px; border: 0; border-bottom: 1px solid var(--stroke); background: none; text-align: left; font-size: 13px; }
+.rec-chapters button:hover { background: var(--subtle); }
+.rec-chapters li.on button { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.rec-at { font-weight: 700; color: var(--accent-ink); font-size: 11.5px !important; }
+.rec-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.rec-who { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-totals { padding-bottom: 8px; }
+.rec-total, .rep-opt { display: grid; grid-template-columns: minmax(0, 1fr) 90px 54px; align-items: center; gap: 8px; padding: 5px 12px; font-size: 12.5px; }
+.rec-total .mono, .rep-opt .mono { text-align: right; font-size: 11.5px; }
+.rec-bar { position: relative; height: 8px; background: var(--subtle-2); border-radius: 1px; overflow: hidden; }
+.rec-bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.rec-share { margin-top: auto; border-top: 1px solid var(--stroke-strong); padding-bottom: 10px; }
+.rec-share .guest-row { padding: 8px 12px; }
+.rec-share .tb-link { margin: 0 12px; display: inline-flex; align-items: center; gap: 5px; }
+.rec-block { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(180px, 1.3fr) auto auto; align-items: stretch; border-top: 1px solid var(--text-3); }
+.rec-block .tb-name { display: grid; align-content: center; gap: 2px; padding: 8px 16px; min-width: 0; }
+.rec-block .tb-name h2 { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-cells { margin: 0; display: flex; border-left: 1px solid var(--stroke-strong); }
+.rec-cells > div { display: grid; align-content: center; gap: 3px; padding: 8px 14px; border-right: 1px solid var(--stroke-strong); min-width: 0; }
+.rec-cells dt { font-size: 9.5px; }
+.rec-cells dd { margin: 0; font-size: 13px; white-space: nowrap; }
+.rec-cells dd.mono { font-weight: 600; }
+.rec-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 14px; }
+
+.rep-body { overflow: auto; min-height: 0; }
+.rep-problem { display: grid; place-items: center; gap: 12px; padding: 40px; }
+.rep-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rep-table th { padding: 7px 10px; text-align: left; font: 600 9.5px/1.2 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--stroke-strong); background: var(--layer); white-space: nowrap; }
+.rep-table td { padding: 8px 10px; border-bottom: 1px solid var(--stroke); white-space: nowrap; }
+.rep-table th:first-child, .rep-table td:first-child { padding-left: 16px; }
+.rep-table .num { text-align: right; }
+.rep-table .mono { font-size: 12px; }
+.rep-axis { width: 32%; }
+.rep-axis span:last-child { float: right; }
+.rep-axis span:first-child { float: left; }
+.rep-bar-cell { position: relative; width: 32%; padding-right: 16px !important; background: repeating-linear-gradient(90deg, var(--stroke) 0 1px, transparent 1px 25%); background-clip: content-box; }
+.rep-bar { position: absolute; top: 50%; height: 10px; margin-top: -5px; background: var(--tint); border-radius: 1px; }
+.rep-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--stroke-strong); }
+.rep-grid > section { border-right: 1px solid var(--stroke-strong); padding-bottom: 10px; min-width: 0; }
+.rep-grid > section:last-child { border-right: 0; }
+.rep-grid p { margin: 8px 12px 0; font-size: 13px; }
+.rep-line .mono { font-size: 15px; margin-right: 4px; }
+.rep-reacts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+.rep-react { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 1px solid var(--stroke-strong); border-radius: 3px; font-size: 16px; }
+.rep-react .mono { font-size: 12px; font-weight: 700; }
+.rep-poll { padding-bottom: 6px; }
+.rep-poll .rec-bar i { background: var(--accent); }
+.rep-line .tb-link { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ------------------------------------------------------------------ the Control room */
+.meet-totals { display: grid; gap: 12px; }
+.meet-totals-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.meet-totals-head .eyebrow { margin-right: auto; }
+.meet-week-bar { width: 30%; }
+.meet-week-bar i { display: block; height: 8px; background: var(--accent); border-radius: 1px; }
+
+@media (max-width: 900px) {
+  .rec-sheet { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(260px, 1fr) auto auto; overflow: auto; }
+  .rec-side { border-left: 0; border-top: 1px solid var(--text-3); }
+  .rec-block { grid-template-columns: minmax(0, 1fr); }
+  .rec-cells { border-left: 0; border-top: 1px solid var(--stroke-strong); flex-wrap: wrap; }
+  .rep-grid { grid-template-columns: minmax(0, 1fr); }
+  .rep-grid > section { border-right: 0; border-bottom: 1px solid var(--stroke-strong); }
+  .bo-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* the sound menu's tab, sitting in the mic cell's top-right corner of the title block's controls */
+.tb-controls { position: relative; }
+.tb-controls > button.tb-sound {
+  position: absolute; z-index: 1; top: 5px; left: calc(100% / 3 - 34px); width: auto; height: 18px; padding: 0 5px; gap: 0;
+  border: 1px solid var(--stroke-strong); border-radius: 2px; background: var(--layer-solid); color: var(--text-3);
+}
+.tb-controls > button.tb-sound .mono { font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.tb-controls > button.tb-sound.on { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--layer-solid); }
+@media (max-width: 720px) { .tb-controls > button.tb-sound { left: calc(100% / 4 - 34px); } }
+
+/* Recent meetings: Report beside Rejoin or Open */
+.meet-log .meet-act { width: 1%; white-space: nowrap; }
+.meet-log .meet-act .btn + .btn { margin-left: 4px; }
+.rep-sheet { height: auto; max-height: min(760px, 100%); }

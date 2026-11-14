@@ -17,7 +17,8 @@
     "./remote": "./src/remote.ts",
     "./dlp": "./src/dlp.ts",
     "./ics": "./src/ics.ts",
-    "./meet": "./src/meet.ts"
+    "./meet": "./src/meet.ts",
+    "./meet-csv": "./src/meet-csv.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

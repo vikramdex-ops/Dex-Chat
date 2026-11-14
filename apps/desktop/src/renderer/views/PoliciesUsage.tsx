@@ -8,6 +8,7 @@ import type { DlpDetector, DlpRule } from '@dex/core/dlp';
 import { useChat } from '../chat/store.ts';
 import { Avatar, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 import { formatSize } from '../chat/files.tsx';
+import { MeetingPolicies, MeetingTotals } from '../meet/MeetAdmin.tsx';
 import './policies.css';
 
 const EDIT: Array<[number | null, string]> = [[null, 'Any time'], [5, '5 minutes'], [15, '15 minutes'], [60, '1 hour'], [1440, '1 day'], [10080, '7 days'], [43200, '30 days'], [525600, '1 year'], [1051200, '2 years']];
@@ -58,7 +59,7 @@ export function PoliciesAdmin() {
       <section className="card">
         <div className="eyebrow">Calls</div>
         <div className="setting" style={{ marginTop: 6 }}>
-          <div className="txt"><div>People can record calls</div><div className="faint">Everyone in the call sees that it is being recorded. The recording is saved on the PC of the person who recorded it.</div></div>
+          <div className="txt"><div>People can record calls</div><div className="faint">Everyone in the call sees that it is being recorded. The recording is kept on the hub (up to the size set under Meetings), and the person who recorded it chooses who can watch it.</div></div>
           <Toggle label="People can record calls" checked={p.allowRecording} onChange={(v) => save({ allowRecording: v })} />
         </div>
         <div className="setting">
@@ -66,6 +67,7 @@ export function PoliciesAdmin() {
           <Toggle label="Join meetings with the camera off and ask before turning it on" checked={p.cameraConsent === true} onChange={(v) => save({ cameraConsent: v })} />
         </div>
       </section>
+      <MeetingPolicies p={p} save={save} />
       <section className="card">
         <div className="eyebrow">Personal devices</div>
         <div className="setting" style={{ marginTop: 6 }}>
@@ -181,7 +183,8 @@ export function UsageAdmin({ users }: { users: PublicUser[] }) {
               })}
             </section>
           </div>
-          <p className="faint" style={{ fontSize: 12 }}>Counts come from the hub: messages, calls and files. Nobody's message text is read to make this report.</p>
+          <MeetingTotals />
+          <p className="faint" style={{ fontSize: 12 }}>Counts come from the hub: messages, calls, meetings and files. Nobody's message text is read to make this report.</p>
         </>
       )}
     </div>

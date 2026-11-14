@@ -2,8 +2,16 @@
 // tile), any shared screen, and everyone's voices mixed together, drawn into one video laid out
 // like the Room sheet (zone captions, a title strip). The hub tells everyone in the Room that it
 // is being recorded.
+//
+// While it records, it follows who is speaking (the Room's 10 Hz speaker detection, speech.ts)
+// and writes a chapter each time the speaker changes. When it stops, the video and its chapters
+// are kept on the hub (uploaded in 512 KB chunks over the hub connection, resuming after a drop)
+// for the Meet lens's Recordings shelf, unless the office's size limit or policy says no.
 import { useSyncExternalStore } from 'react';
+import { RECORDING_CHUNK } from '@dex/core';
+import type { RecordingChapter, RecordingInfo } from '@dex/core';
 import { callState, capName, clock, sheetColumns, zoneRef } from './engine.ts';
+import { onVoiceTick } from './speech.ts';
 import { colorFor, initials } from '../ui.tsx';
 
 interface Rec {
@@ -15,9 +23,33 @@ interface Rec {
   sources: Map<string, MediaStreamAudioSourceNode>;
   videos: Map<string, HTMLVideoElement>;
   roomId: string;
+  chapters: RecordingChapter[];
+  stopVoices: () => void;
 }
 
-export interface Recording { blob: Blob; ms: number; convId: string; roomId: string }
+export interface Recording { blob: Blob; ms: number; convId: string; roomId: string; startedAt: number; title: string; chapters: RecordingChapter[] }
+
+/** Ticks someone must lead (at 10 Hz) before a new chapter starts: a cough is not a chapter. */
+const CHAPTER_TICKS = 8;
+
+/** Who spoke when: a chapter each time a different person has led the talking for a moment. */
+function followSpeakers(r: Rec, nameOf: (userId: string) => string, meId: string): () => void {
+  let leader: string | null = null;
+  let since = 0;
+  let ticks = 0;
+  return onVoiceTick((key) => {
+    if (!key) { ticks = 0; leader = null; return; }
+    const room = callState().room;
+    const userId = key.startsWith('self:') ? meId : room?.participants.find((p) => p.deviceId === key)?.userId;
+    if (!userId) return;
+    if (userId !== leader) { leader = userId; ticks = 1; since = Date.now() - 100; return; }
+    if (++ticks !== CHAPTER_TICKS) return;
+    const last = r.chapters[r.chapters.length - 1];
+    if (last?.userId === userId) return;
+    const name = room?.visitors?.find((v) => v.userId === userId)?.name ?? nameOf(userId);
+    r.chapters.push({ at: Math.max(0, since - r.started), userId, name });
+  });
+}
 
 let rec: Rec | null = null;
 let done: Recording | null = null;
@@ -101,7 +133,9 @@ export async function startRecording(nameOf: (userId: string) => string, meId: s
   const ctx = canvas.getContext('2d')!;
   const audio = new AudioContext();
   const mix = audio.createMediaStreamDestination();
-  const r: Rec = { recorder: null as unknown as MediaRecorder, chunks: [], started: Date.now(), timer: 0 as unknown as ReturnType<typeof setInterval>, audio, sources: new Map(), videos: new Map(), roomId };
+  const r: Rec = { recorder: null as unknown as MediaRecorder, chunks: [], started: Date.now(), timer: 0 as unknown as ReturnType<typeof setInterval>, audio, sources: new Map(), videos: new Map(), roomId, chapters: [], stopVoices: () => {} };
+  r.stopVoices = followSpeakers(r, nameOf, meId);
+  const title = s.room.title || '';
 
   const syncAudio = () => {
     const st = callState();
@@ -176,10 +210,11 @@ export async function startRecording(nameOf: (userId: string) => string, meId: s
   recorder.ondataavailable = (e) => { if (e.data.size) r.chunks.push(e.data); };
   recorder.onstop = () => {
     clearInterval(r.timer);
+    r.stopVoices();
     for (const n of r.sources.values()) n.disconnect();
     void audio.close();
     for (const v of r.videos.values()) v.srcObject = null;
-    done = { blob: new Blob(r.chunks, { type: 'video/webm' }), ms: Date.now() - r.started, convId: s.room?.convId ?? '', roomId };
+    done = { blob: new Blob(r.chunks, { type: 'video/webm' }), ms: Date.now() - r.started, convId: s.room?.convId ?? '', roomId, startedAt: r.started, title, chapters: [...r.chapters] };
     rec = null;
     changed();
   };
@@ -196,4 +231,56 @@ export function stopRecording(): void {
   const r = rec;
   void window.dex.request('room.record', { roomId: r.roomId, on: false }).catch(() => {});
   if (r.recorder.state !== 'inactive') r.recorder.stop();
+}
+
+// ------------------------------------------------------------------ keeping it on the hub
+export interface UploadState { status: 'idle' | 'uploading' | 'done' | 'failed'; sent: number; total: number; info: RecordingInfo | null; error: string | null }
+let upload: UploadState = { status: 'idle', sent: 0, total: 0, info: null, error: null };
+const upSubs = new Set<() => void>();
+const setUpload = (p: Partial<UploadState>) => { upload = { ...upload, ...p }; for (const f of upSubs) f(); };
+export const useUpload = () => useSyncExternalStore((f) => { upSubs.add(f); return () => upSubs.delete(f); }, () => upload);
+export const resetUpload = () => setUpload({ status: 'idle', sent: 0, total: 0, info: null, error: null });
+
+/** Bytes as base64, a slice at a time (a whole chunk at once would overflow the call stack). */
+function base64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Upload a finished recording to the hub in chunks. A chunk that fails is tried again (after 1, 2,
+ * 4 … seconds); asking the hub how much it has makes it resume exactly where it stopped, even
+ * after the connection to the hub dropped and came back.
+ */
+export async function keepOnHub(r: Recording): Promise<RecordingInfo> {
+  setUpload({ status: 'uploading', sent: 0, total: r.blob.size, info: null, error: null });
+  try {
+    const begin = await window.dex.request('rec.begin', { roomId: r.roomId || null, title: r.title, startedAt: r.startedAt, size: r.blob.size, mime: r.blob.type || 'video/webm' });
+    const chunk = Math.min(begin.chunk || RECORDING_CHUNK, RECORDING_CHUNK);
+    let offset = begin.received;
+    let failures = 0;
+    setUpload({ sent: offset });
+    while (offset < r.blob.size) {
+      try {
+        const bytes = new Uint8Array(await r.blob.slice(offset, offset + chunk).arrayBuffer());
+        const res = await window.dex.request('rec.chunk', { id: begin.id, offset, data: base64(bytes) });
+        offset = res.received;
+        failures = 0;
+        setUpload({ sent: offset });
+      } catch (err) {
+        if (++failures > 8) throw err;
+        await wait(Math.min(30_000, 1000 * 2 ** (failures - 1)));
+        offset = await window.dex.request('rec.status', { id: begin.id }).then((st) => st.received).catch(() => offset);
+      }
+    }
+    const info = await window.dex.request('rec.finish', { id: begin.id, durationMs: r.ms, chapters: r.chapters });
+    setUpload({ status: 'done', sent: r.blob.size, info });
+    return info;
+  } catch (err) {
+    setUpload({ status: 'failed', error: (err as Error).message });
+    throw err;
+  }
 }

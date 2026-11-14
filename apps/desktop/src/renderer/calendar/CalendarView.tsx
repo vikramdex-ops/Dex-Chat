@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CalEvent, Conversation, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
 import { formatMeetingId, meetingLink } from '@dex/core';
 import { Avatar, Dialog, Icon, Segmented, ToggleRow, presenceFor, useToast } from '../ui.tsx';
+import { EventInvite } from '../meet/GuestLink.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { renderBody } from '../chat/format.tsx';
@@ -440,6 +441,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
         <label htmlFor="ev-desc">Agenda (optional)</label>
         <textarea id="ev-desc" className="input" rows={3} maxLength={4000} value={description} onChange={(e) => setDescription(e.target.value)} />
       </div>
+      {ev?.online && !ev.cancelled && <EventInvite ev={ev} users={users} meId={meId} office={session.hub.name} />}
       {clashNames.length > 0 && <div className="ev-clash"><Icon name="warning" size={15} />Busy then: {clashNames.join(', ')}</div>}
       <div className="dialog-actions">
         <span className="faint">{describeSpan(allDay ? startOfDay(start) : start, end, allDay)}</span>
