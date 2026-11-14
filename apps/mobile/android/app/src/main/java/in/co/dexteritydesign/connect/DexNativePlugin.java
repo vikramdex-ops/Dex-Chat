@@ -74,12 +74,19 @@ public class DexNativePlugin extends Plugin {
     private final ExecutorService io = Executors.newCachedThreadPool();
     private OkHttpClient systemClient;
     private OkHttpClient hubClient;
+    /** The internet gateway: ordinary certificate checks (Cloudflare's); the hub is checked inside. */
+    private OkHttpClient gatewayClient;
 
     @Override
     public void load() {
         systemClient = new OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
+            .build();
+        gatewayClient = systemClient.newBuilder()
+            .readTimeout(0, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .followRedirects(false)
             .build();
         try {
             X509TrustManager acceptAll = new X509TrustManager() {
@@ -188,6 +195,75 @@ public class DexNativePlugin extends Plugin {
         });
         sockets.put(id, ws);
         call.resolve();
+    }
+
+    /** A binary WebSocket to the internet gateway; frames cross the bridge as base64. */
+    @PluginMethod
+    public void gwOpen(PluginCall call) {
+        final String id = call.getString("id");
+        final String url = call.getString("url");
+        if (id == null || url == null || !(url.startsWith("wss://") || url.startsWith("ws://127.0.0.1"))) { call.reject("A secure gateway address is required"); return; }
+        Request req = new Request.Builder().url(url).build();
+        WebSocket ws = gatewayClient.newWebSocket(req, new WebSocketListener() {
+            @Override public void onOpen(WebSocket socket, Response response) {
+                JSObject e = new JSObject();
+                e.put("id", id);
+                notifyListeners("gwOpen", e);
+            }
+            @Override public void onMessage(WebSocket socket, okio.ByteString bytes) {
+                JSObject e = new JSObject();
+                e.put("id", id);
+                e.put("data", bytes.base64());
+                notifyListeners("gwBinary", e);
+            }
+            @Override public void onClosing(WebSocket socket, int code, String reason) { socket.close(1000, null); }
+            @Override public void onClosed(WebSocket socket, int code, String reason) { closed(id, reason == null || reason.isEmpty() ? "connection closed" : reason); }
+            @Override public void onFailure(WebSocket socket, Throwable t, Response response) { closed(id, t.getMessage() == null ? "connection failed" : t.getMessage()); }
+        });
+        sockets.put(id, ws);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void gwSend(PluginCall call) {
+        WebSocket ws = sockets.get(call.getString("id", ""));
+        if (ws != null) {
+            okio.ByteString b = okio.ByteString.decodeBase64(call.getString("data", ""));
+            if (b != null) ws.send(b);
+        }
+        call.resolve();
+    }
+
+    /** Append base64 bytes to a file in the file cache (downloads through the gateway). */
+    @PluginMethod
+    public void fileWrite(PluginCall call) {
+        final String id = call.getString("id", "");
+        final String name = safeName(call.getString("name"));
+        final String data = call.getString("data", "");
+        final boolean done = Boolean.TRUE.equals(call.getBoolean("done", false));
+        final boolean first = Boolean.TRUE.equals(call.getBoolean("first", false));
+        if (!id.matches("[0-9A-Z]{26}")) { call.reject("Invalid file"); return; }
+        io.execute(() -> {
+            try {
+                File dir = new File(new File(getContext().getCacheDir(), "files"), id);
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("Cannot create the file cache");
+                File part = new File(dir, name + ".part");
+                if (!data.isEmpty()) {
+                    try (OutputStream out = new FileOutputStream(part, !first)) { out.write(Base64.decode(data, Base64.DEFAULT)); }
+                } else if (first) {
+                    new FileOutputStream(part, false).close();
+                }
+                if (done) {
+                    File dest = new File(dir, name);
+                    if (!part.renameTo(dest)) throw new Exception("Could not save the file");
+                    resolvePath(call, dest);
+                } else {
+                    call.resolve();
+                }
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Could not save the file" : e.getMessage());
+            }
+        });
     }
 
     private void closed(String id, String reason) {

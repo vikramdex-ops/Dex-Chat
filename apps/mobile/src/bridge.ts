@@ -16,6 +16,8 @@ import { HubSession } from '@dex/core/session';
 import type { ClientState, HubTarget } from '@dex/core/session';
 import { chooseUpdate, feedUrl, parseFeed } from '@dex/core/feed';
 import type { Channel, UpdateChoice } from '@dex/core/feed';
+import { openRemoteSocket, parseSetupCode } from '@dex/core/remote';
+import type { RawHandlers } from '@dex/core/remote';
 import { SETTINGS_EXTRA_DEFAULTS, type AppState, type DexBridge, type DiscoveredHub, type JoinRequest, type Phase, type Settings, type UpdateState } from '../../desktop/src/shared/bridge.ts';
 
 interface DexNativePlugin {
@@ -38,6 +40,11 @@ interface DexNativePlugin {
   keepAlive(o: { on: boolean; text?: string }): Promise<void>;
   askNotifications(): Promise<void>;
   takeLaunchLink(): Promise<{ url: string | null }>;
+  gwOpen(o: { id: string; url: string }): Promise<void>;
+  gwSend(o: { id: string; data: string }): Promise<void>;
+  fileWrite(o: { id: string; name: string; data: string; first?: boolean; done?: boolean }): Promise<{ path?: string }>;
+  addListener(event: 'gwOpen', fn: (e: { id: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'gwBinary', fn: (e: { id: string; data: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'deepLink', fn: (e: { url: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'downloadProgress', fn: (e: { received: number; total: number }) => void): Promise<PluginListenerHandle>;
 }
@@ -178,11 +185,18 @@ class MobileApp {
   // ---------------------------------------------------------- transport
   private sockets = new Map<string, { onOpen: (fp: string) => void; onMessage: (d: string) => void; onClose: (r: string) => void }>();
   private sockSeq = 0;
+  /** Gateway sockets (outside the office): binary frames, base64 across the bridge. */
+  private gwSockets = new Map<string, RawHandlers>();
 
   private async wireNativeSockets(): Promise<void> {
     await Native.addListener('wsOpen', (e) => this.sockets.get(e.id)?.onOpen(e.fingerprint));
     await Native.addListener('wsMessage', (e) => this.sockets.get(e.id)?.onMessage(e.data));
-    await Native.addListener('wsClose', (e) => { const s = this.sockets.get(e.id); this.sockets.delete(e.id); s?.onClose(e.reason); });
+    await Native.addListener('wsClose', (e) => {
+      const s = this.sockets.get(e.id); this.sockets.delete(e.id); s?.onClose(e.reason);
+      const g = this.gwSockets.get(e.id); this.gwSockets.delete(e.id); g?.onClose(e.reason);
+    });
+    await Native.addListener('gwOpen', (e) => this.gwSockets.get(e.id)?.onOpen());
+    await Native.addListener('gwBinary', (e) => this.gwSockets.get(e.id)?.onBinary(unb64(e.data)));
     await Native.addListener('downloadProgress', (e) => this.setUpdate({ progress: e }));
   }
 
@@ -196,8 +210,24 @@ class MobileApp {
   }
 
   private readonly fileCache = new Map<string, Promise<{ path: string }>>();
+  private async fetchViaGateway(id: string, name: string): Promise<{ path: string }> {
+    const session = this.session.state.kind === 'ready' ? this.session.state.session : null;
+    if (!session) throw new Error('The office hub is not connected.');
+    const r = await this.session.http({ method: 'GET', path: `/files/${id}?download=1`, headers: { authorization: `Bearer ${session.fileToken}` } });
+    if (r.status !== 200) { for await (const _ of r.body) { /* drain */ } throw new Error(r.status === 404 ? 'This file is no longer available.' : `Download failed (${r.status})`); }
+    let first = true;
+    for await (const part of r.body) { await Native.fileWrite({ id, name, data: b64(part), first }); first = false; }
+    const done = await Native.fileWrite({ id, name, data: '', first, done: true });
+    return { path: done.path! };
+  }
+
   private fetchFile(id: string, name: string): Promise<{ path: string }> {
     let p = this.fileCache.get(id);
+    if (!p && this.session.viaGateway) {
+      p = this.fetchViaGateway(id, name);
+      p.catch(() => this.fileCache.delete(id));
+      this.fileCache.set(id, p);
+    }
     if (!p) {
       const hub = this.hubAccess();
       p = Native.fileGet({ url: `${hub.base}/files/${id}?download=1`, fingerprint: hub.fp, token: hub.token, id, name });
@@ -225,6 +255,16 @@ class MobileApp {
           close: () => { this.sockets.delete(id); void Native.wsClose({ id }); },
         };
       },
+      // outside the office: through the gateway, encrypted to the hub
+      openRemote: (target, h) => openRemoteSocket((url, rh) => {
+        const id = `gw${++this.sockSeq}`;
+        this.gwSockets.set(id, rh);
+        Native.gwOpen({ id, url }).catch((err: Error) => { this.gwSockets.delete(id); rh.onClose(err.message); });
+        return {
+          send: (data) => { void Native.gwSend({ id, data: b64(data) }); },
+          close: () => { this.gwSockets.delete(id); void Native.wsClose({ id }); },
+        };
+      }, target as HubTarget & { remote: { url: string; hubId: string } }, h),
     });
     s.on('state', (st: ClientState) => {
       if (st.kind === 'ready' || st.kind === 'pending') { this.config.hub = { ...st.target }; void this.save(); }
@@ -259,7 +299,9 @@ class MobileApp {
             this.hubs.set(b.id, { id: b.id, name: String(b.name), address: h.address, port: b.port, fingerprint: b.fp, version: String(b.version) });
             // follow the hub to a new address, but only with the same certificate
             const cur = this.config.hub;
-            if (cur && cur.hubId === b.id && cur.fp === b.fp && cur.host !== h.address && this.session.state.kind === 'offline') {
+            const st = this.session.state;
+            const outside = st.kind === 'ready' && st.via === 'remote';
+            if (cur && cur.hubId === b.id && cur.fp === b.fp && (cur.host !== h.address || outside) && (st.kind === 'offline' || outside)) {
               this.config.hub = { ...cur, host: h.address, port: b.port };
               void this.save();
               this.session.connect(this.config.hub);
@@ -286,7 +328,8 @@ class MobileApp {
       account: this.account,
       deviceId: this.identity.deviceId,
       hubs: [...this.hubs.values()],
-      hub: hub ? { id: hub.hubId, name: hub.name, host: hub.host, port: hub.port, fingerprint: hub.fp } : null,
+      hub: hub ? { id: hub.hubId, name: hub.name, host: hub.host, port: hub.port, fingerprint: hub.fp, gateway: hub.remote?.url ?? null } : null,
+      via: cs.kind === 'ready' ? cs.via ?? 'lan' : undefined,
       session: cs.kind === 'ready' ? cs.session : null,
       pendingPosition: cs.kind === 'pending' ? cs.position : 0,
       retryInMs: cs.kind === 'offline' ? cs.retryInMs : 0,
@@ -414,6 +457,10 @@ class MobileApp {
         } else if (req.address) {
           const m = req.address.trim().replace(/^\w+:\/\//, '').match(/^([\w.\-]+)(?::(\d+))?$/);
           if (m) target = { host: m[1], port: m[2] ? Number(m[2]) : DEFAULT_HUB_PORT };
+        } else if (req.setupCode) {
+          const r = parseSetupCode(req.setupCode);
+          if (!r) throw new Error('That setup code is not complete. Copy all of it, starting with DXC1-.');
+          target = { host: '', port: 0, hubId: r.hubId, name: r.name, fp: r.fp, remote: { url: r.url, hubId: r.hubId } };
         }
         if (!target) throw new Error('That hub could not be found. Check the address and try again.');
         this.config.hub = target;
@@ -437,8 +484,17 @@ class MobileApp {
       uploadFile: async (_uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string }) => {
         if (!src.data) throw new Error('Choose the file again.');
         if (src.data.byteLength > 100 * 1024 * 1024) throw new Error('Files from a phone can be up to 100 MB.');
-        const hub = this.hubAccess();
         const q = `/files?name=${encodeURIComponent(src.name)}${src.mime ? `&type=${encodeURIComponent(src.mime)}` : ''}`;
+        if (this.session.viaGateway) {
+          const session = this.session.state.kind === 'ready' ? this.session.state.session : null;
+          const r = await this.session.http({ method: 'POST', path: q, headers: { authorization: `Bearer ${session?.fileToken ?? ''}`, 'content-length': String(src.data.byteLength), 'content-type': 'application/octet-stream' }, body: new Uint8Array(src.data) });
+          let text = '';
+          for await (const part of r.body) text += new TextDecoder().decode(part, { stream: true });
+          const json = JSON.parse(text || '{}') as FileInfo & { error?: string };
+          if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
+          return json;
+        }
+        const hub = this.hubAccess();
         const r = await Native.fileUpload({ url: `${hub.base}${q}`, fingerprint: hub.fp, token: hub.token, data: b64(new Uint8Array(src.data)) });
         const json = JSON.parse(r.body || '{}') as FileInfo & { error?: string };
         if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
