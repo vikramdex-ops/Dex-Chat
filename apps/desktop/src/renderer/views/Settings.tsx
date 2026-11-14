@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { EmojiPicker } from '../chat/EmojiPicker.tsx';
+import { QUICK_DEFAULT, quickReactions, setQuickReactions } from '../chat/quick.ts';
 import type { Session } from '@dex/core';
 import type { AppState, MessageSound, Settings, Theme } from '../../shared/bridge.ts';
 import { playSound } from '../sounds.ts';
 import { RemoteSettings } from './Remote.tsx';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Icon, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
+import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
 import type { UpdateChannel } from '../../shared/bridge.ts';
 
@@ -14,11 +16,14 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
   const [name, setName] = useState(session.me.displayName);
   const [title, setTitle] = useState(session.me.title ?? '');
   const [status, setStatus] = useState(session.me.statusText ?? '');
-  const dirty = name.trim() !== session.me.displayName || title.trim() !== (session.me.title ?? '') || status.trim() !== (session.me.statusText ?? '');
+  const [statusEmoji, setStatusEmoji] = useState(session.me.statusEmoji ?? '');
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const emojiBtn = useRef<HTMLButtonElement>(null);
+  const dirty = name.trim() !== session.me.displayName || title.trim() !== (session.me.title ?? '') || status.trim() !== (session.me.statusText ?? '') || statusEmoji !== (session.me.statusEmoji ?? '');
 
   const saveProfile = async () => {
     try {
-      await window.dex.request('me.update', { displayName: name, title: title.trim() || null, statusText: status.trim() || null });
+      await window.dex.request('me.update', { displayName: name, title: title.trim() || null, statusText: status.trim() || null, statusEmoji: statusEmoji || null });
       toast('Profile saved');
     } catch (e) { toast((e as Error).message, true); }
   };
@@ -53,7 +58,16 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="field"><label htmlFor="s-title">Job title</label>
               <input id="s-title" className="input" value={title} maxLength={80} placeholder="e.g. Piping Engineer" onChange={(e) => setTitle(e.target.value)} disabled={!live} /></div>
             <div className="field full"><label htmlFor="s-status">Status message</label>
-              <input id="s-status" className="input" value={status} maxLength={120} placeholder="What are you working on?" onChange={(e) => setStatus(e.target.value)} disabled={!live} /></div>
+              <div className="status-row">
+                <button type="button" ref={emojiBtn} className="btn status-emoji" onClick={() => setEmojiOpen(!emojiOpen)} aria-label="Status emoji" disabled={!live}>{statusEmoji || '🙂'}</button>
+                <input id="s-status" className="input" value={status} maxLength={120} placeholder="What are you working on?" onChange={(e) => setStatus(e.target.value)} disabled={!live} />
+              </div>
+              {emojiOpen && (
+                <Popover anchor={emojiBtn.current} onClose={() => setEmojiOpen(false)} className="emoji-pop-wrap" align="start">
+                  <EmojiPicker onPick={(e) => { setStatusEmoji(e.startsWith(':') ? '' : e); setEmojiOpen(false); }} onClose={() => setEmojiOpen(false)} />
+                </Popover>
+              )}
+            </div>
             <div className="full row-actions" style={{ justifyContent: 'flex-end' }}>
               <button className="btn primary" disabled={!dirty || !live || !name.trim()}>Save profile</button>
             </div>
@@ -107,6 +121,20 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               { value: 125, label: 'Larger' },
             ]} />
           </div>
+        </section>
+
+        <section>
+          <h3>Privacy</h3>
+          <div className="setting">
+            <Icon name="check" className="lead" />
+            <div className="txt"><div>Read receipts</div><div className="faint">Colleagues see when you have read their messages. Turn off and you will not see theirs either.</div></div>
+            <Toggle label="Read receipts" checked={session.me.readReceipts !== false} onChange={(v) => void window.dex.request('me.update', { readReceipts: v }).catch((e: Error) => toast(e.message, true))} />
+          </div>
+        </section>
+
+        <section>
+          <h3>Quick reactions</h3>
+          <QuickReactions />
         </section>
 
         <section>
@@ -212,6 +240,28 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+/** The three reactions on the message hover bar. */
+function QuickReactions() {
+  const [list, setList] = useState(quickReactions());
+  const [editing, setEditing] = useState<number | null>(null);
+  const refs = [useRef<HTMLButtonElement>(null), useRef<HTMLButtonElement>(null), useRef<HTMLButtonElement>(null)];
+  return (
+    <div className="setting">
+      <Icon name="smile" className="lead" />
+      <div className="txt"><div>On the message bar</div><div className="faint">One click to react. Choose your own three.</div></div>
+      <div className="quick-pick">
+        {list.map((e, i) => <button key={i} ref={refs[i]} className="btn" aria-label={`Quick reaction ${i + 1}: ${e}`} onClick={() => setEditing(i)}>{e}</button>)}
+        <button className="link" onClick={() => { setQuickReactions(QUICK_DEFAULT); setList(QUICK_DEFAULT); }}>Reset</button>
+      </div>
+      {editing !== null && (
+        <Popover anchor={refs[editing].current} onClose={() => setEditing(null)} className="emoji-pop-wrap">
+          <EmojiPicker onClose={() => setEditing(null)} onPick={(e) => { if (e.startsWith(':')) return; const next = list.map((x, j) => (j === editing ? e : x)); setQuickReactions(next); setList(next); setEditing(null); }} />
+        </Popover>
+      )}
     </div>
   );
 }

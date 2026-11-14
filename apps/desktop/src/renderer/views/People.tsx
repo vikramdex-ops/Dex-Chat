@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Department, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Dialog, Icon, ROLE_LABEL, Segmented, presenceFor, useToast } from '../ui.tsx';
+import { Avatar, Dialog, Icon, ROLE_LABEL, Segmented, presenceFor, useToast, relativeTime } from '../ui.tsx';
 import { formatBirthday, formatJoined, managersOf, reportsOf, teamSize, useOrg } from '../org/store.ts';
 import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
@@ -96,7 +96,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
                       <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
                       <div className="line faint">{[departments.get(u.profile.departmentId ?? '')?.name, u.profile.extension && `Ext ${u.profile.extension}`].filter(Boolean).join(' · ') || u.account}</div>
                       {workLine(work.get(u.id)) && <div className={`work-line ${work.get(u.id)?.status}`}><span className="work-dot" />{workLine(work.get(u.id))}</div>}
-                      {u.statusText && <div className="status">{u.statusText}</div>}
+                      {u.statusText && <div className="status">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
                     </div>
                   </button>
                 ))}
@@ -158,7 +158,8 @@ function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onCl
         <p className="muted">{u.title ?? ROLE_LABEL[u.role]}</p>
         <WorkChip userId={u.id} />
         {u.ooo && <div className="work-line ooo"><Icon name="calendar" size={13} />Out of office until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}{u.ooo.delegateId ? ` · ask ${users.get(u.ooo.delegateId)?.displayName ?? 'a colleague'}` : ''}</div>}
-        {u.statusText && <div className="status">{u.statusText}</div>}
+        {u.statusText && <div className="status">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
+        {u.id !== meId && presenceFor(u.id) === 'off' && u.lastSeen && <div className="faint" style={{ fontSize: 12 }}>Last seen {relativeTime(u.lastSeen)}</div>}
         {u.id !== meId && (
           <div className="row-actions">
             <button className="btn primary" disabled={!live} onClick={() => onMessage(u.id)}><Icon name="chat" size={15} />Message</button>

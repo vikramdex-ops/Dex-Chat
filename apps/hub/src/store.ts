@@ -9,6 +9,7 @@ interface UserRow {
   id: string; account: string; display_name: string; role: Role; title: string | null;
   status_text: string | null; availability: Availability | null; created_at: number;
   availability_until?: number | null; ooo?: string | null;
+  receipts?: number | null; status_emoji?: string | null; last_seen_at?: number | null;
   // from profiles (LEFT JOIN)
   department_id?: string | null; manager_id?: string | null; phone?: string | null; extension?: string | null; location?: string | null;
   email?: string | null; employee_id?: string | null; joined_on?: string | null; birthday?: string | null; fields?: string | null;
@@ -103,6 +104,9 @@ export const toPublicUser = (r: UserRow): PublicUser => ({
   title: r.title, statusText: r.status_text, availability: r.availability ?? 'available', createdAt: r.created_at,
   availabilityUntil: r.availability_until ?? null,
   ooo: parseOoo(r.ooo),
+  lastSeen: r.availability === 'invisible' ? null : r.last_seen_at ?? null,
+  statusEmoji: r.status_emoji ?? null,
+  readReceipts: r.receipts !== 0,
   profile: {
     departmentId: r.department_id ?? null, managerId: r.manager_id ?? null, phone: r.phone ?? null, extension: r.extension ?? null,
     location: r.location ?? null, email: r.email ?? null, employeeId: r.employee_id ?? null, joinedOn: r.joined_on ?? null,
@@ -112,7 +116,8 @@ export const toPublicUser = (r: UserRow): PublicUser => ({
 
 /** Users with their organisation profile (the manager is stored by account so imports work before people join). */
 const USER_SELECT = `SELECT u.*, p.department_id, p.phone, p.extension, p.location, p.email, p.employee_id, p.joined_on, p.birthday, p.fields,
-  (SELECT m.id FROM users m WHERE m.account = p.manager_account) AS manager_id
+  (SELECT m.id FROM users m WHERE m.account = p.manager_account) AS manager_id,
+  (SELECT MAX(d.last_seen) FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') AS last_seen_at
   FROM users u LEFT JOIN profiles p ON p.account = u.account`;
 
 const toDevice = (r: DeviceRow): DeviceRecord => ({
@@ -132,7 +137,7 @@ export class Store {
     this.db.exec(SCHEMA);
     try { this.db.exec(`ALTER TABLE users ADD COLUMN availability TEXT NOT NULL DEFAULT 'available'`); } catch { /* already there */ }
     for (const col of ['enc_key TEXT', 'enc_sig TEXT']) { try { this.db.exec(`ALTER TABLE devices ADD COLUMN ${col}`); } catch { /* already there */ } }
-    for (const col of ['availability_until INTEGER', 'ooo TEXT']) { try { this.db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch { /* already there */ } }
+    for (const col of ['availability_until INTEGER', 'ooo TEXT', 'receipts INTEGER NOT NULL DEFAULT 1', 'status_emoji TEXT']) { try { this.db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch { /* already there */ } }
   }
 
   close(): void { this.db.close(); }
@@ -177,6 +182,11 @@ export class Store {
   }
 
   /** Timed availability and out of office (kept apart from updateUser's simple fields). */
+  setPrefs(id: string, patch: { receipts?: boolean; statusEmoji?: string | null }): void {
+    if (patch.receipts !== undefined) this.db.prepare('UPDATE users SET receipts = ? WHERE id = ?').run(patch.receipts ? 1 : 0, id);
+    if (patch.statusEmoji !== undefined) this.db.prepare('UPDATE users SET status_emoji = ? WHERE id = ?').run(patch.statusEmoji, id);
+  }
+
   setPresenceExtras(id: string, patch: { availabilityUntil?: number | null; ooo?: PublicUser['ooo'] }): void {
     if (patch.availabilityUntil !== undefined) this.db.prepare('UPDATE users SET availability_until = ? WHERE id = ?').run(patch.availabilityUntil, id);
     if (patch.ooo !== undefined) this.db.prepare('UPDATE users SET ooo = ? WHERE id = ?').run(patch.ooo ? JSON.stringify(patch.ooo) : null, id);

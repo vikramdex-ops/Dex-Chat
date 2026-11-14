@@ -10,6 +10,8 @@ import { plainPreview } from './format.tsx';
 export interface PendingMessage extends Message {
   pending: true;
   failed?: string;
+  /** A side-track reply that should also appear in the conversation. */
+  alsoToConv?: boolean;
 }
 export type AnyMessage = Message | PendingMessage;
 
@@ -195,13 +197,13 @@ export async function loadOlder(convId: string): Promise<void> {
 // ------------------------------------------------------------------ actions
 const newClientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export async function sendMessage(convId: string, body: string, parentId?: string | null, files: FileInfo[] = []): Promise<void> {
+export async function sendMessage(convId: string, body: string, parentId?: string | null, files: FileInfo[] = [], opts: { alsoToConv?: boolean } = {}): Promise<void> {
   held.delete(convId);
   const clientId = newClientId();
   const optimistic: PendingMessage = {
     id: `~${clientId}`, convId, authorId: state.meId, body, parentId: parentId ?? null, createdAt: Date.now(),
     editedAt: null, deleted: false, pinned: false, reactions: {}, mentions: [], replyCount: 0, lastReplyAt: null,
-    clientId, pending: true, files, forwardedFrom: null, poll: null, form: null,
+    clientId, pending: true, files, forwardedFrom: null, poll: null, form: null, alsoToConv: !!(parentId && opts.alsoToConv),
   };
   const key = tlKey(convId, parentId);
   const tl = state.timelines.get(key) ?? { messages: [], hasMore: false, loaded: true, loading: false };
@@ -213,7 +215,7 @@ export async function sendMessage(convId: string, body: string, parentId?: strin
 async function deliver(m: PendingMessage): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const saved = await window.dex.request('msg.send', { convId: m.convId, body: m.body, parentId: m.parentId ?? undefined, clientId: m.clientId!, files: m.files.map((f) => f.id) });
+      const saved = await window.dex.request('msg.send', { convId: m.convId, body: m.body, parentId: m.parentId ?? undefined, clientId: m.clientId!, files: m.files.map((f) => f.id), ...(m.alsoToConv ? { alsoToConv: true } : {}) });
       upsertMessage(saved);
       changed();
       if (saved.files.length) { const c = state.conversations.get(saved.convId); if (c) readImageText(saved.files, c.kind); }
@@ -296,7 +298,7 @@ export function attentionCount(): number {
 }
 
 function notifyIncoming(m: Message): void {
-  if (m.authorId === state.meId) return;
+  if (m.authorId === state.meId || m.system) return;
   const c = state.conversations.get(m.convId);
   const mentioned = m.mentions.includes(state.meId) || m.mentions.includes('all');
   if (c?.muted && !mentioned) return;

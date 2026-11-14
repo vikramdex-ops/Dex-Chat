@@ -483,6 +483,14 @@ export class Hub {
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
     if (conn.ready && conn.userId) this.announcePresence(conn.userId);
+    // "last seen": the moment this device went away
+    if (conn.ready && conn.deviceId) {
+      this.store.touchDevice(conn.deviceId);
+      if (conn.userId && ![...this.conns].some((c) => c.ready && c.userId === conn.userId)) {
+        const u = this.store.userById(conn.userId);
+        if (u) this.emit('user.updated', u);
+      }
+    }
   }
 
   private proofOk(conn: Conn, deviceId: string, publicKey: string, sig: unknown): boolean {
@@ -692,6 +700,16 @@ export class Hub {
         if (d.availability !== undefined) {
           const until = typeof d.until === 'number' && d.until > Date.now() && d.availability !== 'available' ? Math.floor(d.until) : null;
           this.store.setPresenceExtras(conn.userId!, { availabilityUntil: until });
+        }
+        if (typeof d.readReceipts === 'boolean') {
+          this.store.setPrefs(conn.userId!, { receipts: d.readReceipts });
+          // everyone's view of who read what changes with it
+          for (const c of this.messaging.convIdsOf(conn.userId!)) this.messaging.pushConvTo(c);
+        }
+        if (d.statusEmoji !== undefined) {
+          const e = typeof d.statusEmoji === 'string' ? d.statusEmoji.trim() : '';
+          if (e && !/^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f]{1,16}$/u.test(e)) throw new OpError('Choose an emoji for your status.');
+          this.store.setPrefs(conn.userId!, { statusEmoji: e || null });
         }
         if (d.ooo !== undefined) {
           const o = d.ooo as { until?: unknown; message?: unknown; delegateId?: unknown } | null;

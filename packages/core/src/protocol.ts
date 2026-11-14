@@ -44,6 +44,12 @@ export interface PublicUser {
   profile: Profile;
   /** When a timed availability (for example Do not disturb for 1 hour) ends. */
   availabilityUntil: number | null;
+  /** When any of their devices was last connected (hidden while Invisible). */
+  lastSeen?: number | null;
+  /** An emoji shown before the status message. */
+  statusEmoji?: string | null;
+  /** Shares when they have read messages (and sees others' in return). */
+  readReceipts?: boolean;
   /** Out of office: until when, a note, and who to contact instead. */
   ooo: { until: number; message: string | null; delegateId: string | null } | null;
 }
@@ -300,6 +306,10 @@ export interface Message {
   files: FileInfo[];
   /** Set when this message was forwarded from another conversation. */
   forwardedFrom: { authorId: string; convId: string; messageId: string; createdAt: number } | null;
+  /** A side-track reply also shown in the conversation: the message it answers. */
+  inReplyTo?: { messageId: string; authorId: string } | null;
+  /** A notice rather than something someone wrote: people joining, leaving, a rename. */
+  system?: { kind: 'joined' | 'left' | 'added' | 'removed' | 'renamed'; users: string[]; name?: string } | null;
   poll: PollView | null;
   form: FormView | null;
   /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
@@ -594,7 +604,7 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 // Request/response operations available in a session.
 export interface Ops {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
-  'me.update': { req: { displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
+  'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
   'admin.devices': { req: void; res: DeviceRecord[] };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
@@ -670,6 +680,8 @@ export interface Ops {
   };
   'conv.join': { req: { convId: string }; res: Conversation };
   'conv.leave': { req: { convId: string }; res: { ok: true } };
+  /** A Space's moderator takes someone out of it. */
+  'conv.removeMember': { req: { convId: string; userId: string }; res: Conversation };
   'conv.addMembers': { req: { convId: string; userIds: string[] }; res: Conversation };
   'conv.update': { req: { convId: string; name?: string; topic?: string | null }; res: Conversation };
   'conv.read': { req: { convId: string; messageId: string }; res: Conversation };
@@ -681,7 +693,7 @@ export interface Ops {
   /** Spaces: who may post, and moderators (they can pin, delete and change the Space). */
   'conv.settings': { req: { convId: string; postPolicy?: 'everyone' | 'moderators'; moderators?: string[] }; res: Conversation };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };
-  'msg.send': { req: { convId: string; body: string; parentId?: string; clientId: string; files?: string[] }; res: Message };
+  'msg.send': { req: { /** a side-track reply that also appears in the conversation */ alsoToConv?: boolean; convId: string; body: string; parentId?: string; clientId: string; files?: string[] }; res: Message };
   'file.list': { req: { convId: string; before?: string; limit?: number }; res: Array<FileInfo & { messageId: string; authorId: string }> };
   'msg.edit': { req: { messageId: string; body: string }; res: Message };
   'msg.delete': { req: { messageId: string }; res: Message };

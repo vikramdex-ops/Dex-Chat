@@ -2,10 +2,10 @@
 // optional side panel (side-track, pins or members) on the right.
 import { Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Conversation, FileInfo, PublicUser, Session } from '@dex/core';
+import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
-import { Avatar, Icon, Popover, colorFor, useToast, presenceFor } from '../ui.tsx';
+import { Avatar, Icon, Popover, colorFor, relativeTime, useToast, presenceFor } from '../ui.tsx';
 import { isEmojiOnly, renderBody } from './format.tsx';
 import {
   addConversation, chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
@@ -19,6 +19,7 @@ import { NoteEditor, NotesList } from './notes.tsx';
 import { BoardsList } from './boards.tsx';
 import { VoiceRecorder } from './voice.tsx';
 import { EmojiPicker } from './EmojiPicker.tsx';
+import { quickReactions } from './quick.ts';
 import { EmojiGlyph, EmojiImg, useCustomEmoji } from '../emoji.tsx';
 import { ClipRecorder, clipsSupported, screenClipsSupported } from './clips.tsx';
 import type { Board } from '@dex/core';
@@ -47,6 +48,13 @@ interface Ctx {
   /** Multi-select: the chosen message ids (null when not selecting). */
   selected: Set<string> | null;
   select: (id: string | null) => void;
+}
+
+/** The quick reactions chosen in Preferences, kept live. */
+function useQuick(): string[] {
+  const [q, setQ] = useState(quickReactions);
+  useEffect(() => { const on = () => setQ(quickReactions()); window.addEventListener('dex-quick', on); return () => window.removeEventListener('dex-quick', on); }, []);
+  return q;
 }
 
 /** Insert text at the cursor (replacing the selection) through the browser's editing, so undo works. */
@@ -177,7 +185,12 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const subtitle = conv.kind === 'space'
     ? (conv.topic ?? `${conv.members.length} ${conv.members.length === 1 ? 'member' : 'members'}`)
     : others.length === 1
-      ? (users.get(others[0])?.statusText ?? users.get(others[0])?.title ?? (online.has(others[0]) ? 'Available' : 'Offline'))
+      ? (() => {
+        const u = users.get(others[0]);
+        const status = u?.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : null;
+        if (online.has(others[0])) return status ?? u?.title ?? 'Available';
+        return [status, u?.lastSeen ? `Last seen ${relativeTime(u.lastSeen)}` : 'Offline'].filter(Boolean).join(' · ');
+      })()
       : `${conv.members.length} people`;
 
   return (
@@ -364,11 +377,12 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
 
   // runs: consecutive messages by one person within 5 minutes; day labels between days
   const blocks = useMemo(() => {
-    const out: Array<{ kind: 'day'; label: string; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string }> = [];
+    const out: Array<{ kind: 'day'; label: string; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string }> = [];
     let lastDay = '';
     for (const m of messages) {
       const day = new Date(m.createdAt).toDateString();
       if (day !== lastDay) { out.push({ kind: 'day', label: dayLabel(m.createdAt), key: `d${day}` }); lastDay = day; }
+      if ('system' in m && m.system) { out.push({ kind: 'notice', m, key: `n${m.id}` }); continue; }
       const prev = out[out.length - 1];
       if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP) prev.msgs.push(m);
       else out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
@@ -378,7 +392,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
 
   // "Seen by" under the newest of my messages
   const seen = useMemo(() => {
-    const mine = [...messages].reverse().find((m) => m.authorId === ctx.meId && !('pending' in m));
+    const mine = [...messages].reverse().find((m) => m.authorId === ctx.meId && !('pending' in m) && !('system' in m && m.system));
     if (!mine) return null;
     const readers = Object.entries(ctx.conv.reads).filter(([u, r]) => u !== ctx.meId && r && r >= mine.id).map(([u]) => u);
     return { id: mine.id, readers };
@@ -392,6 +406,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
         {!tl?.loaded && <div className="tl-more"><span className="spinner" /></div>}
         {blocks.map((b) => b.kind === 'day'
           ? <div key={b.key} className="day-mark"><span className="label">{b.label}</span></div>
+          : b.kind === 'notice' ? <Notice key={b.key} m={b.m as Message} users={ctx.users} meId={ctx.meId} />
           : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} seen={seen} />)}
       </div>
     </div>
@@ -443,11 +458,13 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
   const [more, setMore] = useState(false);
   const moreBtn = useRef<HTMLButtonElement>(null);
   const pickBtn = useRef<HTMLButtonElement>(null);
-  const [dialog, setDialog] = useState<'remind' | 'forward' | null>(null);
+  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | null>(null);
   const saved = useDesk((s) => s.saved.has(m.id));
   const pending = 'pending' in m;
   const failed = pending ? (m as PendingMessage).failed : undefined;
   const mine = m.authorId === ctx.meId;
+  const receiptsOn = ctx.users.get(ctx.meId)?.readReceipts !== false;
+  const quick = useQuick();
   const policy = usePolicy();
   const inWindow = withinEditWindow(m.createdAt, policy);
   const moderator = ctx.conv.kind === 'space' && (ctx.isAdmin || ctx.conv.moderators?.includes(ctx.meId) || ctx.conv.createdBy === ctx.meId);
@@ -476,6 +493,11 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}`}>
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
+      {m.inReplyTo && !inTrack && (
+        <button className="in-reply" onClick={() => onTrack?.(m.inReplyTo!.messageId)} title="Open the side-track">
+          <Icon name="reply" size={13} />Replied in a side-track to {m.inReplyTo.authorId === ctx.meId ? 'you' : ctx.users.get(m.inReplyTo.authorId)?.displayName ?? 'someone'}
+        </button>
+      )}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
       ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : editing ? (
@@ -517,6 +539,12 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
           <button className="link" onClick={() => discardFailed(m as PendingMessage)}>Discard</button>
         </div>
       )}
+      {mine && !pending && !m.deleted && receiptsOn && (() => {
+        const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
+        const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id);
+        const all = others.length > 0 && read.length === others.length;
+        return <span className={`tick${all ? ' read' : read.length ? ' some' : ''}`} title={all ? 'Read' : read.length ? `Read by ${read.length} of ${others.length}` : 'Delivered'} aria-label={all ? 'Read' : 'Delivered'}>{read.length ? '✓✓' : '✓'}</span>;
+      })()}
       {seenBy && seenBy.length > 0 && (
         <div className="seen" title={seenBy.map((id) => ctx.users.get(id)?.displayName).join(', ')}>
           <Icon name="check" size={12} />Seen{ctx.conv.members.length > 2 ? ` by ${seenBy.length}` : ''}
@@ -525,7 +553,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
 
       {!pending && !editing && (
         <div className="msg-tools" role="toolbar" aria-label="Message actions">
-          {QUICK.slice(0, 3).map((e) => <button key={e} onClick={() => react(e)} title={`React ${e}`}>{e}</button>)}
+          {quick.map((e) => <button key={e} onClick={() => react(e)} title={`React ${e}`}>{e}</button>)}
           <button ref={pickBtn} onClick={() => setPicker(!picker)} title="More reactions"><Icon name="smile" size={16} /></button>
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Reply in a side-track"><Icon name="reply" size={16} /></button>}
           <button className={saved ? 'on' : undefined} onClick={() => void toggleSaved(m).then((on) => toast(on ? 'Saved to your Desk' : 'Removed from your Desk')).catch((e: Error) => toast(e.message, true))} title={saved ? 'Remove from saved' : 'Save for later'} aria-pressed={saved}><Icon name="star" size={16} /></button>
@@ -546,6 +574,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
                   }).catch((e: Error) => toast(e.message, true));
                 }}><Icon name="chat" size={16} />Reply privately</button>
               )}
+              {mine && receiptsOn && ctx.conv.members.length > 1 && <button role="menuitem" onClick={() => { setMore(false); setDialog('readers'); }}><Icon name="eye" size={16} />Read by…</button>}
               <button role="menuitem" onClick={() => { setMore(false); void navigator.clipboard.writeText(`dexconnect://message/${m.convId}/${m.id}`); toast('Link copied: paste it anywhere in Dexterity Connect'); }}><Icon name="open" size={16} />Copy link</button>
               {!inTrack && <button role="menuitem" onClick={() => { setMore(false); ctx.select(m.id); }}><Icon name="check" size={16} />Select</button>}
               <button role="menuitem" onClick={() => { setMore(false); void act(window.dex.request('msg.pin', { messageId: m.id, pinned: !m.pinned }), m.pinned ? 'Unpinned' : 'Pinned for everyone here'); }}><Icon name="pin" size={16} />{m.pinned ? 'Unpin' : 'Pin'}</button>
@@ -567,6 +596,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, seenBy, inTrack }: {
         </span>
       )}
       {dialog === 'remind' && <RemindDialog message={m} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
+      {dialog === 'readers' && <ReadersDialog m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
       {dialog === 'forward' && <ForwardDialog message={m} users={ctx.users} meId={ctx.meId} online={ctx.online} onClose={() => setDialog(null)} />}
     </div>
   );
@@ -629,6 +659,8 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [mIndex, setMIndex] = useState(0);
   const [emoji, setEmoji] = useState(false);
   const emojiBtn = useRef<HTMLButtonElement>(null);
+  /** In a side-track: also post the reply in the conversation. */
+  const [alsoToConv, setAlsoToConv] = useState(false);
   const [mdHelp, setMdHelp] = useState(false);
   const mdBtn = useRef<HTMLButtonElement>(null);
   const custom = useCustomEmoji();
@@ -742,13 +774,13 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         send: (b) => void sendMessage(convId, b, parentId),
         open: (d) => { if (d === 'meet') window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); else setDockDialog(d); },
       }).then((handled) => {
-        if (!handled) { void sendMessage(convId, body.replace(/^\/\//, '/'), parentId); clear(); return; }
+        if (!handled) { void sendMessage(convId, body.replace(/^\/\//, '/'), parentId, [], { alsoToConv }); clear(); return; }
         // keep the text if a dialog needs it (for example /schedule), otherwise clear it
         if (!/^\/schedule\b/i.test(typed)) clear();
       });
       return;
     }
-    void sendMessage(convId, body, parentId, ready.map((a) => a.info!));
+    void sendMessage(convId, body, parentId, ready.map((a) => a.info!), { alsoToConv });
     for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
     setAttachments([]);
     setText('');
@@ -896,6 +928,12 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         </Dialog>
       )}
       {dockDialog === 'schedule' && <ScheduleDialog preview={toWire(text, ctx.users, ctx.conv)} users={ctx.users} meId={ctx.meId} onPick={schedule} onClose={() => setDockDialog(null)} />}
+      {parentId && (
+        <label className="also-conv">
+          <input type="checkbox" checked={alsoToConv} onChange={(e) => setAlsoToConv(e.target.checked)} />
+          Also send to {ctx.conv.kind === 'space' ? 'the Space' : 'the conversation'}
+        </label>
+      )}
       <div className="dock-hint faint">
         {scheduledHere.length > 0 && <span className="sched-note"><Icon name="schedule" size={13} />{scheduledHere.length === 1 ? `1 message scheduled · ${describeWhen(scheduledHere[0].sendAt)}` : `${scheduledHere.length} messages scheduled`} · see Desk</span>}
         <span><b>Enter</b> send · <b>/</b> commands · <b>Shift+Enter</b> new line · <b>↑</b> edit last · <button ref={mdBtn} className="link" onClick={() => setMdHelp(!mdHelp)}>Formatting</button></span>
@@ -994,6 +1032,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const c = ctx.conv;
   const members = c.members.map((id) => ctx.users.get(id)).filter(Boolean) as PublicUser[];
   const candidates = [...ctx.users.values()].filter((u) => !c.members.includes(u.id) && u.role !== 'bot');
+  const canModerate = ctx.isAdmin || c.createdBy === ctx.meId || c.moderators.includes(ctx.meId);
   return (
     <aside className="side-panel" aria-label="People">
       <header className="side-head"><span className="label">People · {members.length}</span><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button></header>
@@ -1009,7 +1048,10 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         {members.sort((a, b) => Number(ctx.online.has(b.id)) - Number(ctx.online.has(a.id))).map((u) => (
           <div key={u.id} className="member-row">
             <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
-            <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ?? u.title ?? u.account}</span></span>
+            <span className="sb-main"><span className="sb-name">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last seen ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
+            {canModerate && c.kind === 'space' && !c.everyone && u.id !== ctx.meId && (
+              <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => { if (confirm(`Remove ${u.displayName} from ${c.name}?`)) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); }}><Icon name="x" size={14} /></button>
+            )}
           </div>
         ))}
         {c.kind === 'space' && (ctx.isAdmin || c.createdBy === ctx.meId || c.moderators.includes(ctx.meId)) && <SpaceSettings c={c} users={members} />}
@@ -1069,3 +1111,33 @@ export function PeoplePicker({ users, online, onDone, initial = [], cta = 'Add' 
   );
 }
 
+
+/** "Priya added Ravi", "Asha left", "Vikram renamed the Space to …". */
+function Notice({ m, users, meId }: { m: Message; users: Map<string, PublicUser>; meId: string }) {
+  const name = (id: string) => (id === meId ? 'you' : users.get(id)?.displayName ?? 'someone');
+  const actor = m.authorId === meId ? 'You' : users.get(m.authorId)?.displayName ?? 'Someone';
+  const list = (ids: string[]) => ids.map(name).join(', ');
+  const s = m.system!;
+  const text = s.kind === 'joined' ? `${actor} joined` : s.kind === 'left' ? `${actor} left`
+    : s.kind === 'added' ? `${actor} added ${list(s.users)}` : s.kind === 'removed' ? `${actor} removed ${list(s.users)}`
+      : `${actor} renamed the Space to “${s.name ?? ''}”`;
+  return <div className="notice-line" data-mid={m.id}><span>{text}</span><span className="mono faint">{clock(m.createdAt)}</span></div>;
+}
+
+/** Who has read one of my messages, and who has not yet. */
+function ReadersDialog({ m, ctx, onClose }: { m: Message; ctx: Ctx; onClose: () => void }) {
+  const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
+  const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id);
+  const hidden = others.filter((u) => !(u in ctx.conv.reads));
+  const unread = others.filter((u) => !read.includes(u) && !hidden.includes(u));
+  const row = (id: string) => { const u = ctx.users.get(id); return <div key={id} className="member-row"><Avatar user={{ id, displayName: u?.displayName ?? '?' }} presence={presenceFor(id)} size="sm" /><span className="sb-main"><span className="sb-name">{u?.displayName ?? 'Someone'}</span></span></div>; };
+  return (
+    <Dialog title="Read by" onClose={onClose}>
+      <div className="readers">
+        <div className="label">Read · {read.length}</div>{read.map(row)}
+        {unread.length > 0 && <><div className="label">Not yet · {unread.length}</div>{unread.map(row)}</>}
+        {hidden.length > 0 && <p className="faint" style={{ fontSize: 12 }}>{hidden.length === 1 ? 'One person does' : `${hidden.length} people do`} not share read receipts.</p>}
+      </div>
+    </Dialog>
+  );
+}

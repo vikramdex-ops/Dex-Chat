@@ -1626,3 +1626,20 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .dock-hint .link { font-size: inherit; padding: 0; }
 
 .md-help-row code { white-space: nowrap; }
+
+/* receipts, notices, status emoji, quick reactions */
+.tick { float: right; margin: -18px 2px 0 8px; font-size: 11px; letter-spacing: -2px; color: var(--text-3); user-select: none; }
+.tick.some { color: var(--text-2); }
+.tick.read { color: var(--accent); }
+.notice-line { display: flex; justify-content: center; align-items: baseline; gap: 8px; margin: 6px 0 6px 76px; padding: 2px 0; font-size: 12px; color: var(--text-3); }
+.notice-line .mono { font-size: 10.5px; }
+.readers { display: grid; gap: 4px; }
+.readers .label { margin-top: 8px; }
+.status-row { display: flex; gap: 6px; }
+.status-row .input { flex: 1; }
+.status-emoji { width: 42px; padding: 0; justify-content: center; font-size: 18px; }
+.quick-pick { display: flex; gap: 6px; align-items: center; }
+.quick-pick .btn { width: 40px; padding: 0; justify-content: center; font-size: 18px; }
+.in-reply { display: inline-flex; align-items: center; gap: 5px; padding: 0; margin: 0 0 2px; border: 0; background: none; font-size: 12px; color: var(--accent-ink); cursor: pointer; }
+.in-reply:hover { text-decoration: underline; }
+.also-conv { display: flex; align-items: center; gap: 6px; padding: 4px 14px 0; font-size: 12.5px; color: var(--text-2); cursor: pointer; }

@@ -237,7 +237,9 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
       onClose();
     };
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    const scroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    // opening it (and focusing a field in it) can nudge a scrolled panel: ignore that first moment
+    const opened = Date.now();
+    const scroll = (e: Event) => { if (Date.now() - opened > 300 && !ref.current?.contains(e.target as Node)) onClose(); };
     window.addEventListener('mousedown', down);
     window.addEventListener('keydown', key);
     window.addEventListener('scroll', scroll, true);

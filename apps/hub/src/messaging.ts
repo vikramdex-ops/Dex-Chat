@@ -10,6 +10,14 @@ export class MsgError extends Error {}
 
 const cleanBody = (v: unknown) => (typeof v === 'string' ? v.replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim() : '');
 
+function parseSystem(raw: string): Message['system'] {
+  try {
+    const s = JSON.parse(raw) as { kind?: string; users?: unknown; name?: unknown };
+    if (!['joined', 'left', 'added', 'removed', 'renamed'].includes(String(s.kind))) return null;
+    return { kind: s.kind as NonNullable<Message['system']>['kind'], users: Array.isArray(s.users) ? s.users.map(String).slice(0, 50) : [], ...(typeof s.name === 'string' ? { name: s.name } : {}) };
+  } catch { return null; }
+}
+
 function parseForward(raw: string): Message['forwardedFrom'] {
   try {
     const f = JSON.parse(raw) as NonNullable<Message['forwardedFrom']>;
@@ -101,7 +109,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNIN
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number; archived: number; post_policy: 'everyone' | 'moderators' }
-export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null }
+export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; client_id: string | null; forwarded: string | null; system?: string | null; reply_to?: string | null }
 
 const MAX_BODY = 8000;
 /** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
@@ -137,6 +145,9 @@ export class Messaging {
     // hubs from before forwarding existed
     const cols = (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('forwarded')) db.exec('ALTER TABLE messages ADD COLUMN forwarded TEXT');
+    // join/leave/rename notices are messages with a system field
+    if (!cols.includes('system')) db.exec('ALTER TABLE messages ADD COLUMN system TEXT');
+    if (!cols.includes('reply_to')) db.exec('ALTER TABLE messages ADD COLUMN reply_to TEXT');
     // sidebar organisation, timed mute, archive, moderation (hubs from before these existed)
     const add = (table: string, col: string, def: string) => {
       const have = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
@@ -203,7 +214,7 @@ export class Messaging {
   }
 
   private preview(convId: string): MessagePreview | null {
-    const r = this.db.prepare('SELECT id, author_id, body, created_at, deleted FROM messages WHERE conv_id = ? AND parent_id IS NULL ORDER BY id DESC LIMIT 1')
+    const r = this.db.prepare('SELECT id, author_id, body, created_at, deleted FROM messages WHERE conv_id = ? AND parent_id IS NULL AND system IS NULL ORDER BY id DESC LIMIT 1')
       .get(convId) as { id: string; author_id: string; body: string; created_at: number; deleted: number } | undefined;
     if (!r) return null;
     let body = r.deleted ? '' : isSealed(r.body) ? '🔒 Encrypted message' : r.body.slice(0, 280);
@@ -218,7 +229,7 @@ export class Messaging {
   view(c: ConvRow, viewer: string): Conversation {
     const m = this.db.prepare('SELECT last_read_id, muted, pinned_at, section, muted_until FROM conv_members WHERE conv_id = ? AND user_id = ?').get(c.id, viewer) as { last_read_id: string | null; muted: number; pinned_at: number | null; section: string | null; muted_until: number | null } | undefined;
     const lastRead = m?.last_read_id ?? '';
-    const unread = m ? (this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conv_id = ? AND parent_id IS NULL AND deleted = 0 AND author_id != ? AND id > ?`)
+    const unread = m ? (this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conv_id = ? AND parent_id IS NULL AND deleted = 0 AND system IS NULL AND author_id != ? AND id > ?`)
       .get(c.id, viewer, lastRead) as { n: number }).n : 0;
     const mentions = m ? (this.db.prepare(`SELECT COUNT(*) AS n FROM mentions mn JOIN messages ms ON ms.id = mn.message_id
       WHERE mn.conv_id = ? AND mn.user_id = ? AND ms.deleted = 0 AND ms.author_id != ? AND mn.message_id > ?`).get(c.id, viewer, viewer, lastRead) as { n: number }).n : 0;
@@ -226,7 +237,7 @@ export class Messaging {
       id: c.id, kind: c.kind, name: c.name, topic: c.topic, private: !!c.private, everyone: !!c.everyone,
       createdBy: c.created_by, createdAt: c.created_at, members: this.members(c.id), lastMessage: this.preview(c.id),
       joined: !!m, unread, mentions, lastReadId: m?.last_read_id ?? null, muted: !!m?.muted,
-      reads: Object.fromEntries((this.db.prepare('SELECT user_id, last_read_id FROM conv_members WHERE conv_id = ?').all(c.id) as Array<{ user_id: string; last_read_id: string | null }>).map((r) => [r.user_id, r.last_read_id])),
+      reads: this.readsFor(c.id, viewer),
       pinnedAt: m?.pinned_at ?? null, section: m?.section ?? null, mutedUntil: m?.muted_until ?? null,
       archived: !!c.archived, postPolicy: c.post_policy ?? 'everyone',
       moderators: (this.db.prepare('SELECT user_id FROM conv_members WHERE conv_id = ? AND moderator = 1').all(c.id) as Array<{ user_id: string }>).map((r) => r.user_id),
@@ -287,6 +298,8 @@ export class Messaging {
       replyCount: replies?.n ?? 0, lastReplyAt: replies?.last ?? null, clientId: r.client_id,
       files: r.deleted ? [] : this.files.forMessage(r.id),
       forwardedFrom: r.forwarded && !r.deleted ? parseForward(r.forwarded) : null,
+      system: r.system ? parseSystem(r.system) : null,
+      inReplyTo: r.reply_to ? (() => { const p = this.message(r.reply_to!); return p ? { messageId: p.id, authorId: p.author_id } : null; })() : null,
       poll: r.deleted ? null : this.pollView(r.id, viewer),
       form: r.deleted ? null : this.formView(r.id, viewer),
     };
@@ -301,6 +314,35 @@ export class Messaging {
 
   private message(id: string): MsgRow | undefined {
     return this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MsgRow | undefined;
+  }
+
+  /** Who has read up to where, as this viewer may see it: people who switched read receipts off
+   *  are left out, and someone who switched theirs off sees only their own. */
+  private readsFor(convId: string, viewer: string): Record<string, string | null> {
+    const rows = this.db.prepare(`SELECT cm.user_id, cm.last_read_id, COALESCE(u.receipts, 1) AS receipts FROM conv_members cm
+      LEFT JOIN users u ON u.id = cm.user_id WHERE cm.conv_id = ?`).all(convId) as Array<{ user_id: string; last_read_id: string | null; receipts: number }>;
+    const mine = rows.find((r) => r.user_id === viewer);
+    const share = mine?.receipts !== 0;
+    return Object.fromEntries(rows.filter((r) => r.user_id === viewer || (share && r.receipts !== 0)).map((r) => [r.user_id, r.last_read_id]));
+  }
+
+  private receiptsOn(userId: string): boolean {
+    return (this.db.prepare('SELECT COALESCE(receipts, 1) AS r FROM users WHERE id = ?').get(userId) as { r: number } | undefined)?.r !== 0;
+  }
+
+  /** Conversations someone is in (to refresh read receipts when they change the setting). */
+  convIdsOf(userId: string): string[] {
+    return (this.db.prepare('SELECT conv_id FROM conv_members WHERE user_id = ?').all(userId) as Array<{ conv_id: string }>).map((r) => r.conv_id);
+  }
+  pushConvTo(convId: string): void { this.pushConv(convId); }
+
+  /** A notice in the conversation: someone joined, left, was added or removed, or it was renamed. */
+  private notice(convId: string, actorId: string, kind: NonNullable<Message['system']>['kind'], users: string[], name?: string): void {
+    const id = ulid();
+    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, system) VALUES (?, ?, ?, ?, NULL, ?, ?)')
+      .run(id, convId, actorId, '', Date.now(), JSON.stringify({ kind, users, ...(name ? { name } : {}) }));
+    const row = this.message(id);
+    if (row) this.pushMessage('msg.new', row);
   }
 
   /** Push every member their own copy of the conversation (unread counts differ per person). */
@@ -408,8 +450,10 @@ export class Messaging {
         if (me.role === 'guest') throw new MsgError('Guests can only use the Spaces they were invited to.');
         const c = typeof d.convId === 'string' ? this.conv(d.convId) : undefined;
         if (!c || c.kind !== 'space' || (c.private && !this.isMember(c.id, me.id))) throw new MsgError('Space not found.');
+        const was = this.isMember(c.id, me.id);
         this.addMember(c.id, me.id);
         this.pushConv(c.id);
+        if (!was && !c.everyone) this.notice(c.id, me.id, 'joined', [me.id]);
         return this.view(c, me.id);
       }
 
@@ -421,7 +465,23 @@ export class Messaging {
         this.db.prepare('DELETE FROM conv_members WHERE conv_id = ? AND user_id = ?').run(c.id, me.id);
         this.deliver([me.id], 'conv.removed', () => ({ convId: c.id }));
         this.pushConv(c.id, before.filter((u) => u !== me.id));
+        this.notice(c.id, me.id, 'left', [me.id]);
         return { ok: true };
+      }
+
+      case 'conv.removeMember': {
+        const c = this.requireMember(String(d.convId), me.id);
+        if (c.kind !== 'space' || c.everyone) throw new MsgError('People can only be removed from Spaces.');
+        if (!this.isModerator(c, me)) throw new MsgError('Only the Space\'s moderators can remove people.');
+        const uid = String(d.userId ?? '');
+        if (uid === me.id) throw new MsgError('Leave the Space instead.');
+        if (!this.isMember(c.id, uid)) throw new MsgError('They are not in this Space.');
+        const before = this.members(c.id);
+        this.db.prepare('DELETE FROM conv_members WHERE conv_id = ? AND user_id = ?').run(c.id, uid);
+        this.deliver([uid], 'conv.removed', () => ({ convId: c.id }));
+        this.pushConv(c.id, before.filter((u) => u !== uid));
+        this.notice(c.id, me.id, 'removed', [uid]);
+        return this.view(c, me.id);
       }
 
       case 'conv.addMembers': {
@@ -430,8 +490,10 @@ export class Messaging {
         if (me.role === 'guest') throw new MsgError('Guests cannot add people.');
         if (c.kind === 'direct') throw new MsgError('Start a new Direct conversation or a Space to include more people.');
         const ids = Array.isArray(d.userIds) ? (d.userIds.filter(knownUser) as string[]) : [];
+        const fresh = ids.filter((u) => !this.isMember(c.id, u));
         for (const u of ids) this.addMember(c.id, u);
         this.pushConv(c.id);
+        if (fresh.length) this.notice(c.id, me.id, 'added', fresh);
         return this.view(c, me.id);
       }
 
@@ -444,6 +506,7 @@ export class Messaging {
         const topic = d.topic === undefined ? c.topic : d.topic === null ? null : str(d.topic, 240) || null;
         this.db.prepare('UPDATE conversations SET name = ?, topic = ? WHERE id = ?').run(name, topic, c.id);
         this.pushConv(c.id);
+        if (name !== c.name) this.notice(c.id, me.id, 'renamed', [], name);
         return this.view(this.conv(c.id)!, me.id);
       }
 
@@ -455,7 +518,8 @@ export class Messaging {
         if (!cur || msg.id > cur) {
           this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(msg.id, c.id, me.id);
           // read receipts for everyone, refreshed unread counts for the reader's other devices
-          this.deliver(this.members(c.id), 'read', () => ({ convId: c.id, userId: me.id, messageId: msg.id }));
+          const share = this.receiptsOn(me.id);
+          this.deliver(this.members(c.id).filter((u) => u === me.id || (share && this.receiptsOn(u))), 'read', () => ({ convId: c.id, userId: me.id, messageId: msg.id }));
           this.pushConv(c.id, [me.id]);
         }
         return this.view(c, me.id);
@@ -532,7 +596,15 @@ export class Messaging {
       case 'msg.send': {
         const c = this.requireMember(String(d.convId), me.id);
         const fileIds = Array.isArray(d.files) ? [...new Set(d.files.filter((f): f is string => typeof f === 'string'))].slice(0, 21) : [];
-        return this.sendAs(me, c, cleanBody(d.body), d.parentId, fileIds, d.clientId, {});
+        const reply = this.sendAs(me, c, cleanBody(d.body), d.parentId, fileIds, d.clientId, {});
+        // "also send to the conversation": a copy in the main timeline that points back to the side-track
+        if (d.alsoToConv === true && reply.parentId && !this.db.prepare('SELECT 1 FROM messages WHERE reply_to = ? AND author_id = ? AND client_id = ?').get(reply.parentId, me.id, `${d.clientId}:conv`)) {
+          const copy = this.sendAs(me, c, cleanBody(d.body), null, fileIds, typeof d.clientId === 'string' ? `${d.clientId}:conv` : undefined, { skipFileCheck: true });
+          this.db.prepare('UPDATE messages SET reply_to = ? WHERE id = ?').run(reply.parentId, copy.id);
+          const row = this.message(copy.id);
+          if (row) this.pushMessage('msg.updated', row);
+        }
+        return reply;
       }
 
       case 'msg.forward': {
@@ -760,7 +832,7 @@ export class Messaging {
         // with no words, filters alone can list messages ("everything Priya sent last week")
         if (!terms.length && !(filtered && (from || hasFile || scope || after !== null))) return { messages: [], files: [] } satisfies Ops['search']['res'];
         const limit = typeof d.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(d.limit))) : 20;
-        const where: string[] = ['m.deleted = 0'];
+        const where: string[] = ['m.deleted = 0', 'm.system IS NULL'];
         const args: Array<string | number> = [me.id];
         if (terms.length) { where.push('messages_fts MATCH ?'); args.push(terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(' ')); }
         if (scope) { where.push('m.conv_id = ?'); args.push(scope); }
