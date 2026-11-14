@@ -7,6 +7,7 @@ import type { Board, BoardOp } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { sendMessage } from './store.ts';
+import { BoardPointers } from '../pointers/surfaces.tsx';
 
 type Tool = 'pen' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'erase';
 type Mark = Exclude<BoardOp, { t: 'erase' } | { t: 'clear' }>;
@@ -300,6 +301,7 @@ export function WhiteboardStage({ board, convId, onClose }: { board: Board; conv
         {WIDTHS.map((w) => <button key={w} className={`board-tool${width === w ? ' on' : ''}`} onClick={() => setWidth(w)} aria-label={`Thickness ${w}`}><span className="glyph dot" style={{ width: w + 3, height: w + 3 }} /></button>)}
       </div>
       <canvas ref={canvas} className={`board-canvas tool-${tool}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={(e) => e.preventDefault()} />
+      <BoardPointers boardId={board.id} view={view} canvas={canvas} />
       {!loaded && <div className="board-loading"><span className="spinner" /></div>}
       {textAt && (
         <textarea className="board-text" autoFocus style={{ left: textAt.sx, top: textAt.sy, color }} value={text} placeholder="Type, then click away"

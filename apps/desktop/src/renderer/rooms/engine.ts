@@ -133,6 +133,51 @@ const tell = (text: string) => set({ notice: { text, at: Date.now() } });
 export const useCall = <T,>(sel: (s: CallState) => T): T => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => sel(state));
 export const callState = () => state;
 
+// ------------------------------------------------------------------ small messages to everyone in the Room (live pointers, remote control)
+type DataListener = (fromDevice: string, fromUser: string, data: unknown) => void;
+const dataSubs = new Set<DataListener>();
+/** Follow messages from the others in the Room (over the data channel, or the hub when there is none). */
+export function onRoomData(f: DataListener): () => void { dataSubs.add(f); return () => { dataSubs.delete(f); }; }
+/**
+ * Send a small message to everyone else in the Room: straight over each PC-to-PC data channel when
+ * every one is open, otherwise once through the hub (a relayed Room, or while channels connect).
+ */
+export function sendRoomData(data: unknown): void {
+  const r = state.room;
+  if (!r) return;
+  const others = r.participants.filter((p) => p.deviceId !== myDevice);
+  if (!others.length) return;
+  const channels = others.map((p) => links.get(p.deviceId)?.dc ?? null);
+  if (r.mode !== 'relay' && channels.every((c) => c?.readyState === 'open')) {
+    const text = JSON.stringify(data);
+    for (const c of channels) { try { c!.send(text); } catch { /* closing */ } }
+    return;
+  }
+  void window.dex.request('room.data', { roomId: r.id, data }).catch(() => {});
+}
+/** This PC's device id in Rooms. */
+export const selfDevice = () => myDevice;
+/** The screen or window this PC is sharing (the source picked), while it shares one. */
+let screenSource: string | null = null;
+export const sharedSource = () => (state.screen ? screenSource : null);
+
+/**
+ * Come into a lounge or support session: audio only (a microphone is not required: without one you
+ * listen), then the hub's answer is the Room to enter.
+ */
+export async function enterSpecial(open: () => Promise<RoomInfo>): Promise<RoomInfo> {
+  if (state.room) throw new Error('You are in another Room. Leave it first.');
+  let local: MediaStream | null = null;
+  try {
+    const [media] = await Promise.all([getMedia(false).catch(() => new MediaStream()), refreshIce()]);
+    local = media;
+    const room = await open();
+    enter(room, local);
+    if (!local.getAudioTracks().length) set({ muted: true });
+    return room;
+  } catch (err) { dropMedia(local); set({ error: (err as Error).message }); throw err; }
+}
+
 // ------------------------------------------------------------------ reactions (to the tiles that show them)
 type ReactionListener = (emoji: string, at: number) => void;
 const reactionSubs = new Map<string, Set<ReactionListener>>();
@@ -144,7 +189,7 @@ export function onReaction(deviceId: string, f: ReactionListener): () => void {
   return () => { s.delete(f); if (!s.size) reactionSubs.delete(deviceId); };
 }
 
-interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; userId: string; senders: RTCRtpSender[] }
+interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; userId: string; senders: RTCRtpSender[]; dc: RTCDataChannel | null }
 const links = new Map<string, Link>();
 
 // ------------------------------------------------------------------ large Rooms: the hub's relay
@@ -194,7 +239,8 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
   myDevice = deviceId;
   if (wired) return;
   wired = true;
-  void window.dex.request('room.list').then((rooms) => set({ active: new Map(rooms.map((r) => [r.convId, r])) })).catch(() => {});
+  // lounges and support sessions are not the conversation's Room: they are kept out of "active"
+  void window.dex.request('room.list').then((rooms) => set({ active: new Map(rooms.filter((r) => !r.purpose).map((r) => [r.convId, r])) })).catch(() => {});
   window.dex.onHubEvent((name, data) => {
     if (name === 'room.ring') {
       const d = data as { room: RoomInfo; from: string };
@@ -204,7 +250,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (!document.hasFocus()) notify(`${nameOf(d.from)} is opening a Room`, `${d.room.video ? 'Video' : 'Voice'} Room · join with voice or video`);
     } else if (name === 'room.updated') {
       const r = data as RoomInfo;
-      const active = new Map(state.active).set(r.convId, r);
+      const active = r.purpose ? state.active : new Map(state.active).set(r.convId, r);
       if (state.room?.id === r.id) {
         // close links to devices that left
         for (const [dev] of links) if (!r.participants.some((p) => p.deviceId === dev)) dropLink(dev);
@@ -222,7 +268,8 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       } else set({ active });
     } else if (name === 'room.ended') {
       const d = data as { roomId: string; convId: string; missed: boolean; startedBy: string; endedBy?: string };
-      const active = new Map(state.active); active.delete(d.convId);
+      const active = new Map(state.active);
+      if (active.get(d.convId)?.id === d.roomId) active.delete(d.convId);
       if (state.incoming?.room.id === d.roomId) {
         stopRing();
         if (d.missed && !document.hasFocus()) notify(`You missed ${nameOf(d.startedBy)}'s Room · ${clock(state.incoming.room.startedAt)}`, 'Open the conversation to ring back');
@@ -269,6 +316,9 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
     } else if (name === 'relay.reset') {
       // the hub restarted its relay: connect again
       if (state.room?.mode === 'relay') startRelay(state.room);
+    } else if (name === 'room.data') {
+      const d = data as { roomId: string; fromDevice: string; fromUser: string; data: unknown };
+      if (state.room?.id === d.roomId) for (const f of dataSubs) f(d.fromDevice, d.fromUser, d.data);
     } else if (name === 'room.signal') {
       const d = data as { roomId: string; fromDevice: string; fromUser: string; data: SignalData };
       if (state.room?.id === d.roomId) void onSignal(d.fromDevice, d.fromUser, d.data);
@@ -516,6 +566,7 @@ export async function toggleScreen(sourceId?: string, withSound = false): Promis
   }
   try {
     if (sourceId) await window.dex.chooseScreen?.(sourceId);
+    screenSource = sourceId ?? null;
     const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15 } }, audio: withSound });
     const track = screen.getVideoTracks()[0];
     track.contentHint = 'detail';
@@ -596,8 +647,19 @@ function ensureLink(deviceId: string, userId: string): Link {
   const existing = links.get(deviceId);
   if (existing) return existing;
   const pc = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle' });
-  const link: Link = { pc, polite: myDevice > deviceId, makingOffer: false, ignoreOffer: false, userId, senders: [] };
+  const link: Link = { pc, polite: myDevice > deviceId, makingOffer: false, ignoreOffer: false, userId, senders: [], dc: null };
   links.set(deviceId, link);
+  // one data channel per link, agreed on both sides (no extra negotiation): pointers and remote control
+  try {
+    const dc = pc.createDataChannel('dex', { negotiated: true, id: 0, ordered: true });
+    dc.onmessage = (e) => {
+      if (typeof e.data !== 'string' || e.data.length > 16_384) return;
+      let msg: unknown;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      for (const f of dataSubs) f(deviceId, userId, msg);
+    };
+    link.dc = dc;
+  } catch { /* no data channels: messages go through the hub */ }
   const local = state.local;
   if (local) for (const t of local.getTracks()) link.senders.push(pc.addTrack(t, local));
   if (state.screen) for (const t of state.screen.getTracks()) link.senders.push(pc.addTrack(t, state.screen));

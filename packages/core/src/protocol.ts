@@ -603,6 +603,8 @@ export interface RoomParticipant {
   screen: boolean;
   /** This person is recording the call (everyone is shown that). */
   recording?: boolean;
+  /** Speaking now (lounges only: shown to the Space on the lounge's row). */
+  speaking?: boolean;
 }
 
 export interface RoomInfo {
@@ -653,7 +655,7 @@ export interface Lounge {
   /** Its Room while anyone is in it. */
   roomId: string | null;
   /** Who is in it now, and who of them is muted. */
-  people: Array<{ userId: string; deviceId: string; muted: boolean }>;
+  people: Array<{ userId: string; deviceId: string; muted: boolean; speaking: boolean }>;
 }
 
 // ---------------------------------------------------------------- meetings
@@ -1038,6 +1040,8 @@ export interface Ops {
   // ------------------------------------------------------------ live pointers
   /** A small message to everyone else in your Room (pointers when the data channel is not there, e.g. on the relay). */
   'room.data': { req: { roomId: string; data: unknown }; res: { ok: true } };
+  /** In a lounge: you started or stopped speaking (the Space sees a live pip on the lounge). */
+  'room.speaking': { req: { roomId: string; speaking: boolean }; res: { ok: true } };
   /** Look at a file or whiteboard together: join its pointer session (invite: tell the conversation). */
   'point.join': { req: { surface: string; convId?: string; invite?: boolean; name?: string }; res: PointSession };
   'point.leave': { req: { surface: string }; res: { ok: true } };

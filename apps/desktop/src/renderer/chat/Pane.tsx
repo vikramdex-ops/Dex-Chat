@@ -35,6 +35,7 @@ import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
 import { timeOpts } from '../time.ts';
 import './chat.css';
+import { LoungeStrip } from '../lounges/Lounges.tsx';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
@@ -276,6 +277,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           <dl className="title-block" aria-label="About this conversation">
             {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
+          {conv.kind === 'space' && <LoungeStrip convId={convId} live={live} />}
           {conv.members.length > 1 && <RoomButton convId={convId} live={live} />}
           <button ref={moreBtn} className="icon-btn head-more" title="More for this conversation" aria-label="More for this conversation" aria-haspopup="menu" aria-expanded={headMenu} onClick={() => setHeadMenu(!headMenu)}><Icon name="more" size={18} /></button>
           {onClose && <button className="icon-btn pane-x" title="Close this Pane" aria-label="Close this Pane" onClick={onClose}><Icon name="x" size={16} /></button>}

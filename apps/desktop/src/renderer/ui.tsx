@@ -153,13 +153,19 @@ export function Avatar({ user, online, presence, size }: {
   const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
   return (
     <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }}
-      title={p ? `${user.displayName} · ${PRESENCE_LABEL[p]}` : user.displayName}>
+      title={p ? `${user.displayName} · ${presenceText(user.id, p)}` : user.displayName}>
       {initials(user.displayName)}
     </span>
   );
 }
 
 export const PRESENCE_LABEL: Record<Presence, string> = { on: 'at their desk', off: 'offline', away: 'away', room: 'in a Room', dnd: 'no interruptions', busy: 'heads-down', meeting: 'in a meeting' };
+
+/** A finer word for someone in a Room ("in Piping desk" for a lounge), from whoever knows (lounges/store.ts). */
+let presenceNote: (id: string) => string | null = () => null;
+export function setPresenceNote(f: (id: string) => string | null): void { presenceNote = f; }
+/** How someone's presence reads: "at their desk", "in Piping desk"… */
+export function presenceText(id: string, p: Presence): string { return (p === 'room' && presenceNote(id)) || PRESENCE_LABEL[p]; }
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;

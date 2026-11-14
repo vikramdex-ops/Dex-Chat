@@ -57,7 +57,7 @@ export class Lounges {
     const room = r.archived ? null : this.host.rooms.purposeRoom({ kind: 'lounge', loungeId: r.id, name: r.name });
     return {
       id: r.id, convId: r.conv, name: r.name, createdBy: r.created_by, createdAt: r.created_at, archived: !!r.archived,
-      roomId: room?.id ?? null, people: room ? room.participants.map((p) => ({ userId: p.userId, deviceId: p.deviceId, muted: p.muted })) : [],
+      roomId: room?.id ?? null, people: room ? room.participants.map((p) => ({ userId: p.userId, deviceId: p.deviceId, muted: p.muted, speaking: !!p.speaking })) : [],
     };
   }
 

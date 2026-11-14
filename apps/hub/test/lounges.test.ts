@@ -47,6 +47,13 @@ test('lounges: create, join and leave freely, no ringing, presence for colleague
   assert.equal(r2.id, room.id, 'the same Room');
   assert.deepEqual((await busy).people.map((p) => p.userId).sort(), [me(priya), me(ravi)].sort());
   assert.equal(rang, false, 'nobody is rung');
+  // the Space sees who is speaking in the lounge; muting stops it
+  const speaking = nextEvent<Lounge>(owner, 'lounge.updated', (l) => l.people.some((p) => p.speaking));
+  await priya.request('room.speaking', { roomId: room.id, speaking: true });
+  assert.equal((await speaking).people.find((p) => p.speaking)!.userId, me(priya));
+  const quiet = nextEvent<Lounge>(owner, 'lounge.updated', (l) => l.people.every((p) => !p.speaking));
+  await priya.request('room.media', { roomId: room.id, muted: true, camera: false, screen: false });
+  await quiet;
   assert.deepEqual((await asha.request('lounge.presence')).map((p) => [p.userId, p.name]).sort(), [[me(priya), null], [me(ravi), null]].sort());
   assert.deepEqual((await owner.request('lounge.presence')).map((p) => p.name), ['Piping desk', 'Piping desk']);
   // a lounge Room is not the Space's call: opening a Room in the Space starts a separate one

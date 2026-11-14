@@ -23,6 +23,7 @@ import { addConversation, chatState, useChat } from '../chat/store.ts';
 import { recordSupported, startRecording, stopRecording, useRecorder } from './recorder.ts';
 import { usePolicy } from '../policy.ts';
 import { LobbySheet } from '../meet/Lobby.tsx';
+import { RoomPointers } from '../pointers/surfaces.tsx';
 import '../meet/meet.css';
 
 const MeetPanel = lazy(() => import('../meet/MeetPanel.tsx'));
@@ -334,6 +335,7 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
           {layout === 'presentation' && shareStream && (
             <figure className="room-share">
               <Video stream={shareStream} muted fit="contain" />
+              <RoomPointers presenterDevice={sharedStream && shared ? shared.deviceId : meDevice} users={users} meId={meId} />
               <figcaption className="room-cap"><b>SHEET</b><span>{screen && !sharedStream ? 'YOUR SCREEN · SHARED' : `${capName(nameOf(shared!.userId))} · SCREEN`}</span></figcaption>
             </figure>
           )}

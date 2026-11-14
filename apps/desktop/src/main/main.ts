@@ -274,7 +274,8 @@ function wireIpc(c: Controller): void {
     mime: typeof src?.mime === 'string' ? src.mime : undefined,
   }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
-  ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
+  // saving reports progress as "save:<id>" on the upload progress channel
+  ipcMain.handle('file:save', (e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name), (got, total) => e.sender.send('file:progress', `save:${String(id)}`, got, total))));
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
   ipcMain.handle('tools:installed', () => installedTools());
   ipcMain.handle('window:popout', (_e, convId: string, title: string) => { popOut(String(convId), String(title ?? '')); });

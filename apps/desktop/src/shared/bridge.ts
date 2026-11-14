@@ -159,7 +159,7 @@ export interface AssistBridge {
   screenshot(): Promise<{ data: ArrayBuffer; name: string } | null>;
   /** The presenter's own screen shows everyone's pointers in a click-through window. */
   pointers(state: { on: boolean; sourceId?: string | null }): void;
-  pointer(msg: { from: string; name: string; color: string; presenter: boolean; m: unknown }): void;
+  pointer(msg: { from: string; userId: string; name: string; color: string; presenter: boolean; m: unknown }): void;
 }
 
 /** In the share bar and pointer windows only. */

@@ -1,0 +1,85 @@
+/* Live pointers: name tags on leader arrows, highlights in the person's colour, numbered balloons
+   like a drawing's item callouts, ink that fades; a thin tool strip with mono labels. */
+
+.pt-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.pt-layer.drawing { pointer-events: auto; cursor: crosshair; }
+.pt-layer[data-tool='pin'] { cursor: copy; }
+.pt-svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+
+.pt-cursor path { stroke: rgba(255, 255, 255, .9); stroke-width: 1.2; stroke-linejoin: round; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .35)); }
+.pt-cursor-name { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; fill: #fff; }
+.pt-cursor rect { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .25)); }
+
+.pt-hl { stroke-width: 2.4; fill-opacity: .14; transition: opacity 120ms linear; }
+.pt-hl.kept { stroke-dasharray: 7 4; }
+.pt-ink { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.pt-pin line { stroke-width: 1.5; }
+.pt-pin rect { stroke: rgba(255, 255, 255, .85); stroke-width: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .3)); }
+.pt-pin-n { font: 700 11px/1 var(--font-mono); fill: #fff; text-anchor: middle; }
+.pt-pin-note {
+  font: 600 12px/1 var(--font-body); fill: #15191b; paint-order: stroke; stroke: rgba(255, 255, 255, .92); stroke-width: 4px; stroke-linejoin: round;
+}
+
+.pt-note {
+  position: absolute; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 6px; transform: translate(10px, -50%);
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); pointer-events: auto;
+}
+.pt-note .mono { font-size: 10px; letter-spacing: .1em; color: var(--text-3); padding: 0 4px; }
+.pt-note .input { width: 200px; height: 30px; }
+
+.pt-tools {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 2px; padding: 3px 4px;
+  background: rgba(14, 30, 33, .86); color: #e8f2f3; border: 1px solid rgba(232, 242, 243, .16); border-radius: 7px; pointer-events: auto;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .25); backdrop-filter: blur(6px);
+}
+.pt-tools.at-bottom { bottom: 12px; }
+.pt-tools.at-top { top: 12px; }
+.pt-tools-label { font-size: 9.5px; letter-spacing: .14em; color: #9fb9bc; padding: 0 8px 0 4px; border-right: 1px solid rgba(232, 242, 243, .14); margin-right: 2px; }
+.pt-tool {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; min-width: 30px; justify-content: center; padding: 0 6px; border: 0; border-radius: 4px;
+  background: transparent; color: inherit; font: 600 12px var(--font-body); cursor: pointer;
+}
+.pt-tool:hover:not(:disabled) { background: rgba(232, 242, 243, .1); }
+.pt-tool.on { background: var(--accent); color: #fff; }
+.pt-tool.off { color: var(--amber); }
+.pt-tool:disabled { opacity: .4; cursor: default; }
+.pt-tool.wide { padding: 0 9px; }
+.pt-keep { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 6px; color: #cfe0e2; }
+.pt-sep { width: 1px; height: 18px; background: rgba(232, 242, 243, .16); margin: 0 4px; }
+
+.pt-board { position: absolute; inset: 0; pointer-events: none; }
+.pt-board .pt-tools { bottom: 44px; }
+.pt-lookers {
+  position: absolute; right: 14px; top: 10px; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 4px 8px; pointer-events: auto;
+  background: var(--layer-solid); border: 1px solid var(--stroke); border-radius: var(--radius-m);
+}
+.pt-lookers .mono { font-size: 10px; letter-spacing: .12em; color: var(--text-3); }
+.pt-lookers .pt-presenter { color: var(--accent-ink); border-left: 1px solid var(--stroke); padding-left: 6px; }
+
+/* looking at a picture together */
+.coview { position: fixed; inset: 0; z-index: 45; display: grid; grid-template-rows: auto 1fr; background: #0d1a1c; animation: fade var(--med); }
+.coview-bar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: #e8f2f3; background: rgba(14, 30, 33, .95); border-bottom: 1px solid rgba(232, 242, 243, .12); }
+.coview-bar .label { color: var(--amber); }
+.coview-name { font-weight: 600; padding-left: 10px; border-left: 2px solid var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coview-bar .icon-btn { color: #e8f2f3; }
+.coview-bar .pt-lookers { position: static; background: rgba(232, 242, 243, .06); border-color: rgba(232, 242, 243, .14); }
+.coview-bar .pt-lookers .mono { color: #9fb9bc; }
+.coview-stage {
+  position: relative; min-height: 0; display: grid; place-items: center; overflow: hidden;
+  background-image: linear-gradient(rgba(232, 242, 243, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(232, 242, 243, .035) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.coview-stage img { max-width: calc(100% - 48px); max-height: calc(100% - 96px); object-fit: contain; box-shadow: 0 10px 40px rgba(0, 0, 0, .45); user-select: none; }
+
+.look-card {
+  position: fixed; right: 18px; bottom: 18px; z-index: 46; display: flex; align-items: center; gap: 10px; max-width: 520px; padding: 10px 12px;
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--amber); border-radius: var(--radius-l);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .2); animation: fade var(--med);
+}
+.look-card-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.look-card-text .mono { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the presenter's own screen */
+.pt-overlay-doc, .pt-overlay-doc body { background: transparent !important; overflow: hidden; }
+.pt-overlay { position: fixed; inset: 0; }

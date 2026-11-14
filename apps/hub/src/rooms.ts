@@ -407,6 +407,7 @@ export class Rooms {
         const p = r.participants.find((x) => x.deviceId === deviceId);
         if (!p) throw new RoomError('Not in this call.');
         p.muted = d.muted === true; p.camera = d.camera === true; p.screen = d.screen === true;
+        if (p.muted) p.speaking = false;
         this.publish(r);
         return { ok: true };
       }
@@ -562,6 +563,18 @@ export class Rooms {
         if (!this.limits.allow(`${r.id}:data:${deviceId}`, 60, 1000)) return { ok: true, limited: true };
         const evt = { roomId: r.id, fromDevice: deviceId, fromUser: me.id, data: d.data ?? null };
         for (const p of r.participants) if (p.deviceId !== deviceId) this.host.deliverToDevice(p.deviceId, 'room.data', evt);
+        return { ok: true };
+      }
+      case 'room.speaking': {
+        const r = this.mine(d.roomId, me, deviceId);
+        if (r.purpose?.kind !== 'lounge') return { ok: true };
+        const p = r.participants.find((x) => x.deviceId === deviceId)!;
+        const on = d.speaking === true && !p.muted;
+        if (!!p.speaking === on) return { ok: true };
+        // a stop always goes through; starts at most four a second
+        if (on && !this.limits.allow(`${r.id}:speak:${deviceId}`, 4, 1000)) return { ok: true, limited: true };
+        p.speaking = on;
+        this.publish(r);
         return { ok: true };
       }
       case 'room.react': {
