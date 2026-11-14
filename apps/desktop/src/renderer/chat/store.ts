@@ -1,6 +1,7 @@
 // Client-side messaging state: conversations, message timelines, side-tracks, typing and
 // drafts. Sends are optimistic (shown instantly, confirmed by the hub, retried with the same
 // clientId so they never duplicate). Components subscribe with useChat(selector).
+import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
 import { plainPreview } from './format.tsx';
@@ -303,5 +304,6 @@ function notifyIncoming(m: Message): void {
   const who = users.get(m.authorId)?.displayName ?? 'Someone';
   const where = c?.kind === 'space' ? ` in ${c.name}` : c && c.members.length > 2 ? ' in a group' : '';
   const title = mentioned ? `${who} mentioned you${where}` : m.parentId ? `${who} replied${where}` : `${who}${where}`;
-  window.dex.notify(title, plainPreview(m.body, users).slice(0, 200), `dexconnect://conversation/${m.convId}`);
+  const personal = mentioned || c?.kind === 'direct' || (!!m.parentId && state.timelines.get(tlKey(m.convId))?.messages.some((p) => p.id === m.parentId && p.authorId === state.meId));
+  alertUser(personal ? 'personal' : 'message', title, plainPreview(m.body, users).slice(0, 200), `dexconnect://conversation/${m.convId}`);
 }

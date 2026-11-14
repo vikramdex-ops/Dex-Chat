@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Session } from '@dex/core';
-import type { AppState, Theme } from '../../shared/bridge.ts';
+import type { AppState, MessageSound, Settings, Theme } from '../../shared/bridge.ts';
+import { playSound } from '../sounds.ts';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
@@ -87,7 +88,62 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               { value: 'dark', label: 'Dark', icon: 'moon' },
             ]} />
           </div>
+          <div className="setting">
+            <Icon name="rows" className="lead" />
+            <div className="txt"><div>Density</div><div className="faint">Compact fits more messages and conversations on screen.</div></div>
+            <Segmented<Settings['density']> label="Density" value={state.settings.density} onChange={(density) => set({ density })} options={[
+              { value: 'comfortable', label: 'Comfortable' },
+              { value: 'compact', label: 'Compact' },
+            ]} />
+          </div>
+          <div className="setting">
+            <Icon name="textsize" className="lead" />
+            <div className="txt"><div>Text size</div><div className="faint">Makes everything larger or smaller. <span className="mono">Ctrl</span>+<span className="mono">=</span> and <span className="mono">Ctrl</span>+<span className="mono">-</span> work too.</div></div>
+            <Segmented<Settings['textSize']> label="Text size" value={state.settings.textSize} onChange={(textSize) => set({ textSize })} options={[
+              { value: 90, label: 'Small' },
+              { value: 100, label: 'Default' },
+              { value: 110, label: 'Large' },
+              { value: 125, label: 'Larger' },
+            ]} />
+          </div>
         </section>
+
+        <section>
+          <h3>Notifications</h3>
+          <div className="setting">
+            <Icon name="bell" className="lead" />
+            <div className="txt"><div>Notify me about</div><div className="faint">Reminders and meetings always notify.</div></div>
+            <Segmented<Settings['notifyFor']> label="Notify me about" value={state.settings.notifyFor} onChange={(notifyFor) => set({ notifyFor })} options={[
+              { value: 'all', label: 'Everything' },
+              { value: 'mentions', label: 'Direct and mentions' },
+              { value: 'none', label: 'Nothing' },
+            ]} />
+          </div>
+          <div className="setting">
+            <Icon name="volume" className="lead" />
+            <div className="txt"><div>Sound</div><div className="faint">Plays with each notification.</div></div>
+            <Segmented<MessageSound> label="Sound" value={state.settings.sound} onChange={(sound) => { set({ sound }); playSound(sound, 0.6, true); }} options={[
+              { value: 'chime', label: 'Chime' },
+              { value: 'tick', label: 'Tick' },
+              { value: 'drop', label: 'Drop' },
+              { value: 'none', label: 'Off' },
+            ]} />
+          </div>
+          <div className="setting">
+            <Icon name="eye" className="lead" />
+            <div className="txt"><div>Show message text in notifications</div><div className="faint">Turn off if others can see your screen.</div></div>
+            <Toggle label="Show message text in notifications" checked={state.settings.showPreviews} onChange={(v) => set({ showPreviews: v })} />
+          </div>
+        </section>
+
+        {state.platform === 'android' && <section>
+          <h3>Background</h3>
+          <div className="setting">
+            <Icon name="tray" className="lead" />
+            <div className="txt"><div>Stay connected in the background</div><div className="faint">So messages, reminders and calls reach you when the app is closed. Android shows a quiet notification while this is on.</div></div>
+            <Toggle label="Stay connected in the background" checked={state.settings.closeToTray} onChange={(v) => set({ closeToTray: v })} />
+          </div>
+        </section>}
 
         {state.platform !== 'android' && <section>
           <h3>Start-up and windows</h3>

@@ -1,11 +1,19 @@
 package in.co.dexteritydesign.connect;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Base64;
 
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSArray;
@@ -466,6 +474,118 @@ public class DexNativePlugin extends Plugin {
             ret.put("appVersion", "0.0.0");
         }
         call.resolve(ret);
+    }
+
+    // ---------------------------------------------------------------- notifications
+    private static final String MESSAGES = "messages";
+    private static final String MESSAGES_QUIET = "messages_quiet";
+    private int nextNotification = 100;
+    private String launchLink = null;
+
+    private void ensureMessageChannels() {
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager nm = getContext().getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        if (nm.getNotificationChannel(MESSAGES) == null) {
+            NotificationChannel ch = new NotificationChannel(MESSAGES, "Messages and reminders", NotificationManager.IMPORTANCE_HIGH);
+            ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT).build());
+            nm.createNotificationChannel(ch);
+        }
+        if (nm.getNotificationChannel(MESSAGES_QUIET) == null) {
+            NotificationChannel ch = new NotificationChannel(MESSAGES_QUIET, "Messages without sound", NotificationManager.IMPORTANCE_HIGH);
+            ch.setSound(null, null);
+            nm.createNotificationChannel(ch);
+        }
+    }
+
+    /** A message, reminder or meeting notification; tapping it opens the given dexconnect:// link. */
+    @PluginMethod
+    public void showNotification(PluginCall call) {
+        String title = call.getString("title", "Dexterity Connect");
+        String body = call.getString("body", "");
+        String link = call.getString("link", "dexconnect://open");
+        boolean silent = Boolean.TRUE.equals(call.getBoolean("silent", false));
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            call.resolve();
+            return;
+        }
+        ensureMessageChannels();
+        Intent open = new Intent(getContext(), MainActivity.class)
+            .setAction(Intent.ACTION_VIEW)
+            .setData(Uri.parse(link))
+            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        int id = nextNotification++;
+        PendingIntent pi = PendingIntent.getActivity(getContext(), id, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        NotificationCompat.Builder b = new NotificationCompat.Builder(getContext(), silent ? MESSAGES_QUIET : MESSAGES)
+            .setSmallIcon(R.drawable.ic_stat_dex)
+            .setColor(0xFF1C7680)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setGroup(link)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH);
+        if (silent) b.setSilent(true);
+        try {
+            NotificationManagerCompat.from(getContext()).notify(link, id, b.build());
+        } catch (SecurityException e) {
+            // notifications were turned off for the app
+        }
+        call.resolve();
+    }
+
+    /** Stay connected in the background (a quiet ongoing notification) or stop doing so. */
+    @PluginMethod
+    public void keepAlive(PluginCall call) {
+        Intent svc = new Intent(getContext(), HubService.class);
+        try {
+            if (Boolean.TRUE.equals(call.getBoolean("on", false))) {
+                svc.putExtra("text", call.getString("text", "Connected to the office"));
+                ContextCompat.startForegroundService(getContext(), svc);
+            } else {
+                getContext().stopService(svc);
+            }
+        } catch (Exception e) {
+            // not allowed right now (the app is in the background); the next call tries again
+        }
+        call.resolve();
+    }
+
+    /** Ask for permission to show notifications (Android 13 and newer). */
+    @PluginMethod
+    public void askNotifications(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 33 && getActivity() != null
+            && ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            androidx.core.app.ActivityCompat.requestPermissions(getActivity(), new String[] { android.Manifest.permission.POST_NOTIFICATIONS }, 4702);
+        }
+        call.resolve();
+    }
+
+    /** The dexconnect:// link the app was opened with (a tapped notification), once. */
+    @PluginMethod
+    public void takeLaunchLink(PluginCall call) {
+        if (launchLink == null && getActivity() != null) {
+            Intent i = getActivity().getIntent();
+            if (i != null && i.getData() != null && "dexconnect".equals(i.getData().getScheme())) launchLink = i.getData().toString();
+            if (i != null) i.setData(null);
+        }
+        JSObject ret = new JSObject();
+        ret.put("url", launchLink);
+        launchLink = null;
+        call.resolve(ret);
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        if (intent != null && intent.getData() != null && "dexconnect".equals(intent.getData().getScheme())) {
+            JSObject ev = new JSObject();
+            ev.put("url", intent.getData().toString());
+            notifyListeners("deepLink", ev, true);
+        }
     }
 
     @Override

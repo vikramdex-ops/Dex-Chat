@@ -109,6 +109,7 @@ function createWindow(startHidden: boolean): void {
   else void win.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'));
 
   win.webContents.on('did-finish-load', () => {
+    win?.webContents.setZoomFactor((controller?.settings.textSize ?? 100) / 100);
     if (pendingDeepLink) { routeDeepLink(pendingDeepLink); pendingDeepLink = null; }
   });
 }
@@ -196,10 +197,16 @@ function wireIpc(c: Controller): void {
     if (typeof patch.closeToTray === 'boolean') safe.closeToTray = patch.closeToTray;
     if (patch.updateChannel === 'stable' || patch.updateChannel === 'beta') safe.updateChannel = patch.updateChannel;
     if (typeof patch.autoDownloadUpdates === 'boolean') safe.autoDownloadUpdates = patch.autoDownloadUpdates;
+    if (patch.sound === 'chime' || patch.sound === 'tick' || patch.sound === 'drop' || patch.sound === 'none') safe.sound = patch.sound;
+    if (patch.notifyFor === 'all' || patch.notifyFor === 'mentions' || patch.notifyFor === 'none') safe.notifyFor = patch.notifyFor;
+    if (typeof patch.showPreviews === 'boolean') safe.showPreviews = patch.showPreviews;
+    if (patch.density === 'comfortable' || patch.density === 'compact') safe.density = patch.density;
+    if (patch.textSize === 90 || patch.textSize === 100 || patch.textSize === 110 || patch.textSize === 125) safe.textSize = patch.textSize;
     const channelChanged = safe.updateChannel && safe.updateChannel !== c.settings.updateChannel;
     const s = c.updateSettings(safe);
     applyTheme(s);
     applyLogin(s);
+    win?.webContents.setZoomFactor(s.textSize / 100);
     if (channelChanged) void updater?.check(false);
     return s;
   });

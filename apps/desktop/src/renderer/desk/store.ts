@@ -1,5 +1,6 @@
 // Client state for the Desk: saved messages, reminders and scheduled messages, kept live by
 // hub events. Reminders that go off raise a native notification and an in-app card.
+import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { Message, PublicUser, Reminder, SavedMessage, ScheduledMessage } from '@dex/core';
 import { plainPreview } from '../chat/format.tsx';
@@ -91,13 +92,13 @@ function onEvent(name: string, data: unknown): void {
       const users = new Map(directory().map((u) => [u.id, u] as const));
       const from = r.createdBy !== meId ? ` · from ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : '';
       const about = r.message ? plainPreview(r.message.body, users).slice(0, 140) : '';
-      window.dex.notify(`Reminder${from}`, about && r.text === 'About this message' ? about : r.text, r.convId ? `dexconnect://conversation/${r.convId}` : 'dexconnect://desk');
+      alertUser('reminder', `Reminder${from}`, about && r.text === 'About this message' ? about : r.text, r.convId ? `dexconnect://conversation/${r.convId}` : 'dexconnect://desk');
       break;
     }
     case 'sched.updated': {
       const s = data as ScheduledMessage;
       set({ scheduled: new Map(state.scheduled).set(s.id, s) });
-      if (s.status === 'failed') window.dex.notify('A scheduled message was not sent', s.error ?? 'Open your Desk to see why.', 'dexconnect://desk');
+      if (s.status === 'failed') alertUser('reminder', 'A scheduled message was not sent', s.error ?? 'Open your Desk to see why.', 'dexconnect://desk');
       break;
     }
     case 'sched.removed': {

@@ -1,6 +1,7 @@
 // App frame in the "Drafting Table" design language (docs/DESIGN-LANGUAGE.md):
 // title bar with brand, lens bar, command button and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right.
+import { setAlertPrefs } from './alerts.ts';
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dex/core';
 import type { AppState } from '../shared/bridge.ts';
@@ -25,6 +26,7 @@ import { startWork } from './work/store.ts';
 import { WorkClock } from './work/WorkUi.tsx';
 import { startCalendar } from './calendar/store.ts';
 import { ShareDialog, parseShare } from './views/ShareDialog.tsx';
+import { ShortcutsSheet } from './views/Shortcuts.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
@@ -61,6 +63,14 @@ function useTheme(state: AppState | null): void {
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
   }, [state?.settings.theme, state?.platform]);
+  useEffect(() => {
+    if (!state) return;
+    const root = document.documentElement;
+    root.dataset.density = state.settings.density ?? 'comfortable';
+    // desktop zooms the window from the main process; the phone's WebView zooms here
+    if (state.platform === 'android') root.style.zoom = String((state.settings.textSize ?? 100) / 100);
+    setAlertPrefs(state.settings, state.platform);
+  }, [state?.settings, state?.platform]);
 }
 
 export function App() {
@@ -141,6 +151,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const [lens, setLens] = useState<Lens>('pulse');
   const [sheet, setSheet] = useState<SheetName>(null);
   const [palette, setPalette] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
   const [menu, setMenu] = useState(false);
   const [query, setQuery] = useState('');
   const [focusUser, setFocusUser] = useState<string | null>(null);
@@ -214,9 +225,26 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setMenu(false); if (!palette) setSheet(null); }
+      if (e.altKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const rows = [...document.querySelectorAll<HTMLButtonElement>('.sb-row')].filter((r) => r.offsetParent);
+        if (!rows.length) return;
+        e.preventDefault();
+        const at = rows.findIndex((r) => r.classList.contains('active'));
+        const next = rows[at < 0 ? 0 : (at + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length];
+        next.click(); next.scrollIntoView({ block: 'nearest' });
+        return;
+      }
       if (!e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === 'k') { e.preventDefault(); setPalette(true); }
+      else if (k === '=' || k === '+' || k === '-' || k === '0') {
+        e.preventDefault();
+        const sizes = [90, 100, 110, 125] as const;
+        const i = sizes.indexOf(state.settings.textSize ?? 100);
+        const next = k === '0' ? 100 : sizes[Math.max(0, Math.min(sizes.length - 1, (i < 0 ? 1 : i) + (k === '-' ? -1 : 1)))];
+        void window.dex.setSettings({ textSize: next });
+      }
+      else if (k === '/') { e.preventDefault(); setShortcuts(true); }
       else if (k === ',') { e.preventDefault(); setSheet('preferences'); }
       else {
         const n = Number(e.key);
@@ -267,6 +295,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       hint: c.kind === 'space' ? 'Space' : 'Direct', run: () => openConversation(c.id, c.kind),
     })),
     { id: 'new-space', label: 'Create a Space', icon: 'plus' as IconName, run: () => setLens('spaces') },
+    { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'info' as IconName, hint: 'Ctrl+/', run: () => setShortcuts(true) },
     { id: 'go-pulse', label: 'Go to Pulse', icon: 'pulse' as IconName, run: () => setLens('pulse') },
     { id: 'go-desk', label: 'Go to Desk: reminders, saved, scheduled', icon: 'desk' as IconName, run: () => setLens('desk') },
     { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
@@ -325,6 +354,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 <button role="menuitem" disabled={!live} onClick={() => { setMenu(false); setOoo(true); }}><Icon name="calendar" size={16} />{session.me.ooo ? `Out of office until ${new Date(session.me.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Out of office…'}</button>
                 <div className="menu-sep" />
                 <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences<span className="kbd">Ctrl ,</span></button>
+                <button role="menuitem" onClick={() => { setShortcuts(true); setMenu(false); }}><Icon name="info" size={16} />Keyboard shortcuts<span className="kbd">Ctrl /</span></button>
                 {isAdmin && (
                   <button role="menuitem" onClick={() => { setSheet('control'); setMenu(false); }}>
                     <Icon name="shield" size={16} />Control room{pendingCount > 0 && <span className="badge">{pendingCount}</span>}
@@ -370,6 +400,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       )}
 
+      {shortcuts && <ShortcutsSheet onClose={() => setShortcuts(false)} />}
       {palette && (
         <CommandPalette
           users={session.users}

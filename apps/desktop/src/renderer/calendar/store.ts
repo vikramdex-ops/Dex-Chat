@@ -1,5 +1,6 @@
 // Calendar on the client: conference rooms, a version counter that bumps whenever a meeting
 // changes (views refetch their range), invitations and "starting soon" cards.
+import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { CalEvent, Occurrence, PublicUser, Venue } from '@dex/core';
 import { addConversation } from '../chat/store.ts';
@@ -28,13 +29,13 @@ export async function startCalendar(me: string, users: () => PublicUser[]): Prom
       if (name === 'cal.invited') {
         const ev = data as CalEvent;
         const who = directory().find((u) => u.id === ev.organizerId)?.displayName ?? 'Someone';
-        window.dex.notify(`${who} invited you`, `${ev.title} · ${describeSpan(ev.startAt, ev.endAt, ev.allDay)}`, 'dexconnect://calendar');
+        alertUser('reminder', `${who} invited you`, `${ev.title} · ${describeSpan(ev.startAt, ev.endAt, ev.allDay)}`, 'dexconnect://calendar');
       }
       if (name === 'cal.reminder') {
         const o = data as Occurrence;
         set({ soon: [...state.soon.filter((x) => !(x.event.id === o.event.id && x.startAt === o.startAt)), o] });
         const mins = Math.max(0, Math.round((o.startAt - Date.now()) / 60_000));
-        window.dex.notify(mins ? `${o.event.title} starts in ${mins} min` : `${o.event.title} is starting`, describeSpan(o.startAt, o.endAt, o.event.allDay), 'dexconnect://calendar');
+        alertUser('reminder', mins ? `${o.event.title} starts in ${mins} min` : `${o.event.title} is starting`, describeSpan(o.startAt, o.endAt, o.event.allDay), 'dexconnect://calendar');
       }
     });
   }

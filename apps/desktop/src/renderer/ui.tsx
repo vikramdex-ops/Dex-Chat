@@ -49,6 +49,10 @@ const PATHS = {
   minimize: 'M5 19h14M9 5v6H3M15 5v6h6',
   expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   bell: 'M6 16.5h12l-1.5-2.5V10a4.5 4.5 0 0 0-9 0v4zM10 19.5h4',
+  eye: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  volume: 'M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11',
+  textsize: 'M3.5 18 8 6l4.5 12M5 14h6M14.5 18l3-8 3 8M15.5 15.5h4',
+  rows: 'M4 6h16M4 10h16M4 14h16M4 18h16',
   mute: 'M6 16.5h10.5M10 19.5h4M7.5 10a4.5 4.5 0 0 1 7.7-3.2M16.5 10.5V14l1.5 2.5M4 4l16 16',
   pin: 'M9 4h6l-1 6 3 3H7l3-3zM12 13v7',
   reply: 'M10 7 5 12l5 5M5 12h9a5 5 0 0 1 5 5v1',
@@ -146,7 +150,7 @@ export function ToggleRow({ checked, onChange, label }: { checked: boolean; onCh
   );
 }
 
-export function Segmented<T extends string>({ value, options, onChange, label }: {
+export function Segmented<T extends string | number>({ value, options, onChange, label }: {
   value: T; label: string; onChange: (v: T) => void; options: Array<{ value: T; label: string; icon?: IconName; badge?: number }>;
 }) {
   return (

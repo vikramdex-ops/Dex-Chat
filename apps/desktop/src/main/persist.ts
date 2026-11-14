@@ -9,7 +9,7 @@ import type { EncKeyPair } from '@dex/core/e2e';
 import { createIdentity, isValidIdentity } from '@dex/core';
 import type { DeviceIdentity } from '@dex/core';
 import type { HubTarget } from '@dex/core/client';
-import type { Settings } from '../shared/bridge.ts';
+import { SETTINGS_EXTRA_DEFAULTS, type Settings } from '../shared/bridge.ts';
 
 export interface Config {
   hub: HubTarget | null;
@@ -24,7 +24,7 @@ export interface Config {
 const DEFAULT_CONFIG: Config = {
   hub: null,
   displayName: null,
-  settings: { theme: 'system', startAtLogin: true, closeToTray: true, updateChannel: 'stable', autoDownloadUpdates: true },
+  settings: { theme: 'system', startAtLogin: true, closeToTray: true, updateChannel: 'stable', autoDownloadUpdates: true, ...SETTINGS_EXTRA_DEFAULTS },
 };
 
 const file = (name: string) => path.join(app.getPath('userData'), name);

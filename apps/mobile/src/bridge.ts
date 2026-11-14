@@ -16,7 +16,7 @@ import { HubSession } from '@dex/core/session';
 import type { ClientState, HubTarget } from '@dex/core/session';
 import { chooseUpdate, feedUrl, parseFeed } from '@dex/core/feed';
 import type { Channel, UpdateChoice } from '@dex/core/feed';
-import type { AppState, DexBridge, DiscoveredHub, JoinRequest, Phase, Settings, UpdateState } from '../../desktop/src/shared/bridge.ts';
+import { SETTINGS_EXTRA_DEFAULTS, type AppState, type DexBridge, type DiscoveredHub, type JoinRequest, type Phase, type Settings, type UpdateState } from '../../desktop/src/shared/bridge.ts';
 
 interface DexNativePlugin {
   discover(o: { port: number; timeoutMs: number; probe: string }): Promise<{ hubs: Array<{ address: string; data: string }> }>;
@@ -34,6 +34,11 @@ interface DexNativePlugin {
   addListener(event: 'wsOpen', fn: (e: { id: string; fingerprint: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'wsMessage', fn: (e: { id: string; data: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'wsClose', fn: (e: { id: string; reason: string }) => void): Promise<PluginListenerHandle>;
+  showNotification(o: { title: string; body: string; link?: string; silent: boolean }): Promise<void>;
+  keepAlive(o: { on: boolean; text?: string }): Promise<void>;
+  askNotifications(): Promise<void>;
+  takeLaunchLink(): Promise<{ url: string | null }>;
+  addListener(event: 'deepLink', fn: (e: { url: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'downloadProgress', fn: (e: { received: number; total: number }) => void): Promise<PluginListenerHandle>;
 }
 
@@ -89,7 +94,7 @@ interface MobileConfig {
 
 const DEFAULTS: MobileConfig = {
   hub: null, displayName: null, officeAccount: null,
-  settings: { theme: 'system', startAtLogin: false, closeToTray: false, updateChannel: 'stable', autoDownloadUpdates: true },
+  settings: { theme: 'system', startAtLogin: false, updateChannel: 'stable', autoDownloadUpdates: true, ...SETTINGS_EXTRA_DEFAULTS, closeToTray: true },
 };
 
 async function loadConfig(): Promise<MobileConfig> {
@@ -293,8 +298,16 @@ class MobileApp {
     };
   }
 
+  private keptAlive: boolean | null = null;
   private push(): void {
     const s = this.state();
+    // stay connected in the background while joined to a hub (Preferences can turn this off)
+    const want = !!this.config.hub && this.config.settings.closeToTray;
+    if (want !== this.keptAlive && (s.phase === 'ready' || !want)) {
+      this.keptAlive = want;
+      void Native.keepAlive({ on: want, text: `Connected to ${this.session.state.kind === "ready" ? this.session.state.session.hub.name : "the office"}` }).catch(() => {});
+      if (want) void Native.askNotifications().catch(() => {});
+    }
     for (const fn of this.listeners.state) fn(s);
   }
 
@@ -375,7 +388,12 @@ class MobileApp {
       getState: async () => this.state(),
       onState: (cb) => { this.listeners.state.add(cb); return () => this.listeners.state.delete(cb); },
       onHubEvent: (cb) => { this.listeners.event.add(cb); return () => this.listeners.event.delete(cb); },
-      onDeepLink: () => () => {},
+      onDeepLink: (cb) => {
+        // a tapped notification: at launch, then while running
+        void Native.takeLaunchLink().then((r) => { if (r.url) cb(r.url); }).catch(() => {});
+        const h = Native.addListener('deepLink', (e) => cb(e.url));
+        return () => { void h.then((x) => x.remove()); };
+      },
       join: async (req: JoinRequest) => {
         const name = req.displayName.trim().slice(0, 80);
         const office = parseOfficeAccount(req.officeAccount);
@@ -436,7 +454,9 @@ class MobileApp {
         if (patch.updateChannel) void this.checkForUpdates(false);
         return this.config.settings;
       },
-      notify: () => { /* in-app toasts for now; system notifications arrive with messaging */ },
+      notify: (title: string, body: string, link?: string) => {
+        void Native.showNotification({ title, body, link, silent: this.config.settings.sound === 'none' }).catch(() => {});
+      },
       checkForUpdates: () => this.checkForUpdates(true),
       downloadUpdate: () => this.downloadUpdate(),
       installUpdate: () => this.installUpdate(),

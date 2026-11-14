@@ -69,7 +69,19 @@ export interface Settings {
   closeToTray: boolean;
   updateChannel: UpdateChannel;
   autoDownloadUpdates: boolean;
+  /** Sound for new messages and reminders. */
+  sound: MessageSound;
+  /** Which messages show a Windows notification. */
+  notifyFor: 'all' | 'mentions' | 'none';
+  /** Show what the message says in notifications (off hides it on a shared screen). */
+  showPreviews: boolean;
+  density: 'comfortable' | 'compact';
+  /** Text and interface size, percent. */
+  textSize: 90 | 100 | 110 | 125;
 }
+
+export type MessageSound = 'chime' | 'tick' | 'drop' | 'none';
+export const SETTINGS_EXTRA_DEFAULTS = { sound: 'chime', notifyFor: 'all', showPreviews: true, density: 'comfortable', textSize: 100 } as const;
 
 /** Hub-off mode: Direct messages pass straight between PCs on the network. */
 export interface P2PState { active: boolean; reachable: string[]; queued: number }
