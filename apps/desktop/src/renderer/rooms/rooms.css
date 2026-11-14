@@ -1,0 +1,304 @@
+/* Rooms, drawn like a drawing sheet: a ruled frame on the drafting grid, people in zones
+   (A1, B1 …), a schedule of who is in the Room top right, and a title block bottom right that
+   holds the controls. Amber marks what needs you (the Room chip, the banner, the speaker's
+   revision cloud); red is kept for recording. Every colour comes from the theme tokens. */
+
+/* ------------------------------------------------------------------ the stage */
+.room-stage {
+  position: fixed; inset: 0; z-index: 35; padding: 14px;
+  background-color: var(--window);
+  background-image:
+    linear-gradient(var(--subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--subtle) 1px, transparent 1px),
+    linear-gradient(var(--subtle-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--subtle-2) 1px, transparent 1px);
+  background-size: 8px 8px, 8px 8px, 40px 40px, 40px 40px;
+  background-position: 14px 14px;
+  animation: fade var(--med) var(--ease);
+}
+:root[data-platform='win32'] .room-stage { top: var(--titlebar); }
+/* folded into the title bar: kept alive (voices, a floated video) but out of sight */
+.room-stage.folded { visibility: hidden; pointer-events: none; animation: none; }
+
+.room-sheet {
+  position: relative; height: 100%;
+  display: grid; grid-template-columns: minmax(0, 1fr) 340px;
+  border: 1px solid var(--text-3);
+  outline: 1px solid var(--stroke-strong); outline-offset: 5px;
+  background: var(--layer);
+}
+/* centring marks on each edge of the frame, as on a drawing sheet */
+.room-sheet::before {
+  content: ''; position: absolute; inset: -9px; pointer-events: none;
+  background:
+    linear-gradient(var(--text-3), var(--text-3)) 50% 0 / 1px 12px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 50% 100% / 1px 12px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 0 50% / 12px 1px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 100% 50% / 12px 1px no-repeat;
+}
+
+/* recording: the one place red is used, a tag sitting on the frame's top edge */
+.rec-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 600 12px/1 var(--font-body); color: var(--danger);
+}
+.rec-chip b { font: 700 11px/1 var(--font-mono); letter-spacing: .1em; }
+.rec-chip .rec-dot { width: 8px; height: 8px; }
+.room-sheet > .rec-chip {
+  position: absolute; z-index: 2; top: -13px; left: 24px; height: 26px; padding: 0 12px;
+  background: var(--layer-solid); border: 1px solid var(--danger); border-radius: var(--radius-s);
+  box-shadow: var(--shadow-1); animation: drop var(--med) var(--ease);
+}
+.rec-note { font-weight: 400; color: var(--text-2); }
+.room-sheet.recording { border-color: var(--danger); }
+
+/* ------------------------------------------------------------------ the field of tiles */
+.room-field { position: relative; min-width: 0; min-height: 0; padding: 32px 28px; display: grid; align-content: center; gap: 16px; overflow: auto; }
+.room-field.sharing { grid-template-columns: minmax(0, 1fr) 200px; align-content: stretch; align-items: start; }
+.room-grid { display: grid; grid-template-columns: repeat(var(--cols, 2), var(--tile-w, minmax(0, 1fr))); gap: 22px 18px; align-content: center; justify-content: center; }
+.room-field.sharing .room-grid { gap: 18px; align-content: start; }
+
+.room-tile { position: relative; aspect-ratio: 16 / 10; min-width: 0; }
+.room-face {
+  position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; container-type: size;
+  border-radius: var(--radius-s); border: 1px solid var(--stroke-strong);
+  background-color: color-mix(in srgb, var(--tint, var(--accent)) 6%, var(--layer-solid));
+  background-image:
+    linear-gradient(var(--stroke) 1px, transparent 1px),
+    linear-gradient(90deg, var(--stroke) 1px, transparent 1px);
+  background-size: 16px 16px; background-position: center;
+}
+.room-tile.has-video .room-face { background: #0b1416; }
+.room-face video { position: absolute; inset: 0; width: 100%; height: 100%; }
+.room-face .avatar { --size: clamp(40px, 30cqh, 96px); box-shadow: 0 0 0 3px var(--layer-solid), 0 0 0 4px var(--stroke-strong); }
+
+/* the caption is a drawing callout: zone reference, then the name in capitals */
+.room-cap {
+  position: absolute; z-index: 1; top: 8px; left: 8px; max-width: calc(100% - 16px);
+  display: inline-flex; align-items: center; gap: 0; height: 22px; overflow: hidden;
+  font: 600 11px/1 var(--font-mono); letter-spacing: .06em; color: var(--text);
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 2px;
+}
+.room-cap b { align-self: stretch; display: grid; place-items: center; padding: 0 6px; background: var(--subtle-2); color: var(--accent-ink); border-right: 1px solid var(--stroke-strong); }
+.room-cap > span { padding: 0 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-cap svg { flex: none; margin-right: 6px; color: var(--text-3); }
+
+/* the speaker: an amber revision cloud around the tile */
+.room-tile::after {
+  content: ''; position: absolute; inset: -8px; pointer-events: none; opacity: 0;
+  transition: opacity var(--fast);
+  --c: color-mix(in srgb, var(--amber) 72%, var(--amber-ink));
+  background:
+    radial-gradient(circle at 50% 100%, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) top / 14px 8px repeat-x,
+    radial-gradient(circle at 50% 0, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) bottom / 14px 8px repeat-x,
+    radial-gradient(circle at 100% 50%, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) left / 8px 14px repeat-y,
+    radial-gradient(circle at 0 50%, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) right / 8px 14px repeat-y;
+  background-repeat: round no-repeat, round no-repeat, no-repeat round, no-repeat round;
+}
+.room-tile.speaking::after { opacity: 1; }
+.room-tile.speaking .room-cap { border-color: var(--amber); }
+.room-tile.speaking .room-cap b { background: var(--amber); color: #2b1a00; border-color: var(--amber); }
+
+/* nobody else here yet: an open seat, hatched, with a dimension line drawing itself */
+.room-tile.open-seat .room-face {
+  border-style: dashed; background-color: transparent;
+  background-image: repeating-linear-gradient(135deg, var(--subtle-2) 0 1px, transparent 1px 9px);
+  background-size: auto; align-content: center; gap: 14px;
+}
+.open-seat-text { font: 500 15px/1.3 var(--font-display); color: var(--text-2); padding: 4px 10px; background: var(--layer-solid); border-radius: var(--radius-s); }
+.open-seat-line { position: relative; width: 46%; height: 9px; border-left: 1px solid var(--text-3); border-right: 1px solid var(--text-3); }
+.open-seat-line::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: var(--amber);
+  transform-origin: left; animation: measure 1.8s var(--ease) infinite;
+}
+@keyframes measure { 0% { transform: scaleX(0); } 60%, 100% { transform: scaleX(1); opacity: 0; } 55% { opacity: 1; } }
+
+/* a shared screen is the sheet being discussed */
+.room-share { position: relative; margin: 0; min-height: 0; height: 100%; border-radius: var(--radius-s); overflow: hidden; background: #0b1416; border: 1px solid var(--stroke-strong); }
+.room-share video { width: 100%; height: 100%; display: block; }
+
+/* ------------------------------------------------------------------ schedule + title block */
+.room-side { display: flex; flex-direction: column; justify-content: space-between; min-height: 0; }
+.room-schedule, .room-block { background: var(--layer-solid); border-left: 1px solid var(--text-3); }
+.room-schedule { border-bottom: 1px solid var(--text-3); max-height: 46%; overflow: auto; }
+.room-block { border-top: 1px solid var(--text-3); }
+.tb-head { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--stroke-strong); }
+.tb-head .mono { font-size: 11px; color: var(--text-3); }
+.room-schedule table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.room-schedule td { height: 30px; padding: 0 6px; border-bottom: 1px solid var(--stroke); color: var(--accent-ink); }
+.room-schedule tr:last-child td { border-bottom: 0; }
+.room-schedule td.ref { width: 38px; padding-left: 12px; color: var(--text-3); font-size: 11px; font-weight: 600; }
+.room-schedule td.who { color: var(--text); max-width: 0; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-schedule td:last-child { padding-right: 12px; }
+.room-schedule td.off { color: var(--text-3); }
+.room-schedule td svg { display: block; }
+.rec-tag { margin-left: 8px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; color: var(--danger); }
+.room-schedule .ringing td.who { color: var(--text-2); }
+.ring-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: var(--amber-ink); text-align: right; animation: pulse 1.4s var(--ease) infinite; }
+
+.tb-name { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 2px 10px; padding: 10px 12px 12px; border-bottom: 1px solid var(--stroke-strong); }
+.tb-name .label { grid-column: 1 / -1; font-size: 10px; }
+.tb-name h2 { margin: 0; min-width: 0; font: 600 20px/1.2 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-kind { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; color: var(--accent-ink); padding: 3px 6px; border: 1px solid var(--accent); border-radius: 2px; }
+.tb-facts { display: grid; grid-template-columns: 1fr 1fr 1.3fr; border-bottom: 1px solid var(--stroke-strong); }
+.tb-facts > div { display: grid; align-content: start; gap: 3px; padding: 7px 12px 9px; min-width: 0; }
+.tb-facts > div + div { border-left: 1px solid var(--stroke-strong); }
+.tb-facts .label { font-size: 10px; }
+.tb-facts .mono { font-size: 13px; }
+.tb-facts .tb-big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.q-good, .q-fair, .q-poor { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.q-good .mono, .q-fair .mono, .q-poor .mono { font-size: 11px; font-weight: 400; }
+.q-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.q-bars i { width: 3px; border-radius: 1px; background: currentColor; opacity: .25; }
+.q-bars i:nth-child(1) { height: 4px; } .q-bars i:nth-child(2) { height: 7px; } .q-bars i:nth-child(3) { height: 11px; }
+.q-good .q-bars i { opacity: 1; color: var(--accent); }
+.q-fair .q-bars i:nth-child(-n+2) { opacity: 1; color: var(--amber); }
+.q-poor .q-bars i:nth-child(1) { opacity: 1; color: var(--danger); }
+
+.tb-controls { display: grid; grid-template-columns: 1fr 1fr; }
+.tb-controls button {
+  display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; min-width: 0;
+  border: 0; border-bottom: 1px solid var(--stroke-strong); background: none; color: var(--text); text-align: left;
+  font-size: 13.5px; font-weight: 500; transition: background var(--fast), color var(--fast);
+}
+.tb-controls button:nth-child(odd) { border-right: 1px solid var(--stroke-strong); }
+.tb-controls button svg { flex: none; color: var(--text-2); }
+.tb-controls button span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-controls button:hover { background: var(--subtle); }
+.tb-controls button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.tb-controls button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.tb-controls button.on svg { color: var(--accent-ink); }
+.tb-controls button.off { color: var(--text-2); background-image: repeating-linear-gradient(135deg, var(--subtle-2) 0 1px, transparent 1px 7px); }
+.tb-controls button.off svg { color: var(--text-3); }
+.tb-controls button.rec { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
+.tb-controls button.rec .rec-dot { width: 10px; height: 10px; margin: 0 4px; }
+
+.tb-foot { display: flex; align-items: center; gap: 2px; padding: 10px 12px; }
+.tb-link { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: var(--radius-s); background: none; color: var(--text-2); font-size: 12.5px; }
+.tb-link:hover { background: var(--subtle); color: var(--text); }
+.room-leave {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 14px;
+  border: 1.5px solid var(--amber); border-radius: var(--radius-s); background: none;
+  color: var(--amber-ink); font-weight: 700; font-size: 13px; letter-spacing: .01em;
+  transition: background var(--fast);
+}
+.room-leave:hover { background: var(--amber-soft); }
+.room-leave:active { transform: translateY(1px); }
+
+/* toasts move clear of the title block while the Room is open */
+body:has(.room-stage:not(.folded)) .toasts { right: 384px; bottom: 28px; }
+
+.add-people { width: 280px; }
+.add-people .input { margin: 4px 4px 6px; width: calc(100% - 8px); }
+
+/* ------------------------------------------------------------------ the Room chip (title bar) */
+.room-chip {
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: stretch; height: 28px; flex: none;
+  border: 1px solid var(--amber); border-radius: var(--radius-s); background: var(--amber-soft);
+  color: var(--amber-ink); overflow: hidden; animation: drop var(--med) var(--ease);
+}
+.room-chip button { border: 0; background: none; color: inherit; display: inline-flex; align-items: center; transition: background var(--fast); }
+.room-chip button:hover { background: var(--amber-soft); }
+.room-chip button:focus-visible { box-shadow: inset 0 0 0 2px var(--amber); }
+.room-chip-main { gap: 8px; padding: 0 10px; }
+.room-chip-text { font: 700 11.5px/1 var(--font-mono); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.room-chip .rec-dot { width: 7px; height: 7px; }
+.room-chip-mic { width: 30px; justify-content: center; border-left: 1px solid var(--amber) !important; }
+.room-chip.muted .room-chip-mic { background-image: repeating-linear-gradient(135deg, var(--amber-soft) 0 1px, transparent 1px 5px); }
+.room-chip-pip { width: 7px; height: 7px; flex: none; border-radius: 1px; background: var(--amber); transform: rotate(45deg); animation: pulse 1.6s var(--ease) infinite; }
+
+/* ------------------------------------------------------------------ "Open a Room" (conversation header) */
+.room-open {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px;
+  border: 1px solid var(--amber); border-radius: var(--radius-s); background: none;
+  color: var(--amber-ink); font-weight: 600; font-size: 13px; white-space: nowrap;
+}
+.room-open:hover { background: var(--amber-soft); }
+.room-open:disabled { opacity: .5; pointer-events: none; }
+.room-open.join { background: var(--amber); color: #2b1a00; }
+.room-open.join .room-chip-pip { background: #2b1a00; }
+.room-open.split { padding: 0; gap: 0; overflow: hidden; }
+.room-open.split:hover { background: none; }
+.room-open.split > button { height: 100%; border: 0; background: none; color: inherit; font: inherit; padding: 0 10px 0 12px; display: inline-flex; align-items: center; }
+.room-open.split > button:hover { background: var(--amber-soft); }
+.room-open.split > button:disabled { opacity: .5; }
+.room-open.split > .room-open-more { padding: 0 6px; border-left: 1px solid var(--amber); }
+.room-open-menu { width: 200px; }
+
+/* ------------------------------------------------------------------ the amber banner */
+.room-banner {
+  position: fixed; z-index: 45; top: var(--titlebar); left: 0; right: 0;
+  display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 9px 20px 13px;
+  background: var(--amber); color: #2b1a00;
+  box-shadow: 0 10px 28px rgba(19, 43, 46, .22);
+  animation: banner-drop var(--med) var(--ease);
+}
+/* a dimension scale along the bottom edge */
+.room-banner::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; pointer-events: none;
+  border-bottom: 1px solid rgba(43, 26, 0, .45);
+  background: repeating-linear-gradient(90deg, rgba(43, 26, 0, .45) 0 1px, transparent 1px 8px) bottom / 100% 4px no-repeat,
+    repeating-linear-gradient(90deg, rgba(43, 26, 0, .45) 0 1px, transparent 1px 40px) bottom / 100% 6px no-repeat;
+}
+@keyframes banner-drop { from { transform: translateY(-100%); opacity: 0; } }
+.room-banner .avatar { box-shadow: 0 0 0 2px var(--amber), 0 0 0 3.5px #2b1a00; animation: none; }
+.room-banner-text { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.room-banner-text strong { font: 600 16px/1.25 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-banner-text .mono { font-size: 11px; letter-spacing: .08em; color: rgba(43, 26, 0, .72); }
+.room-banner-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.rb-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px;
+  border: 1.5px solid #2b1a00; border-radius: var(--radius-s); background: none; color: #2b1a00;
+  font-weight: 600; font-size: 13px; white-space: nowrap; transition: background var(--fast), transform 60ms;
+}
+.rb-btn:hover { background: rgba(43, 26, 0, .1); }
+.rb-btn:active { transform: translateY(1px); }
+.rb-btn:focus-visible { box-shadow: 0 0 0 2px var(--amber), 0 0 0 4px #2b1a00; }
+.rb-btn.solid { background: #2b1a00; color: var(--amber); }
+.rb-btn.solid:hover { background: #45300a; }
+.rb-btn.plain { border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ------------------------------------------------------------------ screen picker + recording dialog */
+.screen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; max-height: 60vh; overflow: auto; width: 100%; padding: 2px; }
+.screen-option { display: grid; gap: 0; padding: 0; border-radius: var(--radius-s); border: 1px solid var(--stroke-strong); background: var(--layer-solid); text-align: left; font-size: 12.5px; overflow: hidden; transition: border-color var(--fast), box-shadow var(--fast); }
+.screen-option:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.screen-option img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #0b1416; }
+.screen-option span { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-top: 1px solid var(--stroke-strong); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.screen-option span b { font-size: 10.5px; color: var(--accent-ink); flex: none; }
+.dialog.screen-picker { width: min(760px, calc(100% - 32px)); }
+
+.rec-facts { margin: 0; width: 100%; display: grid; grid-template-columns: auto auto 1fr; border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); }
+.rec-facts > div { display: grid; gap: 3px; padding: 8px 12px; min-width: 0; }
+.rec-facts > div + div { border-left: 1px solid var(--stroke-strong); }
+.rec-facts dt { font-size: 10px; }
+.rec-facts dd { margin: 0; font-size: 13px; color: var(--text-2); }
+.rec-facts dd.mono { color: var(--text); font-size: 13px; }
+/* above a full-screen Room: the recording-ready dialog */
+.scrim:has(> .dialog[aria-label='Room recording ready']) { z-index: 40; }
+
+/* ------------------------------------------------------------------ small windows and phones */
+@media (max-width: 900px) {
+  .room-stage { padding: 8px; }
+  .room-sheet { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; outline: 0; }
+  .room-sheet::before { display: none; }
+  .room-field { padding: 22px 14px 14px; }
+  .room-field.sharing { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .room-field.sharing .room-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .room-schedule { display: none; }
+  .room-block { border-left: 0; }
+  .tb-controls { grid-template-columns: repeat(3, 1fr); }
+  .tb-controls button { border-right: 1px solid var(--stroke-strong); }
+  .tb-controls button:nth-child(3n) { border-right: 0; }
+  body:has(.room-stage:not(.folded)) .toasts { right: 12px; bottom: 260px; }
+}
+@media (max-width: 720px) {
+  .room-banner { flex-wrap: wrap; padding: 10px 14px 14px; }
+  .room-banner-actions { width: 100%; }
+  .rb-btn { flex: 1; justify-content: center; }
+  .rb-btn.plain { flex: none; }
+  .tb-controls button { flex-direction: column; justify-content: center; gap: 3px; height: 54px; font-size: 11.5px; text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .open-seat-line::before, .room-chip-pip, .ring-tag { animation: none; }
+}
