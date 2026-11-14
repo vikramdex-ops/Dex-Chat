@@ -369,12 +369,12 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
         </aside>
       )}
       {side?.kind === 'files' && <FilesPanel convId={convId} onView={ctx.view} onClose={() => setSide(null)} />}
-      <nav className="sheet-tabs" aria-label="Sheets">
+      <nav className="pane-tabs" aria-label="Sheets">
         {side?.kind === 'track' && (
-          <button className="sheet-tab on track" title="Side-track" aria-pressed="true" onClick={() => setSide(null)}><span>Side-track</span></button>
+          <button className="pane-tab on track" title="Side-track" aria-pressed="true" onClick={() => setSide(null)}><span>Side-track</span></button>
         )}
         {SHEETS.map((s) => (
-          <button key={s.kind} className={`sheet-tab${side?.kind === s.kind ? ' on' : ''}`} title={s.label} aria-pressed={side?.kind === s.kind} onClick={() => toggleSheet(s.kind)}>
+          <button key={s.kind} className={`pane-tab${side?.kind === s.kind ? ' on' : ''}`} title={s.label} aria-pressed={side?.kind === s.kind} onClick={() => toggleSheet(s.kind)}>
             <span>{s.label}{s.kind === 'members' ? <b> · {conv.members.length}</b> : null}</span>
           </button>
         ))}
@@ -409,10 +409,10 @@ function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const inCall = useCall((s) => s.room);
   const [menu, setMenu] = useState(false);
   const caret = useRef<HTMLButtonElement>(null);
-  if (inCall?.convId === convId) return <button className="room-btn live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
+  if (inCall?.convId === convId) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
   if (active && active.participants.length) {
     return (
-      <button className="room-btn live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>
+      <button className="room-open live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>
         <Icon name="phone" size={14} />Join the Room <span className="mono">· {active.participants.length}</span>
       </button>
     );
@@ -420,8 +420,8 @@ function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const open = (video: boolean) => { setMenu(false); void startCall(convId, video).catch((e: Error) => toast(e.message, true)); };
   return (
     <span className="room-split">
-      <button className="room-btn" disabled={!live || !!inCall} onClick={() => open(false)} title="Open a Room with voice">Open a Room</button>
-      <button ref={caret} className="room-btn caret" disabled={!live || !!inCall} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
+      <button className="room-open" disabled={!live || !!inCall} onClick={() => open(false)} title="Open a Room with voice">Open a Room</button>
+      <button ref={caret} className="room-open caret" disabled={!live || !!inCall} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
       {menu && (
         <Popover anchor={caret.current} onClose={() => setMenu(false)} className="menu room-menu">
           <div className="menu-label label">Open a Room</div>
