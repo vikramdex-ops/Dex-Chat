@@ -309,3 +309,21 @@ button.card.person { position: relative; text-align: left; color: inherit; font:
 .search-meta .mono { margin-left: auto; font-size: 11px; flex: none; }
 .search-snippet { display: block; font-size: 13px; line-height: 1.45; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .search-snippet mark { background: var(--amber-soft); color: inherit; border-radius: 2px; padding: 0 2px; }
+
+/* Pulse: cards integrations keep up to date */
+.widget-card .eyebrow { display: flex; justify-content: space-between; gap: 10px; }
+.widget-from { font-size: 9.5px; letter-spacing: .08em; color: var(--text-3); padding: 1px 5px; border: 1px solid var(--stroke); border-radius: 3px; }
+.widget-lines { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.widget-lines li { padding: 5px 0; border-bottom: 1px dashed var(--stroke); font-size: 13.5px; }
+.widget-lines li:last-child { border-bottom: 0; }
+.widget-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; }
+
+/* Desk ▸ Kept: kinds */
+.keep-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.keep-kinds button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--stroke); border-radius: 4px; background: var(--card); font: 600 11.5px var(--font-mono, monospace); letter-spacing: .04em; color: var(--text-2); cursor: pointer; }
+.keep-kinds button i { font-style: normal; color: var(--text-3); }
+.keep-kinds button.on { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.keep-kind { width: auto; height: 30px; padding: 0 8px; font-size: 12.5px; }
+.desk-tag.k-todo, .keep-kinds .k-todo.on { color: var(--accent); border-color: var(--accent); }
+.desk-tag.k-important, .keep-kinds .k-important.on { color: var(--amber-ink, #b26b00); border-color: var(--amber, #f7af44); }
+.desk-tag.k-follow-up { color: var(--text-2); }

@@ -2,7 +2,7 @@
 // hub events. Reminders that go off raise a native notification and an in-app card.
 import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
-import type { Message, PublicUser, Reminder, SavedMessage, ScheduledMessage } from '@dex/core';
+import type { KeepKind, Message, PublicUser, Reminder, SavedMessage, ScheduledMessage } from '@dex/core';
 import { plainPreview } from '../chat/format.tsx';
 import { timeOpts } from '../time.ts';
 
@@ -112,6 +112,17 @@ function onEvent(name: string, data: unknown): void {
     }
   }
 }
+
+/** File a kept message under a kind (To do, Important, Follow up, Reference). */
+export async function setKeepKind(m: Message, kind: KeepKind): Promise<void> {
+  const cur = state.saved.get(m.id);
+  const saved = new Map(state.saved);
+  saved.set(m.id, { message: m, savedAt: cur?.savedAt ?? Date.now(), kind });
+  set({ saved });
+  await window.dex.request('msg.star', { messageId: m.id, on: true, kind });
+}
+
+export const KEEP_LABEL: Record<KeepKind, string> = { keep: 'Kept', todo: 'To do', important: 'Important', 'follow-up': 'Follow up', reference: 'Reference' };
 
 async function refreshSaved(): Promise<void> {
   try {

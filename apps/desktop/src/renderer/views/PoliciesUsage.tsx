@@ -1,7 +1,7 @@
 // Control room ▸ Policies (edit window, upload limit, PC-to-PC fallback, call recording) and
 // ▸ Usage (activity per day, busiest Spaces and people, storage, calls).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { EmojiImg, useCustomEmoji } from '../emoji.tsx';
+import { EmojiImg, StickerImg, useCustomEmoji, useStickers } from '../emoji.tsx';
 import type { OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
 import { DLP_DETECTORS, validCidr } from '@dex/core/dlp';
 import type { DlpDetector, DlpRule } from '@dex/core/dlp';
@@ -46,6 +46,14 @@ export function PoliciesAdmin() {
       <DataProtection p={p} save={save} />
       <DefaultSpaces p={p} save={save} />
       <EmojiAdmin />
+      <StickersAdmin />
+      <section className="card">
+        <div className="eyebrow">Who adds emoji and stickers</div>
+        <div className="setting" style={{ marginTop: 6 }}>
+          <div className="txt"><div>Everyone can add office emoji and stickers</div><div className="faint">From the emoji and sticker pickers. People can remove what they added; administrators can remove anything. Off: only administrators add them here.</div></div>
+          <Toggle label="Everyone can add office emoji and stickers" checked={p.memberEmoji !== false} onChange={(v) => save({ memberEmoji: v })} />
+        </div>
+      </section>
       <section className="card">
         <div className="eyebrow">Calls</div>
         <div className="setting" style={{ marginTop: 6 }}>
@@ -214,6 +222,58 @@ function EmojiAdmin() {
           <button className="btn" onClick={() => pick.current?.click()}><Icon name="paperclip" size={14} />{file ? file.name : 'Choose image'}</button>
           <input ref={pick} type="file" hidden accept="image/png,image/gif,image/webp,image/jpeg" onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !name) setName(f.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)); e.target.value = ''; }} />
           <button className="btn primary" disabled={busy || !file || name.length < 2} onClick={() => void add()}>{busy ? <span className="spinner" /> : <Icon name="plus" size={14} />}Add</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StickersAdmin() {
+  const toast = useToast();
+  const list = useStickers();
+  const [name, setName] = useState('');
+  const [pack, setPack] = useState('Office');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pick = useRef<HTMLInputElement>(null);
+  const add = async () => {
+    if (!file) return;
+    if (file.size > 512 * 1024) { toast('Stickers can be up to 512 KB.', true); return; }
+    setBusy(true);
+    try {
+      const info = await window.dex.uploadFile!(`sticker-${Date.now().toString(36)}`, { data: await file.arrayBuffer(), name: file.name, mime: file.type || undefined });
+      await window.dex.request('sticker.add', { name: name.trim(), pack: pack.trim() || 'Office', fileId: info.id });
+      toast(`${name.trim()} added to ${pack.trim() || 'Office'}`);
+      setName(''); setFile(null);
+    } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
+  };
+  const packs = [...new Set(list.map((x) => x.pack))];
+  return (
+    <section className="card">
+      <div className="eyebrow">Stickers</div>
+      <p className="muted" style={{ marginTop: 0 }}>Larger pictures sent on their own, grouped in packs (the office's mascot, site safety, festivals). PNG, GIF or WebP with a transparent background, up to 512 KB.</p>
+      {packs.map((pk) => (
+        <div key={pk} className="sticker-pack">
+          <div className="label">{pk}</div>
+          <div className="sticker-admin-grid">
+            {list.filter((x) => x.pack === pk).map((x) => (
+              <div key={x.id} className="sticker-admin-item">
+                <StickerImg id={x.id} size={64} />
+                <span>{x.name}</span>
+                <button className="icon-btn" title={`Remove ${x.name}`} onClick={() => void window.dex.request('sticker.remove', { id: x.id }).catch((err: Error) => toast(err.message, true))}><Icon name="x" size={14} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {window.dex.uploadFile && (
+        <div className="org-admin-add" style={{ marginTop: 10 }}>
+          <input className="input" placeholder="Sticker name" maxLength={40} value={name} onChange={(e) => setName(e.target.value)} aria-label="Sticker name" />
+          <input className="input" placeholder="Pack" maxLength={40} value={pack} onChange={(e) => setPack(e.target.value)} aria-label="Sticker pack" list="sticker-packs" />
+          <datalist id="sticker-packs">{packs.map((pk) => <option key={pk} value={pk} />)}</datalist>
+          <button className="btn" onClick={() => pick.current?.click()}><Icon name="paperclip" size={14} />{file ? file.name : 'Choose image'}</button>
+          <input ref={pick} type="file" hidden accept="image/png,image/gif,image/webp" onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !name) setName(f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 40)); e.target.value = ''; }} />
+          <button className="btn primary" disabled={busy || !file || !name.trim()} onClick={() => void add()}>{busy ? <span className="spinner" /> : <Icon name="plus" size={14} />}Add</button>
         </div>
       )}
     </section>

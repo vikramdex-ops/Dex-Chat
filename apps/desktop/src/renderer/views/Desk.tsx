@@ -2,7 +2,8 @@
 // what you kept, what waits to send, notes and your timesheet; and the card that appears when a
 // reminder goes off.
 import { useEffect, useRef, useState } from 'react';
-import type { Message, Ops, PublicUser, Reminder, ScheduledMessage, Session } from '@dex/core';
+import type { KeepKind, Message, Ops, PublicUser, Reminder, SavedMessage, ScheduledMessage, Session } from '@dex/core';
+import { KEEP_KINDS } from '@dex/core';
 import { Avatar, Icon, Popover, Segmented, presenceFor, useToast } from '../ui.tsx';
 import { RemindDialog, ScheduleDialog } from '../chat/extras.tsx';
 import { plainPreview } from '../chat/format.tsx';
@@ -10,7 +11,7 @@ import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { Timesheet } from '../work/WorkUi.tsx';
 import { NoteEditor, NotesList } from '../chat/notes.tsx';
-import { REPEAT_LABEL, describeWhen, dismissRinging, snoozePresets, toggleSaved, useDesk } from '../desk/store.ts';
+import { KEEP_LABEL, REPEAT_LABEL, describeWhen, dismissRinging, setKeepKind, snoozePresets, toggleSaved, useDesk } from '../desk/store.ts';
 import type { WhenPreset } from '../desk/store.ts';
 import { SheetTabs } from './People.tsx';
 
@@ -180,22 +181,35 @@ function QuoteLine({ m, users, meId }: { m: Message; users: Map<string, PublicUs
 }
 
 // ------------------------------------------------------------------ kept on my Desk
-function Kept({ list, users, meId, jump }: { list: Array<{ message: Message; savedAt: number }>; users: Map<string, PublicUser>; meId: string; jump: Jump }) {
+function Kept({ list: all, users, meId, jump }: { list: SavedMessage[]; users: Map<string, PublicUser>; meId: string; jump: Jump }) {
   const toast = useToast();
-  if (!list.length) {
+  const [kind, setKind] = useState<KeepKind | 'all'>('all');
+  const list = kind === 'all' ? all : all.filter((s) => (s.kind ?? 'keep') === kind);
+  const counts = new Map<KeepKind, number>();
+  for (const s of all) counts.set(s.kind ?? 'keep', (counts.get(s.kind ?? 'keep') ?? 0) + 1);
+  if (!all.length) {
     return <div className="empty desk-empty"><Icon name="tray" size={36} /><span>Choose <b>Keep on my Desk</b> <Icon name="tray" size={13} /> on any message to file it here. Only you see what you keep.</span></div>;
   }
   return (
     <section className="desk-group">
-      {list.map(({ message: m, savedAt }) => {
+      <div className="keep-kinds" role="tablist" aria-label="Kinds of kept messages">
+        <button role="tab" aria-selected={kind === 'all'} className={kind === 'all' ? 'on' : ''} onClick={() => setKind('all')}>All <i>{all.length}</i></button>
+        {KEEP_KINDS.filter((k) => counts.get(k)).map((k) => (
+          <button key={k} role="tab" aria-selected={kind === k} className={`k-${k}${kind === k ? ' on' : ''}`} onClick={() => setKind(k)}>{KEEP_LABEL[k]} <i>{counts.get(k)}</i></button>
+        ))}
+      </div>
+      {list.map(({ message: m, savedAt, kind: k }) => {
         const u = users.get(m.authorId);
         return (
           <div key={m.id} className="desk-row saved">
             <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} presence={presenceFor(m.authorId)} size="sm" />
             <button className="desk-main desk-open" onClick={() => jump(m.convId, m.id, m.parentId)}>
               <QuoteLine m={m} users={users} meId={meId} />
-              <div className="desk-meta"><span className="faint">{describeWhen(m.createdAt)}</span><span className="desk-tag mono">KEPT · {describeWhen(savedAt).toUpperCase()}</span></div>
+              <div className="desk-meta"><span className="faint">{describeWhen(m.createdAt)}</span><span className={`desk-tag mono k-${k ?? 'keep'}`}>{KEEP_LABEL[k ?? 'keep'].toUpperCase()} · {describeWhen(savedAt).toUpperCase()}</span></div>
             </button>
+            <select className="input keep-kind" aria-label="File it as" value={k ?? 'keep'} onChange={(e) => void setKeepKind(m, e.target.value as KeepKind).catch((err: Error) => toast(err.message, true))}>
+              {KEEP_KINDS.map((x) => <option key={x} value={x}>{KEEP_LABEL[x]}</option>)}
+            </select>
             <button className="btn ghost sm" title="Take it off your Desk"
               onClick={() => void toggleSaved(m).then(() => toast('Taken off your Desk')).catch((e: Error) => toast(e.message, true))}><Icon name="tray" size={15} />Take off Desk</button>
           </div>

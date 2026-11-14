@@ -1,6 +1,6 @@
 // Pulse: what needs you right now, then the state of the office at a glance.
-import { useMemo, useState } from 'react';
-import type { Session } from '@dex/core';
+import { useEffect, useMemo, useState } from 'react';
+import type { Session, Widget } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import type { Section } from '../App.tsx';
 import { OfflineBanner } from '../App.tsx';
@@ -136,6 +136,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
           </div>
         )}
 
+        <Widgets live={live} />
+
         <div className="card">
           <div className="eyebrow">Office hub</div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -152,5 +154,26 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Cards that integrations keep up to date (build status, plotter queue...), from the Bot API. */
+function Widgets({ live }: { live: boolean }) {
+  const [list, setList] = useState<Widget[]>([]);
+  useEffect(() => { if (live) void window.dex.request('widgets.list').then(setList).catch(() => {}); }, [live]);
+  useEffect(() => window.dex.onHubEvent((name, data) => { if (name === 'widgets.updated') setList(data as Widget[]); }), []);
+  return (
+    <>
+      {list.map((w) => (
+        <div key={`${w.botId}-${w.key}`} className="card widget-card">
+          <div className="eyebrow"><span>{w.title}</span><span className="widget-from mono">{w.botName.toUpperCase()}</span></div>
+          <ul className="widget-lines">{w.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+          <div className="widget-foot">
+            <span className="faint mono">UPDATED {new Date(w.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+            {w.url && <a href={w.url} target="_blank" rel="noreferrer noopener">Open</a>}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

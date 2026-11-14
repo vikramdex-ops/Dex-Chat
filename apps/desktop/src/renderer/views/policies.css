@@ -8,3 +8,8 @@
 .dlp-act.mask { color: var(--amber-ink, var(--accent)); }
 .dlp-form { display: grid; gap: 10px; margin-top: 10px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; }
 .error-text { color: var(--danger); }
+.sticker-pack { margin-top: 10px; }
+.sticker-admin-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.sticker-admin-item { display: grid; justify-items: center; gap: 4px; padding: 8px; border: 1px solid var(--stroke); border-radius: 8px; font-size: 12px; position: relative; }
+.sticker-admin-item .icon-btn { position: absolute; top: 2px; right: 2px; }
+img.sticker { object-fit: contain; }

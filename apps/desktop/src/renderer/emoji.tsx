@@ -1,6 +1,6 @@
 // The office's custom emoji (added by administrators), kept live, and how they are drawn.
 import { useSyncExternalStore } from 'react';
-import type { CustomEmoji } from '@dex/core';
+import type { CustomEmoji, Sticker } from '@dex/core';
 import { useFileSrc } from './chat/files.tsx';
 
 let map = new Map<string, CustomEmoji>();
@@ -11,9 +11,13 @@ let started = false;
 export function startEmoji(): void {
   if (!started) {
     started = true;
-    window.dex.onHubEvent((name, data) => { if (name === 'emoji.updated') set(data as CustomEmoji[]); });
+    window.dex.onHubEvent((name, data) => {
+      if (name === 'emoji.updated') set(data as CustomEmoji[]);
+      if (name === 'sticker.updated') setStickers(data as Sticker[]);
+    });
   }
   void window.dex.request('emoji.list').then(set).catch(() => {});
+  void window.dex.request('sticker.list').then(setStickers).catch(() => {});
 }
 export const customEmoji = () => map;
 export const useCustomEmoji = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => map);
@@ -32,4 +36,18 @@ export function EmojiImg({ name, size = 20 }: { name: string; size?: number }) {
 export function EmojiGlyph({ emoji, size }: { emoji: string; size?: number }) {
   const n = /^:([a-z0-9][a-z0-9_-]{1,31}):$/.exec(emoji);
   return n ? <EmojiImg name={n[1]} size={size} /> : <>{emoji}</>;
+}
+
+// ------------------------------------------------------------------ stickers
+let stickers: Sticker[] = [];
+const stickerSubs = new Set<() => void>();
+const setStickers = (list: Sticker[]) => { stickers = list; for (const f of stickerSubs) f(); };
+export const useStickers = () => useSyncExternalStore((f) => { stickerSubs.add(f); return () => stickerSubs.delete(f); }, () => stickers);
+
+/** A sticker drawn large, from the office's set (a removed one shows its name). */
+export function StickerImg({ id, size = 132 }: { id: string; size?: number }) {
+  const st = useStickers().find((x) => x.id === id);
+  const src = useFileSrc({ id: st?.fileId ?? 'none', name: `${st?.name ?? 'sticker'}.png` });
+  if (!st) return <span className="sticker-missing faint">A sticker that was removed</span>;
+  return src ? <img className="sticker" src={src} alt={st.name} title={st.name} width={size} height={size} /> : <span className="sticker" style={{ width: size, height: size }} />;
 }
