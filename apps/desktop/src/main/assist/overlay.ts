@@ -62,7 +62,7 @@ export class Overlays {
 
   private showBar(display: Display, state: ShareBarState): void {
     this.barState = state;
-    const width = 560;
+    const width = 640;
     const height = 56;
     const area = display.workArea;
     const bounds = { x: Math.round(area.x + (area.width - width) / 2), y: area.y + 10, width, height };
@@ -100,6 +100,11 @@ export class Overlays {
     if (this.bar && !this.bar.isDestroyed()) this.bar.destroy();
     this.bar = null;
     this.barState = null;
+  }
+
+  /** A window finished drawing and listens: send it its state again. */
+  resend(contentsId: number): void {
+    if (this.bar && !this.bar.isDestroyed() && this.bar.webContents.id === contentsId) this.pushBar();
   }
 
   /** Is this one of our overlay windows (their buttons may act)? */

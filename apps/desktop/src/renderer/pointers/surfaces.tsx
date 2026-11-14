@@ -129,7 +129,7 @@ function Lookers({ session, users, meId }: { session: PointSession; users: Map<s
   return (
     <div className="pt-lookers" aria-label={`${people.length} looking`}>
       <span className="mono">LOOKING · {people.length}</span>
-      {people.map((u) => <Avatar key={u} user={{ id: u, displayName: u === meId ? 'You' : users.get(u)?.displayName ?? 'Someone' }} size="sm" />)}
+      {people.map((u) => <Avatar key={u} user={{ id: u, displayName: users.get(u)?.displayName ?? 'Someone' }} size="sm" />)}
       {session.presenter && <span className="mono pt-presenter">{session.presenter === meId ? 'YOU PRESENT' : `${(users.get(session.presenter)?.displayName ?? '').split(' ')[0].toUpperCase()} PRESENTS`}</span>}
     </div>
   );

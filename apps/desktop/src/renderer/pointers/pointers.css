@@ -83,3 +83,6 @@
 /* the presenter's own screen */
 .pt-overlay-doc, .pt-overlay-doc body { background: transparent !important; overflow: hidden; }
 .pt-overlay { position: fixed; inset: 0; }
+
+/* a pointer session with nothing drawn here: the presenter's own screen shows it (their pointer window) */
+.pt-hidden { position: fixed; width: 0; height: 0; overflow: hidden; }

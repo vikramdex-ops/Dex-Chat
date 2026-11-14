@@ -154,8 +154,10 @@ export function HelpDesk({ users, meId, focus }: { users: Map<string, PublicUser
                   <td className="ref mono">{ticketRef(t.number)}</td>
                   <td className="who"><Avatar user={{ id: t.requesterId, displayName: nameOf(t.requesterId) }} size="sm" /></td>
                   <td className="what">
-                    <span className="hd-sum" translate="no">{t.summary}</span>
-                    <span className="mono faint">{nameOf(t.requesterId).toUpperCase()} · {categoryLabel(t.category).toUpperCase()}{t.files.some((f) => f.kind === 'screenshot') ? ' · PICTURE' : ''}</span>
+                    <span className="hd-what">
+                      <span className="hd-sum" translate="no">{t.summary}</span>
+                      <span className="mono faint">{nameOf(t.requesterId).toUpperCase()} · {categoryLabel(t.category).toUpperCase()}{t.files.some((f) => f.kind === 'screenshot') ? ' · PICTURE' : ''}</span>
+                    </span>
                   </td>
                   <td className="age mono" title={new Date(t.createdAt).toLocaleString()}>{tab === 'closed' && t.closedAt ? clock(t.closedAt) : relativeTime(t.createdAt).toUpperCase()}</td>
                   <td className="st"><StatusStamp t={t} />{t.techId && t.status !== 'open' && <span className="mono faint hd-tech">{t.techId === meId ? 'YOU' : nameOf(t.techId).split(' ')[0].toUpperCase()}</span>}</td>

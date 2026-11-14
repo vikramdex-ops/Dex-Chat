@@ -189,7 +189,7 @@ export function onReaction(deviceId: string, f: ReactionListener): () => void {
   return () => { s.delete(f); if (!s.size) reactionSubs.delete(deviceId); };
 }
 
-interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; userId: string; senders: RTCRtpSender[]; dc: RTCDataChannel | null }
+interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; userId: string; senders: RTCRtpSender[]; dc: RTCDataChannel | null; chain: Promise<void> }
 const links = new Map<string, Link>();
 
 // ------------------------------------------------------------------ large Rooms: the hub's relay
@@ -321,7 +321,8 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (state.room?.id === d.roomId) for (const f of dataSubs) f(d.fromDevice, d.fromUser, d.data);
     } else if (name === 'room.signal') {
       const d = data as { roomId: string; fromDevice: string; fromUser: string; data: SignalData };
-      if (state.room?.id === d.roomId) void onSignal(d.fromDevice, d.fromUser, d.data);
+      // one signal at a time per link, in the order they came: an answer and the next offer must not overlap
+      if (state.room?.id === d.roomId) { const l = ensureLink(d.fromDevice, d.fromUser); l.chain = l.chain.then(() => onSignal(d.fromDevice, d.fromUser, d.data)).catch(() => {}); }
     }
   });
 }
@@ -567,7 +568,14 @@ export async function toggleScreen(sourceId?: string, withSound = false): Promis
   try {
     if (sourceId) await window.dex.chooseScreen?.(sourceId);
     screenSource = sourceId ?? null;
-    const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15 } }, audio: withSound });
+    let screen: MediaStream;
+    try {
+      screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 15 } }, audio: withSound });
+    } catch (err) {
+      // some Linux desktops cannot start getDisplayMedia's capturer: the chosen screen still opens the older way
+      if (!sourceId || (err as Error).name !== 'NotReadableError') throw err;
+      screen = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 15 } } } as unknown as MediaStreamConstraints);
+    }
     const track = screen.getVideoTracks()[0];
     track.contentHint = 'detail';
     track.onended = () => stopScreen();
@@ -647,7 +655,7 @@ function ensureLink(deviceId: string, userId: string): Link {
   const existing = links.get(deviceId);
   if (existing) return existing;
   const pc = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle' });
-  const link: Link = { pc, polite: myDevice > deviceId, makingOffer: false, ignoreOffer: false, userId, senders: [], dc: null };
+  const link: Link = { pc, polite: myDevice > deviceId, makingOffer: false, ignoreOffer: false, userId, senders: [], dc: null, chain: Promise.resolve() };
   links.set(deviceId, link);
   // one data channel per link, agreed on both sides (no extra negotiation): pointers and remote control
   try {
@@ -667,6 +675,8 @@ function ensureLink(deviceId: string, userId: string): Link {
   pc.onicecandidate = (e) => signal(deviceId, { candidate: e.candidate ? e.candidate.toJSON() : null });
   pc.onnegotiationneeded = async () => {
     try {
+      // only from a settled state: mid-negotiation, setLocalDescription() would answer, not offer
+      if (pc.signalingState !== 'stable') return;
       link.makingOffer = true;
       await pc.setLocalDescription();
       signal(deviceId, { description: pc.localDescription!.toJSON() });

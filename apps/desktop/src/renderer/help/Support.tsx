@@ -88,7 +88,8 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
   const minimized = useCall((s) => s.minimized);
   const { ticket, timeline } = useTicket(session.ticketId);
   const requester = room.participants.find((p) => p.userId === session.requesterId) ?? null;
-  const screen = useCall((s) => (requester ? s.peers.get(requester.deviceId)?.streams.find((x, i) => i > 0 && x.getVideoTracks().length) ?? null : null));
+  // support sessions are audio only: any picture from the requester is their shared screen (it may be their only stream)
+  const screen = useCall((s) => (requester ? s.peers.get(requester.deviceId)?.streams.filter((x) => x.getVideoTracks().length).at(-1) ?? null : null));
   const [controlling, setControlling] = useState(false);
   const files = useFileSend(session.ticketId);
   const name = users.get(session.requesterId)?.displayName ?? 'Someone';
@@ -259,7 +260,7 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
     <>
       <SessionAudio />
       {/* the technician's pointers on this screen (the click-through window), while it is shared */}
-      {screen && <div className="sup-hidden-layer"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
+      {screen && <div className="pt-hidden"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
       {c.control && (
         <div className="sup-banner" role="alert">
           <span className="sup-banner-pip" aria-hidden="true" />

@@ -134,22 +134,26 @@ export function PointerLayer(props: PointerLayerProps) {
     apply(self.deviceId, m);
   };
 
-  // my pointer: shared while it is over the surface (on its parent, so the page under it still works)
+  // my pointer: shared while it is over the surface (on its parent, so the page under it still works).
+  // Set up once: what changes between renders is read through a ref.
+  const live = useRef({ enabled, rot, send, box });
+  live.current = { enabled, rot, send, box };
   useEffect(() => {
     const host = layer.current?.parentElement;
     if (!host) return;
     let inside = false;
     const move = (e: PointerEvent) => {
-      if (!enabled) return;
-      const b = box();
-      const p = b ? toSurface(e.clientX, e.clientY, b, rot) : null;
-      if (p) { inside = true; send({ k: 'cur', x: p.x, y: p.y }); } else if (inside) { inside = false; send({ k: 'cur', x: -1, y: -1 }); }
+      const l = live.current;
+      if (!l.enabled) return;
+      const b = l.box();
+      const p = b ? toSurface(e.clientX, e.clientY, b, l.rot) : null;
+      if (p) { inside = true; l.send({ k: 'cur', x: p.x, y: p.y }); } else if (inside) { inside = false; l.send({ k: 'cur', x: -1, y: -1 }); }
     };
-    const leave = () => { if (inside) { inside = false; send({ k: 'cur', x: -1, y: -1 }); } };
+    const leave = () => { if (inside) { inside = false; live.current.send({ k: 'cur', x: -1, y: -1 }); } };
     host.addEventListener('pointermove', move, { passive: true });
     host.addEventListener('pointerleave', leave);
     return () => { host.removeEventListener('pointermove', move); host.removeEventListener('pointerleave', leave); leave(); };
-  });
+  }, []);
 
   // keys for the tools while the surface is shown
   useEffect(() => {

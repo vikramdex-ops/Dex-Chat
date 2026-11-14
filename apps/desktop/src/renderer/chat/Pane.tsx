@@ -411,7 +411,7 @@ function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const inCall = useCall((s) => s.room);
   const [menu, setMenu] = useState(false);
   const caret = useRef<HTMLButtonElement>(null);
-  if (inCall?.convId === convId) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
+  if (inCall?.convId === convId && !inCall.purpose) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
   if (active && active.participants.length) {
     return (
       <button className="room-open live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>

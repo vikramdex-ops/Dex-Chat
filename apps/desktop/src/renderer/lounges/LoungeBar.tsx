@@ -61,7 +61,8 @@ export default function LoungeBar({ users, meId, meDevice }: { users: Map<string
   const peopleBtn = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (error) { toast(error, true); clearError(); } }, [error, toast]);
   const sharer = room?.participants.find((p) => p.screen && p.deviceId !== meDevice) ?? null;
-  const shared = useCall((s) => (sharer ? s.peers.get(sharer.deviceId)?.streams.find((x, i) => i > 0 && x.getVideoTracks().length) ?? null : null));
+  // lounges are audio only: a picture from someone is their shared screen (it may be their only stream)
+  const shared = useCall((s) => (sharer ? s.peers.get(sharer.deviceId)?.streams.filter((x) => x.getVideoTracks().length).at(-1) ?? null : null));
   useEffect(() => { if (sharer) setView(true); }, [sharer?.deviceId]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!room || room.purpose?.kind !== 'lounge') return null;
   const name = room.purpose.name;
@@ -71,6 +72,7 @@ export default function LoungeBar({ users, meId, meDevice }: { users: Map<string
   return createPortal(
     <>
       <Voices meDevice={meDevice} roomId={room.id} />
+      {screen && <div className="pt-hidden"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
       {sharer && shared && view && (
         <figure className="lg-screen" aria-label={`${nameOf(sharer.userId)}'s screen`}>
           <Video stream={shared} muted fit="contain" />

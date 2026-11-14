@@ -3,7 +3,7 @@
 
 .lg-section { padding-bottom: 2px; }
 .lg-row {
-  display: flex; align-items: center; gap: 8px; margin: 1px 6px; padding: 6px 8px 6px 6px; border-radius: var(--radius-m);
+  display: flex; align-items: flex-start; gap: 8px; margin: 1px 6px; padding: 6px 8px 6px 6px; border-radius: var(--radius-m);
   border: 1px solid transparent; min-height: 44px;
 }
 .lg-row:hover { background: var(--subtle); }
@@ -17,14 +17,15 @@
 .lg-pip { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--amber); }
 .lg-pip.speaking { animation: lg-speak 900ms ease-in-out infinite; }
 @keyframes lg-speak { 0%, 100% { box-shadow: 0 0 0 0 var(--amber-soft); } 50% { box-shadow: 0 0 0 4px var(--amber-soft); } }
-.lg-people { display: inline-flex; align-items: center; flex: none; padding-left: 4px; }
-.lg-people .lg-tile { margin-left: -5px; border-radius: 32%; box-shadow: 0 0 0 2px var(--layer-solid); }
-.lg-people .lg-tile:first-child { margin-left: 0; }
+.lg-people { display: inline-flex; align-items: center; flex: none; gap: 3px; padding-left: 4px; }
+.lg-main .lg-people { padding: 5px 0 1px; }
+.lg-people .lg-tile { border-radius: 32%; }
 .lg-tile { display: inline-flex; border-radius: 32%; transition: box-shadow var(--fast); }
 .lg-tile .avatar.sm { --size: 22px; font-size: 9px; }
-.lg-tile.speaking { box-shadow: 0 0 0 2px var(--layer-solid), 0 0 0 4px var(--amber) !important; position: relative; z-index: 1; }
+.lg-tile.speaking { box-shadow: 0 0 0 1.5px var(--layer-solid), 0 0 0 3px var(--amber); position: relative; z-index: 1; }
 .lg-tile.muted { opacity: .62; }
 .lg-more { font-size: 10px; color: var(--text-3); padding-left: 4px; }
+.lg-row .lg-ico, .lg-row .lg-join { margin-top: 2px; }
 .lg-join {
   flex: none; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent-ink);
   font: 600 12px var(--font-body); cursor: pointer;
@@ -61,7 +62,7 @@
 
 /* the floating lounge bar */
 .lg-bar {
-  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 38; display: flex; align-items: center; gap: 12px;
+  position: fixed; right: 26px; bottom: 104px; z-index: 38; display: flex; align-items: center; gap: 12px;
   padding: 7px 8px 7px 14px; max-width: calc(100vw - 24px);
   background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong); border-top: 2px solid var(--amber);
   border-radius: var(--radius-l); box-shadow: 0 14px 40px rgba(0, 0, 0, .22); animation: rise var(--med) var(--ease);
@@ -84,7 +85,7 @@
 .lg-btn.leave:hover { background: #a83832; }
 .lg-btn .mono { font-size: 11px; }
 .lg-screen {
-  position: fixed; right: 18px; bottom: 82px; z-index: 37; width: min(640px, 46vw); aspect-ratio: 16 / 10; margin: 0; overflow: hidden;
+  position: fixed; right: 26px; bottom: 170px; z-index: 37; width: min(640px, 46vw); aspect-ratio: 16 / 10; margin: 0; overflow: hidden;
   background: #0b1416; border: 1px solid var(--stroke-strong); border-radius: var(--radius-l); box-shadow: 0 14px 40px rgba(0, 0, 0, .3);
 }
 .lg-screen video { width: 100%; height: 100%; display: block; }

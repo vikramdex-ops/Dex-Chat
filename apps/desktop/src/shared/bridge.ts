@@ -165,6 +165,8 @@ export interface AssistBridge {
 /** In the share bar and pointer windows only. */
 export interface OverlayBridge {
   onState(cb: (state: unknown) => void): () => void;
+  /** The window is drawn and listening: send it what it should show. */
+  ready(): void;
   action(a: 'stop-control' | 'stop-screen' | 'end'): void;
 }
 

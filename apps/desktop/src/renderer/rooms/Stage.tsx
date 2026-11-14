@@ -339,6 +339,7 @@ function RoomSheet({ users, title, onOpenConversation, meDevice, meId, room }: S
               <figcaption className="room-cap"><b>SHEET</b><span>{screen && !sharedStream ? 'YOUR SCREEN · SHARED' : `${capName(nameOf(shared!.userId))} · SCREEN`}</span></figcaption>
             </figure>
           )}
+          {screen && !(layout === 'presentation' && !sharedStream) && <div className="pt-hidden"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
           {mainSeat && <div className="room-main">{tileFor(mainSeat, 'main')}</div>}
           <div className={stripMode ? 'room-strip room-grid' : 'room-grid'} style={stripMode ? undefined : { ['--cols' as string]: cols, ['--tile-w' as string]: fit.tileW ? `${fit.tileW}px` : undefined }}>
             {shown.map((s) => tileFor(s))}

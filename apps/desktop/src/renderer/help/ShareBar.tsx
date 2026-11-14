@@ -14,6 +14,7 @@ export function ShareBar() {
     apply();
     media.addEventListener('change', apply);
     const off = window.dex.overlay?.onState((x) => setS(x as ShareBarState));
+    window.dex.overlay?.ready();
     return () => { media.removeEventListener('change', apply); off?.(); };
   }, []);
   if (!s) return null;

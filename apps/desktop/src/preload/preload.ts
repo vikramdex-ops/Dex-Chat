@@ -63,6 +63,7 @@ const bridge: DexBridge = {
   },
   overlay: {
     onState: (cb) => subscribe('overlay:state', cb),
+    ready: () => ipcRenderer.send('overlay:ready'),
     action: (a) => ipcRenderer.send('overlay:action', a),
   },
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

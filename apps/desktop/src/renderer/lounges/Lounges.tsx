@@ -59,8 +59,8 @@ function LoungeRow({ l, space, users, here, folded }: { l: Lounge; space: string
       <span className="lg-main">
         <span className="lg-name">{l.name}{live && <i className={`lg-pip${speaking ? ' speaking' : ''}`} title={speaking ? 'Someone is speaking' : 'People are in it'} />}</span>
         <span className="lg-sub mono" translate="no">{space.toUpperCase()}{live ? ` · ${l.people.length} IN` : ' · QUIET'}</span>
+        {live && <People lounge={l} users={users} max={6} />}
       </span>
-      {live && <People lounge={l} users={users} max={3} />}
       {here
         ? <button className="lg-join here" onClick={leaveLounge} title="Leave the lounge">Leave</button>
         : <button className="lg-join" onClick={() => join(l.id)} title={`Drop into ${l.name} (audio only)`}>Join</button>}

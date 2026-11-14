@@ -69,12 +69,14 @@
 .hd-table td { padding: 8px 8px; vertical-align: middle; }
 .hd-table td.ref { width: 62px; font-size: 11px; color: var(--accent-ink); border-right: 1px solid var(--stroke); }
 .hd-table tr.waiting td.ref { color: var(--amber-ink); font-weight: 700; }
-.hd-table td.who { width: 30px; padding-right: 0; }
-.hd-table td.what { display: grid; gap: 2px; min-width: 0; }
-.hd-table td.what .mono { font-size: 9.5px; letter-spacing: .08em; }
-.hd-sum { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
-.hd-table td.age { width: 70px; font-size: 10px; color: var(--text-3); text-align: right; white-space: nowrap; }
-.hd-table td.st { width: 96px; text-align: right; }
+.hd-table td.who { width: 38px; padding-right: 0; }
+.hd-table { table-layout: fixed; }
+.hd-table td.what { width: auto; }
+.hd-what { display: grid; gap: 2px; min-width: 0; }
+.hd-what .mono { font-size: 9.5px; letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-sum { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-table td.age { width: 64px; font-size: 10px; color: var(--text-3); text-align: right; white-space: nowrap; }
+.hd-table td.st { width: 104px; text-align: right; }
 .hd-tech { display: block; margin-top: 3px; font-size: 9.5px; letter-spacing: .08em; }
 .hd-empty { padding: 26px; }
 .hd-pane { min-width: 0; }
@@ -170,7 +172,7 @@
 .sup-field.controlling { border-color: var(--amber); outline-color: var(--amber); }
 .sup-screen { position: relative; margin: 0; min-height: 0; background: #0b1416; overflow: hidden; }
 .sup-screen video { width: 100%; height: 100%; display: block; }
-.sup-screen > .room-cap { position: absolute; left: 10px; top: 10px; z-index: 4; }
+.sup-screen > .room-cap { position: absolute; left: 10px; top: auto; bottom: 10px; z-index: 6; }
 .sup-empty { display: grid; align-content: center; justify-items: center; gap: 10px; padding: 30px; text-align: center; color: var(--text-2); }
 .sup-empty p { margin: 0; max-width: 420px; }
 .sup-control { position: absolute; inset: 0; z-index: 5; cursor: default; outline: none; box-shadow: inset 0 0 0 3px var(--amber); }
@@ -215,7 +217,6 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
 }
 .sup-chip.req.sharing { background: var(--amber); color: #2b1a00; }
-.sup-hidden-layer { position: fixed; width: 0; height: 0; overflow: hidden; }
 
 /* ------------------------------------------------------------------ the requester's dock and banner */
 .sup-dock {
@@ -298,4 +299,11 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .sup-banner-pip, .share-bar-pip { animation: none; }
+}
+
+/* dialogs opened from the session (consent sheets, diagnostics) sit above the dock and the sheet */
+body:has(.sup-dock) .scrim, body:has(.sup-stage) .scrim { z-index: 40; }
+@media (max-width: 520px) {
+  .hm-form .dialog-actions { flex-wrap: wrap; }
+  .hm-who { flex-basis: 100%; }
 }

@@ -146,6 +146,7 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
 
   ipcMain.on('assist:input', (e, msg: unknown) => { if (fromMain(e)) control?.input(msg); });
 
+  ipcMain.on('overlay:ready', (e) => overlays.resend(e.sender.id));
   ipcMain.on('overlay:action', (e, a: unknown) => {
     if (!overlays.isBar(e.sender.id)) return;
     if (a === 'stop-control') { stopControl('the share bar'); tellMain('control'); }
