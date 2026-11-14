@@ -1,0 +1,15 @@
+{
+  "name": "@dex/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dexterity Connect internet gateway: a relay on the office's own Cloudflare account",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261114.1",
+    "wrangler": "^4.162.0"
+  }
+}

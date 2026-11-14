@@ -10,7 +10,7 @@ import {
   APP_ID, DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION,
   accountKey, authPayload, deviceIdFor, verifySignature,
 } from '@dex/core';
-import type { ClientFrame, DeviceRecord, HubInfo, OpName, Ops, PublicUser, Role, ServerFrame, Session, WindowsAccount } from '@dex/core';
+import type { ClientFrame, DeviceRecord, HubInfo, OpName, RemoteConfig, RemoteView, Ops, PublicUser, Role, ServerFrame, Session, WindowsAccount } from '@dex/core';
 import { HubAnnouncer } from '@dex/core/discovery';
 import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
@@ -24,6 +24,7 @@ import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
 import { Emoji, EmojiError } from './emoji.ts';
+import { RemoteGateway } from './remote.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
@@ -52,6 +53,8 @@ interface Conn {
   ws: WebSocket;
   nonce: string;
   ip: string;
+  /** Came through the internet gateway rather than the office network. */
+  remote: boolean;
   alive: boolean;
   deviceId: string | null;
   userId: string | null;
@@ -81,7 +84,10 @@ class OpError extends Error {}
 
 export class Hub {
   readonly store: Store;
-  readonly info: HubInfo;
+  info: HubInfo;
+  readonly gateway: RemoteGateway;
+  /** Marks the hub's own loopback connections for devices on the internet gateway. */
+  private readonly gatewaySecret = crypto.randomBytes(24).toString('base64url');
   readonly fingerprint: string;
   private readonly opts: HubOptions;
   private readonly server: https.Server;
@@ -167,6 +173,11 @@ export class Hub {
     this.mirror = opts.updates === false ? null
       : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
+    this.gateway = new RemoteGateway({
+      hubId: id, certPem: tls.cert, keyPem: tls.key, localPort: () => this.port, secret: this.gatewaySecret,
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      onStatus: () => {},
+    });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
   }
 
@@ -219,7 +230,35 @@ export class Hub {
         try { c.ws.ping(); } catch { /* closing */ }
       }
     }, 20000);
+    this.applyRemote();
     this.log('info', 'hub listening', { port: this.port, hubId: this.info.id, fingerprint: this.fingerprint });
+  }
+
+  // ------------------------------------------------------------ outside the office
+  remoteConfig(): RemoteConfig {
+    const m = (k: string, d: string) => this.store.meta(k, () => d);
+    const url = m('remote_url', '');
+    return { enabled: m('remote_enabled', '0') === '1' && !!url, url: url || null, allowJoin: m('remote_join', '1') === '1', allowAdmin: m('remote_admin', '0') === '1' };
+  }
+
+  private setMeta(key: string, value: string): void {
+    this.store.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  }
+
+  private remoteView(): RemoteView {
+    const s = this.gateway.status;
+    return { config: this.remoteConfig(), status: { connected: s.connected, since: s.since, error: s.error, devices: s.devices, pinned: s.pinned }, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name };
+  }
+
+  /** Connect to (or leave) the gateway, tell devices where it is, and drop outside connections if it was turned off. */
+  private applyRemote(): void {
+    const c = this.remoteConfig();
+    this.info = { ...this.info, remote: c.enabled && c.url ? { url: c.url } : null };
+    this.gateway.configure(c.enabled ? c.url : null);
+    for (const conn of this.conns) {
+      if (!conn.remote) continue;
+      if (!c.enabled) conn.ws.close();
+    }
   }
 
   async stop(): Promise<void> {
@@ -227,6 +266,7 @@ export class Hub {
     if (this.deskTimer) clearInterval(this.deskTimer);
     this.mirror?.stop();
     this.announcer?.stop();
+    this.gateway.stop();
     for (const c of this.conns) c.ws.terminate();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
@@ -353,9 +393,16 @@ export class Hub {
   // ---------------------------------------------------------- websocket
   private accept(ws: WebSocket, req: IncomingMessage): void {
     const conn: Conn = {
-      ws, nonce: crypto.randomBytes(24).toString('base64url'), ip: req.socket.remoteAddress ?? '',
+      ws, nonce: crypto.randomBytes(24).toString('base64url'), ip: req.socket.remoteAddress ?? '', remote: false,
       alive: true, deviceId: null, userId: null, ready: false, fileToken: null, idle: false,
     };
+    // the hub's own loopback for a device on the internet gateway (src/remote.ts)
+    const loop = req.socket.remoteAddress === '127.0.0.1' || req.socket.remoteAddress === '::1' || req.socket.remoteAddress === '::ffff:127.0.0.1';
+    if (loop && req.headers['x-dex-gateway'] === this.gatewaySecret) {
+      conn.remote = true;
+      conn.ip = `internet ${String(req.headers['x-dex-remote-ip'] ?? '').slice(0, 80)}`;
+      if (!this.remoteConfig().enabled) { ws.send(JSON.stringify({ t: 'rejected', reason: 'Access from outside the office is turned off.' })); ws.close(); return; }
+    }
     this.conns.add(conn);
     ws.on('pong', () => { conn.alive = true; });
     ws.on('message', (raw) => {
@@ -453,6 +500,11 @@ export class Hub {
 
   private onRegister(conn: Conn, frame: Extract<ClientFrame, { t: 'register' }>): void {
     if (conn.ready) return;
+    if (conn.remote && !this.store.device(String(frame.deviceId ?? '')) && !this.remoteConfig().allowJoin) {
+      this.send(conn, { t: 'rejected', reason: 'New devices join from the office network. Ask your administrator if you need to join from outside.' });
+      conn.ws.close();
+      return;
+    }
     const account = validAccount(frame.account);
     if (!account || typeof frame.publicKey !== 'string' || deviceIdFor(frame.publicKey) !== frame.deviceId) {
       this.send(conn, { t: 'rejected', reason: 'Malformed registration.' });
@@ -555,6 +607,9 @@ export class Hub {
     if (!conn.ready || !conn.userId) { this.send(conn, { t: 'error', error: 'not signed in' }); return; }
     const id = typeof frame.id === 'string' ? frame.id.slice(0, 64) : '';
     try {
+      if (conn.remote && typeof frame.op === 'string' && frame.op.startsWith('admin.') && !this.remoteConfig().allowAdmin) {
+        throw new OpError('The Control room is only available on the office network.');
+      }
       const data = await this.op(conn, frame.op as OpName, frame.data);
       this.send(conn, { t: 'res', id, ok: true, data });
     } catch (err) {
@@ -837,6 +892,28 @@ export class Hub {
             if (err instanceof WorkError) throw new OpError(err.message);
             throw err;
           }
+        }
+        if (op === 'remote.info') {
+          const c = this.remoteConfig();
+          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote };
+        }
+        if (op === 'admin.remote.get' || op === 'admin.remote.set') {
+          const me = this.store.userById(conn.userId!)!;
+          if (me.role !== 'owner' && me.role !== 'admin') throw new OpError('Only administrators can do that.');
+          if (op === 'admin.remote.set') {
+            if (d.url !== undefined) {
+              const url = d.url === null || d.url === '' ? '' : String(d.url).trim().replace(/\/+$/, '');
+              if (url && !/^(https:\/\/[a-z0-9.-]+|http:\/\/(127\.0\.0\.1|localhost))(:\d+)?(\/[\w.-]*)*$/i.test(url)) throw new OpError('Enter the gateway\'s https:// address, for example https://dexconnect-gateway.example.workers.dev');
+              this.setMeta('remote_url', url);
+            }
+            if (typeof d.enabled === 'boolean') this.setMeta('remote_enabled', d.enabled ? '1' : '0');
+            if (typeof d.allowJoin === 'boolean') this.setMeta('remote_join', d.allowJoin ? '1' : '0');
+            if (typeof d.allowAdmin === 'boolean') this.setMeta('remote_admin', d.allowAdmin ? '1' : '0');
+            this.store.audit(me.id, 'remote.set', null, this.remoteConfig());
+            this.applyRemote();
+            if (conn.remote && !this.remoteConfig().allowAdmin) { /* the change still applies; this connection loses admin access */ }
+          }
+          return this.remoteView();
         }
         if (op === 'file.setText') {
           try {

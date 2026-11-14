@@ -11,7 +11,7 @@ import type { ClientState } from '@dex/core/client';
 import { Hub } from '../src/hub.ts';
 
 export const cleanups: Array<() => unknown> = [];
-after(async () => { for (const c of cleanups.reverse()) await c(); });
+after(async () => { for (const c of cleanups.splice(0).reverse()) await c(); });
 
 export async function office() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dexmsg-'));

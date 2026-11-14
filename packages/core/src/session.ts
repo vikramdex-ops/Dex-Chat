@@ -12,13 +12,15 @@ export interface HubTarget {
   name?: string;
   /** Expected certificate fingerprint. When absent the first certificate seen is trusted and reported via 'pinned'. */
   fp?: string;
+  /** The internet gateway for this hub, used when the office network cannot be reached. */
+  remote?: { url: string; hubId: string };
 }
 
 export type ClientState =
   | { kind: 'idle' }
   | { kind: 'connecting'; target: HubTarget }
   | { kind: 'pending'; target: HubTarget; position: number }
-  | { kind: 'ready'; target: HubTarget; session: Session }
+  | { kind: 'ready'; target: HubTarget; session: Session; via?: 'lan' | 'remote' }
   | { kind: 'rejected'; target: HubTarget; reason: string }
   | { kind: 'offline'; target: HubTarget; retryInMs: number; error: string }
   | { kind: 'identity-mismatch'; target: HubTarget; expected: string; actual: string };
@@ -33,6 +35,8 @@ export interface SocketHandlers {
 export interface HubSocket {
   send(data: string): void;
   close(): void;
+  /** Present on the internet gateway's socket: HTTP (files) inside the encrypted channel. */
+  http?(req: import('./remote.ts').TunnelRequest): Promise<import('./remote.ts').TunnelResponse>;
 }
 
 export type OpenSocket = (target: HubTarget, handlers: SocketHandlers) => HubSocket;
@@ -44,6 +48,8 @@ export interface SessionOptions {
   sign: Signer;
   account: WindowsAccount;
   open: OpenSocket;
+  /** Opens the hub through the internet gateway (target.remote), when the office network fails. */
+  openRemote?: OpenSocket;
   requestTimeoutMs?: number;
   maxBackoffMs?: number;
   /** Guest invite code sent with the first registration. */
@@ -66,8 +72,12 @@ export class HubSession extends Emitter {
   private attempts = 0;
   private generation = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Which way the current connection goes, and how often the office network failed in a row. */
+  private via: 'lan' | 'remote' = 'lan';
+  private lanFails = 0;
+  private probeTimer: ReturnType<typeof setInterval> | null = null;
   private readonly pending = new Map<string, Pending>();
-  private readonly opts: Required<SessionOptions>;
+  private readonly opts: Required<Omit<SessionOptions, 'openRemote'>> & { openRemote?: OpenSocket };
 
   constructor(opts: SessionOptions) {
     super();
@@ -90,12 +100,23 @@ export class HubSession extends Emitter {
     this.disconnect();
     this.target = { ...target };
     this.attempts = 0;
+    this.lanFails = 0;
     this.open();
+  }
+
+  /** Is the current connection through the internet gateway? */
+  get viaGateway(): boolean { return this.via === 'remote' && this.state.kind === 'ready'; }
+
+  /** HTTP to the hub through the gateway's encrypted channel (files from outside the office). */
+  http(req: import('./remote.ts').TunnelRequest): Promise<import('./remote.ts').TunnelResponse> {
+    if (!this.sock?.http) return Promise.reject(new Error('not connected through the gateway'));
+    return this.sock.http(req);
   }
 
   disconnect(): void {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    this.stopProbe();
     this.generation++;
     const sock = this.sock;
     this.sock = null;
@@ -134,9 +155,13 @@ export class HubSession extends Emitter {
     const gen = ++this.generation;
     const live = () => gen === this.generation;
     this.setState({ kind: 'connecting', target });
-    this.sock = this.opts.open(target, {
+    const remote = !!(target.remote && this.opts.openRemote && (this.lanFails > 0 || !target.host));
+    this.via = remote ? 'remote' : 'lan';
+    let opened = false;
+    this.sock = (remote ? this.opts.openRemote! : this.opts.open)(target, {
       onOpen: (fp) => {
         if (!live()) return;
+        opened = true;
         this.fingerprint = fp;
         if (target.fp && target.fp !== fp) {
           this.setState({ kind: 'identity-mismatch', target, expected: target.fp, actual: fp });
@@ -157,8 +182,46 @@ export class HubSession extends Emitter {
         try { frame = JSON.parse(data); } catch { return; }
         void this.handle(frame);
       },
-      onClose: (reason) => { if (live()) this.onClosed(reason); },
+      onClose: (reason) => {
+        if (!live()) return;
+        if (!remote && !opened && target.remote && this.opts.openRemote) {
+          // the office network is not reachable: go through the gateway straight away
+          this.lanFails++;
+          this.generation++;
+          this.sock = null;
+          this.open();
+          return;
+        }
+        if (remote) this.lanFails = 0; // next time, try the office network first again
+        this.onClosed(reason);
+      },
     });
+  }
+
+  /** While on the gateway, check now and then whether the office network is back, and move to it. */
+  private startProbe(): void {
+    this.stopProbe();
+    this.probeTimer = setInterval(() => {
+      const target = this.target;
+      if (!target || this.via !== 'remote' || !target.host) return;
+      let done = false;
+      const probe = this.opts.open(target, {
+        onOpen: (fp) => {
+          if (done) return;
+          done = true;
+          probe.close();
+          if (fp === target.fp && this.target === target) { this.lanFails = 0; this.connect(target); }
+        },
+        onMessage: () => {},
+        onClose: () => { done = true; },
+      });
+      setTimeout(() => { if (!done) { done = true; probe.close(); } }, 4000);
+    }, 60_000);
+  }
+
+  private stopProbe(): void {
+    if (this.probeTimer) clearInterval(this.probeTimer);
+    this.probeTimer = null;
   }
 
   private onClosed(reason: string): void {
@@ -189,12 +252,18 @@ export class HubSession extends Emitter {
     const target = this.target;
     if (!target) return;
     switch (frame.t) {
-      case 'hello':
+      case 'hello': {
         this.nonce = frame.nonce;
         target.hubId ??= frame.hub.id;
         target.name = frame.hub.name;
+        // learn (or forget) the internet gateway while on the office network, for use outside it
+        const was = JSON.stringify(target.remote ?? null);
+        if (frame.hub.remote?.url) target.remote = { url: frame.hub.remote.url, hubId: frame.hub.id };
+        else if (frame.hub.remote === null && this.via === 'lan') delete target.remote;
+        if (JSON.stringify(target.remote ?? null) !== was) this.emit('pinned', { ...target });
         this.send({ t: 'auth', deviceId: this.opts.deviceId, sig: await this.proof() });
         break;
+      }
       case 'unknown':
         this.send({ t: 'register', deviceId: this.opts.deviceId, publicKey: this.opts.publicKey, account: this.opts.account, sig: await this.proof(), ...(this.opts.invite ? { invite: this.opts.invite } : {}) });
         break;
@@ -206,7 +275,8 @@ export class HubSession extends Emitter {
         break;
       case 'ready':
         this.attempts = 0;
-        this.setState({ kind: 'ready', target, session: frame.session });
+        this.setState({ kind: 'ready', target, session: frame.session, via: this.via });
+        if (this.via === 'remote') this.startProbe(); else this.stopProbe();
         break;
       case 'res': {
         const p = this.pending.get(frame.id);

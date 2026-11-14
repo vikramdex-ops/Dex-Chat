@@ -27,6 +27,8 @@ export interface HubInfo {
   name: string;
   version: string;
   protocol: number;
+  /** The internet gateway devices use outside the office, when the administrator has turned it on. */
+  remote?: { url: string } | null;
 }
 
 export interface PublicUser {
@@ -116,6 +118,24 @@ export interface LegalHold {
 export interface ProfileField {
   id: string;
   label: string;
+}
+
+/** Access from outside the office, through the internet gateway. */
+export interface RemoteConfig {
+  enabled: boolean;
+  /** The gateway's https:// address (the Cloudflare Worker). */
+  url: string | null;
+  /** New devices may ask to join from outside (an administrator still approves each one). */
+  allowJoin: boolean;
+  /** Administrators may use the Control room from outside. */
+  allowAdmin: boolean;
+}
+export interface RemoteView {
+  config: RemoteConfig;
+  status: { connected: boolean; since: number | null; error: string | null; devices: number; pinned: boolean };
+  hubId: string;
+  fingerprint: string;
+  name: string;
 }
 
 /** An office emoji added by an administrator, used as :name:. */
@@ -606,6 +626,10 @@ export interface Ops {
   'org.get': { req: void; res: OrgInfo };
   'policy.get': { req: void; res: OfficePolicy };
   'emoji.list': { req: void; res: CustomEmoji[] };
+  /** How to reach this hub from outside (for a phone's setup code); null url when it is off. */
+  'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean } };
+  'admin.remote.get': { req: void; res: RemoteView };
+  'admin.remote.set': { req: Partial<RemoteConfig>; res: RemoteView };
   /** Text the uploader's PC read from an image, so search can find it (not Direct conversations). */
   'file.setText': { req: { fileId: string; text: string }; res: { ok: true } };
   'admin.emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
