@@ -28,7 +28,7 @@ export class Policies {
   private readonly db: DatabaseSync;
   private readonly store: Store;
   private readonly files: FileStore;
-  private readonly defaultUploadMb: number;
+  private readonly defaultBytes: number;
   private readonly changed: (p: OfficePolicy) => void;
 
   constructor(store: Store, files: FileStore, changed: (p: OfficePolicy) => void) {
@@ -37,8 +37,8 @@ export class Policies {
     this.files = files;
     this.changed = changed;
     this.db.exec(SCHEMA);
-    this.defaultUploadMb = Math.max(1, Math.round(files.maxBytes / 1024 / 1024));
-    this.files.maxBytes = this.get().maxUploadMb * 1024 * 1024;
+    this.defaultBytes = files.maxBytes;
+    this.files.maxBytes = this.uploadBytes();
   }
 
   private meta(key: string): string | null {
@@ -54,10 +54,16 @@ export class Policies {
     const up = Number(this.meta('policy_upload_mb'));
     return {
       editWindowMinutes: edit === null || edit === 'none' ? null : Number(edit),
-      maxUploadMb: Number.isFinite(up) && up >= 1 ? up : this.defaultUploadMb,
+      maxUploadMb: Number.isFinite(up) && up >= 1 ? up : Math.max(1, Math.ceil(this.defaultBytes / 1024 / 1024)),
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
     };
+  }
+
+  /** The upload limit in bytes: the administrator's choice, or what the hub was started with. */
+  private uploadBytes(): number {
+    const up = Number(this.meta('policy_upload_mb'));
+    return Number.isFinite(up) && up >= 1 ? up * 1024 * 1024 : this.defaultBytes;
   }
 
   /** Milliseconds after sending that an author may still edit or delete, or null for any time. */
@@ -141,7 +147,7 @@ export class Policies {
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
         const p = this.get();
-        this.files.maxBytes = p.maxUploadMb * 1024 * 1024;
+        this.files.maxBytes = this.uploadBytes();
         this.store.audit(me.id, 'policy.set', null, p);
         this.changed(p);
         return p satisfies Ops['admin.policy.set']['res'];
