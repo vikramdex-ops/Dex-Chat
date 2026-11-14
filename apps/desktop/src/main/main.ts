@@ -1,5 +1,6 @@
 // Dexterity Connect — Electron main process.
 import path from 'node:path';
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
@@ -226,6 +227,11 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   ipcMain.handle('file:save', (_e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name))));
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
+  ipcMain.handle('file:stat', (_e, p: string) => wrap(async () => {
+    const full = path.resolve(String(p));
+    const st = await fs.promises.stat(full);
+    return { name: path.basename(full), size: st.size, isFile: st.isFile() };
+  }));
   ipcMain.on('slate:available', (e) => { e.returnValue = !!slateExe(); });
   ipcMain.handle('slate:edit', (_e, noteId: string, title: string, body: string) => wrap(() => editInSlate(String(noteId), String(title), String(body), (id, text) => win?.webContents.send('slate:changed', id, text))));
   ipcMain.handle('slate:open', (_e, id: string, name: string) => wrap(async () => {

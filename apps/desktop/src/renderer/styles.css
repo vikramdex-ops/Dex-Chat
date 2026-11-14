@@ -1440,3 +1440,7 @@ select[multiple].input { height: auto; padding: 4px; }
   .calendar .view-head .row-actions { flex-wrap: wrap; }
   .view { padding: 20px 16px 32px; }
 }
+.share-files { display: grid; gap: 6px; }
+.file-card.missing { border-color: var(--danger); }
+.share-to { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-m); background: var(--subtle); }
+.picker-row { width: 100%; border: 0; background: none; text-align: left; color: inherit; }

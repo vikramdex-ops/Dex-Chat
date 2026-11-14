@@ -24,6 +24,8 @@ import { startOrg } from './org/store.ts';
 import { startWork } from './work/store.ts';
 import { WorkClock } from './work/WorkUi.tsx';
 import { startCalendar } from './calendar/store.ts';
+import { ShareDialog, parseShare } from './views/ShareDialog.tsx';
+import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 
@@ -145,6 +147,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [openDirect, setOpenDirect] = useState<string | null>(null);
   const [openSpace, setOpenSpace] = useState<string | null>(null);
+  const [share, setShare] = useState<ShareRequest | null>(null);
   const conversations = useChat((s) => s.conversations);
   const usersRef = useRef(session.users);
   usersRef.current = session.users;
@@ -220,6 +223,8 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
   // dexconnect://people/<id>, dexconnect://admin, dexconnect://settings
   useEffect(() => window.dex.onDeepLink((url) => {
+    const shareReq = parseShare(url);
+    if (shareReq) { setShare(shareReq); return; }
     const m = url.match(/^dexconnect:\/\/([a-z]+)\/?([\w-]*)/i);
     if (!m) return;
     const target = m[1].toLowerCase();
@@ -362,6 +367,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       <ReminderCards users={users} meId={session.me.id} jump={jump} />
       <MeetingCards users={users} meId={session.me.id} />
+      {share && <ShareDialog req={share} session={session} onDone={(convId) => { setShare(null); if (convId) { const c = conversations.get(convId); if (c) openConversation(c.id, c.kind); } }} />}
       <RequiredUpdate state={state} />
     </div>
   );

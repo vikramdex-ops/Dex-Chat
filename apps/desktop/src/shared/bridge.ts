@@ -106,6 +106,8 @@ export interface DexBridge {
   saveFile?(id: string, name: string): Promise<string>;
   /** Phones: a URL the page can show an image or play audio from (desktop uses the dexfile: scheme). */
   fileUrl?(id: string, name: string): Promise<string>;
+  /** Desktop: name and size of a local file another tool asked to share. */
+  statFile?(path: string): Promise<{ name: string; size: number; isFile: boolean }>;
   /** Edit a note in Slate (or the default editor); saves there come back through onSlateChange. */
   editInSlate?(noteId: string, title: string, body: string): Promise<'slate' | 'default'>;
   onSlateChange?(cb: (noteId: string, text: string) => void): () => void;
