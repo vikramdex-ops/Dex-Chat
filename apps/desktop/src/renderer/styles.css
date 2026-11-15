@@ -892,6 +892,7 @@ select.input { appearance: auto; }
 .org-admin { display: grid; gap: 16px; }
 .org-admin-list { display: grid; gap: 6px; margin-bottom: 12px; }
 .org-admin-row { display: flex; gap: 8px; align-items: center; }
+.org-managers-add { margin-top: 10px; max-width: 360px; }
 .org-admin-row .input { flex: 1; min-width: 0; }
 .org-admin-row select.input { flex: .8; }
 .org-count { width: 28px; text-align: right; font: 600 12px var(--font-mono); }

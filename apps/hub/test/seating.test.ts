@@ -59,6 +59,9 @@ test('permissions: members view only; an administrator names office managers, wh
   assert.equal((await owner.request('seating.get')).plans.length, 1);
   await owner.request('admin.seating.managers', { userIds: [] });
   await assert.rejects(priya.request('seating.discard', { id: draft.id }), /office managers/);
+  // audited with who was named and who was taken off (the Control room's Office managers section)
+  const audit = (await owner.request('admin.audit', { limit: 20 }) as Array<{ action: string; detail: { added?: string[]; removed?: string[] } }>).filter((a) => a.action === 'seating.managers');
+  assert.deepEqual(audit.map((a) => [a.detail.added, a.detail.removed]), [[[], [me(priya)]], [[me(priya)], []]]);
 });
 
 test('a move plan applies today: a revision, the seat field follows and is read-only, people are told once; undo puts it back', async () => {

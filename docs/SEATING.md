@@ -61,10 +61,17 @@ that is not a working day, and a day further than two weeks out (`seating.book`;
 offers are `bookDays` in `seating.get`). Their directory **Seat** field follows the plan (`W-A14 · Left benches`) and becomes
 read-only; the free text stays for offices with no plan.
 
+## Office managers
+
+Administrators name the office managers in Control room ▸ **Organisation** ▸ **Office managers**:
+type a name to add someone (members only: administrators can change seats already), and the × on
+a person's chip takes them off. Each change is in the audit log ("changed the office managers",
+with who was added and who was taken off). The hub op is `admin.seating.managers`.
+
 ## Changing seats: move plans
 
 Seats change only through a move plan: lines of "this seat, held by this". Administrators and the
-office managers they name (Control room: `admin.seating.managers`) put one together on the plan:
+office managers they name put one together on the plan:
 
 - drag a person from the list, or from their seat, onto a seat; drop on someone to swap;
 - tick several people (or a department) and drag them to a seat: they fill that zone's free seats

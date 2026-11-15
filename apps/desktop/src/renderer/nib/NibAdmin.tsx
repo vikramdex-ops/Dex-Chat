@@ -79,7 +79,7 @@ export function NibAdmin({ session }: { session: Session }) {
             <div>Who receives the register</div>
             <div className="faint">One daily register, one follow-up when sheets come in late, and the week on its last workday. Never a message for each person.</div>
             <div className="nib-pick">
-              {cfg.managers.map((id) => { const u = users.get(id); return u ? <button key={id} type="button" className="nib-giver on" aria-pressed onClick={() => set({ managers: cfg.managers.filter((x) => x !== id) })} title="Remove"><Avatar user={u} size="sm" /><span className="nib-giver-name" translate="no">{u.displayName}</span><Icon name="x" size={12} /></button> : null; })}
+              {cfg.managers.map((id) => { const u = users.get(id); return u ? <button key={id} type="button" className="nib-giver on rm" aria-pressed onClick={() => set({ managers: cfg.managers.filter((x) => x !== id) })} title="Remove"><Avatar user={u} size="sm" /><span className="nib-giver-name" translate="no" title={u.displayName}>{u.displayName}</span><Icon name="x" size={12} /></button> : null; })}
             </div>
             <PersonPick users={people} exclude={cfg.managers} onPick={(u) => set({ managers: [...cfg.managers, u.id] })} placeholder="Add the office manager, a director…" label="Add someone to the management" />
           </div>
@@ -91,7 +91,7 @@ export function NibAdmin({ session }: { session: Session }) {
             <div className="faint">{exempt === null ? 'Everyone except the management.' : exempt.length ? (exempt.length === 1 ? 'Everyone except one person.' : `Everyone except ${exempt.length} people.`) : 'Everyone, the management too.'}</div>
             {exempt !== null && (
               <>
-                <div className="nib-pick">{exempt.map((id) => { const u = users.get(id); return u ? <button key={id} type="button" className="nib-giver on" aria-pressed onClick={() => set({ exempt: exempt.filter((x) => x !== id) })}><Avatar user={u} size="sm" /><span className="nib-giver-name" translate="no">{u.displayName}</span><Icon name="x" size={12} /></button> : null; })}</div>
+                <div className="nib-pick">{exempt.map((id) => { const u = users.get(id); return u ? <button key={id} type="button" className="nib-giver on rm" aria-pressed onClick={() => set({ exempt: exempt.filter((x) => x !== id) })}><Avatar user={u} size="sm" /><span className="nib-giver-name" translate="no" title={u.displayName}>{u.displayName}</span><Icon name="x" size={12} /></button> : null; })}</div>
                 <PersonPick users={people} exclude={exempt} onPick={(u) => set({ exempt: [...exempt, u.id] })} placeholder="Someone who keeps no day sheet" label="Someone who keeps no day sheet" />
               </>
             )}

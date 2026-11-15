@@ -596,13 +596,14 @@ export class Seating {
         if (me.role !== 'owner' && me.role !== 'admin') throw new SeatingError('Only administrators can choose the office managers.');
         if (Array.isArray(d.userIds)) {
           const ids = [...new Set(d.userIds.slice(0, 50).map((u) => this.person(u)).filter((u) => u.role === 'member').map((u) => u.id))];
+          const before = this.managers();
           this.db.exec('BEGIN');
           try {
             this.db.prepare('DELETE FROM seat_managers').run();
             for (const id of ids) this.db.prepare('INSERT INTO seat_managers (user_id) VALUES (?)').run(id);
             this.db.exec('COMMIT');
           } catch (e) { this.db.exec('ROLLBACK'); throw e; }
-          this.d.audit(me.id, 'seating.managers', null, { count: ids.length });
+          this.d.audit(me.id, 'seating.managers', null, { count: ids.length, added: ids.filter((x) => !before.includes(x)), removed: before.filter((x) => !ids.includes(x)) });
           this.changed();
         }
         return { managers: this.managers() } satisfies Ops['admin.seating.managers']['res'];
