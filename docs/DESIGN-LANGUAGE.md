@@ -22,7 +22,7 @@ other messengers. Every decision below is checked against one rule:
 | Settings and admin | Separate settings pages | **Control sheets**: full-height sheets that slide over from the right, opened from your own tile in the title bar. |
 | Labels | Sentence-case UI labels | **Title-block labels**: small caps, wide tracking, for section labels only (`PEOPLE · 24 ONLINE`). Body text stays sentence case. |
 | Empty states | Illustrations | **Drafting grid**: a faint blueprint grid with one line of plain text and one action. |
-| Accent colour | Blue / green | **Dexterity teal** for structure and actions. **Amber** only for things that need you (mentions, approvals, a call ringing, an update ready). |
+| Accent colour | Blue / green | **Dexterity teal** for structure and actions. **Amber** only for things that are live or need you (mentions, approvals, a call ringing, a lounge in use, an update ready); never for a file type, someone being away or a plain notice. |
 
 ## 2. Foundations
 
@@ -58,6 +58,19 @@ other messengers. Every decision below is checked against one rule:
 | **Dock** | Floating, 12 px from the edges. Icons on the left inside the Dock: attach, record, insert (poll/form/note/tool). Send is an arrow that turns teal when there is text. Enter sends; Shift+Enter adds a line. |
 | **Cards** | Rich embeds (a file, a Sheets range, a Sleuth tag hit, a Datum component) all share one card frame: icon tile, title, mono meta line, primary action. |
 | **Control sheet** | Slides from the right, 560 px, with a sticky header. Escape closes. |
+
+### Shared controls (drawn in `drawing.css`)
+
+| Control | Rule |
+| --- | --- |
+| **Choice of one** | A row of ruled cells; the chosen cell is teal-tinted with a 2 px teal base rule. Never a sliding white thumb in a grey pill. The Control room's sections are a numbered drawing register (01 Approvals … 14 Audit log). |
+| **Switch** | A slide lever on a scale: square track, square knob, a tick where the knob will go. Never a round pill toggle. |
+| **Tag** | A mono caption in a hairline box (`YOU`, `ADMIN`, `ENCRYPTED`). Never a rounded coloured pill; green is not in the palette. |
+| **Settings, dashboards, registers** | One sheet ruled with hairlines and numbered section labels (`01 PROFILE`), not a stack of floating rounded cards. Pulse's summary and the Directory are ruled cells. |
+| **Stamps** | One ruled strip under the message; your own stamp has a teal base rule. |
+| **Live bars** (a lounge) | A title block in the corner of the sheet: ruled cells, an amber rule down the edge while live, Leave as an amber outline with the door glyph. Never a red hang-up handset. |
+| **Icons** | Drawn in `ui.tsx` on the 24 px grid: send is a transmittal (a sheet with a dimension arrow), messages are a spine with entries, voice is a Room on plan, leaving is a door. No paper planes, speech bubbles or handsets. |
+| **Empty states** | One symbol in a framed cell on the drafting grid, one line, one action. |
 
 ## 4. Voice
 

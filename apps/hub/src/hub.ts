@@ -601,7 +601,7 @@ export class Hub {
     if (!bot || bot.role !== 'bot') { req.resume(); reply(401, { ok: false, error: 'Unknown or revoked integration token.' }); return; }
     if (req.method === 'POST' && req.url?.split('?')[0] === '/api/bot/widget') {
       let raw = '';
-      try { for await (const c of req) { raw += c; if (raw.length > 16 * 1024) throw new Error('too large'); } } catch { reply(413, { ok: false, error: 'Widget too large.' }); return; }
+      try { for await (const c of req) { raw += c; if (raw.length > 16 * 1024) throw new Error('too large'); } } catch { reply(413, { ok: false, error: 'Pulse card too large.' }); return; }
       try {
         const list = this.commands.setWidget(bot.id, JSON.parse(raw) as Record<string, unknown>);
         this.emit('widgets.updated', list);

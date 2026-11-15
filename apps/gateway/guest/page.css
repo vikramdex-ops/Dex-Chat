@@ -192,7 +192,8 @@ button:disabled { cursor: default; opacity: .45; }
 .controls { justify-content: flex-end; flex-wrap: nowrap; }
 /* with the chat open the title block is narrower: the clock alone tells the time */
 @media (max-width: 1360px) { .chat-open .rb-facts > div + div { display: none; } }
-.leave { display: inline-flex; align-items: center; gap: 8px; height: 54px; padding: 0 14px; flex: none; border: 1.5px solid var(--amber); border-radius: var(--radius); background: transparent; color: var(--amber-ink); font-weight: 700; }
+/* Leave, as in the app's Rooms: an amber outline (red is kept for errors) */
+.leave { display: inline-flex; align-items: center; gap: 8px; height: 54px; padding: 0 14px; flex: none; border: 1.5px solid var(--amber); border-radius: 4px; background: transparent; color: var(--amber-ink); font-weight: 700; }
 .leave:hover { background: var(--amber-soft); }
 
 /* the meeting chat: a ruled panel */
@@ -212,7 +213,10 @@ button:disabled { cursor: default; opacity: .45; }
 
 .react-menu { position: fixed; z-index: 10; display: grid; gap: 6px; padding: 10px; background: var(--layer); border: 1px solid var(--stroke-strong); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 .react-row { display: flex; gap: 4px; }
-.react-row button { width: 40px; height: 40px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--layer-2); font-size: 20px; }
+.react-row { gap: 0; }
+.react-row button { width: 40px; height: 40px; border: 1px solid var(--stroke-strong); border-radius: 0; background: var(--layer-2); font-size: 20px; }
+.react-row button + button { margin-left: -1px; }
+.react-row button:hover { position: relative; z-index: 1; }
 .react-row button:hover { border-color: var(--accent); }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20; padding: 10px 16px; background: var(--layer); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--amber); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); font-size: 14px; max-width: calc(100% - 32px); }
 

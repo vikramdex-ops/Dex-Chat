@@ -91,16 +91,16 @@ export class Commands {
   /** POST /api/bot/widget: an integration sets (or removes) one of its Pulse cards. */
   setWidget(botId: string, body: Record<string, unknown>): Widget[] {
     const key = typeof body.key === 'string' ? body.key.trim().slice(0, 40) : '';
-    if (!/^[\w.-]{1,40}$/.test(key)) throw new CommandError('Give the widget a "key" (letters, numbers, . _ -).');
+    if (!/^[\w.-]{1,40}$/.test(key)) throw new CommandError('Give the Pulse card a "key" (letters, numbers, . _ -).');
     if (body.remove === true) {
       this.db.prepare('DELETE FROM bot_widgets WHERE bot_id = ? AND key = ?').run(botId, key);
       return this.widgets();
     }
     const title = typeof body.title === 'string' ? body.title.trim().slice(0, 80) : '';
-    if (!title) throw new CommandError('Give the widget a "title".');
+    if (!title) throw new CommandError('Give the Pulse card a "title".');
     const lines = (Array.isArray(body.lines) ? body.lines : []).filter((l): l is string => typeof l === 'string').map((l) => l.trim().slice(0, 200)).filter(Boolean).slice(0, 8);
     const url = typeof body.url === 'string' && /^https?:\/\/\S+$/.test(body.url) ? body.url.slice(0, 2000) : null;
-    if ((this.db.prepare('SELECT COUNT(*) AS n FROM bot_widgets WHERE bot_id = ? AND key != ?').get(botId, key) as { n: number }).n >= 5) throw new CommandError('An integration can have up to 5 widgets.');
+    if ((this.db.prepare('SELECT COUNT(*) AS n FROM bot_widgets WHERE bot_id = ? AND key != ?').get(botId, key) as { n: number }).n >= 5) throw new CommandError('An integration can have up to 5 Pulse cards.');
     this.db.prepare('INSERT INTO bot_widgets (bot_id, key, title, lines, url, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, key) DO UPDATE SET title = excluded.title, lines = excluded.lines, url = excluded.url, updated_at = excluded.updated_at')
       .run(botId, key, title, JSON.stringify(lines), url, Date.now());
     return this.widgets();
