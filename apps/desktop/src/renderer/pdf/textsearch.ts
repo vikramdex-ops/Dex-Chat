@@ -68,17 +68,21 @@ export function matchSegments(page: PageText, start: number, end: number): Segme
 
 const apply = (m: number[], x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 
+/** How wide a piece of text is in some font (any unit): makes partial boxes follow the letters. */
+export type Measure = (s: string) => number;
+const evenly: Measure = (s) => s.length;
+
 /** The four corners (PDF user space) of characters from..to of a run. */
-export function segmentQuad(run: TextRun, from: number, to: number): Array<[number, number]> {
+export function segmentQuad(run: TextRun, from: number, to: number, measure: Measure = evenly): Array<[number, number]> {
   const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = run.transform;
   const ul = Math.hypot(a, b) || 1;
   const vl = Math.hypot(c, d) || 1;
   const u: [number, number] = [a / ul, b / ul];
   const v: [number, number] = [c / vl, d / vl];
   const h = vl > 0 ? vl : run.height;
-  const len = Math.max(1, run.str.length);
-  const x0 = (run.width * from) / len;
-  const x1 = (run.width * to) / len;
+  const whole = measure(run.str) || Math.max(1, run.str.length);
+  const x0 = from <= 0 ? 0 : (run.width * measure(run.str.slice(0, from))) / whole;
+  const x1 = to >= run.str.length ? run.width : (run.width * measure(run.str.slice(0, to))) / whole;
   const lo = -0.2 * h;
   const up = 0.85 * h;
   const at = (x: number, y: number): [number, number] => [e + u[0] * x + v[0] * y, f + u[1] * x + v[1] * y];
@@ -101,8 +105,8 @@ export function quadToBox(quad: Array<[number, number]>, view: number[]): Box {
 }
 
 /** Highlight boxes for a match. */
-export function matchBoxes(page: PageText, m: Pick<Match, 'start' | 'end'>, view: number[]): Box[] {
-  return matchSegments(page, m.start, m.end).map((s) => quadToBox(segmentQuad(page.runs[s.run], s.from, s.to), view));
+export function matchBoxes(page: PageText, m: Pick<Match, 'start' | 'end'>, view: number[], measure?: Measure): Box[] {
+  return matchSegments(page, m.start, m.end).map((s) => quadToBox(segmentQuad(page.runs[s.run], s.from, s.to, measure), view));
 }
 
 /** The page's text for copying: runs joined, lines kept. */

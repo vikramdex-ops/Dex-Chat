@@ -167,4 +167,9 @@ test('PDF text search: case, spaces and line breaks, Hindi, and boxes on the rig
   const [ub] = matchBoxes(up, findMatches(up, 'GRID', 0)[0], view);
   assert.ok(ub.height * 792 > ub.width * 612, 'a vertical label has a tall box');
   assert.equal(copyText(p), 'PIPE RACK PR-03\nपाइप रैक');
+  // with a measure, a box follows the letters' own widths (a narrow "I" and a wide "W")
+  const ruler = (s: string) => [...s].reduce((n, c) => n + (c === 'I' ? 1 : 3), 0);
+  const w = pageText([{ str: 'IIWW', transform: [10, 0, 0, 10, 0, 100], width: 80, height: 10 }]);
+  const [ww] = matchBoxes(w, findMatches(w, 'WW', 0)[0], view, ruler);
+  assert.ok(Math.abs(ww.left * 612 - 20) < 0.01 && Math.abs(ww.width * 612 - 60) < 0.01);
 });

@@ -65,6 +65,15 @@ function turn(fx: number, fy: number, rot: number): [number, number] {
 }
 const RAW_TRANSFORM: Record<number, string> = { 0: 'none', 90: 'rotate(90deg) translateY(-100%)', 180: 'rotate(180deg) translate(-100%, -100%)', 270: 'rotate(270deg) translateX(-100%)' };
 
+/** Text widths in a sans-serif face, close to the Helvetica and Arial most drawings use. */
+let measureCtx: CanvasRenderingContext2D | null = null;
+const textWidth = (s: string): number => {
+  measureCtx ??= document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return s.length;
+  measureCtx.font = '100px Arial, Helvetica, "Liberation Sans", sans-serif';
+  return measureCtx.measureText(s).width;
+};
+
 async function writeClipboard(text: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); return; } catch { /* fall back below */ }
   const ta = document.createElement('textarea');
@@ -294,7 +303,7 @@ export default function PdfViewer({ name, size, load, onDownload, onOpenExternal
       if (engine.count > 3) setFind((f) => ({ ...f, busy: `Searching page ${i + 1} of ${engine.count}` }));
       try {
         const [text, info] = await Promise.all([engine.text(i), engine.loadInfo(i)]);
-        for (const m of findMatches(text, q, i, MAX_HITS - hits.length)) hits.push({ ...m, boxes: matchBoxes(text, m, info.view) });
+        for (const m of findMatches(text, q, i, MAX_HITS - hits.length)) hits.push({ ...m, boxes: matchBoxes(text, m, info.view, textWidth) });
       } catch { /* a page without text */ }
       if (gen !== findGen.current) return;
       // show the first results while the rest of a long document is searched
