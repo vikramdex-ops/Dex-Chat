@@ -220,3 +220,4 @@
   .agenda-now { left: 8px; }
 }
 @media (hover: none) { .meet-line-ap { display: inline-flex; } }
+.ap-capture .ap-preview .ap-hint { display: none; }

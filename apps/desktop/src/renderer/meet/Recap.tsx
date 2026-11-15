@@ -198,7 +198,7 @@ export default function RecapSheet({ occurrenceId, users, meId, onClose, jump }:
 function Section({ no, title, meta, children }: { no: string; title: string; meta?: string; children: React.ReactNode }) {
   return (
     <section className="recap-sec" aria-labelledby={`recap-${no}`}>
-      <h3 id={`recap-${no}`} className="recap-label"><span className="mono">{no}</span>{title.toUpperCase()}{meta && <span className="mono faint">{meta}</span>}</h3>
+      <h3 id={`recap-${no}`} className="recap-label"><span className="mono">{no}</span><span className="recap-label-text">{title}</span>{meta && <span className="mono faint">{meta}</span>}</h3>
       {children}
     </section>
   );
