@@ -1,0 +1,75 @@
+/* Meeting threads in conversations: the occurrence divider, the recap card, the action point's
+   register entry on its message, the preview above a composer, guests' lines. Drafting-sheet
+   vocabulary: ruled cells, hairlines, mono captions; teal for structure, amber only for overdue. */
+.tag { display: inline-flex; align-items: center; padding: 1px 4px; font: 700 9.5px/1.3 var(--font-mono); letter-spacing: .08em; color: var(--text-2); border: 1px solid var(--stroke-strong); border-radius: 2px; vertical-align: 1px; white-space: nowrap; }
+.tag.live { color: var(--amber-ink); border-color: var(--amber); }
+.guest-tag { margin-left: 6px; }
+.cap { font: 600 9.5px/1.2 var(--font-mono); letter-spacing: .1em; color: var(--text-3); }
+
+/* the divider when an occurrence starts: a title-block label across the spine */
+.meet-divider { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 10px; border-top: 1px solid var(--accent); border-bottom: 1px solid var(--stroke); font-size: 13px; }
+.meet-divider .mono { font: 600 11px/1.3 var(--font-mono); letter-spacing: .08em; color: var(--accent-ink); }
+.meet-divider b { font-family: var(--font-display); font-weight: 600; }
+.meet-divider.cancelled { border-top-color: var(--stroke-strong); }
+
+/* the recap card: a title block over a ruled line of counts */
+.recap-card { max-width: 520px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m, 12px); background: var(--layer-solid); overflow: hidden; }
+.recap-card .rc-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 2px solid var(--accent); color: var(--accent-ink); }
+.recap-card .rc-kind { font: 700 11px/1 var(--font-mono); letter-spacing: .12em; }
+.recap-card .rc-no { margin-left: auto; font-size: 11px; }
+.recap-card .rc-title { padding: 8px 12px 0; font: 600 17px/1.3 var(--font-display); overflow-wrap: anywhere; }
+.recap-card .rc-when { padding: 2px 12px 8px; font-size: 11.5px; color: var(--text-2); }
+.recap-card .rc-counts { display: grid; grid-template-columns: repeat(5, 1fr); margin: 0; border-top: 1px solid var(--stroke); }
+.recap-card .rc-counts > div { padding: 6px 10px; border-right: 1px solid var(--stroke); min-width: 0; }
+.recap-card .rc-counts > div:last-child { border-right: 0; }
+.recap-card dt { font-size: 9px; letter-spacing: .08em; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recap-card dd { margin: 2px 0 0; font: 600 18px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.recap-card dd.open { color: var(--accent-ink); }
+.recap-card > .btn { margin: 10px 12px 12px; }
+
+/* an action point on its message: the register's row */
+.ap-strip { display: flex; flex-wrap: wrap; align-items: stretch; margin-top: 6px; border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); border-radius: 2px; background: var(--layer-solid); font-size: 12.5px; max-width: 560px; }
+.ap-strip > * { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-right: 1px solid var(--stroke); min-height: 30px; }
+.ap-strip > *:last-child { border-right: 0; }
+.ap-strip.late { border-left-color: var(--amber); }
+.ap-strip.done { border-left-color: var(--stroke-strong); }
+.ap-strip.done .ap-val { color: var(--text-3); }
+.ap-strip.compact { margin-top: 2px; }
+.ap-box { width: 18px; height: 18px; padding: 0; margin: auto 0; display: inline-grid; place-items: center; border: 1.5px solid var(--accent); border-radius: 2px; background: transparent; color: var(--accent-ink); cursor: pointer; }
+.ap-strip > .ap-box { margin: 6px 8px; padding: 0; min-height: 18px; border-right: 1.5px solid var(--accent); }
+.ap-box[aria-checked="true"] { background: var(--accent-soft); }
+.ap-ref { font: 700 11.5px/1 var(--font-mono); letter-spacing: .06em; color: var(--accent-ink); }
+.ap-cell .cap { margin-right: 2px; }
+.ap-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.ap-status { font: 700 10px/1 var(--font-mono); letter-spacing: .08em; color: var(--text-2); }
+.ap-status.late { color: var(--amber-ink); }
+.ap-strip .ap-edit { margin-left: auto; padding: 0 6px; }
+.ap-pop { padding: 10px; min-width: 260px; }
+.ap-edit-form .field { display: grid; gap: 4px; margin: 8px 0; }
+.ap-edit-form .row-actions, .ap-dialog .row-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ap-select, .ap-date { min-width: 0; max-width: 200px; height: 28px; padding: 2px 6px; font-size: 12.5px; }
+.ap-other { display: inline-flex; align-items: center; gap: 4px; }
+.ap-other .input { width: 140px; height: 28px; }
+.ap-dialog-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ap-dialog-row .field, .ap-dialog .field { display: grid; gap: 4px; }
+.ap-dialog-row .ap-select, .ap-dialog-row .ap-date { max-width: none; width: 100%; }
+
+/* the preview above a composer while typing /action, AP: or → */
+.ap-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin: 0 12px 6px; border: 1px solid var(--accent); border-radius: 2px; background: var(--layer-solid); font-size: 12.5px; }
+.ap-preview > * { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-right: 1px solid var(--stroke); min-height: 32px; }
+.ap-preview > *:last-child { border-right: 0; }
+.ap-preview .ap-task { flex: 1 1 160px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.ap-preview .ap-hint { font-size: 10px; letter-spacing: .08em; margin-left: auto; }
+
+/* lines said in the meeting chat */
+.meet-line-tag { display: inline-block; margin-top: 2px; font: 600 9.5px/1.3 var(--font-mono); letter-spacing: .1em; color: var(--text-3); }
+
+@media (max-width: 600px) {
+  .recap-card .rc-counts { grid-template-columns: repeat(3, 1fr); }
+  .recap-card .rc-counts > div:nth-child(3) { border-right: 0; }
+  .recap-card .rc-counts > div:nth-child(n + 4) { border-top: 1px solid var(--stroke); }
+  .ap-val { max-width: 120px; }
+  .ap-preview .ap-hint { display: none; }
+  .ap-dialog-row { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .recap-card, .ap-strip { transition: none; } }

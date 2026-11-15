@@ -493,7 +493,9 @@ export class MeetThreads {
     // the card's message is the task: an edit to it is an edit to the action point
     const sealed = !!a.sealed || (!!m && isSealed(m.body));
     const body = m && !sealed ? (actionTrigger(m.body) ?? m.body) : '';
-    const text = sealed ? '' : (a.source === 'promote' ? a.text : body.trim() || a.text).slice(0, ACTION_TEXT_MAX);
+    // the words given when it was logged, unless its message was edited since (an edit to the card is an edit to the point)
+    const edited = !!m?.edited_at && m.edited_at > a.created_at;
+    const text = sealed ? '' : (edited ? body.trim() || a.text : a.text).slice(0, ACTION_TEXT_MAX);
     return {
       id: a.id, convId: a.conv_id, occurrenceId: a.occ_id, n: a.n, text, sealed, ownerId: a.owner_id, ownerName: a.owner_name, due: a.due,
       status: m?.deleted ? 'dropped' : a.status, createdBy: a.created_by, createdAt: a.created_at, updatedAt: a.updated_at, doneAt: a.done_at, doneBy: a.done_by,

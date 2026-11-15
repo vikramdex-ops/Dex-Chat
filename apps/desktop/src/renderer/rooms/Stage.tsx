@@ -5,7 +5,7 @@
 // to one person re-renders that tile, not the sheet.
 import { Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { MEETING_REACTIONS, formatMeetingId, meetingLink } from '@dex/core';
+import { MEETING_REACTIONS, formatMeetingId, isWebGuest, meetingLink } from '@dex/core';
 import type { LobbyRule, PublicUser, RoomInfo, RoomParticipant } from '@dex/core';
 import { Avatar, Dialog, Icon, Popover, colorFor, presenceFor, useToast } from '../ui.tsx';
 import {
@@ -26,6 +26,7 @@ import { usePolicy } from '../policy.ts';
 import { LobbySheet } from '../meet/Lobby.tsx';
 import { HostExtras, SoundMenu, useRoomUsers } from '../meet/RoomExtras.tsx';
 import { BreakoutBanner } from '../meet/Breakouts.tsx';
+import { MeetingAids } from '../meet/Capture.tsx';
 import { useNoise } from './noise.ts';
 import { RoomPointers } from '../pointers/surfaces.tsx';
 import { ControlLayer, ControlMenuItems, ShareControl } from '../meet/Control.tsx';
@@ -38,9 +39,9 @@ const MeetPanel = lazy(() => import('../meet/MeetPanel.tsx'));
 const WebinarPanel = lazy(() => import('../meet/webinar/StageTabs.tsx'));
 const WebinarBar = lazy(() => import('../meet/webinar/StageTabs.tsx').then((m) => ({ default: m.WebinarBar })));
 
-type Tab = 'people' | 'chat' | 'polls' | 'board' | 'files' | WebinarTab;
+type Tab = 'people' | 'chat' | 'register' | 'polls' | 'board' | 'files' | WebinarTab;
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'people', label: 'People' }, { id: 'chat', label: 'Chat' }, { id: 'polls', label: 'Polls' }, { id: 'board', label: 'Board' }, { id: 'files', label: 'Files' },
+  { id: 'people', label: 'People' }, { id: 'chat', label: 'Chat' }, { id: 'register', label: 'Register' }, { id: 'polls', label: 'Polls' }, { id: 'board', label: 'Board' }, { id: 'files', label: 'Files' },
 ];
 /** More tiles than this and the gallery turns into numbered sheets (only one sheet's tiles are live). */
 const GALLERY_PAGE = 25;
@@ -353,6 +354,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
         )}
         <section ref={fieldRef} className={`room-field layout-${layout}${shareStream && layout === 'presentation' ? ' sharing' : ''}`} aria-label="People in the Room">
           <BreakoutBanner room={room} />
+          {room.occurrenceId && <MeetingAids room={room} meId={meId} meDevice={meDevice} users={users} onTab={(t) => setTab(t)} />}
           {room.meetingKind === 'webinar' && <Suspense fallback={null}><WebinarBar room={room} meId={meId} meDevice={meDevice} users={users} /></Suspense>}
           {unmuteAsk && muted && (
             <div className="room-ask" role="alertdialog" aria-label="Asked to unmute">
@@ -391,7 +393,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
         <aside className="room-side">
           <div className="room-panel">
             <nav className="room-tabs" role="tablist" aria-label="Meeting panel" aria-orientation="vertical" onKeyDown={tabKeys}>
-              {(room.meetingKind === 'webinar' ? WEBINAR_TAB_LIST : TABS).map((t) => (
+              {(room.meetingKind === 'webinar' ? WEBINAR_TAB_LIST : TABS.filter((t) => t.id !== 'register' || !!room.occurrenceId)).map((t) => (
                 <button key={t.id} role="tab" id={`room-tab-${t.id}`} aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} aria-controls="room-panel-body" onClick={() => setTab(t.id)}>
                   <span>{t.label}{t.id === 'people' ? ` · ${room.participants.length}` : ''}</span>
                   {t.id === 'people' && isHost && waiting.length > 0 && <i className="room-tab-badge" aria-label={`${waiting.length} waiting`}>{waiting.length}</i>}
@@ -535,7 +537,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   );
 }
 
-type HostOp = (op: 'room.admit' | 'room.lock' | 'room.cohost' | 'room.mute' | 'room.askUnmute' | 'room.remove' | 'room.spotlight' | 'room.end' | 'room.hand', params: Record<string, unknown>) => Promise<unknown>;
+type HostOp = (op: 'room.admit' | 'room.lock' | 'room.cohost' | 'room.mute' | 'room.askUnmute' | 'room.remove' | 'room.spotlight' | 'room.end' | 'room.hand' | 'meet.noteTaker', params: Record<string, unknown>) => Promise<unknown>;
 
 /** What you can do to a person in the Room: pin for yourself; hosts spotlight, mute, ask, lower a hand, make co-host, remove. */
 function PersonMenu({ anchor, onClose, room, deviceId, meDevice, meId, isHost, isMainHost, pinned, nameOf, handUp, run, host }: {
@@ -564,6 +566,11 @@ function PersonMenu({ anchor, onClose, room, deviceId, meDevice, meId, isHost, i
           {!me && p.muted && <button role="menuitem" onClick={() => act(() => host('room.askUnmute', { deviceId }))}><Icon name="mic" size={16} />Ask {first} to unmute</button>}
           {isMainHost && !me && p.userId !== meId && (
             <button role="menuitem" onClick={() => act(() => host('room.cohost', { userId: p.userId, on: !isCo }))}><Glyph name="people" size={16} />{isCo ? 'Take back co-host' : 'Make co-host'}</button>
+          )}
+          {room.occurrenceId && !isWebGuest(p.userId) && (
+            <button role="menuitem" onClick={() => act(() => host('meet.noteTaker', { userId: room.noteTakerId === p.userId ? null : p.userId }))}>
+              <Icon name="action" size={16} />{room.noteTakerId === p.userId ? (me ? 'Stop taking the notes' : `${first} stops taking the notes`) : me ? 'I take the notes' : `${first} takes the notes`}
+            </button>
           )}
           {!me && p.userId !== room.hostId && (isMainHost || !isCo) && (
             <button role="menuitem" className="danger" onClick={() => act(() => void confirmAction({ title: `Take ${nameOf(p.userId)} out of the meeting?`, body: 'They wait in the lobby, and a host can let them back in.', confirm: 'Remove from the meeting', danger: true })
@@ -655,10 +662,11 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
               const cam = s.me ? camera : !!p?.camera;
               const hand = handOrder.get(s.deviceId);
               const role = s.userId === room.hostId ? 'HOST' : (room.coHosts ?? []).includes(s.userId) ? 'CO-HOST' : '';
+              const notes = room.noteTakerId === s.userId;
               return (
                 <tr key={s.deviceId} className={hand ? 'hand-up' : undefined}>
                   <td className="mono ref">{zones.get(s.deviceId) ?? '··'}</td>
-                  <td className="who">{nameOf(s.userId)}{s.me && <span className="faint"> (you)</span>}{role && <span className="role-tag">{role}</span>}{p?.recording && <span className="rec-tag">REC</span>}</td>
+                  <td className="who">{nameOf(s.userId)}{s.me && <span className="faint"> (you)</span>}{role && <span className="role-tag">{role}</span>}{notes && <span className="role-tag">NOTE-TAKER</span>}{p?.recording && <span className="rec-tag">REC</span>}</td>
                   <td className="hand-cell" title={hand === 1 ? 'Hand raised · first in line' : hand ? `Hand raised · number ${hand} in line` : undefined}>{hand ? <span className="room-hand"><Glyph name="hand" size={12} />{hand}</span> : null}</td>
                   <td className={isMuted ? 'off' : ''} title={isMuted ? 'Mic off' : 'Mic on'}><Icon name={isMuted ? 'mic-off' : 'mic'} size={14} /></td>
                   <td className={cam ? '' : 'off'} title={cam ? 'Camera on' : 'Camera off'}><Icon name={cam ? 'video' : 'video-off'} size={14} /></td>
