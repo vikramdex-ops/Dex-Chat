@@ -1,0 +1,1223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dexterity Connect User Guide</title>
+<link rel="stylesheet" href="guide.css">
+<script id="meta" type="application/json">
+{"title": "Dexterity Connect User Guide", "doc_no": "DDSP-IT-DXC-UG-001", "rev": "0", "date": "15-Nov-2026",
+ "company": "Dexterity Design Services Private Limited", "classification": "Internal use only",
+ "subject": "User guide for Dexterity Connect for Windows 10/11, macOS and Android, and the office hub"}
+</script>
+</head>
+<body>
+
+<!-- ===================================================== COVER -->
+<section class="cover">
+  <div class="cover__top">
+    <img src="dexterity-logo.png" alt="Dexterity">
+    <div class="cover__org"><b>Dexterity Design Services Private Limited</b><br>Internal tools · Official usage document</div>
+  </div>
+  <div class="cover__title">
+    <img src="../../apps/desktop/build/icon.png" alt="">
+    <div><div class="h1">Dexterity Connect</div><p class="sub">User Guide: messages, meetings and the office, in one place</p></div>
+  </div>
+  <div class="cover__rule"></div>
+  <p class="cover__lead">This guide explains how to use Dexterity Connect, the office's own messenger, meetings and
+  collaboration app. It runs on our own hub on the office network, keeps working with the internet unplugged, and
+  reaches you at home or on site through the office's gateway. Each section shows a screenshot of the screen it
+  describes and says what every button and setting does. It is written for all DDSP staff; section 17 is for
+  administrators.</p>
+  <div class="cover__control">
+    <table class="control">
+      <tr><th colspan="2">Document control</th></tr>
+      <tr><td>Document No.</td><td>DDSP-IT-DXC-UG-001</td></tr>
+      <tr><td>Revision</td><td>0 (first issue)</td></tr>
+      <tr><td>Date</td><td>15-Nov-2026</td></tr>
+      <tr><td>Applies to</td><td>Dexterity Connect for Windows 10/11, macOS and Android, and the office hub</td></tr>
+      <tr><td>Issued by</td><td>Office of the Managing Director</td></tr>
+      <tr><td>Approved by</td><td class="pending">Pending approval</td></tr>
+      <tr><td>Classification</td><td>Internal use only. Do not share outside DDSP.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ===================================================== CONTENTS -->
+<section class="sec toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span class="n">1</span><span class="t">Introduction</span><span class="toc-page" data-sec="1"></span></li>
+    <li><span class="n">2</span><span class="t">Installation and first start</span><span class="toc-page" data-sec="2"></span></li>
+    <li><span class="n">3</span><span class="t">The window at a glance</span><span class="toc-page" data-sec="3"></span></li>
+    <li><span class="n">4</span><span class="t">Pulse</span><span class="toc-page" data-sec="4"></span></li>
+    <li><span class="n">5</span><span class="t">Messages</span><span class="toc-page" data-sec="5"></span></li>
+    <li><span class="n">6</span><span class="t">Spaces and lounges</span><span class="toc-page" data-sec="6"></span></li>
+    <li><span class="n">7</span><span class="t">Desk</span><span class="toc-page" data-sec="7"></span></li>
+    <li><span class="n">8</span><span class="t">Calendar and meetings</span><span class="toc-page" data-sec="8"></span></li>
+    <li><span class="n">9</span><span class="t">Directory and the office drawing</span><span class="toc-page" data-sec="9"></span></li>
+    <li><span class="n">10</span><span class="t">Bots</span><span class="toc-page" data-sec="10"></span></li>
+    <li><span class="n">11</span><span class="t">Automations</span><span class="toc-page" data-sec="11"></span></li>
+    <li><span class="n">12</span><span class="t">Help me: IT help and support sessions</span><span class="toc-page" data-sec="12"></span></li>
+    <li><span class="n">13</span><span class="t">Preferences</span><span class="toc-page" data-sec="13"></span></li>
+    <li><span class="n">14</span><span class="t">Phones (Android)</span><span class="toc-page" data-sec="14"></span></li>
+    <li><span class="n">15</span><span class="t">Working from outside the office</span><span class="toc-page" data-sec="15"></span></li>
+    <li><span class="n">16</span><span class="t">Security and privacy</span><span class="toc-page" data-sec="16"></span></li>
+    <li><span class="n">17</span><span class="t">For administrators</span><span class="toc-page" data-sec="17"></span></li>
+    <li class="sub"><span class="n">17.1</span><span class="t">The Control room, section by section</span><span class="toc-page" data-sec="17.1"></span></li>
+    <li class="sub"><span class="n">17.2</span><span class="t">Installing the office hub</span><span class="toc-page" data-sec="17.2"></span></li>
+    <li class="sub"><span class="n">17.3</span><span class="t">Backing up and restoring the hub</span><span class="toc-page" data-sec="17.3"></span></li>
+    <li class="sub"><span class="n">17.4</span><span class="t">When someone leaves</span><span class="toc-page" data-sec="17.4"></span></li>
+    <li class="sub"><span class="n">17.5</span><span class="t">Releasing updates</span><span class="toc-page" data-sec="17.5"></span></li>
+    <li><span class="n">18</span><span class="t">Keyboard shortcuts</span><span class="toc-page" data-sec="18"></span></li>
+    <li><span class="n">19</span><span class="t">Troubleshooting and support</span><span class="toc-page" data-sec="19"></span></li>
+  </ol>
+  <div class="conventions">
+    <h3>Conventions used in this guide</h3>
+    <p><kbd>Ctrl</kbd> + <kbd>G</kbd> means: hold Ctrl and press G. On a Mac, use <kbd>Cmd</kbd> where this guide says Ctrl.
+    <b>Words in bold</b> are the names of buttons, menus and settings exactly as Dexterity Connect shows them.
+    <b>Preferences → Your devices</b> means: open Preferences, then go to Your devices. <code>\\nas01\Project</code> is a
+    path or address as you would type it.</p>
+    <p>The screenshots show a demonstration office (40 colleagues, the P-12 Piping and P-14 Structural steel jobs,
+    Priya Raman as the reader). None of the people, messages or files are real. Your screens show your own office.
+    Most screenshots are of the light theme; the dark theme has the same layout.</p>
+    <p><b>Policy.</b> Dexterity Connect is DDSP's official channel for internal messages, calls and meetings. Use it for
+    work. Do not install it on a device that is not yours, do not share your pairing codes, and tell IT at once if a
+    phone or laptop with the app is lost.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 1 -->
+<section class="sec">
+  <h2>1 Introduction</h2>
+  <p class="lead">Dexterity Connect is the office's own messenger and meeting room. Colleagues write to each other,
+  talk in project Spaces, share drawings, meet on video, keep reminders, and find anyone in the office, all from one
+  window. Everything lives on our <b>office hub</b>, a PC in the office, not on someone else's cloud.</p>
+  <table class="t">
+    <tr><th style="width:34mm">Part</th><th>What it is for</th></tr>
+    <tr><td>Messages</td><td><b>Direct</b> conversations with one person or a small group, and <b>Spaces</b> for a job, a team or the whole office. Side-tracks keep a discussion off the main line. Files and PDF drawings open inside the app.</td></tr>
+    <tr><td>Meetings</td><td>Voice and video calls (<b>Rooms</b>), meetings with their own ID and link, screen sharing, recording, breakout rooms, guests who join from a browser, and webinars.</td></tr>
+    <tr><td>Desk</td><td>Your own drawer: reminders, messages you kept, side-tracks you follow, messages waiting to be sent, notes, your bots and your timesheet.</td></tr>
+    <tr><td>Calendar</td><td>Meetings with invitations and replies, conference rooms that cannot be double-booked, and one-click Join.</td></tr>
+    <tr><td>Directory</td><td>Everyone in the office with their department, extension and seat, and the <b>office drawing</b>: the org chart and floor plan drawn like an engineering drawing.</td></tr>
+    <tr><td>Bots and automations</td><td>Small question-and-answer bots anyone can make (plot requests, leave notes, site visits), and rules that act when something happens in a conversation.</td></tr>
+    <tr><td>Help me</td><td>Ask IT for help from inside the app; IT can open a support session in which you decide what they may see and touch.</td></tr>
+  </table>
+
+  <h3>1.1 How it fits together</h3>
+  <dl class="kv">
+    <dt>The office hub</dt><dd>One always-on PC in the office runs the hub as a Windows service. It holds the Directory and the approvals, the history of Spaces, the shared files, the Calendar and recordings. It backs itself up every night (section 17.3).</dd>
+    <dt>The app</dt><dd>Dexterity Connect on your Windows PC, Mac or Android phone. On the office network it finds the hub by itself and talks to it directly. Each device has its own key; there is no password to remember, because you are signed in through Windows.</dd>
+    <dt>The gateway</dt><dd>For home, site and mobile data, the office runs a small relay on Cloudflare. The hub connects out to it, so no port is opened at the office, and your device's traffic is encrypted all the way to the hub: the gateway only passes it on and cannot read it (section 15).</dd>
+  </dl>
+  <div class="note info"><b>Works with the internet unplugged.</b> In the office, messages, files and calls go over the office network only. If the internet is down, nothing changes for people in the office. If the hub PC itself is off, PCs find each other on the network and pass Direct messages straight across; the hub adds them to its history when it is back.</div>
+
+  <h3>1.2 Encryption in one paragraph</h3>
+  <p>The connection between every device and the hub is encrypted and pinned to the hub's own certificate. On top of
+  that, <b>Direct messages are end-to-end encrypted</b>: they are locked on the sender's device and can only be opened
+  on the devices of the people in the conversation. The hub stores and passes them on but cannot read them. Spaces are
+  not end-to-end encrypted, so the office can keep them, search them and apply its retention and legal-hold rules.
+  Section 16 explains what this means in practice.</p>
+
+  <h3>1.3 Words used in Dexterity Connect</h3>
+  <table class="t">
+    <tr><th style="width:34mm">Word</th><th>Meaning</th></tr>
+    <tr><td>Lens</td><td>One of the main views across the top of the window: Pulse, Direct, Spaces, Desk, Calendar, Directory, Meet.</td></tr>
+    <tr><td>Space</td><td>A conversation for a job, team or topic (other apps call it a channel). Open to the office, or private.</td></tr>
+    <tr><td>Direct</td><td>A private conversation with one colleague or a small group. End-to-end encrypted.</td></tr>
+    <tr><td>Switchboard</td><td>The list of your conversations on the left of Direct and Spaces.</td></tr>
+    <tr><td>Dock</td><td>The box at the bottom of a conversation where you write.</td></tr>
+    <tr><td>Side-track</td><td>A short discussion hanging off one message (a thread).</td></tr>
+    <tr><td>Stamp</td><td>A reaction to a message (👍, ✅, 👀 …).</td></tr>
+    <tr><td>Callout</td><td>A message that mentions you by name with <code>@</code>.</td></tr>
+    <tr><td>Room</td><td>A voice or video call. A meeting is a Room with an ID, a lobby and a host.</td></tr>
+    <tr><td>Lounge</td><td>A standing voice Room inside a Space that people drop into and out of.</td></tr>
+    <tr><td>Control room</td><td>The administrators' settings, opened from their tile (section 17).</td></tr>
+  </table>
+
+  <h3>1.4 System requirements</h3>
+  <ul>
+    <li><b>Windows:</b> Windows 10 or Windows 11, 64-bit. The app installs for your Windows user.</li>
+    <li><b>macOS:</b> a Mac with Apple silicon or an Intel processor (separate installers).</li>
+    <li><b>Android:</b> an Android phone; the app is installed from a link or QR code (section 14).</li>
+    <li><b>Network:</b> the office network (wired or Wi-Fi). From outside the office, any internet connection, once an administrator has turned on access from outside (section 15).</li>
+    <li><b>Calls:</b> a headset or speakers and microphone; a camera for video. A camera is not needed to take part.</li>
+    <li><b>The hub:</b> one office PC that stays on, running Windows, with a second disk or a network share for backups (section 17.2).</li>
+  </ul>
+</section>
+
+<!-- ===================================================== 2 -->
+<section class="sec">
+  <h2>2 Installation and first start</h2>
+  <h3>2.1 Install the app</h3>
+  <ol class="steps">
+    <li>Get the installer from the office's release page,
+        <a href="https://github.com/dexterity-admin/dexterity-connect/releases">github.com/dexterity-admin/dexterity-connect/releases</a>
+        (linked from <a href="https://dexterity-admin.github.io/dexterity-connect/">dexterity-admin.github.io/dexterity-connect</a>), or ask IT for the copy on the office share.
+        Windows uses the <b>Setup</b> <code>.exe</code>; Macs use the <code>.dmg</code> for Apple silicon (arm64) or Intel (x64).</li>
+    <li><b>Windows:</b> double-click the installer. It installs for your Windows user and opens Dexterity Connect at the end.<br>
+        <b>macOS:</b> open the <code>.dmg</code> and drag Dexterity Connect into Applications.</li>
+    <li>The app adds itself to the Start menu (or Applications), and keeps itself up to date from then on (section 13).</li>
+  </ol>
+  <div class="note warn"><b>If Windows shows "Windows protected your PC" (SmartScreen)</b>, click <b>More info → Run anyway</b>.
+  This appears because the installer is an internal build that is not code-signed. Only run installers from the release page above or from IT.
+  On a Mac, if macOS says the app cannot be checked, Control-click it in Applications and choose <b>Open</b>.</div>
+
+  <h3>2.2 Join the office hub</h3>
+  <div class="cols w40">
+    <figure><img src="figures/fig-welcome.png" alt="The welcome screen: your Windows account, your name, the office hub and Request access"><figcaption><b>Fig. 2-1</b> First start: the welcome screen</figcaption></figure>
+    <div>
+      <p>The first time it opens, the app shows <b>Welcome to Dexterity Connect</b> (Fig. 2-1).</p>
+      <ol class="steps">
+        <li>Check the Windows account shown at the top (for example <code>DEX\priya</code>). This is how the office knows you; there is no password.</li>
+        <li>Under <b>Your name, as colleagues will see it</b>, type your name as it should appear, for example <i>Priya Raman</i>.</li>
+        <li>Under <b>Office hub</b>, the app looks for the hub on the network and lists it with a <span class="tag">SECURE</span> tag. Click it. If it is not found, click <b>Enter the hub address yourself</b> and type the address IT gives you (as in the figure); <b>Find the hub automatically instead</b> goes back.</li>
+        <li>Click <b>Request access</b>.</li>
+      </ol>
+      <p>Two other ways in, on the same screen: <b>I'm a guest with an invite code</b> (for consultants and client engineers given a code, section 17.1 Guests) and <b>I have a pairing code</b> (to add your own laptop, section 2.4).</p>
+    </div>
+  </div>
+
+  <h3>2.3 Wait for approval</h3>
+  <div class="cols w70">
+    <div>
+      <p>Every new PC or phone must be approved once by an administrator. Until then the app shows
+      <b>Waiting for an administrator</b> (Fig. 2-2) with your <b>device code</b>, two groups of four characters.</p>
+      <ol class="steps">
+        <li>Tell an administrator you are waiting (in person or by phone).</li>
+        <li>Read out your device code. The administrator sees the same code in <b>Control room → Approvals</b> and checks it matches before clicking <b>Approve</b>.</li>
+        <li>The screen moves on by itself once you are approved, and Pulse opens. (<b>Choose a different hub</b> goes back if you picked the wrong one.)</li>
+      </ol>
+      <div class="note tip"><b>The first person to join</b> a new hub becomes its owner and is approved straight away (section 17.2).</div>
+    </div>
+    <figure><img src="figures/fig-waiting.png" alt="Waiting for an administrator, with the device code"><figcaption><b>Fig. 2-2</b> Waiting for an administrator, with the device code to read out</figcaption></figure>
+  </div>
+
+  <h3>2.4 Add your own phone or laptop</h3>
+  <p>Once your office PC is approved, you can add your own phone or laptop yourself, without an administrator, from
+  <b>Preferences → Your devices</b> (open Preferences with <kbd>Ctrl</kbd> + <kbd>,</kbd>).</p>
+  <div class="cols">
+    <figure><img src="figures/fig-pair-phone.png" alt="Add your phone: a QR code and three steps"><figcaption><b>Fig. 2-3</b> <b>Add my phone</b>: point the phone's camera at the square</figcaption></figure>
+    <figure><img src="figures/fig-pair-laptop.png" alt="Add your laptop: a pairing code to copy"><figcaption><b>Fig. 2-4</b> <b>Add my laptop</b>: a code to send to yourself</figcaption></figure>
+  </div>
+  <ul>
+    <li><b>Add my phone</b> shows a QR code. Point the phone's camera at it and tap the link that appears; the page offers <b>Download for Android</b>, or <b>Open the app</b> if it is already installed. The app finds the code by itself and signs you in. If it asks, tap <b>Scan the code on your PC</b>.</li>
+    <li><b>Add my laptop</b> shows a code that starts with <code>DXP1-</code>. Click <b>Copy code</b> (or <b>Email it to me</b>), install Dexterity Connect on the laptop, open it and paste the code. A laptop with a camera can scan the QR code instead.</li>
+    <li>A code works <b>once</b>, for <b>24 hours</b>, and only for you. The device joins as you, already approved. Your other devices are told at once (<i>A device was added to your account</i>), and the new device is listed under <b>Your devices</b>, where <b>Remove</b> signs it out. <b>Keep codes to yourself</b>: anyone who has your code before you use it can add a device to your account.</li>
+  </ul>
+</section>
+
+<!-- ===================================================== 3 -->
+<section class="sec">
+  <h2>3 The window at a glance</h2>
+  <figure><img src="figures/fig-window.png" alt="The main window: title bar with the lenses, GO TO, the hub and your tile; Pulse below"><figcaption><b>Fig. 3-1</b> The main window, with Pulse open</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:36mm">Area</th><th>Purpose</th></tr>
+    <tr><td>Title bar, left</td><td>The Dexterity Connect mark and name.</td></tr>
+    <tr><td>Lens bar</td><td>The seven lenses (table below). A lens shows an amber count when something needs you there (a callout, an approval), and a small tick when there is only something unread. <kbd>Ctrl</kbd> + <kbd>1</kbd> … <kbd>7</kbd> switches lenses.</td></tr>
+    <tr><td>GO TO</td><td>The field at the end of the lens bar (<kbd>Ctrl</kbd> + <kbd>G</kbd>): type a few letters to jump to a person, a conversation or a command (section 3.2).</td></tr>
+    <tr><td>Hub status</td><td>The office hub's name with a dot: teal when connected, amber while reconnecting. A globe shows when you are connected from outside the office through the gateway.</td></tr>
+    <tr><td>Your tile</td><td>Your initials. Click it for your day, your status, Help me, Preferences and (for administrators) the Control room (section 3.3). A thin teal arc round the tile traces your working day.</td></tr>
+  </table>
+
+  <h3>3.1 The lenses</h3>
+  <table class="t">
+    <tr><th style="width:28mm">Lens</th><th>What it shows</th><th style="width:22mm">Section</th></tr>
+    <tr><td>Pulse</td><td>Your start page: what needs you, the day's line, who is in, what is coming up.</td><td>4</td></tr>
+    <tr><td>Direct</td><td>Your Direct conversations, with the Switchboard on the left.</td><td>5</td></tr>
+    <tr><td>Spaces</td><td>Your Spaces and lounges, with the Switchboard on the left.</td><td>5, 6</td></tr>
+    <tr><td>Desk</td><td>Callouts, side-tracks, reminders, kept messages, sends waiting, notes, bots, timesheet.</td><td>7</td></tr>
+    <tr><td>Calendar</td><td>Your week, meetings, invitations and conference rooms.</td><td>8</td></tr>
+    <tr><td>Directory</td><td>People, the org chart (the office drawing), departments and the day log.</td><td>9</td></tr>
+    <tr><td>Meet</td><td>Start or join a meeting, your personal room, webinars, recordings and recent meetings.</td><td>8</td></tr>
+  </table>
+  <p>Press <kbd>G</kbd> then a letter, outside a text box, to jump to a lens: <kbd>P</kbd> Pulse, <kbd>D</kbd> Direct,
+  <kbd>S</kbd> Spaces, <kbd>K</kbd> Desk, <kbd>C</kbd> Calendar, <kbd>Y</kbd> Directory, <kbd>M</kbd> Meet.</p>
+
+  <div class="hold">
+  <h3>3.2 GO TO</h3>
+  <div class="cols w40">
+    <figure><img src="figures/fig-goto.png" alt="GO TO with pip typed: Spaces and people that match"><figcaption><b>Fig. 3-2</b> GO TO: <i>pip</i> finds the Piping Spaces and colleagues</figcaption></figure>
+    <div>
+      <p>Click <b>GO TO</b> or press <kbd>Ctrl</kbd> + <kbd>G</kbd>, and type. The list shows Spaces, Direct conversations,
+      people (with their Windows account) and commands such as <b>Create a Space</b>, <b>Open Preferences</b>,
+      <b>Keyboard shortcuts</b>, <b>Check for updates</b> or <b>Help me</b>. Use the arrow keys and <kbd>Enter</kbd>, or click.</p>
+      <p>The last line, <b>Search everything for "…" with filters</b>, opens Search with what you typed (section 5.11).</p>
+    </div>
+  </div>
+  </div>
+
+  <h3>3.3 Your tile: your day and your status</h3>
+  <div class="cols w70">
+    <div>
+      <p>Click your tile at the top right (Fig. 3-3).</p>
+      <dl class="kv">
+        <dt>Day and Where today</dt><dd>Your working day. Choose where you are today (<b>Office</b>, <b>Home</b>, <b>Site</b> or <b>Client</b>) and click <b>Start my day</b>. During the day the same place offers <b>Step out</b> (and <b>Back at desk</b>) and <b>Close my day</b>; you can change where you are at any time. Colleagues see who is working, and where, on Pulse and in the Directory; your hours appear in your timesheet on the Desk. A day you forget to end closes at your last activity.</dd>
+        <dt>Show me as</dt><dd><b>At my desk</b> (notifications on), <b>Heads-down</b> (focused; notifications still on), <b>No interruptions</b> (no notifications or sounds) and <b>Unlisted</b> (you appear offline). After choosing one, pick how long: <b>Till lunch</b>, <b>Till</b> the office's closing time, <b>Rest of today</b> or <b>Until I change it</b>. The app also shows you as away when you are idle or lock the screen, and <i>in a meeting</i> during a Calendar meeting.</dd>
+        <dt>Away from the office…</dt><dd>For leave and site visits: the date you are <b>Back on</b>, a note, and who to contact for anything urgent. Colleagues see it on your profile and when they write to you, with an automatic reply.</dd>
+        <dt>Help me…</dt><dd>Ask IT for help (section 12).</dd>
+        <dt>Preferences, Keyboard shortcuts</dt><dd>Section 13 and section 18.</dd>
+        <dt>Control room</dt><dd>Administrators only (section 17).</dd>
+        <dt>Check for updates</dt><dd>Looks for a new version now (section 13.6).</dd>
+        <dt>Offices</dt><dd>The office you are in; <b>Join another office…</b> adds a second hub on the same device.</dd>
+      </dl>
+    </div>
+    <figure><img src="figures/fig-tile-menu.png" alt="The tile menu: day, where today, show me as, help, preferences"><figcaption><b>Fig. 3-3</b> Your tile's menu</figcaption></figure>
+  </div>
+
+  <h3>3.4 Light and dark</h3>
+  <div class="cols w30">
+    <figure><img src="figures/fig-dark.png" alt="The P-12 Piping Space in the dark theme"><figcaption><b>Fig. 3-4</b> The dark theme</figcaption></figure>
+    <div>
+      <p>Dexterity Connect follows the Windows (or macOS) light or dark setting. To choose yourself, open
+      <b>Preferences → Appearance → Theme</b> and pick <b>System</b>, <b>Light</b> or <b>Dark</b>.</p>
+      <p>In the same place: <b>Density</b> (<b>Comfortable</b> or <b>Compact</b>, which fits more on screen), how
+      <b>Messages drawn as</b> (<b>Spine</b> or <b>Cards</b>), <b>Time format</b> and <b>Text size</b>.
+      <kbd>Ctrl</kbd> + <kbd>=</kbd> and <kbd>Ctrl</kbd> + <kbd>-</kbd> change the text size at any time; <kbd>Ctrl</kbd> + <kbd>0</kbd> resets it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 4 -->
+<section class="sec">
+  <h2>4 Pulse</h2>
+  <p class="lead">Pulse is where the app opens. It answers two questions: <i>what needs me now</i>, and <i>what is the office doing today</i>.</p>
+  <figure><img src="figures/fig-pulse.png" alt="Pulse: greeting, the day's line, needs you"><figcaption><b>Fig. 4-1</b> Pulse: the greeting, the day's line and Needs you</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:36mm">Part</th><th>What it shows and does</th></tr>
+    <tr><td>Greeting</td><td><i>Good morning / afternoon / evening</i> and your first name; below it how many colleagues are online and the hub's name.</td></tr>
+    <tr><td>The day's line</td><td>One line a day for the whole office, beside a technical drawing that draws itself in like a pen plotter. <b>Copy</b>, <b>Share</b> (into a conversation) and <b>Full screen</b>; the arrows step through earlier days. Administrators can add the office's own lines (section 17.1).</td></tr>
+    <tr><td>Needs you</td><td>Reminders due today first (with their time), then conversations with callouts (an amber <span class="tag amber">@ 1</span>) or unread messages (<span class="tag">1 NEW</span>), newest first. Click one to open it.</td></tr>
+  </table>
+  <figure><img src="figures/fig-pulse-cards.png" alt="The lower part of Pulse: day log, coming up, the office drawing, online now, your status, office hub"><figcaption><b>Fig. 4-2</b> Further down: the office cards</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:36mm">Card</th><th>What it shows and does</th></tr>
+    <tr><td>Day log</td><td>How many colleagues have started their day, by place (<b>Office</b>, <b>Home</b>, <b>Site</b>, <b>Client</b>), with their tiles, and your own day with a <b>Start my day</b> button.</td></tr>
+    <tr><td>Coming up</td><td>Your meetings today and tomorrow; a camera mark means it is held as a call. A meeting about to start shows a <b>Join</b> card.</td></tr>
+    <tr><td>The office drawing</td><td>New colleagues this month, birthdays and work anniversaries today, and <i>Meet someone in …</i>, a colleague from another department. <b>Open the drawing</b> opens the org chart at them (section 9).</td></tr>
+    <tr><td>Online now</td><td>Who is online; <b>Open the Directory</b>.</td></tr>
+    <tr><td>Your status</td><td>A line colleagues see next to your name (<i>Checking P-12 isometrics</i>). Type it and click <b>Set</b>.</td></tr>
+    <tr><td>Office hub</td><td>The hub you are connected to and its address, with <span class="tag">ENCRYPTED CONNECTION</span> and <span class="tag">WORKS WITHOUT INTERNET</span>.</td></tr>
+  </table>
+  <p>Tools that integrate with Dexterity Connect (Hopper, Dexterity Sheets and others) can add cards of their own to Pulse.</p>
+</section>
+<!-- ===================================================== 5 -->
+<section class="sec">
+  <h2>5 Messages</h2>
+  <p class="lead">Conversations come in two kinds. A <b>Direct</b> conversation is private, with one colleague or a small
+  group, and end-to-end encrypted. A <b>Space</b> is for a job, a team or a topic; an open Space can be found and joined
+  by anyone in the office, a private one only by the people added to it.</p>
+
+  <h3>5.1 The Switchboard</h3>
+  <div class="cols w30">
+    <figure><img src="figures/fig-switchboard.png" alt="The Switchboard: chips, filter, Spaces list and lounges"><figcaption><b>Fig. 5-1</b> The Switchboard on the Spaces lens</figcaption></figure>
+    <div>
+      <p>The <b>Direct</b> and <b>Spaces</b> lenses share one list on the left, the <b>Switchboard</b>.</p>
+      <table class="t">
+        <tr><th style="width:30mm">Part</th><th>What it does</th></tr>
+        <tr><td>Chips</td><td><b>All</b>, <b>People</b> (Direct), <b>Spaces</b> and <b>Projects</b>. Projects are Spaces whose name or topic has a job number, such as <i>P-12</i> or <i>P-12513</i>.</td></tr>
+        <tr><td>Filter</td><td>Type to narrow the list.</td></tr>
+        <tr><td>Show unread only</td><td>The envelope button beside the filter.</td></tr>
+        <tr><td>Sort</td><td>By <b>Latest message</b>, <b>Unread first</b> or <b>Name</b>.</td></tr>
+        <tr><td><b>+</b></td><td><b>New Space</b> or <b>New Direct conversation</b> (section 6.1).</td></tr>
+        <tr><td>A row</td><td>Tile, name and the last message. Unread conversations have a bold name and a teal tick on the left edge; a callout to you adds an amber count.</td></tr>
+        <tr><td>Lounges</td><td>The lounges in your Spaces and who is in them (section 6.2).</td></tr>
+      </table>
+      <p>Each row has a menu (hover and click the small arrow, or right-click): <b>Lay it beside</b> (open it next to the
+      conversation you are in), <b>Keep on top</b>, drawers of your own (<b>New drawer…</b> groups rows under a title you
+      choose), and <b>Hush</b> to mute it <b>Till lunch</b>, <b>Till end of day</b>, <b>Until Monday</b> or <b>Until I turn it back on</b>.
+      The <b>‹</b> at the top folds the Switchboard into a strip of tiles; drag its edge to make it wider.
+      <kbd>Alt</kbd> + <kbd>↑</kbd> / <kbd>↓</kbd> moves to the previous or next conversation.</p>
+    </div>
+  </div>
+
+  <h3>5.2 Reading a conversation</h3>
+  <figure><img src="figures/fig-space.png" alt="The P-12 Piping Space: header, the timeline with messages, a PDF and a callout, the Dock"><figcaption><b>Fig. 5-2</b> A Space: the header, the timeline and the Dock</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:36mm">Part</th><th>What it shows and does</th></tr>
+    <tr><td>Header</td><td>The Space's tile, name and topic; <b>PEOPLE</b> and <b>OPENED</b>; <b>Lounges</b>; <b>Open a Room</b> (a call here; the arrow beside it offers <b>With voice</b> or <b>With video</b>); and <b>More for this conversation</b> (<b>⋯</b>): <b>Plan a meeting</b>, <b>Add a tool…</b>, <b>Search this conversation</b>, <b>Jump to a date…</b>, <b>Automations…</b> and <b>Open in a new window</b>.</td></tr>
+    <tr><td>Timeline</td><td>Messages hang off a thin rule (the <i>spine</i>), grouped by sender, with a time tick every few minutes and a label at each new day. Your own messages carry an amber notch on the spine. Callouts to you are tinted amber.</td></tr>
+    <tr><td>New line</td><td>When you come back, a line marked <span class="tag amber">NEW</span> sits above the first message you have not seen. Scrolled back, a <b>NEWEST</b> button takes you to the latest message and counts what arrived meanwhile. The app remembers where you were reading in each conversation.</td></tr>
+    <tr><td>Side tabs</td><td>On the right edge: <b>Notes</b>, <b>Whiteboards</b>, <b>Files</b>, <b>Pinned</b> and <b>People</b> for this conversation.</td></tr>
+    <tr><td>Dock</td><td>Where you write (section 5.3).</td></tr>
+  </table>
+  <p>Hold <kbd>Ctrl</kbd> and click another conversation to lay it beside this one; up to three sit side by side.
+  Use <kbd>↑</kbd> and <kbd>↓</kbd> in the timeline to move from message to message with the keyboard.</p>
+
+  <h3>5.3 Writing and formatting</h3>
+  <figure><img src="figures/fig-composer.png" alt="The Dock with a formatted message being written"><figcaption><b>Fig. 5-3</b> Writing in the Dock: bold text and a list</figcaption></figure>
+  <div class="cols w60">
+    <div>
+      <p>Type in the Dock and press <kbd>Enter</kbd> to send; <kbd>Shift</kbd> + <kbd>Enter</kbd> starts a new line.
+      The line under the Dock is a reminder of the keys, and <b>Formatting</b> opens the full list.</p>
+      <table class="t">
+        <tr><th style="width:36mm">To get</th><th>Type</th></tr>
+        <tr><td><b>bold</b></td><td><code>**bold**</code> or <kbd>Ctrl</kbd> + <kbd>B</kbd></td></tr>
+        <tr><td><i>italic</i></td><td><code>*italic*</code> or <kbd>Ctrl</kbd> + <kbd>I</kbd></td></tr>
+        <tr><td>underline, strike</td><td><kbd>Ctrl</kbd> + <kbd>U</kbd>, <kbd>Ctrl</kbd> + <kbd>5</kbd></td></tr>
+        <tr><td>a link</td><td><kbd>Ctrl</kbd> + <kbd>K</kbd></td></tr>
+        <tr><td><code>code</code>, a code block</td><td><code>`code`</code>, or three back-ticks on the lines before and after</td></tr>
+        <tr><td>a list, a quote</td><td>start lines with <code>- </code>, or <code>&gt; </code></td></tr>
+        <tr><td>a callout</td><td><code>@</code> and a name; <code>@everyone</code> calls out the whole Space</td></tr>
+        <tr><td>a tag, a Space</td><td><code>#</code> and a word (found by Search), or <code>#</code> and a Space's name</td></tr>
+        <tr><td>emoji</td><td><kbd>Ctrl</kbd> + <kbd>.</kbd></td></tr>
+      </table>
+      <p>Line numbers such as <code>6"-P-1001-A1B</code> or <code>ISO-1001-01</code> are recognised and drawn as references.
+      <kbd>Ctrl</kbd> + <kbd>↑</kbd> edits your last message. Drafts are kept per conversation.</p>
+    </div>
+    <figure><img src="figures/fig-dock-insert.png" alt="The Insert menu: emoji, video message, poll, form, decision, note, whiteboard, meeting, stickers, scan"><figcaption><b>Fig. 5-4</b> <b>Insert</b> (the <b>+</b> in the Dock)</figcaption></figure>
+  </div>
+  <p>The buttons at the left of the Dock: <b>Attach</b> (the paperclip; or drop files on the conversation, or paste),
+  <b>Record a voice note</b> (in Spaces), <b>Insert</b> and <b>Restyle</b>. <b>Insert</b> (Fig. 5-4) adds an <b>Emoji</b>, a
+  <b>Video message</b> or <b>Screen recording</b>, a <b>Poll</b>, a <b>Form</b>, a <b>Decision</b>, a <b>Note</b>, a <b>Whiteboard</b>,
+  a <b>Meeting</b>, <b>Stickers</b>, or <b>Scan a document</b> (a straightened PDF from your camera). <b>Restyle</b> rewrites your
+  draft as <i>Concise</i>, <i>Formal</i>, <i>Diplomatic</i>, <i>Explanatory</i> or <i>Technical</i> on your own PC; you accept or reject each change.</p>
+  <div class="hold">
+  <h4>Slash commands</h4>
+  <p>Type <code>/</code> at the start of the Dock for commands. The most useful:</p>
+  <table class="t">
+    <tr><th style="width:42mm">Command</th><th>What it does</th></tr>
+    <tr><td><code>/remind in 30m Call the client</code></td><td>Set a reminder (<i>in 20m</i>, <i>in 2h</i>, <i>tomorrow</i>, <i>monday</i>, <i>at 5pm</i>).</td></tr>
+    <tr><td><code>/poll Lunch? | Dosa | Biryani</code></td><td>Ask a question with choices.</td></tr>
+    <tr><td><code>/meet</code>, <code>/call</code>, <code>/video</code></td><td>Plan a meeting with the people here; open a Room with voice; with video.</td></tr>
+    <tr><td><code>/schedule</code></td><td>Send what you are writing later (section 5.9).</td></tr>
+    <tr><td><code>/status At the site till 3</code></td><td>Set (or clear) your status message.</td></tr>
+    <tr><td><code>/here</code>, <code>/headsdown</code>, <code>/quiet</code>, <code>/unlisted</code></td><td>Show me as at my desk, heads-down, no interruptions, unlisted.</td></tr>
+    <tr><td><code>/startday site</code>, <code>/stepout</code>, <code>/endday</code></td><td>Start your day (office, home, site or client), step out or come back, close your day.</td></tr>
+    <tr><td><code>/help</code></td><td>List the commands, including those added by office tools.</td></tr>
+  </table>
+  </div>
+
+  <h3>5.4 Files and the PDF viewer</h3>
+  <p>Files up to the office limit (1 GB unless your administrator changed it) are stored once on the hub. Pictures show in
+  the timeline and open in a viewer. Word, Excel and PowerPoint files show as a card with <b>Open in the default app</b>
+  and <b>Download</b>. Voice notes, video messages and screen recordings play in place. A PDF shows its first page, its size
+  and page count, with <b>View</b> and a download button. Every file shared in a conversation is listed under its <b>Files</b> tab.</p>
+  <figure><img src="figures/fig-pdf-viewer.png" alt="The PDF viewer with an A1 GA drawing, the page strip and the toolbar"><figcaption><b>Fig. 5-5</b> The PDF viewer showing an A1 GA drawing</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:36mm">Control</th><th>What it does</th></tr>
+    <tr><td>Page strip</td><td>A thumbnail of each page (<b>Page strip</b>, <kbd>S</kbd>); click one to go there. The arrows and the page box go to a page.</td></tr>
+    <tr><td>Zoom</td><td><b>Zoom out</b> and <b>Zoom in</b>, <b>Fit page</b> (<kbd>F</kbd>) and <b>Fit width</b> (<kbd>W</kbd>), from 25% to 800%. <kbd>Ctrl</kbd> + mouse wheel zooms where the pointer is; on a touch screen, pinch. Large A0 and A1 sheets are drawn in tiles at screen resolution, so they stay sharp and quick.</td></tr>
+    <tr><td>Pan, Select text</td><td>Drag the sheet with <b>Pan</b>; switch to <b>Select text</b> to select text, and <b>Copy text</b> copies the selection (or the whole page).</td></tr>
+    <tr><td>Rotate, Find</td><td><b>Rotate</b> a quarter turn; <b>Find in this PDF</b> (<kbd>Ctrl</kbd> + <kbd>F</kbd>) highlights every match.</td></tr>
+    <tr><td>Download, Open in the default app</td><td>Save the file, or open it in your usual PDF program.</td></tr>
+  </table>
+  <p>A password-protected PDF asks for its password. <kbd>Esc</kbd> closes the viewer.</p>
+
+  <h3>5.5 A message's tools</h3>
+  <div class="cols">
+    <div>
+      <p>Point at a message (or move to it with the arrow keys) and a column of tools appears on the spine beside it:</p>
+      <dl class="kv">
+        <dt>Side-track</dt><dd>Reply in a side-track (section 5.6).</dd>
+        <dt>Stamp</dt><dd>React with one of the stamps you keep on hand (Fig. 5-6), or <b>+</b> for any emoji. Choose your four stamps in <b>Preferences → Stamps on hand</b>.</dd>
+        <dt>Keep on my Desk</dt><dd>Keep the message on your Desk, as <i>Kept</i>, <i>To do</i>, <i>Important</i>, <i>Follow up</i> or <i>Reference</i>. A kept message shows a small amber corner.</dd>
+        <dt>Remind me</dt><dd>A reminder about this message, for you or a colleague who can see it.</dd>
+        <dt>More</dt><dd>Everything else (Fig. 5-7).</dd>
+      </dl>
+    </div>
+    <figure><img src="figures/fig-stamps.png" alt="The spine tools beside a message, with the Stamp flyout"><figcaption><b>Fig. 5-6</b> The tools on the spine, with the <b>Stamp</b> flyout</figcaption></figure>
+  </div>
+  <figure><img src="figures/fig-msg-menu.png" alt="The More menu of a message"><figcaption><b>Fig. 5-7</b> A message's <b>More</b> menu</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:44mm">Entry</th><th>What it does</th></tr>
+    <tr><td>Forward</td><td>Send a copy, with credit to the writer, to up to 25 conversations.</td></tr>
+    <tr><td>Reference in…</td><td>Point to this message from another conversation without copying it: people there see it only if they can open the original. You can also drag the message (or a file) onto another conversation.</td></tr>
+    <tr><td>Quote, Take to Direct</td><td>Quote it in your reply; or answer the writer privately.</td></tr>
+    <tr><td>Start a Space from this</td><td>A new Space that begins with this message and its side-track.</td></tr>
+    <tr><td>Pin for everyone</td><td>Pin it at the top of the conversation, for a time you choose or until unpinned. Pins are listed under the <b>Pinned</b> tab.</td></tr>
+    <tr><td>Copy reference, Copy text</td><td>Copy a link to the message (it shows as a card wherever it is pasted in the app), or its text.</td></tr>
+    <tr><td>Come back to this</td><td>Marks the conversation unread from this message.</td></tr>
+    <tr><td>Who has seen it</td><td>Who has seen your message (for your own messages).</td></tr>
+    <tr><td>Reaction insights</td><td>Who stamped what, and when, by department, with charts. Stamps are not approvals.</td></tr>
+    <tr><td>Restyle a copy</td><td>A restyled copy of someone else's message, for you only.</td></tr>
+    <tr><td>Pick several</td><td>Select messages to forward, copy, save or delete together.</td></tr>
+    <tr><td>Edit, Delete</td><td>Your own messages (within the office's edit window). Deleting asks first.</td></tr>
+    <tr><td>Report to administrators…</td><td>Send the message to the administrators for review.</td></tr>
+  </table>
+
+  <h3>5.6 Side-tracks</h3>
+  <figure><img src="figures/fig-sidetrack.png" alt="A side-track open on the right of the Space"><figcaption><b>Fig. 5-8</b> A side-track about the cable tray clash</figcaption></figure>
+  <p>A side-track keeps a discussion about one message off the main timeline. The message shows
+  <span class="tag">SIDE-TRACK · 3 · 11:52 AM</span> (how many replies and the latest); click it to open the side-track
+  beside the conversation. Write in its own Dock; tick <b>Echo in the Space</b> to post your reply in the main timeline
+  too. Side-tracks you took part in are listed on the Desk, and replies to them reach you as callouts. <kbd>Esc</kbd> closes it.</p>
+
+  <h3>5.7 Polls and Decisions</h3>
+  <div class="cols">
+    <figure><img src="figures/fig-poll.png" alt="A poll: which day suits"><figcaption><b>Fig. 5-9</b> A poll</figcaption></figure>
+    <figure><img src="figures/fig-decision.png" alt="A Decision with two options"><figcaption><b>Fig. 5-10</b> A Decision</figcaption></figure>
+  </div>
+  <p>A <b>Poll</b> (<b>Insert → Poll</b>, or <code>/poll</code>) asks a question with choices: one or several answers,
+  anonymous if you like, with a closing time. Results show once you vote.</p>
+  <p>A <b>Decision</b> (<b>Insert → Decision</b>) is a question whose options either <b>end</b> it or lead to a follow-up
+  question, up to four steps deep; the last step can ask for a written answer. Each person walks their own path. The
+  person who asked sees a results sheet and can export it as CSV, and an automation can act on each answer (section 11).
+  Use it for small yes / no / why questions such as <i>Issue ISO-1001-01 Rev C to the client today?</i></p>
+
+  <h3>5.8 Link cards</h3>
+  <div class="cols w40">
+    <figure><img src="figures/fig-linkcard.png" alt="A card under a message for a share path, with Open folder, Copy path and Discuss"><figcaption><b>Fig. 5-11</b> A card for a share path</figcaption></figure>
+    <div>
+      <p>Links in a message get a card underneath: office links, links from office tools (Project Opener, Sleuth, Datum,
+      Dexterity Sheets), share paths such as <code>\\nas01\Standards</code>, meetings and web pages. The card offers what fits:
+      <b>Open folder</b>, <b>Copy path</b>, <b>Open</b>, <b>Join</b>, or open in the tool; <b>Discuss</b> starts a side-track about it.
+      Web page titles are fetched by the hub, never by your PC. A link you cannot open shows a quiet "no access" note. The
+      writer can remove a card.</p>
+    </div>
+  </div>
+
+  <h3>5.9 Sending later</h3>
+  <div class="cols w60">
+    <div>
+      <p>Write the message, then click the arrow beside <b>Send</b> (<b>More ways to send</b>) and choose <b>Send later…</b>,
+      or press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd>. Pick <b>Before I leave</b>, <b>Tomorrow, first thing</b>, or a date and
+      time, and click <b>Send at this time</b>.</p>
+      <p><b>The office hub sends it at that time, even if your PC is switched off.</b> A line under the Dock says how many
+      messages are waiting; they are listed on the Desk under <b>Waiting to send</b>, where you can send one now, change its time
+      or text, or cancel it (section 7).</p>
+    </div>
+    <figure><img src="figures/fig-send-later.png" alt="The Send later dialog"><figcaption><b>Fig. 5-12</b> <b>Send later</b></figcaption></figure>
+  </div>
+
+  <h3>5.10 Direct conversations</h3>
+  <figure><img src="figures/fig-direct.png" alt="A Direct conversation with Ravi Kumar, marked ENCRYPTED"><figcaption><b>Fig. 5-13</b> A Direct conversation, end-to-end encrypted</figcaption></figure>
+  <p>Start one with <b>+</b> on the <b>People</b> chip, with <b>Write to …</b> on someone's Directory card, or from GO TO.
+  Add more people for a small group. The header shows <span class="tag">ENCRYPTED</span>, the person's status and title, and
+  when they were last on. Everything in sections 5.3 to 5.9 works the same here. If someone in the conversation is on an
+  older version of the app that cannot encrypt, a line above the Dock says so (section 16).</p>
+
+  <h3>5.11 Search</h3>
+  <div class="cols w40">
+    <figure><img src="figures/fig-search.png" alt="Search with filters and three results"><figcaption><b>Fig. 5-14</b> Search, with its filters</figcaption></figure>
+    <div>
+      <p>Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> (or choose <b>Search this conversation</b> in a conversation's
+      <b>⋯</b> menu) and type. Narrow it with the filters: <b>BY</b> (a person), <b>IN</b> (a conversation), <b>WHEN</b>,
+      <b>WHERE</b> (<b>Both</b>, <b>Direct</b> or <b>Spaces</b>) and <b>FILES</b>. The <b>TEXT</b> and <b>FILES</b> tabs split the results;
+      click one to jump to the message.</p>
+      <ul>
+        <li>Text in pictures shared in Spaces is found too (read on the sender's PC).</li>
+        <li>Encrypted Direct messages are searched on your own device, from an index that is itself encrypted; such hits are marked <i>from this device</i>. Hindi and Tamil work.</li>
+        <li><code>#tag</code> finds messages with that tag exactly.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 6 -->
+<section class="sec">
+  <h2>6 Spaces and lounges</h2>
+  <h3>6.1 Creating and joining a Space</h3>
+  <div class="cols w60">
+    <div>
+      <ol class="steps">
+        <li>On the <b>Spaces</b> lens, click <b>+</b> (<b>New Space</b>) at the top of the Switchboard, or choose <b>Create a Space</b> in GO TO.</li>
+        <li>Give it a <b>Name</b>. For a job, start with the job number (<i>P-12513 Piping</i>) so it also appears under <b>Projects</b>.</li>
+        <li>Add <b>What is it for? (optional)</b>, the topic shown under the name.</li>
+        <li>Switch on <b>Private</b> if only the people you add should find or read it. Leave it off for an open Space that anyone in the office can find and join.</li>
+        <li>Click <b>Next: add people</b>, choose the people, and create it.</li>
+      </ol>
+      <p>To find open Spaces, use <b>Find Spaces to join</b> (the magnifier at the top of the Switchboard). The person who started
+      a Space and its moderators can rename it, change the topic, add and remove people and archive it; anyone can leave.
+      New colleagues are added to the office's default Spaces automatically.</p>
+    </div>
+    <figure><img src="figures/fig-new-space.png" alt="New Space: Direct or Space, name, what is it for, private"><figcaption><b>Fig. 6-1</b> <b>New Space</b></figcaption></figure>
+  </div>
+  <div class="note tip"><b>Tip.</b> Keep one Space per job and discipline (<i>P-12 Piping</i>, <i>P-14 Structural steel</i>), one for the
+  site, and use side-tracks for each problem. Pin the documents everyone needs, such as the latest MTO.</div>
+
+  <h3>6.2 Lounges</h3>
+  <figure><img src="figures/fig-lounge.png" alt="Priya in the Piping desk lounge: the lounge in the Switchboard and the lounge bar"><figcaption><b>Fig. 6-2</b> In the <i>Piping desk</i> lounge</figcaption></figure>
+  <p>A <b>lounge</b> is a standing voice Room inside a Space, for a team that likes to talk while it works. Nobody is rung:
+  people drop in and out. Lounges are listed in the Switchboard (with who is in them) and under <b>Lounges</b> in the Space's
+  header, where <b>New lounge…</b> opens one (for example <i>Piping desk</i>).</p>
+  <ul>
+    <li>Click <b>Join</b> to drop in. A small bar shows the lounge, how long you have been in, <b>Mic on</b>, <b>Share</b> (your screen) and <b>Leave</b>.</li>
+    <li>Click <b>Leave</b> on the bar or on the lounge to go. A quiet lounge stays where it is for next time; the people who manage the Space can rename or archive it.</li>
+  </ul>
+</section>
+
+<!-- ===================================================== 7 -->
+<section class="sec">
+  <h2>7 Desk</h2>
+  <p class="lead">The Desk is your own drawer. Nobody else sees it.</p>
+  <figure><img src="figures/fig-desk-reminders.png" alt="The Desk, Reminders tab: later today and upcoming"><figcaption><b>Fig. 7-1</b> The Desk, with its tabs, on <b>Reminders</b></figcaption></figure>
+  <table class="t">
+    <tr><th style="width:32mm">Tab</th><th>What it holds</th></tr>
+    <tr><td>Callouts</td><td>Messages that mention you, and replies in side-tracks you are part of. Filter by <b>All</b>, <b>@ you</b> or <b>Side-track replies</b>.</td></tr>
+    <tr><td>Side-tracks</td><td>Side-tracks you started or replied in, newest activity first.</td></tr>
+    <tr><td>Reminders</td><td>Grouped as <b>Due</b>, <b>Later today</b>, <b>Upcoming</b> and <b>Set for others</b>. Tick the box when done, <b>Snooze 15 min</b>, or use <b>⋯</b> to change or delete one (a deleted reminder can be brought back with <b>Undo</b>).</td></tr>
+    <tr><td>Kept</td><td>Messages you kept, filed as Kept, To do, Important, Follow up or Reference (Fig. 7-2). Change the kind with the list beside each; <b>Take off Desk</b> removes it.</td></tr>
+    <tr><td>Waiting to send</td><td>Messages you scheduled (section 5.9): <b>Send now</b>, change the time, edit the text or cancel.</td></tr>
+    <tr><td>Notes</td><td>Your own notes. They save as you type.</td></tr>
+    <tr><td>Bots</td><td>Bots you made, and bots you can use (section 10).</td></tr>
+    <tr><td>Timesheet</td><td>Your working days: when you started, breaks, where, and when you finished.</td></tr>
+  </table>
+  <div class="cols">
+    <figure><img src="figures/fig-desk-kept.png" alt="The Kept tab with a To do and a Kept message"><figcaption><b>Fig. 7-2</b> <b>Kept</b>: what you kept, by kind</figcaption></figure>
+    <figure><img src="figures/fig-new-reminder.png" alt="New reminder dialog"><figcaption><b>Fig. 7-3</b> <b>New reminder</b></figcaption></figure>
+  </div>
+  <h3>7.1 Reminders</h3>
+  <ol class="steps">
+    <li>Click <b>New reminder</b> on the Desk, use <b>Remind me</b> on a message, or type <code>/remind</code>.</li>
+    <li>Write what to be reminded of under <b>Remind me to</b>.</li>
+    <li>Pick <b>Before I leave</b>, <b>Tomorrow, first thing</b>, or a date and time under <b>Or pick a date and time</b>.</li>
+    <li>Choose <b>Repeat</b> if it should come back (daily, on weekdays, weekly, monthly) and <b>Who</b> it is for: <b>Me</b> or a colleague.</li>
+    <li>Click <b>Set reminder</b>.</li>
+  </ol>
+  <p>When it is due, a reminder card appears at the side of the window, with <b>Done</b>, a snooze and <b>Dismiss</b>, and a
+  notification rings even if notifications are otherwise off. A reminder about a message opens that message.</p>
+</section>
+<!-- ===================================================== 8 -->
+<section class="sec">
+  <h2>8 Calendar and meetings</h2>
+  <h3>8.1 The Calendar</h3>
+  <figure><img src="figures/fig-calendar.png" alt="The Calendar, week view, with next week's meetings"><figcaption><b>Fig. 8-1</b> The Calendar, <b>Week</b> view</figcaption></figure>
+  <p>The <b>Calendar</b> lens shows your week hour by hour (<b>Week</b>) or as a list (<b>Agenda</b>). <b>‹</b>, <b>Today</b> and
+  <b>›</b> move between weeks; an amber line marks the time now. A meeting you have not answered has a dashed outline; <i>Maybe</i> is hatched and <i>Not going</i> struck through.
+  The gear (<b>Calendar settings</b>) sets the day <b>Weeks start on</b> (<b>Monday</b>, <b>Sunday</b> or <b>Saturday</b>) and a
+  second time zone to show beside your own (<b>Also show times in</b>), useful for clients abroad.</p>
+  <div class="cols w40">
+    <figure><img src="figures/fig-meeting-card.png" alt="A meeting's card: time, room, call ID, conversation, organiser, invited, replies, Join call"><figcaption><b>Fig. 8-2</b> A meeting: answer and join</figcaption></figure>
+    <div>
+      <p>Click a meeting to see it (Fig. 8-2): when, the conference room, the call's ID with <b>Copy link</b>, the conversation it
+      belongs to, the organiser, and who is invited with their replies. Answer with <b>Going</b>, <b>Maybe</b> or <b>Not going</b>.
+      <b>Join call</b> joins it. The organiser also has <b>Edit</b> and <b>Cancel meeting</b>, and can copy an invitation as text
+      or download it as an <code>.ics</code> file for people outside the office.</p>
+      <p>Before a meeting starts, a card offers <b>Join call</b> or <b>Dismiss</b>. While you are in a Calendar meeting,
+      colleagues see you as <i>in a meeting</i>.</p>
+    </div>
+  </div>
+
+  <h3>8.2 Planning a meeting</h3>
+  <div class="cols w60">
+    <div>
+      <p>Click <b>New meeting</b> on the Calendar, use <b>Plan a meeting</b> in a conversation's <b>⋯</b> menu, choose
+      <b>Insert → Meeting</b>, or type <code>/meet</code>.</p>
+      <table class="t">
+        <tr><th style="width:32mm">Field</th><th>Notes</th></tr>
+        <tr><td>Title</td><td>What it is about.</td></tr>
+        <tr><td>Starts, Length</td><td>The start, and how long (the list shows when it ends).</td></tr>
+        <tr><td>Time zone</td><td>Your own, or another (a client's), for meetings set in another zone.</td></tr>
+        <tr><td>All day</td><td>For site visits and leave.</td></tr>
+        <tr><td>Hold it as a call in Dexterity Connect</td><td>On by default: the meeting gets its own ID and link, a lobby, and you as host.</td></tr>
+        <tr><td>Repeat, Reminder</td><td>A repeating meeting (with <b>Until (optional)</b>), and when to be reminded.</td></tr>
+        <tr><td>People</td><td>Who to invite. Their free and busy times show while you plan.</td></tr>
+        <tr><td>Conference room, Or a place</td><td>Book a conference room (a room cannot be booked twice for the same time), or type a place such as a client's office or a site.</td></tr>
+        <tr><td>Conversation</td><td>Tie the meeting to a Space or Direct conversation; it is announced there.</td></tr>
+        <tr><td>Agenda (optional)</td><td>Shown on the meeting's card.</td></tr>
+      </table>
+      <p>Click <b>Save</b>. Invitations go to everyone you added.</p>
+    </div>
+    <figure><img src="figures/fig-new-meeting.png" alt="The New meeting dialog"><figcaption><b>Fig. 8-3</b> <b>New meeting</b></figcaption></figure>
+  </div>
+
+  <h3>8.3 The Meet lens</h3>
+  <figure><img src="figures/fig-meet.png" alt="The Meet lens: start a meeting, join a meeting, webinars, your personal room, coming up"><figcaption><b>Fig. 8-4</b> The Meet lens</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:36mm">Panel</th><th>What it does</th></tr>
+    <tr><td>Start a meeting</td><td>A meeting now. Optionally say <b>What is it about?</b> and <b>Ring people in</b>; choose the <b>Lobby</b> rule (<b>Guests and people from outside wait</b>, <b>Everyone waits to be let in</b> or <b>Nobody waits</b>) and whether to <b>Start with my camera on</b>. <b>Start meeting</b> opens it, with its own ID and a Space for its chat and files.</td></tr>
+    <tr><td>Join a meeting</td><td>Type a nine-digit ID such as <i>482-913-207</i>, or paste a <code>dexconnect://meet</code> link, and click <b>Join</b>.</td></tr>
+    <tr><td>Your personal room</td><td>Your standing meeting ID, the same every time. Set its lobby, whether <b>People can come in before you</b>, and <b>Guests from outside</b> (section 8.6); <b>Copy link</b> or <b>Open your room</b>.</td></tr>
+    <tr><td>Coming up</td><td>This week's meetings held as calls, each with <b>Join</b>.</td></tr>
+    <tr><td>Webinars</td><td>Webinars you can watch, and <b>Plan a webinar</b> (section 8.7).</td></tr>
+    <tr><td>Recordings</td><td>Recordings kept on the hub that you made or that were shared with you, with a viewer (section 8.5).</td></tr>
+    <tr><td>Recent meetings</td><td>Meetings and calls you were in: who came, when, and for how long. <b>Report</b> (attendance, hands, polls, recordings, as CSV), <b>Rejoin</b> or <b>Open</b> its conversation.</td></tr>
+  </table>
+
+  <h3>8.4 In a Room</h3>
+  <figure><img src="figures/fig-room.png" alt="A meeting with three people on camera, the people table, host controls and the title block"><figcaption><b>Fig. 8-5</b> A meeting with three people. The cameras show placeholder pictures in this demonstration.</figcaption></figure>
+  <p>A <b>Room</b> is any call: from <b>Open a Room</b> in a conversation, from a profile, from a meeting, or a lounge. When
+  someone rings you, a banner offers <b>Join with video</b>, <b>Join with voice</b> or <b>Not now</b>. Up to 8 people talk PC to
+  PC; larger meetings (up to 50) run through the hub's relay on the office network.</p>
+  <table class="t">
+    <tr><th style="width:40mm">Control</th><th>What it does</th></tr>
+    <tr><td>Mic on, Camera on</td><td>Turn your microphone and camera on and off. The small <b>NS</b> tab on the mic switches strong noise suppression (on by default).</td></tr>
+    <tr><td>Share sheet</td><td>Share your screen or one window, picked from pictures of each. While you share a whole screen you can give a colleague control of it (<b>Give control…</b> in their person menu); they can also <b>Ask for control</b>. You allow it in a separate sheet, and <b>Stop control</b> or <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> ends it at once. Everyone can point at a shared screen with live pointers.</td></tr>
+    <tr><td>Raise hand, React</td><td>Hands are queued in order for the host; reactions float up your tile.</td></tr>
+    <tr><td>Background</td><td><b>As it is</b>, <b>Blur</b>, an office background, or <b>Your picture</b>. Done on your PC.</td></tr>
+    <tr><td>Gallery</td><td>Gallery, speaker or presentation layout; pin someone for yourself.</td></tr>
+    <tr><td>Record</td><td>Record the meeting (if the office allows it). Everyone is told. The recording is kept on the hub with chapters for who spoke when, or saved on your PC.</td></tr>
+    <tr><td>Ring someone</td><td>Ring a colleague into the Room.</td></tr>
+    <tr><td>Side tabs</td><td><b>People</b> (with mic and camera states), <b>Chat</b>, <b>Polls</b>, <b>Board</b> (a whiteboard) and <b>Files</b>, all on the meeting's conversation.</td></tr>
+    <tr><td>Bottom line</td><td><b>Conversation</b> opens the chat (the Room stays in the title bar); fold the Room into the title bar (<kbd>Esc</kbd>); float the video in a small window on top; <b>Leave Room</b>.</td></tr>
+  </table>
+  <p>The title block in the corner shows the meeting's name, its kind (<span class="tag">INSTANT</span>, a scheduled meeting or a
+  personal room), its ID with a copy button, the time, when it opened and the <b>Connection</b> quality.</p>
+
+  <h3>8.5 Hosting: lobby, controls, breakouts and recordings</h3>
+  <p>Whoever starts a meeting is its <b>host</b> (for a Calendar meeting, the organiser). The host's panel has
+  <b>Host controls</b>: <b>Mute all</b>, <b>Lower all hands</b>, <b>Lock meeting</b> (no one new can come in), <b>Breakout rooms…</b>,
+  <b>Guests from outside</b>, <b>Meeting settings</b> and <b>End for everyone</b>. From each person's menu the host can mute them
+  (unmuting is only ever <i>asked</i>), make them a co-host, spotlight them for everyone, or remove them to the lobby. When every
+  host leaves, the person who has been there longest runs the meeting.</p>
+  <ul>
+    <li><b>The lobby.</b> People who must wait (by the lobby rule) appear under <b>Lobby</b> with <b>Admit</b> and <b>Deny</b> (or <b>Deny all</b>). Guests from a browser always wait.</li>
+    <li><b>Recordings.</b> When a recording stops it is uploaded to the hub. Only the person who recorded it (and administrators) can watch it until it is shared with the meeting's conversation or by a link for the office. The Meet lens's <b>Recordings</b> shelf plays it, with the chapters as a list and a strip under the video.</li>
+  </ul>
+  <div class="cols w40">
+    <figure><img src="figures/fig-breakouts.png" alt="Breakout rooms: rooms, timer, deal out at random, columns"><figcaption><b>Fig. 8-6</b> Setting up <b>Breakout rooms</b></figcaption></figure>
+    <div>
+      <h4>Breakout rooms</h4>
+      <ol class="steps">
+        <li>Click <b>Breakout rooms…</b> (at least two other people must be in the Room).</li>
+        <li>Choose how many <b>Rooms</b> and a <b>Timer</b>.</li>
+        <li>Drag people between the columns, choose a room beside each name, or click <b>Deal out at random</b>. Hosts stay in the main Room unless placed.</li>
+        <li>Click <b>Open … rooms</b>. While they run, the host can send a note to every room, <b>Visit</b> any room, move people, and <b>Call everyone back</b>. Everyone gets a 60-second countdown before coming back, also when the timer ends.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h3>8.6 Guests from a browser</h3>
+  <p>People outside the office (a client, a vendor) can join a meeting from a web browser, with nothing to install. A host
+  turns on the meeting's <b>guest link</b> under <b>Guests from outside</b> (in the Room's host controls, the Calendar's meeting
+  card or the personal room on the Meet lens), then copies the link, or a whole invitation as text or an <code>.ics</code> file.</p>
+  <ul>
+    <li>The link looks like <code>https://…/m/482913207#Hx7kP2qR</code>. The part after <code>#</code> is the passcode. <b>Renew</b> makes a new passcode (the old link stops working).</li>
+    <li>The guest types their name, checks camera and microphone, and waits in the lobby until a host admits them. They see and hear the meeting, share their screen, raise a hand and write in the meeting chat. They see the names of the people in the meeting and nothing else of the office.</li>
+    <li>Meetings of more than 8 people run on the office network's relay, which browsers outside cannot reach: such meetings cannot take browser guests, and the guest link panel says so.</li>
+  </ul>
+
+  <h3>8.7 Webinars</h3>
+  <div class="cols w60">
+    <div>
+      <p>A webinar has an organiser and up to 7 panelists on a <i>stage</i>, and an audience that watches but is never seen or
+      heard. People outside the office register on a page of their own. Click <b>Plan a webinar</b> on the Meet lens and fill in the
+      title, <b>What it is about (on the registration page)</b>, the date, start and length, the panelists, how registration is
+      approved, whether <b>Everyone in the office can watch it from the Meet lens</b>, and the questions on the registration page.</p>
+      <p>On the day, the organiser opens the stage as a practice session, then clicks <b>Go live</b>. The stage has tabs for
+      <b>Questions</b> (with votes, answered live or in writing), <b>Audience</b> (raised hands, inviting someone to speak),
+      <b>Polls</b> and <b>Handouts</b>. It can also be streamed live to a service such as YouTube. Afterwards the organiser sends a
+      thank-you with the recording and an optional survey, and reads the report. The hub sends no email: the app writes the
+      invitations, reminders and follow-ups for you to send from your own mailbox.</p>
+    </div>
+    <figure><img src="figures/fig-webinar-plan.png" alt="The Plan a webinar dialog"><figcaption><b>Fig. 8-7</b> <b>Plan a webinar</b></figcaption></figure>
+  </div>
+</section>
+
+<!-- ===================================================== 9 -->
+<section class="sec">
+  <h2>9 Directory and the office drawing</h2>
+  <figure><img src="figures/fig-directory.png" alt="The Directory: people with extension, title, department and where they are today"><figcaption><b>Fig. 9-1</b> The Directory, <b>People</b> tab</figcaption></figure>
+  <p>The <b>Directory</b> lens lists everyone in the office. The line under the title counts people, who is online and the
+  departments. Four tabs: <b>People</b>, <b>Org chart</b>, <b>Departments</b> and <b>Day log</b> (who is working today and where;
+  managers and administrators see their team's attendance and can export it as CSV).</p>
+  <p>On <b>People</b>, search by name, title, department or extension, pick a department, and choose <b>Everyone</b> or
+  <b>Online</b>. Each card shows the extension, the job title and department, where they are today and since when, and their status.</p>
+  <div class="cols w60">
+    <div>
+      <h3>9.1 A colleague's card</h3>
+      <p>Click a person to open their <b>Directory card</b> beside the list (Fig. 9-2): department, extension, seat, line manager,
+      status, today's place, joining date and birthday, Windows account, and the Spaces you have in common.</p>
+      <ul>
+        <li><b>Write to …</b> opens your Direct conversation with them.</li>
+        <li><b>Open a Room</b> calls them, with voice or video.</li>
+        <li><b>See in the org chart</b> flies to them on the office drawing.</li>
+      </ul>
+      <p>Your own details (phone, extension, seat, birthday) are yours to change in <b>Preferences → Contact details</b>. Your
+      department, designation and manager are set by an administrator.</p>
+    </div>
+    <figure><img src="figures/fig-profile.png" alt="Deepa Krishnan's Directory card"><figcaption><b>Fig. 9-2</b> A Directory card</figcaption></figure>
+  </div>
+
+  <h3>9.2 The office drawing (Org chart)</h3>
+  <p>The <b>Org chart</b> tab draws the whole office on one sheet, like an engineering drawing you pan and zoom in a CAD
+  viewer: drag to pan, use the mouse wheel or pinch to zoom, double-click to zoom in, or use the zoom cells in the corner
+  (<kbd>+</kbd>, <kbd>-</kbd>, and <kbd>0</kbd> for the whole sheet). The title block at the bottom right shows the drawing, how
+  many people are in, the live scale and the grid square under the pointer; the key plan at the bottom left shows where you are.</p>
+  <figure><img src="figures/fig-org-lines.png" alt="The office drawing, Lines sheet, the whole office"><figcaption><b>Fig. 9-3</b> The <b>Lines</b> sheet: reporting lines, with departments as areas</figcaption></figure>
+  <dl class="kv">
+    <dt>Lines and Floor</dt><dd><b>Lines</b> draws the reporting lines, routed like pipes from each manager to their team, with each department as an area (a chain-line boundary). <b>Floor</b> draws the floor plan from people's seats (Fig. 9-6).</dd>
+    <dt>Plates</dt><dd>Each person is a plate: tile, name, designation and a strip with extension, seat and grid square. A solid plate with a teal edge means they are in today; a paper-coloured plate, not signed in. New colleagues this month have a revision cloud, birthdays a pennant and work anniversaries a small <i>5 yrs</i> box. <span class="tag">YOU ARE HERE</span> marks your own plate. <b>Key</b> explains every mark.</dd>
+    <dt>Find</dt><dd>Type a name, designation, seat or extension in the search box: the sheet spotlights the person and flies there.</dd>
+    <dt>The callout</dt><dd>Click a person for a small title block with their details and <b>Write</b>, <b>Room</b>, <b>How we connect</b>, <b>Spaces</b> and <b>Card</b> (Fig. 9-4).</dd>
+  </dl>
+  <div class="cols">
+    <figure><img src="figures/fig-org-callout.png" alt="A person's callout on the drawing"><figcaption><b>Fig. 9-4</b> Farhan Qureshi's callout</figcaption></figure>
+    <figure><img src="figures/fig-org-route.png" alt="How you connect: a route along the reporting lines with numbered steps"><figcaption><b>Fig. 9-5</b> <b>How we connect</b>: the route through the reporting lines</figcaption></figure>
+  </div>
+  <ul>
+    <li><b>How we connect</b> draws a heavy teal route along the reporting lines from you to the person, with numbered steps and the Spaces you share. On the floor plan, <b>Walk there</b> shows the walk to their desk along the corridor. <b>Clear the route</b> removes it.</li>
+    <li><b>Spaces</b> (top right) lays a Space over the sheet: a hexagon tag with dashed lines to its members (Fig. 9-7).</li>
+    <li><b>Growth</b> adds a scale that replays how the office grew: drag it to see the office as it was on a date.</li>
+    <li><b>Schedule</b> lists everyone as a tree (or, on the floor plan, by room), for keyboard and screen-reader use. On the sheet itself the arrow keys walk along the lines: up to the manager, down to the team, left and right to colleagues; <kbd>Enter</kbd> opens a person and <kbd>Home</kbd> goes to you.</li>
+  </ul>
+  <figure><img src="figures/fig-org-floor.png" alt="The floor plan: bays, cabins, corridor, people at their desks and the off-site key"><figcaption><b>Fig. 9-6</b> The <b>Floor</b> sheet. Colleagues working from home, a site or a client stand in the key on the right; their desks are dashed.</figcaption></figure>
+  <div class="cols">
+    <figure><img src="figures/fig-org-spaces.png" alt="The P-14 Structural steel Space laid over the drawing"><figcaption><b>Fig. 9-7</b> A Space laid over the sheet</figcaption></figure>
+    <figure><img src="figures/fig-org-dark.png" alt="The route on the drawing in the dark theme"><figcaption><b>Fig. 9-8</b> The office drawing in the dark theme</figcaption></figure>
+  </div>
+</section>
+
+<!-- ===================================================== 10 -->
+<section class="sec">
+  <h2>10 Bots</h2>
+  <p class="lead">A bot asks people one question at a time, in its own conversation with them, keeps their place, and at the
+  end puts a task on someone's Desk, posts a summary in a Space or sets a reminder. Anyone can make one; no programming is needed.</p>
+  <h3>10.1 Using a bot</h3>
+  <p>A bot is offered as a card in a Space or on your Desk (<b>Desk → Bots → Bots you can use</b>). Click <b>Start</b>. The bot
+  greets you and asks its first question as a card: choose an option, type an answer, pick a date, a colleague or a file, and
+  click <b>Next</b>. You can go back a step or cancel. If the bot has office hours it says when it is closed. Some bots remember
+  your last answers; <b>Forget my answers</b> clears them.</p>
+
+  <h3>10.2 Making your own bot</h3>
+  <figure><img src="figures/fig-bot-start.png" alt="Make a bot: templates, with a preview of the Plot request bot"><figcaption><b>Fig. 10-1</b> <b>Make a bot</b>: start from a template, from a few words, or from a copy</figcaption></figure>
+  <ol class="steps">
+    <li>Open <b>Desk → Bots</b> and click <b>Make a bot</b>.</li>
+    <li>Choose how to start: <b>A template</b> (<i>Plot request</i>, <i>Leave note</i>, <i>Site visit</i>, <i>RFI log</i>, <i>Drawing issue request</i>, or <i>Blank</i>), <b>Describe it in words</b> (a small model on your PC drafts the bot from a few sentences), or <b>Copy a bot</b>. Hover a template to try it in the preview on the right.</li>
+    <li>Edit it in the five tabs: <b>Identity</b>, <b>Questions</b>, <b>At the end</b>, <b>Sharing</b> and <b>Advanced</b>.</li>
+    <li>Click <b>Test run</b> to play the bot on the right with its real cards. Nothing is sent during a test run.</li>
+    <li>Click <b>Save bot</b>.</li>
+  </ol>
+  <figure><img src="figures/fig-bot-maker.png" alt="The bot maker, Questions tab, with the test run on the right"><figcaption><b>Fig. 10-2</b> The <b>Questions</b> tab, with the preview on the right</figcaption></figure>
+  <table class="t">
+    <tr><th style="width:30mm">Tab</th><th>What you set</th></tr>
+    <tr><td>Identity</td><td>The bot's <b>Name</b> and what it is for, its mark (a drawn symbol or letters) and colour, its voice (<b>Plain</b>, <b>Warm</b>, <b>Brief</b> or <b>Formal</b>, which changes how it words everything), the greeting (<i>{{user.first}}</i> puts in the person's first name), and whether it answers only during office hours (Fig. 10-3).</td></tr>
+    <tr><td>Questions</td><td>The questions, in order. Add <b>Choices</b>, <b>Short text</b>, <b>Paragraph</b>, <b>Number</b>, <b>Date</b>, <b>A person</b>, <b>A file</b> or <b>Confirm</b>. Each can be checked (for example a job number like <i>P-12513</i>), and choices can route to different next questions. A problem is shown beside the question it is in.</td></tr>
+    <tr><td>At the end</td><td>What happens with the answers: a task on someone's Desk (for example the person's lead), a post in a Space, a reminder.</td></tr>
+    <tr><td>Sharing</td><td>Keep it to yourself, share it with a Space, or ask an administrator to make it office-wide (it then shows <i>Waiting for review</i>).</td></tr>
+    <tr><td>Advanced</td><td>The bot as JSON, for those who prefer it.</td></tr>
+  </table>
+  <figure><img src="figures/fig-bot-identity.png" alt="The Identity tab: name, mark, colour, voice and greeting"><figcaption><b>Fig. 10-3</b> The <b>Identity</b> tab: <i>Plot desk</i> with a plotter symbol and a warm voice</figcaption></figure>
+  <h3>10.3 Looking after your bots</h3>
+  <p>Each bot you made has a page on <b>Desk → Bots</b> with its runs (<b>Finished</b>, <b>Stopped</b>, <b>In progress</b>, the
+  <b>Finish rate</b>), <b>Where people stop</b>, <b>Recent runs</b> and its <b>Revisions</b>. <b>Edit</b>, <b>Start</b>, <b>Share</b>,
+  <b>Pause</b>, <b>Retire</b> and <b>Delete</b> are at the top. Every save is a new revision; a conversation already under way
+  carries on with the revision it started with.</p>
+</section>
+
+<!-- ===================================================== 11 -->
+<section class="sec">
+  <h2>11 Automations</h2>
+  <p class="lead">An automation is a rule that acts when something happens in a conversation: a drawing is attached, someone
+  stamps ✅, someone votes, a message says "stop work", someone mentions the Document Control group. The hub runs the rules, so
+  they work whoever is online.</p>
+  <figure><img src="figures/fig-automation.png" alt="Automations for the Piping team Space: a rule drafted from words, drawn as a schematic"><figcaption><b>Fig. 11-1</b> A rule drafted from plain words, drawn as a schematic</figcaption></figure>
+  <p>A rule reads left to right like a schematic: <b>When</b> (one trigger) → <b>Only if</b> (conditions, all of which must hold)
+  → <b>Then</b> (steps, in order).</p>
+  <table class="t">
+    <tr><th style="width:36mm">Part</th><th>Choices</th></tr>
+    <tr><td>When</td><td>A file is attached (types such as pdf, dwg, xlsx, or a name like <code>GA-*</code>); someone reacts (a stamp); a vote, form answer or the end of a Decision; a message has certain words; someone is mentioned.</td></tr>
+    <tr><td>Only if</td><td>Only in these conversations; only when it is these people (or not them); only at these times; only these files.</td></tr>
+    <tr><td>Then</td><td>Read the PDF title block (drawing title, revision and number); notify people; post a message; a reminder or To do; tag the message; call a webhook.</td></tr>
+  </table>
+  <ol class="steps">
+    <li>In a conversation, open <b>⋯ → Automations…</b>. You can add rules if you started the conversation or moderate it; everyone in it can see its rules.</li>
+    <li>Under <b>Describe a rule</b>, write the rule in your own words, for example <i>When someone attaches a PDF here, read its title block, then tell Fatima Begum and put a To do on her Desk</i>, and click <b>Draft the rule</b>. A small model on your PC drafts it; parts it was unsure of are marked for you to fill in. You can also start a rule from scratch.</li>
+    <li>Check each part, add conditions or steps (<b>+ Add a condition</b>, <b>+ Add a step</b>), and use <b>Test run</b> to see what it would do.</li>
+    <li>Click <b>Approve and turn on</b> (or save it turned off). Each rule keeps a log of its last 50 runs and acts at most 30 times a minute.</li>
+  </ol>
+  <div class="note info"><b>Privacy.</b> Office-wide rules (set by administrators in the Control room) watch Spaces only. A rule made for a Direct
+  conversation never reads its encrypted text, so a keyword or mention rule cannot match there; a rule about files still can.</div>
+</section>
+
+<!-- ===================================================== 12 -->
+<section class="sec">
+  <h2>12 Help me: IT help and support sessions</h2>
+  <div class="cols w30">
+    <figure><img src="figures/fig-help-me.png" alt="Ask IT for help: what is wrong, what it is about, details, a picture of the screen"><figcaption><b>Fig. 12-1</b> <b>Ask IT for help</b></figcaption></figure>
+    <div>
+      <h3>12.1 Asking for help</h3>
+      <ol class="steps">
+        <li>Click your tile and choose <b>Help me…</b> (or type <i>Help me</i> in GO TO).</li>
+        <li>Say in one line <b>What is wrong?</b></li>
+        <li>Choose what <b>It is about</b>: <b>An application</b>, <b>This PC or a device</b>, <b>Network or internet</b>, <b>Printing and plotting</b>, <b>Sign-in and access</b>, <b>Drawings and files</b> or <b>Something else</b>.</li>
+        <li>Add <b>Details (optional)</b> and, if it helps, <b>Add a picture of my screen</b> (the app steps aside for a moment and takes it; you see it before sending) <b>Or a picture from a file</b>.</li>
+        <li>Click <b>Send to IT</b>.</li>
+      </ol>
+      <p>Your request becomes a ticket such as <i>T-0042</i> in the IT desk's queue. <b>Your requests</b>, in the same dialog, shows
+      where each one stands, and you are told when someone takes it. IT sees your name, your request and your PC's system.</p>
+    </div>
+  </div>
+  <h3>12.2 Support sessions</h3>
+  <p>When it helps, the IT person who took your ticket starts a <b>support session</b>: a two-person call in which you decide,
+  one step at a time, what they may see and touch. You get a card, <i>"… from IT is ready to help"</i>, with <b>Join the session</b>
+  or <b>Not now</b>. Only you and that technician can be in the session.</p>
+  <table class="t">
+    <tr><th style="width:36mm">Step</th><th>What happens, and how you stay in charge</th></tr>
+    <tr><td>Seeing your screen</td><td>IT can ask; you choose a whole screen or one window, or say <b>Not now</b>. While you share, an amber frame stays around the screen and a bar on top says <i>Sharing your screen with …</i> with <b>Stop sharing</b>.</td></tr>
+    <tr><td>Diagnostics</td><td><b>Send diagnostics</b> collects the app's version, your system, displays and network checks, and the app's own recent log lines. It never includes messages, file names, notes, keys or passwords. You can open the file exactly as it will be sent before you send it.</td></tr>
+    <tr><td>Files</td><td>Either side can <b>Send a file</b>; it stays on the ticket.</td></tr>
+    <tr><td>Remote control</td><td>Only after a second, separate question: <i>Let … use your mouse and keyboard?</i> A whole screen must be shared. An amber banner says who is in control, with a big <b>Stop control</b>; <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> stops it at once from anywhere. System keys such as <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Del</kbd> are never passed on. On a Mac, IT can see but not control.</td></tr>
+  </table>
+  <p>Every grant and stop is recorded on the ticket and in the audit log. When the problem is fixed, you or IT close the ticket;
+  you can rate it, or reopen it if the problem comes back.</p>
+  <div class="note tip"><b>For the IT desk.</b> People an administrator puts on the IT desk (<b>Control room → People &amp; roles → IT desk</b>) get
+  <b>Help desk</b> in their tile menu: the queue (<b>In the queue</b>, <b>With IT</b>, <b>Yours</b>), each ticket with its timeline, and
+  <b>Take it</b>, <b>Hand back</b>, <b>Start a support session</b> and <b>Close</b>.</div>
+</section>
+<!-- ===================================================== 13 -->
+<section class="sec">
+  <h2>13 Preferences</h2>
+  <div class="cols w40">
+    <figure><img src="figures/fig-prefs.png" alt="Preferences: profile and contact details"><figcaption><b>Fig. 13-1</b> Preferences, opened with <kbd>Ctrl</kbd> + <kbd>,</kbd></figcaption></figure>
+    <div>
+      <p>Open <b>Preferences</b> from your tile or with <kbd>Ctrl</kbd> + <kbd>,</kbd>. It slides in from the right as one ruled
+      sheet with numbered sections; <kbd>Esc</kbd> closes it. Changes take effect at once, except the two forms at the top,
+      which have their own <b>Save</b> buttons.</p>
+      <h3>13.1 Profile and contact details</h3>
+      <ul>
+        <li><b>Profile</b>: <b>Display name</b>, <b>Job title</b> and <b>Status message</b> (with an emoji). Click <b>Save profile</b>.</li>
+        <li><b>Contact details</b>: <b>Extension</b>, <b>Phone</b>, <b>Seat or location</b> and <b>Birthday (MM-DD)</b>. Click <b>Save contact details</b>. Your department, designation and manager are set by an administrator.</li>
+      </ul>
+      <h3>13.2 Appearance and language</h3>
+      <table class="t">
+        <tr><th style="width:30mm">Setting</th><th>Choices</th></tr>
+        <tr><td>Theme</td><td><b>System</b>, <b>Light</b>, <b>Dark</b></td></tr>
+        <tr><td>Density</td><td><b>Comfortable</b>, <b>Compact</b></td></tr>
+        <tr><td>Messages drawn as</td><td><b>Spine</b> (messages hang off a timeline rule) or <b>Cards</b> (a compact card each, yours on the right). This PC only.</td></tr>
+        <tr><td>Language</td><td><b>English</b>, <b>हिन्दी</b> (Hindi) or <b>தமிழ்</b> (Tamil): the app's own words. What people write and their names are never translated.</td></tr>
+        <tr><td>Time format</td><td>As in Windows, <b>1:30 PM</b> or <b>13:30</b>.</td></tr>
+        <tr><td>Text size</td><td><b>Small</b>, <b>Default</b>, <b>Large</b>, <b>Larger</b> (also <kbd>Ctrl</kbd> + <kbd>=</kbd> and <kbd>Ctrl</kbd> + <kbd>-</kbd>).</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="cols">
+    <figure><img src="figures/fig-prefs-appearance.png" alt="Appearance, Privacy and Stamps on hand"><figcaption><b>Fig. 13-2</b> Appearance, Privacy and Stamps on hand</figcaption></figure>
+    <figure><img src="figures/fig-hindi.png" alt="Pulse with the app in Hindi"><figcaption><b>Fig. 13-3</b> The app in Hindi. Names and messages stay as written.</figcaption></figure>
+  </div>
+  <h3>13.3 Privacy and stamps</h3>
+  <p><b>Show when I've seen messages</b>: colleagues' notches fill in as you see their messages. Turn it off and you will not see
+  when they have seen yours either. <b>Stamps on hand</b>: the four stamps in the Stamp flyout (section 5.5); click a slot to
+  change it, or <b>Reset</b>.</p>
+  <div class="cols w40">
+    <figure><img src="figures/fig-prefs-notifications.png" alt="Notifications, start-up and your devices"><figcaption><b>Fig. 13-4</b> Notifications and Start-up and windows</figcaption></figure>
+    <div>
+      <h3>13.4 Notifications</h3>
+      <table class="t">
+        <tr><th style="width:32mm">Setting</th><th>What it does</th></tr>
+        <tr><td>Ping me for</td><td><b>Every message</b>, <b>Only what's addressed to me</b> (Direct messages and callouts) or <b>Only reminders and meetings</b>. Reminders and meetings always ping you.</td></tr>
+        <tr><td>Sound</td><td><b>Chime</b>, <b>Tick</b>, <b>Drop</b> or <b>Off</b>. <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Q</kbd> makes all sounds quiet, or brings them back.</td></tr>
+        <tr><td>Quiet hours</td><td>No message notifications or sounds between two times, every day (19:00 to 09:00 when first switched on). Reminders and meetings still notify.</td></tr>
+        <tr><td>Show message text in notifications</td><td>Turn off if others can see your screen.</td></tr>
+      </table>
+      <p>To mute one conversation, use <b>Hush</b> in its Switchboard menu (section 5.1).</p>
+      <h3>13.5 Start-up and windows</h3>
+      <p><b>Start when I sign in to Windows</b> (opens quietly in the notification area) and <b>Keep running when the window is
+      closed</b> (so messages and calls still reach you; quit from the tray icon). <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>D</kbd>
+      brings Dexterity Connect forward from any app.</p>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <h3>13.6 Your devices, calendar, outside the office, hub and updates</h3>
+      <dl class="kv">
+        <dt>Your devices</dt><dd>Every PC, laptop and phone signed in as you, with <span class="tag">THIS ONE</span> for the device you are on. <b>Add my phone</b> and <b>Add my laptop</b> (section 2.4); <b>Remove</b> signs a device out.</dd>
+        <dt>Calendar</dt><dd><b>Show my meetings in Outlook or on my phone</b> makes a private calendar address. Copy it into Outlook (<b>Add calendar ▸ Subscribe from web</b>) or your phone's calendar. It lists meetings you organise or are invited to, with their links; your calendar app cannot change anything here. Turning it off stops the address at once.</dd>
+        <dt>Outside the office</dt><dd>Whether you are <i>Connected on the office network</i> or <i>Connected through the internet gateway</i>, or that your administrator has not turned access from outside on (section 15).</dd>
+        <dt>Office hub</dt><dd>The hub's name, version, address and certificate fingerprint, and <b>This PC</b> with its device code. <b>Disconnect</b> leaves this hub (you can join it or another again from the welcome screen).</dd>
+        <dt>Updates</dt><dd><b>Check for updates</b>; the <b>Update channel</b> (<b>Stable</b>, or <b>Beta</b> for new features first); and <b>Download updates automatically</b>. The app checks when it opens and every 4 hours, downloads in the background, and installs when you restart or quit. Without internet it updates from the hub's copy.</dd>
+      </dl>
+    </div>
+    <figure><img src="figures/fig-prefs-devices.png" alt="Your devices, Calendar, Outside the office and Office hub"><figcaption><b>Fig. 13-5</b> Your devices, Calendar, Outside the office and Office hub</figcaption></figure>
+  </div>
+</section>
+
+<!-- ===================================================== 14 -->
+<section class="sec">
+  <h2>14 Phones (Android)</h2>
+  <p class="lead">The phone app is the same Dexterity Connect, laid out for a small screen. It works on the office Wi-Fi and,
+  once access from outside is on, anywhere on mobile data.</p>
+  <h3>14.1 Install and sign in</h3>
+  <ol class="steps">
+    <li>On your PC, open <b>Preferences → Your devices → Add my phone</b>. A QR code appears (Fig. 2-3).</li>
+    <li>Point the phone's camera at the code and tap the link. On the page, tap <b>Download for Android</b> and install the app (allow installing from your browser if Android asks).</li>
+    <li>Open Dexterity Connect. It finds the code by itself and signs you in, already approved. If it asks, tap <b>Scan the code on your PC</b> and point the phone at the square.</li>
+  </ol>
+  <p>On the office Wi-Fi you can also join without a code, like a PC: type your name and request access, and an
+  administrator approves the phone once.</p>
+  <div class="phones">
+    <figure class="phone"><img src="figures/fig-phone-pulse.png" alt="Pulse on a phone"><figcaption><b>Fig. 14-1</b> Pulse on a phone</figcaption></figure>
+    <figure class="phone"><img src="figures/fig-phone-switchboard.png" alt="The Switchboard on a phone"><figcaption><b>Fig. 14-2</b> The Switchboard</figcaption></figure>
+    <figure class="phone"><img src="figures/fig-phone-space.png" alt="A Space on a phone"><figcaption><b>Fig. 14-3</b> A Space</figcaption></figure>
+  </div>
+  <h3>14.2 Finding your way</h3>
+  <p>The lenses sit in a strip along the bottom: <b>Pulse</b>, <b>Switchboard</b> (Direct and Spaces together), <b>Desk</b>,
+  <b>Calendar</b> and <b>Directory</b>. Meet is a card on Pulse. GO TO and your tile are at the top; Preferences, Help me and
+  your day are in your tile's menu. Tap the back arrow in a conversation, or the Switchboard lens again, to return to the
+  list. Pictures and voice notes play in place; other files open in another app or save to Downloads.</p>
+  <div class="phones">
+    <figure class="phone"><img src="figures/fig-phone-calendar.png" alt="The Calendar agenda on a phone"><figcaption><b>Fig. 14-4</b> The Calendar's agenda</figcaption></figure>
+    <figure class="phone"><img src="figures/fig-phone-menu.png" alt="The tile menu on a phone"><figcaption><b>Fig. 14-5</b> Your tile's menu</figcaption></figure>
+    <figure class="phone"><img src="figures/fig-phone-space-dark.png" alt="A Space on a phone in the dark theme"><figcaption><b>Fig. 14-6</b> The dark theme</figcaption></figure>
+  </div>
+  <h3>14.3 Notifications on a phone</h3>
+  <p>Messages reach the phone through the office's own connection, not through Google. For them to arrive while the phone is
+  locked, the app must be allowed to run in the background:</p>
+  <ul>
+    <li>Leave <b>Preferences → Background → Stay connected in the background</b> on. Android then shows a quiet <i>Connected to the office</i> notification.</li>
+    <li>Run <b>Preferences → Background → Notifications check</b> → <b>Check</b>. It looks at the notification, battery and autostart settings that phone makers use to stop background apps, marks what needs attention, and gives the exact steps for Samsung, Xiaomi, Redmi and POCO, Vivo and iQOO, Oppo and Realme, OnePlus, Huawei and Honor phones.</li>
+    <li>Anything that arrives while the connection was stopped is shown as soon as the phone reconnects, so nothing is lost; at worst it is late.</li>
+  </ul>
+  <div class="note info"><b>What phones cannot do yet.</b> Screen sharing in support sessions, diagnostics and remote control are desktop only. Phones keep the search index of Direct messages in memory only.</div>
+</section>
+
+<!-- ===================================================== 15 -->
+<section class="sec">
+  <h2>15 Working from outside the office</h2>
+  <p class="lead">At home, on site or on leave, your laptop and phone reach the office hub through the office's own
+  <b>gateway</b>, with every feature you have in the office: messages, files, calls, the Desk, the Calendar and notifications.</p>
+  <figure class="half"><img src="figures/fig-prefs-outside.png" alt="Preferences: Outside the office, Office hub and Updates"><figcaption><b>Fig. 15-1</b> <b>Preferences → Outside the office</b> says how you are connected</figcaption></figure>
+  <ul>
+    <li><b>There is nothing to switch.</b> The app tries the office network first and uses the gateway when the office is out of reach. When it sees the hub on the office Wi-Fi again, it moves back. While it goes through the internet, the title bar shows a globe.</li>
+    <li><b>It is as safe as the office network.</b> Your device and the hub have their own encrypted channel inside the gateway's connection, pinned to the hub's certificate. The gateway passes on encrypted data and cannot read messages, files, names or calls. The office opens no ports to the internet.</li>
+    <li><b>Calls</b> from outside go through a relay on the internet when a direct path is not possible; they stay encrypted end to end.</li>
+    <li><b>Your administrator decides</b> whether access from outside is on, whether new devices may ask to join from outside, whether the Control room works from outside, and from which networks (section 17.1).</li>
+  </ul>
+  <div class="note warn"><b>If it says your administrator has not turned on access from outside</b>, the app only works on the office network. Ask IT.
+  The calendar address you made in Preferences works from anywhere only when it is given out <b>From anywhere</b>; the <b>On the office network</b> one works only at the office.</div>
+</section>
+
+<!-- ===================================================== 16 -->
+<section class="sec">
+  <h2>16 Security and privacy</h2>
+  <div class="cols w60">
+    <div>
+      <h3>16.1 Direct messages are end-to-end encrypted</h3>
+      <p>A Direct message is locked on your device with keys that only the devices of the people in the conversation hold. The
+      hub stores and passes on the locked envelope. Files, photos and voice notes in a Direct conversation are locked the same way.</p>
+      <ul>
+        <li>The conversation's header shows <span class="tag">ENCRYPTED</span>. Click it to see the <b>safety code</b> (Fig. 16-1). Compare it with your colleague in person: it is the same on both screens, and changes when anyone adds or replaces a device.</li>
+        <li>When you add a new device, your other devices hand it your history, so it can read past Direct messages.</li>
+        <li>If someone is on an older version of the app that cannot encrypt, a line above the Dock says so and <b>Why</b> explains. Your office can require encryption, in which case nothing is sent until they update.</li>
+        <li>Your devices search your Direct messages themselves, from an index encrypted with a key in the PC's secure storage. Signing out or removing the device deletes it.</li>
+      </ul>
+    </div>
+    <figure><img src="figures/fig-safety-code.png" alt="End-to-end encrypted: the safety code"><figcaption><b>Fig. 16-1</b> The safety code of a Direct conversation</figcaption></figure>
+  </div>
+  <h3>16.2 What administrators can and cannot see</h3>
+  <table class="t">
+    <tr><th style="width:52mm">Administrators can</th><th>Administrators cannot</th></tr>
+    <tr><td style="font-weight:400">Read and export messages in Spaces (Compliance), with every earlier version of a message kept under a legal hold.</td><td>Read Direct messages. An export of Direct conversations shows only that messages exist and when, never what they say.</td></tr>
+    <tr><td style="font-weight:400">See who is in the office, devices, sign-ins, and the audit log of every administrative change.</td><td>See your Desk: reminders, kept messages, notes or drafts.</td></tr>
+    <tr><td style="font-weight:400">Remove devices, end guests' access, and take over a leaver's Spaces and meetings.</td><td>Join or watch a support session, or use your mouse and keyboard, without your consent each time.</td></tr>
+    <tr><td style="font-weight:400">Watch a recording kept on the hub, and delete it.</td><td>See what your PC's search index holds.</td></tr>
+  </table>
+  <h3>16.3 Compliance and data protection</h3>
+  <ul>
+    <li><b>Retention.</b> The office decides how long messages in Spaces and Direct conversations are kept; the hub removes older ones every hour. Messages under a legal hold are kept whatever the retention.</li>
+    <li><b>Data protection.</b> The office can stop or mask card, Aadhaar, PAN and bank numbers and chosen words before they are sent (for encrypted messages, your own device checks before locking them), and block file types such as <code>exe</code>.</li>
+    <li><b>Reports.</b> <b>Report to administrators…</b> on any message sends it for review.</li>
+    <li><b>Lost device.</b> Tell IT at once. You can also remove it yourself in <b>Preferences → Your devices</b>; a removed device is signed out and its keys stop working.</li>
+  </ul>
+  <div class="note stop"><b>Do not</b> send passwords, OTPs or client login details in any conversation, encrypted or not. Do not forward
+  client drawings to personal accounts. Treat everything in Dexterity Connect as internal unless a Space is set up for a guest.</div>
+</section>
+<!-- ===================================================== 17 -->
+<section class="sec">
+  <h2>17 For administrators</h2>
+  <p class="lead">Administrators approve devices, keep the Directory, set the office's policies, and look after the hub. All of it is in the
+  <b>Control room</b>: click your tile and choose <b>Control room</b> (or <b>Open Control room</b> in GO TO). A badge on it counts devices
+  waiting for approval. The first person to join a hub is its <b>Owner</b>; the owner and anyone with the <b>Admin</b> role see the Control room.</p>
+  <div class="note warn"><b>Every change in the Control room is recorded</b> in the audit log with who made it and when. By default
+  the Control room works only on the office network (section 17.1, Outside the office).</div>
+
+  <h3>17.1 The Control room, section by section</h3>
+  <p>The Control room is a sheet with a numbered register of fifteen sections, <b>01 Approvals</b> to <b>15 Audit log</b>.</p>
+  <figure><img src="figures/fig-cr-approvals.png" alt="Control room, Approvals: Nisha Varma waiting, with her device code"><figcaption><b>Fig. 17-1</b> <b>01 Approvals</b>: a new joiner waiting, with the device code to compare</figcaption></figure>
+  <dl class="kv">
+    <dt>01 Approvals</dt><dd>Devices waiting to join: the person, their Windows account, the PC's name, when they asked, and the <b>device code</b>. Ask the person to read out the code on their screen; if it matches, click <b>Approve</b>, otherwise <b>Decline</b>. The first device of a new colleague creates their Directory entry.</dd>
+    <dt>02 Devices</dt><dd>Every device with its owner, PC name, status (<span class="tag amber">WAITING</span>, <span class="tag">APPROVED</span>, declined or removed) and when it was last seen. <b>Remove</b> signs a device out at once, for example a lost phone; the person must be approved again on it.</dd>
+  </dl>
+  <div class="cols">
+    <figure><img src="figures/fig-cr-devices.png" alt="Control room, Devices"><figcaption><b>Fig. 17-2</b> <b>02 Devices</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-roles.png" alt="Control room, People and roles, with the IT desk"><figcaption><b>Fig. 17-3</b> <b>03 People &amp; roles</b></figcaption></figure>
+  </div>
+  <dl class="kv">
+    <dt>03 People &amp; roles</dt><dd>Everyone with their Windows account and <b>Role</b>: <b>Owner</b>, <b>Admin</b>, <b>Member</b> or <b>Guest</b>. At the top, the <b>IT desk</b>: <b>Add someone to the IT desk…</b> gives them the Help desk queue and support sessions (section 12).</dd>
+    <dt>04 Organisation</dt><dd>Departments (nested under each other, each with its head), designations, reporting lines, extensions, seats, joining dates, birthdays and custom fields: what the Directory and the office drawing show. Import it from a CSV saved from Excel or Dexterity Sheets, including people who have not joined yet. Further down, <b>Conference rooms and cabins</b> that people can book with a meeting.</dd>
+  </dl>
+  <figure><img src="figures/fig-cr-organisation.png" alt="Control room, Organisation: departments with their heads"><figcaption><b>Fig. 17-4</b> <b>04 Organisation</b></figcaption></figure>
+  <dl class="kv">
+    <dt>05 Guests</dt><dd>Consultants and client engineers join with an invite code. <b>Invite a guest</b>: choose the Spaces they can use, how long access lasts, how long the code works, how many guests can use it and a note for yourself, then <b>Create invite code</b> (it is shown once). Guests are approved straight away, see only those Spaces and their people, and lose access when their time is up. Extend or end a guest's access any time.</dd>
+    <dt>06 Compliance</dt><dd><b>How long messages are kept</b> in Spaces and in Direct conversations; <b>Legal holds</b> on a person or a conversation (every version of edited or deleted messages is kept); and <b>Export</b> of chosen Spaces or people for a period, as <b>Readable (HTML)</b>, <b>Spreadsheet (CSV)</b> or <b>Data (JSON)</b>. Direct messages are private: an export shows that they exist and when, never what they say.</dd>
+    <dt>07 Reports</dt><dd>Messages people reported with <b>Report to administrators…</b>: open the message, remove it with a reason, or close the report.</dd>
+  </dl>
+  <div class="cols">
+    <figure><img src="figures/fig-cr-guests.png" alt="Control room, Guests"><figcaption><b>Fig. 17-5</b> <b>05 Guests</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-compliance.png" alt="Control room, Compliance"><figcaption><b>Fig. 17-6</b> <b>06 Compliance</b></figcaption></figure>
+  </div>
+  <dl class="kv">
+    <dt>08 Policies</dt><dd>The office's rules: how long people can edit or delete their messages and the largest file people can share; link cards (whether the hub fetches web page previews, also for guests, and which office hosts it may preview); whether Direct messages must be end-to-end encrypted; whether Direct messages may pass straight between PCs when the hub is off; who can add office emoji and stickers; whether people can record calls; meetings (the default lobby, joining before the host, guest links, the largest recording, and <b>Join meetings with the camera off and ask before turning it on</b>); whether <b>People can add their own phones and laptops</b>; the default Spaces for new people; the office's own lines for the day's line on Pulse; and <b>Data protection</b> (stop or mask card, Aadhaar, PAN and bank numbers and chosen words, blocked file types, and the networks allowed to connect from outside).</dd>
+  </dl>
+  <figure><img src="figures/fig-cr-policies.png" alt="Control room, Policies"><figcaption><b>Fig. 17-7</b> <b>08 Policies</b> (the first of several screens)</figcaption></figure>
+  <dl class="kv">
+    <dt>09 Outside the office</dt><dd>The <b>Gateway address</b> (<b>Save address</b>), the switch <b>Allow access from outside the office</b> (turning it off disconnects everyone outside at once), <b>Who may use it</b> (<b>New devices may ask to join from outside</b>, <b>The Control room works from outside</b>), this hub's id and fingerprint for pinning the gateway, and <b>Calls across networks</b> (the TURN relay for calls between home and office). Setting up the gateway itself is described in <code>docs/REMOTE-ACCESS.md</code>; IT deploys it with <code>scripts\release\Deploy-Gateway.cmd</code>.</dd>
+  </dl>
+  <div class="cols">
+    <figure><img src="figures/fig-cr-remote.png" alt="Control room, Outside the office"><figcaption><b>Fig. 17-8</b> <b>09 Outside the office</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-usage.png" alt="Control room, Usage"><figcaption><b>Fig. 17-9</b> <b>10 Usage</b></figcaption></figure>
+  </div>
+  <dl class="kv">
+    <dt>10 Usage</dt><dd>For 7, 30 or 90 days: people active, messages, Rooms, files stored, messages per day, the busiest Spaces and who writes most, and meetings by week (count, hours, average size, browser guests, recordings), with <b>Show as table</b> and CSV.</dd>
+    <dt>11 Integrations</dt><dd>Tokens for office tools that post into Dexterity Connect (Hopper file alerts, Sheets mentions, Sleuth reports): give a name and <b>Create token</b>; revoke one any time. <b>Webhooks for other tools</b> accept Slack-style messages into a chosen Space. <b>For tool builders: the Bot API</b> explains the rest (see <code>docs/INTEGRATIONS.md</code>).</dd>
+    <dt>12 Automations</dt><dd>Every rule in the office, office-wide rules that watch every Space (drafted from words like a conversation's rules, section 11), and the switch <b>Webhooks may call the office network</b> (off: automations call only addresses on the internet).</dd>
+    <dt>13 Bots &amp; tools</dt><dd><b>Flows</b>: the office's bots, with bots people asked to make office-wide waiting for review (approve, or send back with a note), pause or retire. <b>Tools in conversations</b>: small tools that can be added to a Space, each reviewed before use.</dd>
+  </dl>
+  <div class="cols">
+    <figure><img src="figures/fig-cr-integrations.png" alt="Control room, Integrations"><figcaption><b>Fig. 17-10</b> <b>11 Integrations</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-bots.png" alt="Control room, Bots and tools"><figcaption><b>Fig. 17-11</b> <b>13 Bots &amp; tools</b></figcaption></figure>
+  </div>
+  <dl class="kv">
+    <dt>14 Backups &amp; leavers</dt><dd><b>Backups</b> (section 17.3) and <b>Someone leaving</b> (section 17.4).</dd>
+    <dt>15 Audit log</dt><dd>Every administrative event, newest first: approvals and removals, role changes, policy changes, exports, guests, meetings, recordings, support-session consents, automations and backups. People connecting from outside show as <i>internet &lt;address&gt; (&lt;country&gt;)</i>.</dd>
+  </dl>
+  <div class="cols">
+    <figure><img src="figures/fig-cr-automations.png" alt="Control room, Automations"><figcaption><b>Fig. 17-12</b> <b>12 Automations</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-audit.png" alt="Control room, Audit log"><figcaption><b>Fig. 17-13</b> <b>15 Audit log</b></figcaption></figure>
+  </div>
+
+  <h3>17.2 Installing the office hub</h3>
+  <p>Put the hub on one office PC that stays on, plugged into the office network. Set it never to sleep, and ask whoever
+  manages the router to give it a fixed address (a DHCP reservation); the apps follow the hub if its address changes, but a
+  fixed one is best.</p>
+  <ol class="steps">
+    <li>Copy the hub folder from the release (the hub zip) to where it should live, for example <code>D:\Dexterity Connect Hub</code>.</li>
+    <li>Double-click <b>Install-Hub.cmd</b> and click <b>Yes</b> when Windows asks for permission. It installs the hub as a Windows service that starts with the PC and restarts itself, and opens only the ports it needs in Windows Firewall: TCP 47900 for the apps and UDP 47901 for finding the hub (plus 47910–47999 for meetings of more than 8 people).</li>
+    <li>On your own PC, install Dexterity Connect and click <b>Request access</b>. As the first person, you become the owner, approved at once.</li>
+    <li>Everyone else installs the app and requests access; approve them in <b>Control room → Approvals</b>.</li>
+    <li>Choose a backup folder straight away (section 17.3).</li>
+  </ol>
+  <p>The hub's data is in <code>hub-data</code> beside it, its logs in <code>logs</code>. A browser at <code>https://&lt;hub-pc&gt;:47900/health</code>
+  answers if the hub is running (the browser warns about the certificate; the app trusts it by its fingerprint instead).
+  <b>Uninstall-Hub.cmd</b> removes the service and keeps the data.</p>
+
+  <h3>17.3 Backing up and restoring the hub</h3>
+  <figure><img src="figures/fig-cr-backups.png" alt="Control room, Backups and leavers: hub backup, where and when, keep"><figcaption><b>Fig. 17-14</b> <b>14 Backups &amp; leavers → Backups</b></figcaption></figure>
+  <ol class="steps">
+    <li><b>Backup folder</b>: a second disk (<code>E:\DexConnectBackup</code>) or a network share (<code>\\NAS\backups\dexconnect</code>), never the hub's own disk. Click <b>Save folder</b>; the hub checks it can write there and says why if not.</li>
+    <li><b>Every night at</b>: the hub PC's time, 02:00 unless you change it. If the hub was off then, it backs up as soon as it is on again.</li>
+    <li><b>Keep</b>: one a day for 14 days, one a week for 8 weeks and one a month for 12 months, unless you change the numbers. Click <b>Save</b>.</li>
+  </ol>
+  <p>A backup is taken while the hub runs, copies only new files, and is checked after every run. The sheet shows the last good
+  backup, its size, the check, the next backup, the copies kept, and any failure in plain words. <b>Back up now</b> makes one at
+  once (before moving the hub, for example). After two days without a good backup, the sheet turns amber and every administrator
+  is told once a day.</p>
+  <div class="note stop"><b>The backup folder holds the hub's private key and all the office's messages and files.</b> Only administrators
+  should be able to read it. For a network share, the hub service's account (Local System, which acts as the hub PC's computer account) must be allowed to write there.</div>
+  <h4>Putting a backup back</h4>
+  <ol class="steps">
+    <li>On the hub PC, stop the service: <b>Services ▸ Dexterity Connect Hub ▸ Stop</b>. The restore refuses to run while the hub is running.</li>
+    <li>Open a Command Prompt as administrator in the hub's folder and run <code>DexterityConnectHub.exe --restore "E:\DexConnectBackup"</code> for the newest copy, or give one copy's folder under <code>snapshots</code>. You can also drag the backup folder onto <b>Restore-Hub.cmd</b>. The copy is checked first; the current data is moved aside to <code>hub-data-before-restore-…</code>, never deleted.</li>
+    <li>Start the service again.</li>
+  </ol>
+  <p>On a new PC: run <b>Install-Hub.cmd</b>, then the three steps above. Apps trust the restored hub because its certificate is
+  restored. Anything after the backup (new messages, devices approved since) is not in it. The full procedure is in <code>docs/BACKUP.md</code>.</p>
+
+  <h3>17.4 When someone leaves</h3>
+  <p><b>Control room → Backups &amp; leavers → Someone leaving</b> offboards a colleague in one step: choose <b>Who is leaving</b>
+  and <b>Who takes over</b>, decide what happens to <b>Their meetings from now on</b> (<b>Move to the colleague</b> or <b>Cancel them</b>), add a
+  <b>Note for the colleague (optional)</b>, check the list of what will be handed over, and confirm.</p>
+  <ul>
+    <li>Every device of theirs is signed out at once, with their calendar feed and any unused pairing codes.</li>
+    <li>Their Spaces, automations, integrations and tools, reminders, meetings, help tickets and webinars go to the colleague taking over.</li>
+    <li>Their messages stay, for compliance. The Directory shows them as having left the office.</li>
+    <li>If they come back, <b>Give access again</b> restores their account.</li>
+  </ul>
+
+  <h3>17.5 Releasing updates</h3>
+  <p>Releases are built on an office Windows PC with one script; the one-time setup (Node.js 22, Git, and optionally the Android
+  tools and the GitHub CLI) is in <code>docs/RELEASING.md</code>.</p>
+  <ol class="steps">
+    <li>On the build PC, with the <code>main</code> branch checked out, double-click <code>scripts\release\Build-Release.cmd</code>. It installs what it needs, typechecks, runs the tests, and builds the Windows installer, the hub package and the Android APK into <code>D:\DexterityConnect-Releases\&lt;version&gt;</code>, with <code>SHA256SUMS.txt</code> and the update feed. Nothing is published yet.</li>
+    <li>Install the new setup on one PC and try it.</li>
+    <li>Publish that exact build: <code>Build-Release.cmd -Publish -Version &lt;that version&gt; -SkipTests</code>. Installed apps update themselves within the hour (stable from <code>main</code>, beta from other branches; <code>-Channel</code> overrides).</li>
+  </ol>
+  <p>Other options: <code>-SkipAndroid</code>, <code>-Out E:\Builds</code>. Versions read <i>major.minor.yyMMddHH</i>, so each build is newer than the
+  last. PCs without internet update from the hub's copy. Mac installers are built on a Mac. The installers are not code-signed, hence SmartScreen (section 2.1).</p>
+</section>
+
+<!-- ===================================================== 18 -->
+<section class="sec">
+  <h2>18 Keyboard shortcuts</h2>
+  <p class="lead">Press <kbd>Ctrl</kbd> + <kbd>/</kbd> for the list in the app. The keys under <b>Your keys</b> can be changed on your PC:
+  click the keys, press the new ones (the app warns if they are taken), or <b>Reset all</b>.</p>
+  <div class="keys">
+    <div>
+      <table class="t">
+        <tr><th colspan="2">Your keys (can be changed)</th></tr>
+        <tr><td>Go to a person, conversation or command</td><td><kbd>Ctrl</kbd> <kbd>G</kbd></td></tr>
+        <tr><td>Search messages and files, with filters</td><td><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F</kbd></td></tr>
+        <tr><td>Preferences</td><td><kbd>Ctrl</kbd> <kbd>,</kbd></td></tr>
+        <tr><td>Sounds quiet, or back on</td><td><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Q</kbd></td></tr>
+        <tr><td>Send later</td><td><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Enter</kbd></td></tr>
+        <tr><td>Edit your last message</td><td><kbd>Ctrl</kbd> <kbd>↑</kbd></td></tr>
+        <tr><td>Pulse … Meet lens</td><td><kbd>Ctrl</kbd> <kbd>1</kbd> … <kbd>7</kbd></td></tr>
+      </table>
+      <table class="t">
+        <tr><th colspan="2">G then a letter (outside text boxes)</th></tr>
+        <tr><td>Pulse, Direct, Spaces</td><td><kbd>G</kbd> <kbd>P</kbd> · <kbd>G</kbd> <kbd>D</kbd> · <kbd>G</kbd> <kbd>S</kbd></td></tr>
+        <tr><td>Desk, Calendar</td><td><kbd>G</kbd> <kbd>K</kbd> · <kbd>G</kbd> <kbd>C</kbd></td></tr>
+        <tr><td>Directory, Meet</td><td><kbd>G</kbd> <kbd>Y</kbd> · <kbd>G</kbd> <kbd>M</kbd></td></tr>
+      </table>
+      <table class="t">
+        <tr><th colspan="2">Getting around</th></tr>
+        <tr><td>Previous / next conversation in the Switchboard</td><td><kbd>Alt</kbd> <kbd>↑</kbd> / <kbd>↓</kbd></td></tr>
+        <tr><td>Lay a conversation beside the open ones (up to three)</td><td><kbd>Ctrl</kbd> + click</td></tr>
+        <tr><td>Show Dexterity Connect from any app</td><td><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>D</kbd></td></tr>
+        <tr><td>The shortcuts list</td><td><kbd>Ctrl</kbd> <kbd>/</kbd></td></tr>
+        <tr><td>Close a dialog, menu or selection</td><td><kbd>Esc</kbd></td></tr>
+      </table>
+    </div>
+    <div>
+      <table class="t">
+        <tr><th colspan="2">Writing</th></tr>
+        <tr><td>Send</td><td><kbd>Enter</kbd></td></tr>
+        <tr><td>New line</td><td><kbd>Shift</kbd> <kbd>Enter</kbd></td></tr>
+        <tr><td>Bold, italic</td><td><kbd>Ctrl</kbd> <kbd>B</kbd> · <kbd>Ctrl</kbd> <kbd>I</kbd></td></tr>
+        <tr><td>Underline, strikethrough</td><td><kbd>Ctrl</kbd> <kbd>U</kbd> · <kbd>Ctrl</kbd> <kbd>5</kbd></td></tr>
+        <tr><td>Add a link</td><td><kbd>Ctrl</kbd> <kbd>K</kbd></td></tr>
+        <tr><td>Emoji</td><td><kbd>Ctrl</kbd> <kbd>.</kbd></td></tr>
+        <tr><td>Commands</td><td><kbd>/</kbd></td></tr>
+        <tr><td>Call out someone</td><td><kbd>@</kbd></td></tr>
+        <tr><td>A tag, or a Space by name</td><td><kbd>#</kbd></td></tr>
+        <tr><td>Accept a suggestion</td><td><kbd>Tab</kbd></td></tr>
+      </table>
+      <table class="t">
+        <tr><th colspan="2">View</th></tr>
+        <tr><td>Larger, smaller, default text</td><td><kbd>Ctrl</kbd> <kbd>=</kbd> · <kbd>Ctrl</kbd> <kbd>-</kbd> · <kbd>Ctrl</kbd> <kbd>0</kbd></td></tr>
+      </table>
+      <table class="t">
+        <tr><th colspan="2">PDF viewer and calls</th></tr>
+        <tr><td>Find in the PDF</td><td><kbd>Ctrl</kbd> <kbd>F</kbd></td></tr>
+        <tr><td>Fit page, fit width, page strip</td><td><kbd>F</kbd> · <kbd>W</kbd> · <kbd>S</kbd></td></tr>
+        <tr><td>Stop someone controlling your screen</td><td><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>S</kbd></td></tr>
+        <tr><td>Fold the Room into the title bar</td><td><kbd>Esc</kbd></td></tr>
+      </table>
+    </div>
+  </div>
+  <p class="small">On a Mac, use <kbd>Cmd</kbd> where the table says <kbd>Ctrl</kbd>.</p>
+</section>
+
+<!-- ===================================================== 19 -->
+<section class="sec">
+  <h2>19 Troubleshooting and support</h2>
+  <table class="t">
+    <tr><th style="width:56mm">What you see</th><th>What to do</th></tr>
+    <tr><td>The welcome screen keeps saying it is looking for the office hub</td><td>Check that the PC is on the office network (not a guest Wi-Fi). Click <b>Enter the hub address yourself</b> and type the address IT gives you. If the hub PC was moved, the app finds it again by itself.</td></tr>
+    <tr><td>Stuck on <b>Waiting for an administrator</b></td><td>An administrator has to approve each new device once. Tell one, and read out your device code.</td></tr>
+    <tr><td><b>Access not granted</b>: an administrator declined this device</td><td>Ask the administrator why; they can approve you if you request access again.</td></tr>
+    <tr><td><b>This hub's identity changed</b></td><td>The app no longer recognises the hub's certificate. Do not continue; call IT. (After a restore from backup this does not happen, because the certificate is restored too.)</td></tr>
+    <tr><td>The hub name in the title bar is amber (reconnecting)</td><td>The app lost the hub for a moment. You can keep reading; what you write is sent when it reconnects. If it lasts, check your network, or ask IT whether the hub PC is on.</td></tr>
+    <tr><td>Outside the office, the app does not connect</td><td>See <b>Preferences → Outside the office</b>. If your administrator has not turned access on, the app works only at the office.</td></tr>
+    <tr><td>A Direct conversation says <i>Not end-to-end encrypted</i></td><td>Someone in it is on an older version of the app. Ask them to update (<b>Check for updates</b> in their tile menu).</td></tr>
+    <tr><td>No notifications</td><td>Check <b>Preferences → Notifications</b> (Ping me for, Quiet hours), whether the conversation is hushed, and your status (<b>No interruptions</b> turns them off). On a phone, run the <b>Notifications check</b> (section 14.3).</td></tr>
+    <tr><td>Others cannot hear or see you in a Room</td><td>Check <b>Mic on</b> and <b>Camera on</b>, and that no other program is using the camera. A host may have muted you: you will be asked before you are unmuted.</td></tr>
+    <tr><td>A file will not attach</td><td>It may be larger than the office limit, or of a type the office blocks (for example <code>.exe</code>). Share it on the office server and post its path instead.</td></tr>
+    <tr><td>Windows shows "Windows protected your PC"</td><td>Click <b>More info → Run anyway</b> (section 2.1).</td></tr>
+    <tr><td>Phone or laptop lost</td><td>Remove it in <b>Preferences → Your devices</b>, and tell IT.</td></tr>
+  </table>
+  <h3>19.1 Getting help</h3>
+  <ul>
+    <li><b>In the app:</b> your tile → <b>Help me…</b> (section 12). Attach a picture of the screen if something looks wrong.</li>
+    <li><b>From IT:</b> IT may ask you to <b>Send diagnostics</b> in a support session; you can read the file before it is sent.</li>
+    <li><b>About this guide:</b> corrections and suggestions to the Office of the Managing Director. The current revision is kept with the app's documentation as <code>docs/Dexterity-Connect-User-Guide.pdf</code>.</li>
+  </ul>
+  <h3>19.2 Revision history</h3>
+  <table class="t">
+    <tr><th style="width:22mm">Revision</th><th style="width:30mm">Date</th><th>Change</th></tr>
+    <tr><td>0</td><td>15-Nov-2026</td><td>First issue.</td></tr>
+  </table>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,150 @@
+/* Dexterity Connect user guide: print stylesheet (A4, Chromium through scripts/build-guide.mjs).
+   The same print look as the office's other guides (Project Opener, Sleuth), in this app's teal.
+   The running header and footer are @page margin boxes, so the cover has none. */
+@font-face { font-family: "Onest"; src: url("Onest-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "Onest"; src: url("Onest-Medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Onest"; src: url("Onest-SemiBold.ttf"); font-weight: 600; }
+@font-face { font-family: "Onest"; src: url("Onest-Bold.ttf"); font-weight: 700; }
+
+@page {
+  size: A4; margin: 19mm 15mm 17mm 15mm;
+  @top-left { content: "Dexterity Connect User Guide  ·  DDSP-IT-DXC-UG-001  ·  Rev 0"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
+  @top-right { content: "Dexterity Design Services Private Limited"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
+  @top-center { content: ""; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
+  @bottom-center { content: ""; vertical-align: top; padding-top: 3.2mm; border-top: 0.6pt solid #D5E2E3; }
+  @bottom-left { content: "Internal use only. Do not share outside DDSP."; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: top; padding-top: 3.2mm; border-top: 0.6pt solid #D5E2E3; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: top; padding-top: 3.2mm; border-top: 0.6pt solid #D5E2E3; }
+}
+@page cover {
+  margin: 15mm 15mm 14mm 15mm;
+  @top-left { content: none; border: 0; } @top-center { content: none; border: 0; } @top-right { content: none; border: 0; }
+  @bottom-center { content: none; border: 0; }
+  @bottom-left { content: none; border: 0; } @bottom-right { content: none; border: 0; }
+}
+
+:root {
+  --ink: #1D2230; --muted: #5B6275; --faint: #8A90A0;
+  --accent: #1C7680; --accent-soft: #E2F0F1; --accent-ink: #1E6066;
+  --sky: #E6F0FA; --sky-ink: #1F4E7A; --blush: #FBE9E7; --blush-ink: #8A2E24;
+  --sand: #FBF3E0; --sand-ink: #6B4E12; --amber: #F7AF44;
+  --line: #D5E2E3; --surface: #F3F8F8;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; }
+body { font-family: "Onest", "Segoe UI", Arial, sans-serif; font-size: 10.2pt; line-height: 1.5; color: var(--ink);
+       font-feature-settings: "tnum" 1; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+p { margin: 0 0 7pt; orphans: 3; widows: 3; }
+b, strong { font-weight: 600; }
+a { color: var(--accent-ink); text-decoration: none; }
+kbd { font-family: "Onest"; font-weight: 500; font-size: 8.6pt; padding: 0 4pt; border: 1px solid var(--line);
+      border-bottom-width: 2px; border-radius: 4pt; background: #fff; white-space: nowrap; }
+code, .path { font-family: Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace; font-size: 8.8pt; background: var(--surface);
+              padding: 0 3pt; border-radius: 3pt; }
+code { white-space: nowrap; }
+code.wrap { white-space: normal; overflow-wrap: anywhere; }
+ul, ol { margin: 0 0 7pt; padding-left: 16pt; }
+li { margin-bottom: 2.5pt; }
+
+/* cover */
+.cover { page: cover; height: 267mm; display: flex; flex-direction: column; overflow: hidden; }
+.cover__top { display: flex; justify-content: space-between; align-items: flex-start; }
+.cover__top img { width: 34mm; }
+.cover__org { text-align: right; font-size: 8.6pt; color: var(--muted); line-height: 1.45; }
+.cover__org b { color: var(--ink); font-weight: 600; }
+.cover__title { margin-top: 30mm; display: flex; align-items: center; gap: 9mm; }
+.cover__title img { width: 30mm; height: 30mm; }
+.cover__title .h1 { margin: 0; font-size: 36pt; font-weight: 700; letter-spacing: -0.02em; line-height: 1.02; }
+.cover__title .sub { margin: 6pt 0 0; font-size: 14pt; color: var(--accent-ink); font-weight: 500; }
+.cover__rule { height: 2.2mm; background: var(--accent); border-radius: 2mm; margin: 13mm 0 9mm; }
+.cover__lead { font-size: 11.3pt; max-width: 140mm; color: var(--ink); }
+.cover__control { margin-top: auto; }
+.control { width: 100%; border-collapse: collapse; font-size: 9.2pt; }
+.control th { text-align: left; background: var(--accent); color: #fff; padding: 4.5pt 8pt; font-weight: 600; }
+.control td { padding: 4.2pt 8pt; border-bottom: 1px solid var(--line); vertical-align: top; }
+.control td:first-child { width: 36mm; font-weight: 600; color: var(--muted); }
+.control .pending { color: var(--sand-ink); font-weight: 500; }
+
+/* contents */
+.toc h2 { margin-top: 0; }
+.toc ol { list-style: none; padding: 0; margin: 0; }
+.toc li { display: flex; align-items: baseline; gap: 6pt; margin: 0; padding: 2.4pt 0; border-bottom: 1px dotted var(--line); font-size: 10pt; break-inside: avoid; }
+.toc li.sub { padding-left: 16pt; font-size: 8.8pt; color: var(--muted); border-bottom: none; padding-top: 0.6pt; padding-bottom: 0.6pt; }
+.toc .n { width: 18pt; color: var(--accent-ink); font-weight: 600; flex: none; }
+.toc li.sub .n { width: 24pt; font-weight: 500; }
+.toc .t { flex: 1; }
+.toc .toc-page { flex: none; min-width: 16pt; text-align: right; color: var(--muted); }
+.toc-cols { columns: 2; column-gap: 9mm; }
+.toc-cols li { break-inside: avoid; }
+.conventions { margin-top: 7mm; border: 1px solid var(--line); border-radius: 10pt; padding: 8pt 11pt; font-size: 9.2pt; break-inside: avoid; }
+.conventions h3 { margin: 0 0 4pt; }
+.conventions p:last-child { margin-bottom: 0; }
+
+/* sections */
+section.sec { break-before: page; }
+h2 { font-size: 19pt; font-weight: 700; letter-spacing: -0.015em; color: var(--accent-ink); margin: 0 0 7pt; line-height: 1.45; }
+/* (a tighter line-height makes Chromium write each h2 twice into the PDF outline) */
+h3 { font-size: 13pt; font-weight: 600; margin: 13pt 0 5pt; letter-spacing: -0.01em; break-after: avoid; }
+h4 { font-size: 10.6pt; font-weight: 600; margin: 9pt 0 3pt; break-after: avoid; }
+.lead { font-size: 10.8pt; color: var(--ink); }
+.keep { break-inside: avoid; }
+/* a heading with the first thing after it: never left alone at the foot of a page */
+.hold { break-inside: avoid; }
+.hold > h3 { margin-top: 13pt; }
+
+/* two-column text + figure */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-items: start; }
+.cols.w60 { grid-template-columns: 1.35fr 1fr; }
+.cols.w40 { grid-template-columns: 1fr 1.35fr; }
+.cols.w70 { grid-template-columns: 1.9fr 1fr; }
+.cols.w30 { grid-template-columns: 1fr 1.9fr; }
+.cols > * { min-width: 0; }
+
+/* figures */
+figure { margin: 6pt 0 10pt; break-inside: avoid; }
+figure img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 6pt; }
+figure.narrow { width: 62%; margin-left: auto; margin-right: auto; }
+figure.half { width: 50%; margin-left: auto; margin-right: auto; }
+figure.phone img { border-radius: 10pt; }
+figcaption { font-size: 8.6pt; color: var(--muted); margin-top: 4pt; }
+figcaption b { color: var(--accent-ink); font-weight: 600; }
+.phones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+.phones figure { margin: 0; }
+
+/* tables */
+table.t { width: 100%; border-collapse: collapse; font-size: 9.2pt; margin: 4pt 0 10pt; break-inside: auto; }
+table.t th { text-align: left; background: var(--accent); color: #fff; padding: 4.5pt 7pt; font-weight: 600; }
+table.t td { padding: 3.8pt 7pt; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.t tr { break-inside: avoid; }
+table.t thead { display: table-header-group; }
+table.t td:first-child { font-weight: 600; }
+table.t.nowrap1 td:first-child { white-space: nowrap; }
+
+/* numbered steps */
+ol.steps { list-style: none; padding: 0; margin: 4pt 0 10pt; counter-reset: step; }
+ol.steps li { position: relative; padding-left: 22pt; margin-bottom: 6pt; counter-increment: step; break-inside: avoid; }
+ol.steps li::before { content: counter(step); position: absolute; left: 0; top: 1pt; width: 15pt; height: 15pt; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 8.4pt; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+
+/* callouts */
+.note { border-radius: 9pt; padding: 7pt 10pt; margin: 6pt 0 10pt; font-size: 9.5pt; break-inside: avoid; }
+.note.tip { background: var(--accent-soft); color: var(--accent-ink); }
+.note.info { background: var(--sky); color: var(--sky-ink); }
+.note.warn { background: var(--sand); color: var(--sand-ink); }
+.note.stop { background: var(--blush); color: var(--blush-ink); }
+.note p:last-child { margin-bottom: 0; }
+
+/* tags, drawn like the app's: a mono caption in a hairline box */
+.tag { display: inline-block; font-family: Consolas, "DejaVu Sans Mono", monospace; font-size: 7.6pt; letter-spacing: 0.06em; padding: 0 4pt;
+       border: 1px solid var(--accent); color: var(--accent-ink); border-radius: 2pt; white-space: nowrap; }
+.tag.amber { border-color: #C98A1E; color: #7A4F05; }
+
+dl.kv { margin: 0 0 8pt; }
+dl.kv dt { font-weight: 600; margin-top: 5pt; }
+dl.kv dd { margin: 0 0 2pt 0; }
+
+.keys { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8mm; }
+.keys table.t td:first-child { font-weight: 400; }
+.keys table.t td:last-child { white-space: nowrap; text-align: right; }
+
+.small { font-size: 8.8pt; color: var(--muted); }
+.pb { break-before: page; }

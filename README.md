@@ -12,6 +12,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 
 - **Product page:** https://dexterity-admin.github.io/dexterity-connect/
 - **Installers and update feed:** https://github.com/dexterity-admin/dexterity-connect/releases
+- **User guide for staff and administrators (PDF):** [`docs/Dexterity-Connect-User-Guide.pdf`](docs/Dexterity-Connect-User-Guide.pdf), source and rebuild steps in [`docs/guide/`](docs/guide/README.md)
 - **Plan, decisions, ratings:** [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) · Cliq research: [`docs/CLIQ-FEATURE-INVENTORY.md`](docs/CLIQ-FEATURE-INVENTORY.md)
 
 ## What works today
@@ -121,7 +122,7 @@ apps/gateway    the internet gateway: a Cloudflare Worker that relays encrypted 
 apps/mobile     Android app (Capacitor) and its native LAN, file and notification plugin
 packages/core   protocol, identity, discovery, hub client, end-to-end encryption (+ tests)
 brand/          Dexterity International logo files and colour tokens
-docs/           blueprint, design language, Cliq feature inventory, integrations, third-party licences
+docs/           user guide (PDF, and its source in docs/guide), blueprint, design language, Cliq feature inventory, integrations, third-party licences
 ```
 
 Internal software. © Dexterity Design Services Pvt. Ltd. All rights reserved.

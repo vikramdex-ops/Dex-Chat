@@ -35,6 +35,7 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
 | esbuild (build tool only) | Building the gateway's guest meeting page into the Worker | MIT |
 | WinSW | Running the hub as a Windows service | MIT |
+| Onest (font, `docs/guide/Onest-*.ttf`) | The printed user guide only; not part of the app | OFL-1.1 |
 
 pdfjs-dist also contains Liberation Sans (GPL-2.0 with a font exception), QuickJS and the
 @napi-rs/canvas binding for Node; none of them is copied into the app (PDF.js uses the PC's own

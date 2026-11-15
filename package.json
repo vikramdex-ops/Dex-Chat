@@ -19,7 +19,8 @@
     "desktop:dev": "npm run dev -w @dex/desktop",
     "desktop:build": "npm run build -w @dex/desktop",
     "desktop:dist": "npm run dist -w @dex/desktop",
-    "e2e": "node apps/desktop/e2e/run.mjs"
+    "e2e": "node apps/desktop/e2e/run.mjs",
+    "guide": "node scripts/build-guide.mjs"
   },
   "license": "UNLICENSED",
   "devDependencies": {
