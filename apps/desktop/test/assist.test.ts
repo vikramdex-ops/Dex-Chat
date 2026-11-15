@@ -108,6 +108,31 @@ test('control: nothing reaches the input before consent; chords are blocked; tak
   assert.equal(rc.active, false);
 });
 
+test('control in a meeting: input is taken only from the device the presenter allowed', async () => {
+  const sent: InputEvent[] = [];
+  const sink: InputSink = { prepare: async () => {}, send: (ev) => sent.push(ev), stop: () => {} };
+  const rc = new RemoteControl(sink, () => {});
+  const msg = { k: 'in', e: [{ t: 'move', x: 0.5, y: 0.5 }] };
+  rc.setDisplay({ x: 0, y: 0, width: 1280, height: 800 });
+  await rc.grant('DEV-RAVI');
+  assert.equal(rc.allowed, 'DEV-RAVI');
+  assert.equal(rc.input(msg, Date.now(), 'DEV-VIKRAM'), 0, 'someone else in the meeting');
+  assert.equal(rc.input(msg, Date.now(), null), 0, 'no sender');
+  assert.equal(rc.input(msg, Date.now(), 'DEV-RAVI'), 1);
+  // the same 120 events a second as in a support session
+  let n = 0;
+  const now = Date.now();
+  for (let i = 0; i < 10; i++) n += rc.input({ k: 'in', e: Array.from({ length: 30 }, (_, j) => ({ t: 'move', x: (i * 30 + j) / 400, y: 0.5 })) }, now, 'DEV-RAVI');
+  assert.equal(n, 119, 'the rate limit (one event was earlier)');
+  rc.revoke('stop');
+  assert.equal(rc.allowed, null);
+  assert.equal(rc.input(msg, Date.now() + 2000, 'DEV-RAVI'), 0, 'nothing after Stop');
+  // a support session: the window checks the technician, any device it passes on is taken
+  await rc.grant();
+  assert.equal(rc.input(msg, Date.now() + 3000, 'ANY'), 1);
+  assert.equal(sent.length, 121);
+});
+
 test('diagnostics: ICE addresses, a STUN probe that gets an answer, and no secrets in the report', async () => {
   assert.deepEqual(parseIceUrl('turn:turn.example.net:3478?transport=tcp'), { scheme: 'turn', host: 'turn.example.net', port: 3478, transport: 'tcp' });
   assert.deepEqual(parseIceUrl('turns:relay.example.net'), { scheme: 'turns', host: 'relay.example.net', port: 5349, transport: 'tcp' });

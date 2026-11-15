@@ -1,14 +1,15 @@
-// The help desk's and live pointers' main-process side: consent as this PC enforces it, remote
-// control (Windows helper, xdotool on Linux, none on macOS), the stop hotkey, diagnostics, a
-// screenshot for a Help Me request, and the overlay windows. Only the main window may grant or
-// feed control; the share bar may only take things back.
+// The help desk's, live pointers' and "Give control"'s main-process side: consent as this PC
+// enforces it, remote control (Windows helper, xdotool on Linux, none on macOS) for a support
+// session or a meeting, the stop hotkey, diagnostics, a screenshot for a Help Me request, and the
+// overlay windows. Only the main window may grant or feed control; the share bar may only take
+// things back.
 import path from 'node:path';
 import os from 'node:os';
 import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen } from 'electron';
 import type { Display } from 'electron';
 import { STOP_HOTKEY } from '@dex/core/assist';
 import type { Rect } from '@dex/core/assist';
-import type { AssistCaps, ShareBarState, UpdateChannel } from '../../shared/bridge.ts';
+import type { AssistCaps, AssistContext, ShareBarState, UpdateChannel } from '../../shared/bridge.ts';
 import { appLog } from '../applog.ts';
 import { RemoteControl, windowsSink, xdotoolSink } from './control.ts';
 import type { InputSink } from './control.ts';
@@ -31,10 +32,11 @@ export interface AssistDeps {
 
 const HOTKEY = 'CommandOrControl+Alt+Shift+S';
 
+let linuxCaps: { ok: boolean; reason: string | null } | null = null;
 function caps(): AssistCaps {
   if (process.platform === 'win32') return { control: true, reason: null, platform: process.platform };
-  if (process.platform === 'linux') { const x = xdotoolAvailable(); return { control: x.ok, reason: x.reason, platform: process.platform }; }
-  if (process.platform === 'darwin') return { control: false, reason: 'On a Mac, remote control needs Accessibility permission, which this app does not ask for. IT can see your screen and guide you instead.', platform: process.platform };
+  if (process.platform === 'linux') { linuxCaps ??= xdotoolAvailable(); return { control: linuxCaps.ok, reason: linuxCaps.reason, platform: process.platform }; }
+  if (process.platform === 'darwin') return { control: false, reason: 'On a Mac, remote control needs Accessibility permission, which this app does not ask for. Others can see your screen and you can guide them instead.', platform: process.platform };
   return { control: false, reason: 'Remote control is not available on this system.', platform: process.platform };
 }
 
@@ -83,15 +85,17 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
     sink = xdotoolSink(x);
   }
   const control = sink ? new RemoteControl(sink, log) : null;
-  let share: { display: Display | null; state: ShareBarState } | null = null;
+  // what is shared and with whom; in a support session the frame and bar show while the screen is
+  // shared, in a meeting only while someone has control (the meeting's own sheet shows the share)
+  let share: { display: Display | null; state: ShareBarState; shown: boolean } | null = null;
   let hotkey = false;
 
-  const tellMain = (what: 'control' | 'screen' | 'session') => deps.win()?.webContents.send('assist:stop', what);
+  const tellMain = (what: 'control' | 'screen' | 'session', context: AssistContext | null) => deps.win()?.webContents.send('assist:stop', what, context);
   const fromMain = (e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => { const w = deps.win(); return !!w && e.sender.id === w.webContents.id; };
 
   const setHotkey = (on: boolean) => {
     if (on && !hotkey) {
-      try { hotkey = globalShortcut.register(HOTKEY, () => { stopControl('the stop keys'); tellMain('control'); }); } catch { hotkey = false; }
+      try { hotkey = globalShortcut.register(HOTKEY, () => { const ctx = share?.state.context ?? null; stopControl('the stop keys'); tellMain('control', ctx); }); } catch { hotkey = false; }
       if (!hotkey) log('warn', 'the stop keys are taken by another program; the share bar still stops control');
     } else if (!on && hotkey) { globalShortcut.unregister(HOTKEY); hotkey = false; }
   };
@@ -99,59 +103,69 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   const stopControl = (why: string) => {
     control?.revoke(why);
     setHotkey(false);
-    if (share) { share.state = { ...share.state, control: false }; overlays.updateBar(share.state); }
+    if (!share) return;
+    share.state = { ...share.state, control: false };
+    if (share.state.context === 'meeting') { overlays.hideShare(); share.shown = false; } else overlays.updateBar(share.state);
   };
 
   const stopAll = (why: string) => {
     stopControl(why);
     control?.setDisplay(null);
-    if (share) log('info', 'screen sharing for IT stopped', { why });
+    if (share) log('info', share.state.context === 'meeting' ? 'screen given in a meeting stopped' : 'screen sharing for IT stopped', { why });
     share = null;
     overlays.hideShare();
   };
 
   ipcMain.handle('assist:caps', () => caps());
 
-  ipcMain.handle('assist:consent', async (e, raw: { screen?: unknown; sourceId?: unknown; scope?: unknown; control?: unknown; tech?: unknown }) => {
+  ipcMain.handle('assist:consent', async (e, raw: { screen?: unknown; sourceId?: unknown; scope?: unknown; control?: unknown; peer?: unknown; context?: unknown; from?: unknown }) => {
     if (!fromMain(e)) return { screen: false, control: false, error: 'Not allowed from this window.' };
     const wantScreen = raw?.screen === true;
     const wantControl = raw?.control === true;
-    const tech = typeof raw?.tech === 'string' ? raw.tech.slice(0, 80) : 'IT';
+    const context: AssistContext = raw?.context === 'meeting' ? 'meeting' : 'support';
+    const peer = typeof raw?.peer === 'string' ? raw.peer.slice(0, 80) : context === 'meeting' ? 'Someone' : 'IT';
+    // in a meeting, input is taken from the one device the presenter gave control to
+    const from = context === 'meeting' && typeof raw?.from === 'string' ? raw.from.slice(0, 64) : null;
     const scope = raw?.scope === 'window' ? 'window' : 'screen';
-    if (!wantScreen) { stopAll('the requester stopped sharing'); return { screen: false, control: false, error: null }; }
+    if (!wantScreen) { stopAll(context === 'meeting' ? 'the presenter stopped sharing' : 'the requester stopped sharing'); return { screen: false, control: false, error: null }; }
     const sourceId = typeof raw?.sourceId === 'string' ? raw.sourceId : null;
     const display = scope === 'screen' ? await displayOf(sourceId) : null;
-    const state: ShareBarState = { tech, scope, control: false, hotkey: STOP_HOTKEY };
-    if (!share || share.display?.id !== display?.id || share.state.scope !== scope) {
-      share = { display, state };
-      overlays.showShare(display, state);
-      log('info', 'screen shared with IT', { scope, display: display ? `${display.bounds.width}x${display.bounds.height}` : 'one window' });
+    const state: ShareBarState = { peer, scope, control: false, hotkey: STOP_HOTKEY, context };
+    if (!share || share.display?.id !== display?.id || share.state.scope !== scope || share.state.context !== context) {
+      if (share?.shown) overlays.hideShare();
+      share = { display, state, shown: false };
+      if (context === 'support') { overlays.showShare(display, state); share.shown = true; }
+      log('info', context === 'meeting' ? 'screen shared in a meeting' : 'screen shared with IT', { scope, display: display ? `${display.bounds.width}x${display.bounds.height}` : 'one window' });
     }
     control?.setDisplay(display ? injectorRect(display) : null);
-    if (!wantControl) { stopControl('the requester took control back'); return { screen: true, control: false, error: null }; }
+    if (!wantControl) { stopControl(context === 'meeting' ? 'the presenter took control back' : 'the requester took control back'); return { screen: true, control: false, error: null }; }
     const c = caps();
     if (!c.control || !control) return { screen: true, control: false, error: c.reason ?? 'Remote control is not available on this PC.' };
-    if (scope !== 'screen') return { screen: true, control: false, error: 'Share your whole screen to let IT use the mouse and keyboard.' };
+    if (scope !== 'screen') return { screen: true, control: false, error: context === 'meeting' ? 'Share your whole screen (not one window) to give control.' : 'Share your whole screen to let IT use the mouse and keyboard.' };
+    // one person at a time: a different device means the earlier grant ends first
+    if (control.active && control.allowed !== from) control.revoke('control given to someone else');
     try {
-      if (!control.active) await control.grant();
+      if (!control.active) await control.grant(from);
     } catch (err) {
       log('warn', 'remote control could not start', { error: (err as Error).message });
       return { screen: true, control: false, error: `Remote control could not start on this PC: ${(err as Error).message}` };
     }
     setHotkey(true);
-    share.state = { ...share.state, control: true };
-    overlays.updateBar(share.state);
+    share.state = { ...share.state, peer, control: true };
+    if (share.shown) overlays.updateBar(share.state);
+    else { overlays.showShare(display, share.state); share.shown = true; }
     return { screen: true, control: true, error: null };
   });
 
-  ipcMain.on('assist:input', (e, msg: unknown) => { if (fromMain(e)) control?.input(msg); });
+  ipcMain.on('assist:input', (e, msg: unknown, from: unknown) => { if (fromMain(e)) control?.input(msg, Date.now(), typeof from === 'string' ? from : null); });
 
   ipcMain.on('overlay:ready', (e) => overlays.resend(e.sender.id));
   ipcMain.on('overlay:action', (e, a: unknown) => {
     if (!overlays.isBar(e.sender.id)) return;
-    if (a === 'stop-control') { stopControl('the share bar'); tellMain('control'); }
-    else if (a === 'stop-screen') { stopAll('the share bar'); tellMain('screen'); }
-    else if (a === 'end') { stopAll('the share bar'); tellMain('session'); }
+    const ctx = share?.state.context ?? null;
+    if (a === 'stop-control') { stopControl('the share bar'); tellMain('control', ctx); }
+    else if (a === 'stop-screen') { stopAll('the share bar'); tellMain('screen', ctx); }
+    else if (a === 'end') { stopAll('the share bar'); tellMain('session', ctx); }
   });
 
   ipcMain.handle('assist:diagnostics', async (e, rendererErrors: unknown) => {
