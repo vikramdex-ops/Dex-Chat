@@ -68,6 +68,8 @@ export interface Scene {
   labels: Labels;
   deptName: (id: string) => string;
   modeOf: (id: string) => WorkMode | null;
+  /** The real floor plan's overlays and modes (drawplan.ts), when the sheet is the plan. */
+  seating?: import('./drawplan.ts').PlanScene;
 }
 
 export const LOD = { far: 0.3, near: 0.62 };
@@ -75,7 +77,7 @@ const INTRO_MS = 1300;
 
 // ------------------------------------------------------------------ small drawing helpers
 const fitCache = new Map<string, string>();
-function fit(ctx: CanvasRenderingContext2D, text: string, max: number): string {
+export function fit(ctx: CanvasRenderingContext2D, text: string, max: number): string {
   const key = `${ctx.font}|${max}|${text}`;
   const hit = fitCache.get(key);
   if (hit !== undefined) return hit;
@@ -90,12 +92,12 @@ function fit(ctx: CanvasRenderingContext2D, text: string, max: number): string {
   return out;
 }
 
-function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+export function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
 /** A run with rounded bends (elbows), like a routed pipe. */
-function run(ctx: CanvasRenderingContext2D, pts: Pt[], r: number): void {
+export function run(ctx: CanvasRenderingContext2D, pts: Pt[], r: number): void {
   ctx.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length - 1; i++) {
     const [ax, ay] = pts[i - 1], [bx, by] = pts[i], [cx, cy] = pts[i + 1];
@@ -118,7 +120,7 @@ function along(pts: Pt[], k: number): Pt {
 }
 
 /** A revision cloud: scallops round a rectangle, the drafter's mark for "this changed". */
-function cloud(ctx: CanvasPath, x: number, y: number, w: number, h: number, s: number): void {
+export function cloud(ctx: CanvasPath, x: number, y: number, w: number, h: number, s: number): void {
   const nx = Math.max(2, Math.round(w / s)), ny = Math.max(2, Math.round(h / s));
   const sx = w / nx, sy = h / ny;
   ctx.moveTo(x, y);
@@ -128,11 +130,11 @@ function cloud(ctx: CanvasPath, x: number, y: number, w: number, h: number, s: n
   for (let i = ny - 1; i >= 0; i--) ctx.arc(x, y + sy * (i + 0.5), sy / 2, Math.PI / 2, Math.PI * 1.5);
 }
 
-const caps = (ink: Ink, s: string) => (ink.latinCaps ? s.toUpperCase() : s);
-const intersects = (x: number, y: number, w: number, h: number, v: { x: number; y: number; w: number; h: number }) => x < v.x + v.w && x + w > v.x && y < v.y + v.h && y + h > v.y;
+export const caps = (ink: Ink, s: string) => (ink.latinCaps ? s.toUpperCase() : s);
+export const intersects = (x: number, y: number, w: number, h: number, v: { x: number; y: number; w: number; h: number }) => x < v.x + v.w && x + w > v.x && y < v.y + v.h && y + h > v.y;
 
 /** The tile with its beacon ring (presence), drawn the way the app draws avatars. */
-function tile(ctx: CanvasRenderingContext2D, s: Scene, u: PublicUser, cx: number, cy: number, size: number, opts: { ghost?: boolean; text?: boolean } = {}): void {
+export function tile(ctx: CanvasRenderingContext2D, s: Scene, u: PublicUser, cx: number, cy: number, size: number, opts: { ghost?: boolean; text?: boolean } = {}): void {
   const p = s.presence(u.id);
   const r = size * 0.3, x = cx - size / 2, y = cy - size / 2;
   const ink = s.ink;
@@ -160,7 +162,7 @@ function tile(ctx: CanvasRenderingContext2D, s: Scene, u: PublicUser, cx: number
 }
 
 /** A small mono caption in a hairline box (a tag), its left edge at x. Returns its width. */
-function tag(ctx: CanvasRenderingContext2D, ink: Ink, text: string, x: number, y: number, size: number, color: string, fill?: string): number {
+export function tag(ctx: CanvasRenderingContext2D, ink: Ink, text: string, x: number, y: number, size: number, color: string, fill?: string): number {
   ctx.font = `600 ${size}px ${ink.latinCaps ? ink.mono : ink.body}`;
   const w = ctx.measureText(text).width + size * 0.9, h = size * 1.55;
   ctx.beginPath(); ctx.rect(x, y, w, h);
@@ -173,7 +175,7 @@ function tag(ctx: CanvasRenderingContext2D, ink: Ink, text: string, x: number, y
 }
 
 /** A pennant on a pole: a birthday today. */
-function pennant(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+export function pennant(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
   ctx.beginPath(); ctx.moveTo(x, y + 14); ctx.lineTo(x, y); ctx.lineTo(x + 11, y + 3.5); ctx.lineTo(x, y + 7);
   ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.stroke();
   ctx.fillStyle = color; ctx.globalAlpha *= 0.85; ctx.fill(); ctx.globalAlpha /= 0.85;
@@ -186,7 +188,7 @@ function seatShort(loc: string | null): string {
   return loc.length > 14 ? `${loc.slice(0, 13)}…` : loc;
 }
 
-function sheetBackground(ctx: CanvasRenderingContext2D, s: Scene, w: number, h: number, cam: Camera): void {
+export function sheetBackground(ctx: CanvasRenderingContext2D, s: Scene, w: number, h: number, cam: Camera): void {
   const ink = s.ink;
   ctx.fillStyle = ink.paper;
   ctx.fillRect(0, 0, w, h);
@@ -213,7 +215,7 @@ function sheetBackground(ctx: CanvasRenderingContext2D, s: Scene, w: number, h: 
 /** How present someone is at the date being looked at: 1 there, 0 not yet joined. */
 const there = (s: Scene, id: string) => (s.asAt === null ? 1 : (s.joinedAt.get(id) ?? -Infinity) <= s.asAt ? 1 : 0);
 
-function introAlpha(s: Scene, delay: number): number {
+export function introAlpha(s: Scene, delay: number): number {
   if (s.intro === null || s.reduced) return 1;
   const t = s.now - s.intro - delay;
   return Math.max(0, Math.min(1, t / 260));
@@ -492,7 +494,7 @@ function plate(ctx: CanvasRenderingContext2D, s: Scene, u: PublicUser, x: number
   }
 }
 
-function youAreHere(ctx: CanvasRenderingContext2D, s: Scene, x: number, y: number, z: number, up = false): void {
+export function youAreHere(ctx: CanvasRenderingContext2D, s: Scene, x: number, y: number, z: number, up = false): void {
   const ink = s.ink;
   const k = Math.max(1, 0.8 / z);
   if (up) {
@@ -510,7 +512,7 @@ function youAreHere(ctx: CanvasRenderingContext2D, s: Scene, x: number, y: numbe
   tag(ctx, ink, caps(ink, s.labels.you), x + 34 * k, y - 26 * k, 10 * k, ink.accentInk);
 }
 
-function spotlight(ctx: CanvasRenderingContext2D, s: Scene, cx: number, cy: number, rad: number, cam: Camera): void {
+export function spotlight(ctx: CanvasRenderingContext2D, s: Scene, cx: number, cy: number, rad: number, cam: Camera): void {
   const age = s.now - s.spotlight!.t0;
   // in over 0.4 s, held, then out by 4 s (a spotlight is a moment, not a mode)
   const t = Math.max(0, Math.min(1, age / (s.reduced ? 1 : 420))) * Math.max(0, Math.min(1, (4000 - age) / 700));
@@ -530,7 +532,7 @@ function spotlight(ctx: CanvasRenderingContext2D, s: Scene, cx: number, cy: numb
 }
 
 /** A Space as an instrument loop: a hexagon tag at its members' centre, signal lines to each. */
-function spaceLoop(ctx: CanvasRenderingContext2D, s: Scene, pts: Pt[], name: string, z: number): void {
+export function spaceLoop(ctx: CanvasRenderingContext2D, s: Scene, pts: Pt[], name: string, z: number): void {
   if (!pts.length) return;
   const ink = s.ink;
   const px = 1 / z;
@@ -632,7 +634,16 @@ export function drawFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam
       ctx.textAlign = 'right'; ctx.fillText(caps(ink, word), dx + dwid - 4, top + dh - 5); ctx.textAlign = 'left';
     }
   }
-  // the off-site key and people with no seat
+  drawOffsite(ctx, f, s, cam);
+  ctx.globalAlpha = 1;
+  drawWalk(ctx, s, walk, px);
+  drawSpots(ctx, f, s, cam);
+}
+
+/** The off-site key (home, site, client) and the strip of people with no seat. */
+export function drawOffsite(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam: Camera): void {
+  const ink = s.ink;
+  const px = 1 / cam.z;
   const keyBox = (x: number, y: number, w: number, h: number, title: string) => {
     ctx.beginPath(); ctx.rect(x, y, w, h); ctx.fillStyle = ink.paper; ctx.fill();
     ctx.setLineDash([10, 4, 2, 4]); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1, px); ctx.stroke(); ctx.setLineDash([]);
@@ -645,9 +656,11 @@ export function drawFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam
   }
   for (const a of f.away) keyBox(a.x, a.y, a.w, a.h, a.mode === 'home' ? s.labels.home : a.mode === 'site' ? s.labels.site : s.labels.client);
   if (f.unseated.people.length) keyBox(f.unseated.x, f.unseated.y, f.unseated.w, f.unseated.h, s.labels.noSeat);
-  ctx.globalAlpha = 1;
+}
 
-  // a walk from one desk to another, along the corridor
+/** A walk from one desk to another: a dotted line that runs while the route is new. */
+export function drawWalk(ctx: CanvasRenderingContext2D, s: Scene, walk: Pt[] | null, px: number): void {
+  const ink = s.ink;
   if (walk && walk.length > 1) {
     ctx.beginPath(); run(ctx, walk, 18);
     ctx.strokeStyle = ink.paper; ctx.lineWidth = Math.max(7, 7 * px); ctx.stroke();
@@ -656,15 +669,21 @@ export function drawFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam
     if (!s.reduced && s.route) ctx.lineDashOffset = -((s.now - s.route.t0) / 30) * Math.max(1, px);
     ctx.stroke(); ctx.setLineDash([]); ctx.lineCap = 'butt'; ctx.lineDashOffset = 0;
   }
+}
 
-  // people
+/** People on their spots: tiles with presence, names, marks, you-are-here, pulses and the spotlight. */
+export function drawSpots(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam: Camera, size = TILE): void {
+  const ink = s.ink;
+  const z = cam.z;
+  const px = 1 / z;
+  const v = cam.view(60);
   const dim = (id: string) => (s.route ? !s.route.ids.includes(id) : s.overlay ? !s.overlay.members.has(id) : false);
   for (const sp of f.spots.values()) {
     if (!intersects(sp.x - 40, sp.y - 40, 80, 80, v)) continue;
     const u = s.users.get(sp.id);
     if (!u) continue;
     ctx.globalAlpha = introAlpha(s, (sp.x / Math.max(1, f.w)) * 500) * (dim(sp.id) ? 0.25 : 1);
-    const sz = sp.where === 'desk' ? TILE : 32;
+    const sz = sp.where === 'desk' ? size : 32;
     const ty = sp.y;
     if (s.selected === sp.id || s.hover === sp.id) { ctx.beginPath(); rrect(ctx, sp.x - sz / 2 - 8, ty - sz / 2 - 8, sz + 16, sz + 16, 9); ctx.fillStyle = ink.accentSoft; ctx.fill(); }
     tile(ctx, s, u, sp.x, ty, sz);
@@ -700,7 +719,7 @@ export function drawFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam
   }
 }
 
-function northArrow(ctx: CanvasRenderingContext2D, ink: Ink, x: number, y: number, n: string): void {
+export function northArrow(ctx: CanvasRenderingContext2D, ink: Ink, x: number, y: number, n: string): void {
   ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.strokeStyle = ink.text2; ctx.lineWidth = 1; ctx.stroke();
   ctx.beginPath(); ctx.moveTo(x, y - 24); ctx.lineTo(x + 7, y + 10); ctx.lineTo(x, y + 4); ctx.closePath(); ctx.fillStyle = ink.text2; ctx.fill();
   ctx.beginPath(); ctx.moveTo(x, y - 24); ctx.lineTo(x - 7, y + 10); ctx.lineTo(x, y + 4); ctx.closePath(); ctx.stroke();

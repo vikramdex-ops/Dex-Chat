@@ -1,0 +1,153 @@
+/* Seating on the floor plan: the arrange and revisions panels (ruled cells down the right of the
+   sheet), the seat notice and the comparing strip across the top, the hover tip, the seat callout,
+   the underlay dialog. Teal for structure; amber only for moves still to be published. */
+
+/* panels down the right, like the schedule */
+.seat-panel {
+  position: absolute; right: 0; top: 0; bottom: 0; z-index: 6; width: 360px; display: flex; flex-direction: column;
+  background: var(--layer-solid); border-left: 1px solid var(--stroke-strong); box-shadow: var(--shadow-2); cursor: default;
+}
+.orgscape.with-seat-panel .seat-panel { position: relative; box-shadow: none; flex: none; }
+.with-seat-panel .os-foot, .with-seat-panel .os-legend { right: 372px; }
+.seat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 8px 8px 14px; border-bottom: 1px solid var(--stroke-strong); }
+.seat-tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--stroke-strong); }
+.seat-tabs button {
+  flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 32px; padding: 0 8px;
+  border: 0; background: none; color: var(--text-2); font-size: 12.5px; white-space: nowrap;
+}
+.seat-tabs button + button { box-shadow: inset 1px 0 0 var(--stroke); }
+.seat-tabs button.on { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+.seat-tabs button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.seat-count { display: inline-grid; place-items: center; min-width: 18px; height: 16px; padding: 0 4px; border-radius: 2px; background: var(--amber); color: var(--amber-ink, #3d2600); font-size: 10.5px; }
+.seat-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 16px; display: grid; align-content: start; gap: 10px; font-size: 13px; }
+.seat-body section { display: grid; gap: 8px; }
+.seat-body h4 { margin: 6px 0 0; }
+.seat-hint { margin: 0; font-size: 12.5px; line-height: 1.45; }
+.seat-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.seat-row .input { flex: 1 1 120px; min-width: 0; }
+.seat-sel { min-height: 28px; }
+.seat-actions { margin-top: 4px; }
+.seat-form { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 8px; }
+.seat-form > .btn { grid-column: 1 / -1; justify-self: start; }
+.seat-form.seat-add { grid-template-columns: auto 64px auto minmax(0, 1fr); }
+.seat-form.seat-add > .btn { grid-column: auto / span 2; }
+.seat-compare { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+.seat-warn { margin: 0; color: var(--amber-ink, #7a4a00); font-size: 12.5px; }
+.seat-people { list-style: none; margin: 0; padding: 0; border: 1px solid var(--stroke-strong); border-radius: 3px; max-height: 52vh; overflow: auto; }
+.seat-person { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 5px 8px; }
+.seat-person + .seat-person { border-top: 1px solid var(--stroke); }
+.seat-person.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.seat-grip { display: grid; place-items: center; width: 22px; height: 26px; border-radius: 3px; color: var(--text-3); cursor: grab; touch-action: none; }
+.seat-grip:hover { background: var(--subtle); color: var(--text); }
+.seat-who { display: grid; min-width: 0; line-height: 1.3; }
+.seat-who b, .seat-who > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-who .faint { font-size: 11.5px; }
+.seat-person .chip { font-size: 11px; }
+.seat-to { padding: 8px; border: 1px dashed var(--stroke-strong); border-radius: 3px; }
+.seat-changes { list-style: none; margin: 0; padding: 0; border: 1px solid var(--stroke-strong); border-radius: 3px; }
+.seat-changes li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 5px 4px 5px 10px; }
+.seat-changes li + li { border-top: 1px solid var(--stroke); }
+.seat-ft { font-size: 12px; white-space: nowrap; }
+.seat-plan { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; border: 1px solid var(--stroke-strong); border-radius: 3px; box-shadow: inset 3px 0 0 var(--accent); }
+.seat-plan .seat-who { flex: 1; }
+.seat-draft { padding: 10px; border: 1px solid var(--stroke-strong); border-radius: 3px; box-shadow: inset 3px 0 0 var(--amber); }
+.seat-paste { width: 100%; resize: vertical; font: 12.5px/1.5 var(--font-mono); }
+.seat-import { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.seat-import th { text-align: left; font: 600 11px/1.4 var(--font-body); text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); padding: 4px; border-bottom: 1px solid var(--stroke-strong); }
+.seat-import td { padding: 4px; border-bottom: 1px solid var(--stroke); vertical-align: middle; }
+.seat-import td .input { width: 100%; min-width: 0; height: 28px; font-size: 12.5px; }
+.seat-import tr.check td { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+.seat-import tr.bad td { color: var(--text-3); }
+.seat-chk { margin-top: 3px; font-size: 10.5px; }
+.seat-tools { gap: 2px; padding: 4px; border: 1px solid var(--stroke-strong); border-radius: 3px; }
+.seat-redo svg { transform: scaleX(-1); }
+.seat-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--stroke-strong); border-radius: 3px; }
+.seat-fields legend { padding: 0 4px; }
+.seat-fields label { display: grid; gap: 2px; font-size: 11.5px; color: var(--text-3); }
+.seat-fields .input { height: 30px; font-size: 12.5px; min-width: 0; }
+.seat-problems { list-style: none; margin: 0; padding: 8px 10px; border: 1px solid var(--amber); border-radius: 3px; display: grid; gap: 4px; }
+.seat-layout { display: grid; gap: 10px; }
+.seat-underlay { padding-top: 10px; border-top: 1px dashed var(--stroke-strong); }
+
+/* revisions: the triangle and its line */
+.seat-revlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.seat-rev { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); color: inherit; text-align: left; }
+.seat-revlist li.open .seat-rev { box-shadow: inset 3px 0 0 var(--accent); }
+.seat-revlist .seat-changes { margin: 4px 0 6px 28px; }
+.seat-tri {
+  display: inline-grid; place-items: end center; width: 24px; height: 21px; padding-bottom: 1px; font-size: 10.5px; font-weight: 700; color: var(--accent-ink);
+  background: linear-gradient(to top right, transparent 49%, var(--accent) 50%, transparent 54%) left / 50% 100% no-repeat,
+    linear-gradient(to top left, transparent 49%, var(--accent) 50%, transparent 54%) right / 50% 100% no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom / 100% 1.5px no-repeat;
+}
+
+/* the strip across the top: a seat notice, or comparing two revisions */
+.seat-notice {
+  position: absolute; left: 30px; right: 16px; top: 26px; z-index: 5; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px 8px 12px;
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 4px; box-shadow: var(--shadow-2), inset 3px 0 0 var(--accent); font-size: 13px;
+  animation: os-in var(--med) var(--ease); max-width: 760px;
+}
+.seat-notice > span { flex: 1 1 220px; min-width: 0; }
+.seat-notice .btn { gap: 5px; }
+.seat-comparing { top: auto; bottom: 130px; box-shadow: var(--shadow-2), inset 3px 0 0 var(--accent); }
+
+/* the hover tip */
+.seat-tip {
+  position: absolute; left: 0; top: 0; z-index: 7; pointer-events: none; max-width: 300px; padding: 4px 8px;
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 3px; box-shadow: var(--shadow-1);
+  font: 500 12px/1.4 var(--font-body); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.os-stage.dragging { cursor: copy; }
+.editing .os-stage { cursor: default; }
+
+/* an empty seat's callout sits at the top right of the sheet */
+.seat-callout { left: auto; right: 16px; top: 26px; transform: none; }
+.with-seat-panel .seat-callout { right: 16px; }
+.seat-badge { display: inline-grid; place-items: center; min-width: 40px; height: 40px; padding: 0 4px; border: 1.5px dashed var(--accent); border-radius: 8px; color: var(--accent-ink); font-size: 10.5px; }
+.seat-reserve { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 0 12px 12px 14px; }
+.seat-reserve .label { grid-column: 1 / -1; }
+
+/* the underlay dialog */
+.seat-dialog {
+  position: absolute; right: 380px; top: 26px; z-index: 8; width: 340px; display: grid; gap: 10px; padding: 0 12px 12px;
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 4px; box-shadow: var(--shadow-2);
+}
+.seat-dialog .seat-head { margin: 0 -12px; }
+
+/* the key's new symbols */
+.os-sym.seat-free { width: 20px; border: 1.5px dashed var(--accent); border-radius: 5px; background: var(--accent-soft); }
+.os-sym.seat-res { border: 1px solid var(--stroke-strong); background: repeating-linear-gradient(45deg, var(--text-3) 0 1px, transparent 1px 5px); }
+.os-sym.pending { height: 0; border-top: 2px dashed var(--amber-ink, #7a4a00); border-radius: 0; margin-top: 9px; }
+.os-sym.revcloud { border: 1.5px dotted var(--accent); border-radius: 9px; box-shadow: 8px -6px 0 -5px var(--accent); }
+
+.field-note { display: block; margin-top: 3px; font-size: 12px; }
+html:is([lang='hi'], [lang='ta']) .seat-import th { letter-spacing: 0; text-transform: none; font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .seat-notice { animation: none; } }
+
+@media (max-width: 720px) {
+  /* on a phone the panels are sheets over the plan */
+  .seat-panel, .orgscape.with-seat-panel .seat-panel { position: absolute; left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 62%; border-left: 0; border-top: 1px solid var(--stroke-strong); box-shadow: var(--shadow-2); }
+  .with-seat-panel .os-foot, .with-seat-panel .os-legend { right: 8px; }
+  .seat-notice { left: 26px; right: 8px; top: 26px; font-size: 12.5px; }
+  .seat-comparing { bottom: 64px; top: auto; }
+  .seat-dialog { left: 8px; right: 8px; width: auto; top: 26px; }
+  .seat-tip { display: none; }
+}
+.seat-badge.sm { min-width: 34px; height: 28px; border-radius: 5px; font-size: 9.5px; }
+.orgscape.with-notice .os-route { top: calc(49px + 28px + 58px); }
+.os-callout.seat-callout { left: auto; right: 16px; top: 26px; transform: none; }
+.with-notice .os-callout.seat-callout { top: 84px; }
+@media (max-width: 720px) {
+  .orgscape.with-notice .os-route { top: 96px; }
+  .os-callout.seat-callout { left: 8px; right: 8px; top: auto; bottom: 8px; }
+}
+.seat-import td.mono { white-space: nowrap; }
+/* the departments' colours, when the wash is on */
+.seat-washkey {
+  position: absolute; left: 30px; bottom: 132px; z-index: 4; margin: 0; padding: 8px 10px; list-style: none; display: grid; gap: 4px; max-height: 40%; overflow: auto;
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 4px; box-shadow: var(--shadow-1); font-size: 12px;
+}
+.seat-washkey li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.seat-washkey i { width: 14px; height: 10px; border-radius: 2px; opacity: .55; }
+@media (max-width: 720px) { .seat-washkey { left: 26px; bottom: 64px; max-height: 30%; } }

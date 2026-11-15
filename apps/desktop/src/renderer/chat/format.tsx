@@ -64,6 +64,7 @@ function ToolLink({ url }: { url: string }) {
   if (/^dexconnect:\/\/message\//.test(url)) label = 'Open the message';
   else if (/^dexconnect:\/\/conversation\//.test(url)) label = 'Open the conversation';
   else if (/^dexconnect:\/\/meet\//.test(url)) label = `Meeting ${label.replace(/^meet\//, '')}`;
+  else if (/^dexconnect:\/\/floor\//.test(url)) label = tr(`Walk to ${label.replace(/^floor\//, '')}`);
   return (
     <button className="tool-link" title={url} onClick={() => void window.dex.openLink?.(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })))}>
       <span className="tool-name">{TOOL_NAME[scheme] ?? scheme}</span>{label.length > 60 ? `${label.slice(0, 57)}…` : label}

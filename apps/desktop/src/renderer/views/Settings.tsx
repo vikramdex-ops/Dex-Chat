@@ -42,7 +42,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
     || contact.location !== (session.me.profile.location ?? '') || contact.birthday !== (session.me.profile.birthday ?? '');
   const saveContact = async () => {
     try {
-      await window.dex.request('me.profile', { phone: contact.phone || null, extension: contact.extension || null, location: contact.location || null, birthday: contact.birthday || null });
+      await window.dex.request('me.profile', { phone: contact.phone || null, extension: contact.extension || null, ...(session.me.profile.seatId ? {} : { location: contact.location || null }), birthday: contact.birthday || null });
       toast('Contact details saved');
     } catch (e) { toast((e as Error).message, true); }
   };
@@ -91,7 +91,9 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="field"><label htmlFor="s-phone">Phone</label>
               <input id="s-phone" className="input" value={contact.phone} maxLength={40} onChange={(e) => setContact({ ...contact, phone: e.target.value })} disabled={!live} /></div>
             <div className="field"><label htmlFor="s-seat">Seat or location</label>
-              <input id="s-seat" className="input" value={contact.location} maxLength={80} placeholder="Bay 2, Desk 4" onChange={(e) => setContact({ ...contact, location: e.target.value })} disabled={!live} /></div>
+              {session.me.profile.seatId
+                ? <><input id="s-seat" className="input mono" value={session.me.profile.location ?? session.me.profile.seatId} readOnly aria-describedby="s-seat-note" /><span id="s-seat-note" className="faint field-note">From the floor plan. The office manager moves seats.</span></>
+                : <input id="s-seat" className="input" value={contact.location} maxLength={80} placeholder="Bay 2, Desk 4" onChange={(e) => setContact({ ...contact, location: e.target.value })} disabled={!live} />}</div>
             <div className="field"><label htmlFor="s-bday">Birthday (MM-DD)</label>
               <input id="s-bday" className="input" value={contact.birthday} maxLength={5} placeholder="06-30" onChange={(e) => setContact({ ...contact, birthday: e.target.value })} disabled={!live} /></div>
             <div className="full row-actions" style={{ justifyContent: 'space-between' }}>

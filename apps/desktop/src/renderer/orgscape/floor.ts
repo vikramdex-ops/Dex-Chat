@@ -5,6 +5,7 @@
 // Pure: no DOM, so it can be tested.
 import type { PublicUser, WorkMode } from '@dex/core';
 import { MARGIN } from './layout.ts';
+import type { PlanModel } from './plan.ts';
 
 export type Seat =
   | { kind: 'bay'; bay: string; desk: number | null }
@@ -50,6 +51,8 @@ export interface Floor {
   building: { x: number; y: number; w: number; h: number };
   w: number;
   h: number;
+  /** The office's real floor plan, when the hub has one (plan.ts); otherwise the sheet is generated from seats. */
+  plan?: PlanModel;
 }
 
 const natural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });

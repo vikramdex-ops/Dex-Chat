@@ -56,6 +56,7 @@ import { tr } from './i18n/index.ts';
 import { NibButton, NibHost, openNib } from './nib/NibHost.tsx';
 import { NoticeBanner, NoticeHost } from './notices/Host.tsx';
 import { openNotice, startNotices, useNotices, waitingForMe } from './notices/store.ts';
+import { requestFloor } from './orgscape/seating/store.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 // last: the drawing-office layer decides the shape of the shared controls (after every screen's own sheet)
 import './drawing.css';
@@ -495,7 +496,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [palette, state.settings.sound, lens, chip]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // dexconnect://people/<id>, dexconnect://admin, dexconnect://settings
+  // dexconnect://people/<id>, dexconnect://floor/<seat>, dexconnect://admin, dexconnect://settings
   // one of my devices was added with a pairing code: tell me, in case it was not me
   useEffect(() => window.dex.onHubEvent((name, data) => {
     if (name !== 'me.devicePaired') return;
@@ -527,6 +528,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       else if (target === 'help') { setSheet(null); openHelp(m[2] === 'desk' ? { view: 'desk' } : { view: 'me' }); }
       else if (target === 'nib') { setSheet(null); openNib(m[2] === 'wrap' ? { v: 'wrap' } : m[2] === 'leave' ? { v: 'leave' } : { v: 'home' }); }
       else if (target === 'pulse') { setLens('pulse'); setSheet(null); }
+      else if (target === 'floor') { setLens('directory'); setSheet(null); if (m[2]) requestFloor(m[2]); }
       else if (target === 'notices') { setLens('notices'); setSheet(null); if (m[2]) openNotice(m[2]); }
       else if (target === 'meet') {
         setLens('meet'); setSheet(null);

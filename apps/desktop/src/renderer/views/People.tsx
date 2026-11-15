@@ -19,6 +19,7 @@ import './people.css';
 import { LeftTheOffice } from './LeftOffice.tsx';
 import { Orgscape } from '../orgscape/Orgscape.tsx';
 import { onChartRequest, takeChartRequest } from '../orgscape/request.ts';
+import { peekFloorRequest } from '../orgscape/seating/store.ts';
 import { formatDateTime } from '../time.ts';
 
 /**
@@ -82,7 +83,7 @@ export function People({ state, session, query: kept, setQuery: keep, focusUser,
   const search = useDeferredValue(query);
   // asked to open the drawing at someone (Pulse, a link): start on the drawing
   const [chartAt, setChartAt] = useState<{ id: string; n: number } | null>(() => { const id = takeChartRequest(); return id ? { id, n: 1 } : null; });
-  const [view, setView] = useState<View>(chartAt ? 'chart' : 'people');
+  const [view, setView] = useState<View>(chartAt || peekFloorRequest() ? 'chart' : 'people');
   const [filter, setFilter] = useState<Filter>('all');
   const [dept, setDept] = useState<string>('');
   const [selected, setSelected] = useState<string | null>(focusUser);
@@ -98,6 +99,8 @@ export function People({ state, session, query: kept, setQuery: keep, focusUser,
   const managesSomeone = everyone.some((u) => u.profile.managerId === session.me.id);
 
   useEffect(() => { if (focusUser) { setSelected(focusUser); setView('people'); } }, [focusUser]);
+  // a seat link (dexconnect://floor/W-A14): the drawing, where the floor plan takes it from there
+  useEffect(() => { const on = () => setView('chart'); window.addEventListener('dex-floor', on); return () => window.removeEventListener('dex-floor', on); }, []);
   useEffect(() => onChartRequest((id) => { takeChartRequest(); setView('chart'); setChartAt((c) => ({ id, n: (c?.n ?? 0) + 1 })); }), []);
   const showInChart = (id: string) => { setView('chart'); setChartAt((c) => ({ id, n: (c?.n ?? 0) + 1 })); };
   const chartPeople = useMemo(() => everyone.filter((u) => u.role !== 'guest'), [everyone]);
@@ -373,7 +376,7 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
     try {
       await window.dex.request('admin.org.setProfile', {
         userId: u.id, title: f.title || null, departmentId: f.departmentId || null, managerId: f.managerId || null, phone: f.phone || null,
-        extension: f.extension || null, location: f.location || null, email: f.email || null, employeeId: f.employeeId || null,
+        extension: f.extension || null, ...(u.profile.seatId ? {} : { location: f.location || null }), email: f.email || null, employeeId: f.employeeId || null,
         joinedOn: f.joinedOn || null, birthday: f.birthday || null, fields: f.fields,
       });
       toast(`Saved ${u.displayName}'s details`);
@@ -406,7 +409,9 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
       </div>
       <div className="form-row">
         {input('email', 'Email', { maxLength: 120, type: 'email' })}
-        {input('location', 'Seat or location', { maxLength: 80 })}
+        {u.profile.seatId
+          ? <div className="field"><label htmlFor="pe-location">Seat</label><input id="pe-location" className="input mono" value={u.profile.location ?? u.profile.seatId} readOnly aria-describedby="pe-seat-note" /><span id="pe-seat-note" className="faint field-note">From the floor plan. Move them on Org chart ▸ Floor.</span></div>
+          : input('location', 'Seat or location', { maxLength: 80 })}
       </div>
       <div className="form-row">
         {input('employeeId', 'Employee ID', { maxLength: 40 })}
