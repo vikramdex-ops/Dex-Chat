@@ -107,6 +107,7 @@ function Holder({ v, users }: { v: BotTrackView; users: Map<string, PublicUser> 
   if (!s) return null;
   if (v.queue && v.queue.position > 0) return <span className="chip warn">{v.queue.key ? `In line for ${v.queue.key}: place ${v.queue.position} of ${v.queue.of}` : `Place ${v.queue.position} of ${v.queue.of}`}</span>;
   if (v.role === 'actor') return <span className="chip warn">{v.actingAs ? `Trying it as: ${v.actingAs}` : 'Waiting for you'}</span>;
+  if (v.turnBelow) return <span className="chip warn">Your turn: the card below</span>;
   const who = nameOf(users, s.who);
   const cover = s.whoNote?.startsWith('ooo:') ? nameOf(users, s.whoNote.slice(4)) : '';
   return (
@@ -255,7 +256,7 @@ export function RegisterBody({ r, users, meId, driver }: { r: BotRegisterView; u
                   <span className="reg-title" translate="no">{v.title}</span>
                   <span className="reg-stage">{here?.label}</span>
                   <span className="reg-who" translate="no">{v.queue && v.queue.position > 0 ? '' : nameOf(users, here?.who)}</span>
-                  <span className={`mono reg-age${late ? ' late' : ''}`}>{late ? 'Overdue' : `${ageDays(v.createdAt)} d`}</span>
+                  <span className={`mono reg-age${late ? ' late' : ''}`}>{late ? 'Overdue' : ageDays(v.createdAt) === 0 ? 'Today' : ageDays(v.createdAt) === 1 ? '1 day' : `${ageDays(v.createdAt)} days`}</span>
                   <Icon name="chevron" size={13} className="reg-chev" />
                 </button>
                 {isOpen && <div className="reg-drill"><TrackBody v={v} users={users} meId={meId} driver={driver} /></div>}

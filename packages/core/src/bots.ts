@@ -321,6 +321,8 @@ export interface BotTrackView {
   queue: { position: number; of: number; key: string; holders: Array<{ userId: string; since: number; ref: string }> } | null;
   /** A newer card for this request is further down this conversation. */
   moved?: boolean;
+  /** It is this person's turn, on a newer card further down (their first card only follows it). */
+  turnBelow?: boolean;
   /** The bot maker's test run: whose part the maker plays at this stage ("Their lead"). */
   actingAs?: string;
   createdAt: number;

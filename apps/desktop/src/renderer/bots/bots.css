@@ -224,7 +224,14 @@ html:is([lang='hi'], [lang='ta']) .trk-label, html:is([lang='hi'], [lang='ta']) 
 .reg-mini-stamp { font: 700 9px/1 var(--font-mono); letter-spacing: .12em; padding: 2px 4px; border: 1px solid currentColor; border-radius: 2px; color: var(--accent-ink); }
 .reg-mini-stamp.stopped { color: var(--danger); }
 .reg-mini-stamp.withdrawn { color: var(--text-3); }
+.trk-cells .chip { white-space: nowrap; }
 @media (max-width: 520px) {
+  .reg-at { display: none; }
+  .trk-cells { grid-template-columns: 1fr 1fr; }
+  .trk-cells > div:nth-child(2n) { border-right: 0; }
+  .trk-cells > div:nth-child(n + 3) { border-top: 1px solid var(--stroke); }
+  .trk-strip { grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); }
+  .trk-cell { padding: 5px 6px 6px; }
   .reg-row-head { grid-template-columns: auto minmax(0, 1fr) auto 14px; }
   .reg-row-head .reg-who, .reg-row-head .reg-stage { display: none; }
   .reg-counts dd { font-size: 19px; }

@@ -208,7 +208,7 @@ export class BotItems {
 
   /** What a card shows now (called each time its message is drawn), or null when it is not ours. */
   cardView(clientId: string, data: { itemId?: string; flow?: string; mode?: BotRegisterView['mode']; ownerId?: string; itemIds?: string[]; space?: boolean }): Pick<BotFlowCard, 'track' | 'register'> | null {
-    const meta = this.db.prepare('SELECT superseded FROM bot_item_cards WHERE client_id = ?').get(clientId) as { superseded: number } | undefined;
+    const meta = this.db.prepare('SELECT superseded, purpose FROM bot_item_cards WHERE client_id = ?').get(clientId) as { superseded: number; purpose: CardPurpose } | undefined;
     const moved = !!meta?.superseded;
     if (data.itemId) {
       const got = this.load(data.itemId);
@@ -219,7 +219,12 @@ export class BotItems {
       const now = this.d.now();
       const stage = stageOf(f.def, got.item.stage);
       const peers = stage && got.item.status === 'open' ? this.openOf(got.item.flow).filter((x) => x.stage === stage.id) : [];
-      return { track: trackView(f.def, got.item, viewer, { now, moved, canTakeOver: this.canTakeOver(f.def, f.ownerId, got.item, viewer), queue: peers.length ? queueOf(f.def, got.item, peers) : null }) };
+      const view = trackView(f.def, got.item, viewer, { now, moved, canTakeOver: this.canTakeOver(f.def, f.ownerId, got.item, viewer), queue: peers.length ? queueOf(f.def, got.item, peers) : null });
+      // the person who asked has a newer card for their turn: the first one only follows it
+      if (meta?.purpose === 'requester' && view.role === 'actor' && this.db.prepare("SELECT 1 FROM bot_item_cards WHERE item_id = ? AND user_id = ? AND purpose = 'actor' AND superseded = 0").get(got.item.id, viewer)) {
+        return { track: { ...view, role: 'requester', actions: [], turnBelow: true } };
+      }
+      return { track: view };
     }
     if (data.flow) return { register: this.register(data.flow, data.ownerId ?? null, data.mode ?? 'all', { moved, itemIds: data.itemIds, space: data.space }) };
     return null;

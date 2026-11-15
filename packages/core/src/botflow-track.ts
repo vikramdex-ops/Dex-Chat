@@ -334,7 +334,11 @@ export function trackView(def: BotFlowDefinition, item: BotItem, viewerId: strin
   const role: BotTrackView['role'] = item.status === 'open' && !item.waiting && (o.actingAs || item.actorId === viewerId) ? 'actor' : item.requesterId === viewerId ? 'requester' : 'watcher';
   const visited = new Set(item.history.map((e) => e.stage).filter((x): x is string => !!x));
   const way = mainWay(def);
-  if (item.stage && !way.includes(item.stage)) way.push(item.stage);
+  if (item.stage && !way.includes(item.stage)) {
+    // a stage off the main way (sent back to correct) is drawn after the one it came from
+    const from = [...item.history].reverse().find((e) => e.stage && way.includes(e.stage))?.stage;
+    way.splice(from ? way.indexOf(from) + 1 : way.length, 0, item.stage);
+  }
   const lastAt = (id: string) => [...item.history].reverse().find((e) => e.stage === id);
   const stages = way.map((id) => {
     const s = stageOf(def, id)!;

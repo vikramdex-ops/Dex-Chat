@@ -93,6 +93,21 @@ for (const file of hubFiles) {
   visit(sf);
 }
 
+// the bot templates are put into the maker's language when used (bots/maker/localize.ts): their
+// questions, buttons, stages and stamps, {{placeholders}} and all
+const TEMPLATE_PROPS = new Set(['title', 'about', 'description', 'done', 'label', 'prompt', 'placeholder', 'yes', 'no', 'message', 'ask', 'stamp']);
+const templates = path.resolve(import.meta.dirname, '../../../packages/core/src/bot-templates.ts');
+if (fs.existsSync(templates)) {
+  const sf = ts.createSourceFile(templates, fs.readFileSync(templates, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const keep = (t) => /[A-Za-z]{2}/.test(t) && !out.has(t) && out.set(t, 'core/bot-templates.ts');
+  const visit = (n) => {
+    if (ts.isPropertyAssignment(n) && (ts.isStringLiteral(n.initializer) || ts.isNoSubstitutionTemplateLiteral(n.initializer)) && TEMPLATE_PROPS.has(n.name.getText())) keep(n.initializer.text.trim());
+    if (ts.isPropertyAssignment(n) && n.name.getText() === 'checklist' && ts.isArrayLiteralExpression(n.initializer)) for (const e of n.initializer.elements) if (ts.isStringLiteral(e)) keep(e.text.trim());
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+}
+
 const target = path.join(root, 'i18n', 'strings.json');
 const sorted = Object.fromEntries([...out.entries()].sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0])));
 const miss = process.argv.indexOf('--missing');
