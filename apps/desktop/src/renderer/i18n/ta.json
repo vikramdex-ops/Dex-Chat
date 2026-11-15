@@ -4081,5 +4081,8 @@
   "Show everyone": "அனைவரையும் காட்டு",
   "Clear the filters": "வடிகட்டிகளை அழி",
   "Nothing has changed yet": "இன்னும் எதுவும் மாறவில்லை",
-  "Your name cannot be empty": "உங்கள் பெயர் காலியாக இருக்க முடியாது"
+  "Your name cannot be empty": "உங்கள் பெயர் காலியாக இருக்க முடியாது",
+  "anyone": "யாரும்",
+  "· 1 reply": "· 1 பதில்",
+  "· {0} replies": "· {0} பதில்கள்"
 }

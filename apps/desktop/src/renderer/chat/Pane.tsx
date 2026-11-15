@@ -1563,7 +1563,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
   return (
     <aside className="side-panel side-track" aria-label="Side-track">
       <header className="side-head">
-        <span className="label">Side-track <span className="mono">· {n} {n === 1 ? 'reply' : 'replies'}</span></span>
+        <span className="label">Side-track <span className="mono">{n === 1 ? '· 1 reply' : `· ${n} replies`}</span></span>
         <button className="icon-btn" onClick={onClose} aria-label="Close side-track"><Icon name="x" size={16} /></button>
       </header>
       <div className="side-body">

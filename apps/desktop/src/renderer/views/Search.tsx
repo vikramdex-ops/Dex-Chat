@@ -10,6 +10,7 @@ import { plainPreview } from '../chat/format.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { chatState } from '../chat/store.ts';
 import { timeOpts } from '../time.ts';
+import { translating } from '../i18n/index.ts';
 
 export interface SearchInit { q?: string; convId?: string | null }
 type When = 'any' | 'today' | 'week' | 'month' | 'year';
@@ -129,7 +130,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
         </div>
         <div className={`sr-cell${period !== 'any' ? ' on' : ''}`}>
           <button ref={anchors.when} className="sr-pick" onClick={() => setMenu('when')} aria-haspopup="menu">
-            <span className="sr-k">When</span><span className="sr-v">{WHEN.find((w) => w.value === period)!.label.toLowerCase()}</span>
+            <span className="sr-k">When</span><span className="sr-v">{translating() ? WHEN.find((w) => w.value === period)!.label : WHEN.find((w) => w.value === period)!.label.toLowerCase()}</span>
           </button>
         </div>
         {!convId && (

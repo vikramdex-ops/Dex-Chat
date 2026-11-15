@@ -4081,5 +4081,8 @@
   "Show everyone": "सभी को दिखाएँ",
   "Clear the filters": "फ़िल्टर हटाएँ",
   "Nothing has changed yet": "अभी तक कुछ नहीं बदला",
-  "Your name cannot be empty": "आपका नाम खाली नहीं हो सकता"
+  "Your name cannot be empty": "आपका नाम खाली नहीं हो सकता",
+  "anyone": "कोई भी",
+  "· 1 reply": "· 1 जवाब",
+  "· {0} replies": "· {0} जवाब"
 }
