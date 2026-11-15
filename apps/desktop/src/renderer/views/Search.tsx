@@ -70,7 +70,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
         .then((r) => { setHits(mergeLocal(r.messages)); setFiles(r.files); setMore(r.messages.length === 30); })
         .catch(() => { setHits([]); setFiles([]); })
         .finally(() => setBusy(false));
-    }, 200);
+    }, 120); // a pause in the typing (the hub answers in a few milliseconds)
     return () => clearTimeout(t);
   }, [key]);
   /** End-to-end encrypted Direct text never reaches the hub's index: search what this device has open. */

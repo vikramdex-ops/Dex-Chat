@@ -7,7 +7,7 @@ import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from
 import type { IconName } from '../ui.tsx';
 import { plainPreview } from './format.tsx';
 import { useChat } from './store.ts';
-import { timeOpts } from '../time.ts';
+import { timeOpts, useTimeFormat } from '../time.ts';
 import { CONV_DRAG, openBeside, openInPane, usePanes } from './panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, nextMonday, todayAt } from './officeTime.ts';
 import { LoungeSection } from '../lounges/Lounges.tsx';
@@ -133,6 +133,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
   const [filter, setFilter] = useState('');
   // the list follows the filter a moment behind the typing, so keys never wait for it
   const query = useDeferredValue(filter);
+  const clock = useTimeFormat();
   const [showArchived, setShowArchived] = useState(false);
   // how the list is ordered and narrowed (kept per device)
   const [sort, setSort] = useState<Sort>(() => { try { return (localStorage.getItem('dex-sb-sort') as Sort | null) ?? 'recent'; } catch { return 'recent'; } });
@@ -193,7 +194,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     const state = c.id === focusId ? ' active' : at >= 0 ? ' open' : '';
     // a person's beacon ring is part of the row (the row is kept while nothing about it changes)
     const one = c.kind === 'direct' ? c.members.filter((m) => m !== meId) : [];
-    return <SbRow key={c.id} c={c} users={users} meId={meId} state={state} folded={folded} onMenu={setMenu} presence={one.length === 1 ? presenceFor(one[0]) : ''} />;
+    return <SbRow key={c.id} c={c} users={users} meId={meId} state={state} folded={folded} onMenu={setMenu} presence={one.length === 1 ? presenceFor(one[0]) : ''} clock={clock} />;
   };
 
   const label = CHIPS.find((x) => x.id === chip)!.label;
@@ -277,6 +278,8 @@ const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu }: {
   onMenu: (m: { id: string; anchor: HTMLElement }) => void;
   /** The other person's presence in a one-to-one (drawn by the tile; here so a change redraws the row). */
   presence: string;
+  /** The time format (the row's time is drawn again when it changes). */
+  clock: string;
 }) {
     const title = convTitle(c, users, meId);
     const last = c.lastMessage;

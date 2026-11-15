@@ -89,6 +89,25 @@ npm run hub            # run a hub from source (data in ./hub-data)
 npm run desktop:dev    # build and launch the desktop app
 ```
 
+### Performance at office scale
+
+The app is held to these budgets with an office of 120 people, 300 conversations, two years of
+history (60,000 messages), 3,000 files, 2,000 Desk items and 400 events: start to a usable screen
+under 1.5 s warm and 3 s cold, a lens switch under 100 ms, a conversation open under 150 ms, no
+long task over 50 ms while scrolling or typing, the hub's hot operations under 30 ms at p95, and
+the window's memory under 400 MB.
+
+```bash
+node apps/hub/scripts/seed-office.ts ./hub-data       # seed a hub with that office
+node apps/hub/scripts/bench-ops.ts --check            # hub operations, p50 and p95
+npm run desktop:build && PLAYWRIGHT=/path/to/playwright xvfb-run -a node apps/desktop/scripts/perf/perf.mts --check
+```
+
+`perf.mts` drives the built app through start-up, every lens, a busy conversation, 5,000 messages
+of scrolling back, typing, search and ten minutes of moving around, with background office
+traffic, and prints each measurement against its budget. `DEX_ROOT` points it at another checkout
+(an earlier commit in a worktree) for a before-and-after comparison.
+
 ## Repository layout
 
 ```

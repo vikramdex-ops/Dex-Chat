@@ -338,10 +338,14 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     return desk;
   }, [state.phase, session.me.id, session.deviceId]);
 
+  // the lens and chip now, for handlers kept from an earlier render (links, events)
+  const now = useRef({ lens, chip });
+  now.current = { lens, chip };
   const openConversation = (id: string, kind: 'direct' | 'space') => {
     openInPane(id);
+    const { lens: l, chip: c } = now.current;
     // stay on the Switchboard's current chip when it already shows this conversation
-    if (!isTalk(lens) || (chip !== 'all' && (kind === 'space') !== (chip !== 'people'))) setLens(kind === 'space' ? 'spaces' : 'direct');
+    if (!isTalk(l) || (c !== 'all' && (kind === 'space') !== (c !== 'people'))) setLens(kind === 'space' ? 'spaces' : 'direct');
     setSheet(null);
   };
   /** Open a conversation and scroll to (or open the side-track of) a message. */

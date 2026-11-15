@@ -36,7 +36,7 @@ import { EventDialog } from '../calendar/CalendarView.tsx';
 import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
-import { timeOpts } from '../time.ts';
+import { timeOpts, useTimeFormat } from '../time.ts';
 import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeople, openWithQuote, pinEnd, runAction, useActions } from './wire.tsx';
 import { useMsgLayout } from './prefs.ts';
 import { LinkCards } from './linkcards.tsx';
@@ -80,6 +80,8 @@ interface Ctx {
   select: (id: string | null) => void;
   /** Messages drawn as compact cards (Preferences) rather than on the spine. */
   cards: boolean;
+  /** The time format (12/24-hour), so kept messages draw their times again when it changes. */
+  clock: string;
 }
 
 /** The stamps on hand (Preferences), kept live. */
@@ -238,8 +240,9 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
     if (next.has(id)) next.delete(id); else if (next.size < 50) next.add(id);
     return next;
   }), []);
-  const ctx = useMemo<Ctx | null>(() => (conv ? { users, meId, isAdmin, conv, online, view, selected, cards: layout === 'cards', select } : null),
-    [users, meId, isAdmin, conv, online, view, selected, layout, select]);
+  const clockFormat = useTimeFormat();
+  const ctx = useMemo<Ctx | null>(() => (conv ? { users, meId, isAdmin, conv, online, view, selected, cards: layout === 'cards', select, clock: clockFormat } : null),
+    [users, meId, isAdmin, conv, online, view, selected, layout, select, clockFormat]);
   const onTrack = useCallback((parentId: string) => setSide({ kind: 'track', parentId }), []);
   if (!conv || !ctx) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
   const picked = (): AnyMessage[] => (chatState().timelines.get(convId)?.messages ?? []).filter((m) => selected?.has(m.id) && !('pending' in m));
@@ -624,7 +627,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
     }
     lastRuns.current = runs;
     return out;
-  }, [messages, ctx.meId]);
+  }, [messages, ctx.meId, ctx.clock]);
 
   // ---------------------------------------------------------------- drawing a window of it
   // A long history (scrolled back through thousands of messages) is drawn a window at a time:
@@ -728,7 +731,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
 
 /** Blocks drawn at once in a timeline, and how far the window slides at a time. */
 const WINDOW = 360;
-const STEP = 120;
+const STEP = 60;
 /** A block's height before it was ever drawn: what the browser assumes for a run (chat.css). */
 const GUESS: Record<string, number> = { day: 44, tick: 20, notice: 30, run: 72 };
 
@@ -805,7 +808,7 @@ function sameMessage(a: ItemProps, b: ItemProps): boolean {
   const x = a.ctx;
   const y = b.ctx;
   if (x === y) return true;
-  if (x.users !== y.users || x.meId !== y.meId || x.isAdmin !== y.isAdmin || x.cards !== y.cards || x.view !== y.view || x.select !== y.select) return false;
+  if (x.users !== y.users || x.meId !== y.meId || x.isAdmin !== y.isAdmin || x.cards !== y.cards || x.clock !== y.clock || x.view !== y.view || x.select !== y.select) return false;
   if (!x.selected !== !y.selected || (x.selected && y.selected && x.selected.has(a.m.id) !== y.selected.has(b.m.id))) return false;
   const c = x.conv;
   const d = y.conv;

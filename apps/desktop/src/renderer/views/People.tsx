@@ -14,6 +14,7 @@ import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
 import { useWork, workLine } from '../work/store.ts';
 import { TeamDayLog } from '../work/WorkUi.tsx';
+import { useProgressive } from '../progressive.ts';
 import './people.css';
 
 /**
@@ -102,10 +103,17 @@ export function People({ state, session, query: kept, setQuery: keep, focusUser,
       .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName));
   }, [everyone, online, filter, search, dept, departments]);
 
+  // a screenful of cards at once, the rest over the next frames (see progressive.ts)
+  const shown = useProgressive(people, 36, 48);
+  // the person asked for, once their card is drawn
+  const scrolledTo = useRef<string | null>(null);
   useEffect(() => {
-    if (focusUser) document.getElementById(`person-${focusUser}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [focusUser]);
-
+    if (!focusUser || scrolledTo.current === focusUser) return;
+    const el = document.getElementById(`person-${focusUser}`);
+    if (!el) return;
+    scrolledTo.current = focusUser;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focusUser, shown.length]);
   const sel = selected ? users.get(selected) : undefined;
 
   return (
@@ -141,7 +149,7 @@ export function People({ state, session, query: kept, setQuery: keep, focusUser,
               <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span></div>
             ) : (
               <div className="grid cols-people">
-                {people.map((u) => <PersonCard key={u.id} u={u} meId={session.me.id} selected={selected === u.id} flash={focusUser === u.id} online={online.has(u.id)}
+                {shown.map((u) => <PersonCard key={u.id} u={u} meId={session.me.id} selected={selected === u.id} flash={focusUser === u.id} online={online.has(u.id)}
                   presence={presenceFor(u.id)} department={departments.get(u.profile.departmentId ?? '')?.name} work={work.get(u.id)} onPick={setSelected} />)}
               </div>
             )}
