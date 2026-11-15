@@ -1596,7 +1596,28 @@ await part('botnet', async () => {
 
 await part('seating', async () => {
   autoApprove = true;
-  await owner.request('admin.seating.managers' as never, { userIds: [id('bhavna')] } as never);
+  // the administrator names Bhavna office manager in Control room ▸ Organisation ▸ Office managers
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1200);
+  await V.locator('.me-btn').click();
+  await V.getByRole('menuitem', { name: /Control room/ }).click();
+  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Organisation/ }).click();
+  const mgr = V.locator('.org-managers');
+  await mgr.waitFor({ timeout: 10000 });
+  await mgr.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  const addMgr = V.getByRole('combobox', { name: 'Add an office manager' });
+  await addMgr.fill('Bhav');
+  await mgr.getByRole('option', { name: /Bhavna Shah/ }).waitFor();
+  await addMgr.press('Enter');
+  await V.getByText('Bhavna Shah is now an office manager').waitFor({ timeout: 8000 });
+  await noToasts(V);
+  // a second name being typed, to show the picker's list
+  await addMgr.fill('Ra');
+  await mgr.getByRole('listbox').waitFor();
+  await sleep(600);
+  { const cb = (await mgr.boundingBox())!; const lb = (await mgr.getByRole('listbox').boundingBox())!; const bottom = Math.max(cb.y + cb.height, lb.y + lb.height) + 12; await shot(V, 'cr-office-managers', { x: cb.x - 12, y: cb.y - 12, width: cb.width + 24, height: Math.min(H, bottom) - cb.y + 12 }); }
+  await addMgr.fill('');
+  await V.keyboard.press('Escape');
   const b = await appOf('bhavna', 'Bhavna Shah');
   const B = b.page;
   const at = (page: any, seat: string) => page.evaluate((x: string) => (globalThis as any).__seatScreen(x), seat);

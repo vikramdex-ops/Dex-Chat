@@ -73,8 +73,8 @@ POL1_ISOLATED=1 TZ=Asia/Kolkata xvfb-run -a -s "-screen 0 2000x1000x24 -noreset"
   leave policy with its PDF, a check question and a Hindi version, and issues it; Pulse, the board, the reading sheet and the
   stamp; the acknowledgement register; Rev B with its revision cloud; an urgent banner), `botnet` (an iso check whose Plot stage
   the plot room's bot carries; a question that asks the Software seat bot; the bot maker's Other bots and Schedule; the job sheet
-  with the hub's bot clock moved to Monday; the bot network sheet; office holidays in the Control room) and `seating` (Bhavna,
-  named office manager, finds a free seat, drags Priya to a new one, moves the Structural team and sets the move plan for Monday;
+  with the hub's bot clock moved to Monday; the bot network sheet; office holidays in the Control room) and `seating` (Vikram names Bhavna
+  office manager in Control room ▸ Organisation, Office managers; she finds a free seat, drags Priya to a new one, moves the Structural team and sets the move plan for Monday;
   the hub's seating clock reaches Monday and Priya walks to her new seat; revisions B and C compared; the layout editor).
   `GUIDE_ONLY=recap,notices,botnet,seating` walks just these. The office is seated on the real floor plan when it is seeded.
 - The three pictures of the guest's meeting page, `fig-meet-landing-1.png` to `-3.png`, are not made

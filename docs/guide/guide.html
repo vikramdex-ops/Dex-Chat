@@ -228,7 +228,7 @@
     <tr><td>Hub status</td><td>The office hub's name with a dot: teal when connected, amber while reconnecting. A globe shows when you are connected from outside the office through the gateway.</td></tr>
     <tr><td>Your tile</td><td>Your initials. Click it for your day, your status, Help me, Preferences and (for administrators) the Control room (section 3.3). A thin teal arc round the tile traces your working day.</td></tr>
     <tr><td>Nib</td><td>The tile with a drafting-pen nib, beside yours: Nib's tray, your day sheet and leave note (section 8).</td></tr>
-    <tr><td>Urgent banner</td><td>Under the title bar, only for an urgent notice (an IT outage, a safety alert): its number and title, <b>Read</b> and <b>Dismiss</b> (section 11.1).</td></tr>
+    <tr><td>Urgent banner</td><td>Under the title bar, only for an urgent notice (an IT outage, a safety alert): its number and title, <b>Read</b> and <b>Dismiss</b> (section 11.1). It takes its own row and pushes the page down, so it never covers what is under it.</td></tr>
   </table>
 
   <h3>3.1 The lenses</h3>
@@ -1074,6 +1074,8 @@
     <div>
       <p>When a meeting ends, a <span class="tag">MEETING RECAP</span> card is posted in its thread (Fig. 9-14): the title, date, time and length,
       its drawing number (<i>MTG-174490695-01</i>), and a ruled line of counts: PEOPLE, FILES, ACTIONS OPEN, DONE and DECISIONS. A recap is posted when anything was captured; a meeting that never started has none.</p>
+      <p>Times on the recap card and sheet, on the <span class="tag">MEETING STARTED</span> line and in <i>What you missed</i> follow your <b>Time format</b>
+      (<i>1:30 PM</i> or <i>13:30</i>, section 15.2).</p>
       <p><b>Open the recap</b> opens the <b>recap sheet</b>. You can also reach it from the Calendar (a meeting opened after it was held shows
       <b>Open the recap</b>), from the Meet lens (<b>Recent meetings → Recap</b>) and from search, which finds its chat and files.</p>
     </div>
@@ -1238,13 +1240,14 @@
   many people are in, the live scale and the grid square under the pointer; the key plan at the bottom left shows where you are.</p>
   <figure><img src="figures/fig-org-lines.png" alt="The office drawing, Lines sheet, the whole office"><figcaption><b>Fig. 10-3</b> The <b>Lines</b> sheet: reporting lines, with departments as areas</figcaption></figure>
   <dl class="kv">
-    <dt>Lines and Floor</dt><dd><b>Lines</b> draws the reporting lines, routed like pipes from each manager to their team, with each department as an area (a chain-line boundary). <b>Floor</b> draws the office's real floor plan, with everyone on their seat (section 10.3).</dd>
+    <dt>Lines and Floor</dt><dd><b>Lines</b> draws the reporting lines, routed like pipes from each manager to their team, with each department as an area (a chain-line boundary). <b>Floor</b> draws the office's real floor plan, with everyone on their seat (section 10.3). The two sheets look different on purpose: Lines shows the structure (who reports to whom), Floor shows where people sit, so a team that is close on Lines can sit far apart on Floor.</dd>
     <dt>Plates</dt><dd>Each person is a plate: tile, name, designation and a strip with extension, seat and grid square. A solid plate with a teal edge means they are in today; a paper-coloured plate, not signed in. New colleagues this month have a revision cloud, birthdays a pennant and work anniversaries a small <i>5 yrs</i> box. <span class="tag">YOU ARE HERE</span> marks your own plate. <b>Key</b> explains every mark.</dd>
     <dt>Find</dt><dd>Type a name, designation, seat or extension in the search box: the sheet spotlights the person and flies there.</dd>
     <dt>The callout</dt><dd>Click a person for a small title block with their details and <b>Write</b>, <b>Room</b>, <b>How we connect</b>, <b>Spaces</b> and <b>Card</b> (Fig. 10-4).</dd>
+    <dt>Across to the other sheet</dt><dd>On Lines, the callout's <b>Find on the floor</b> switches to Floor and flies to the person's seat, with them still selected. When there is no seat to show it says why instead: <i>No seat on the plan</i>, <i>Working from home today</i>, <i>On site today</i> or <i>At a client today</i>. On Floor, a person's callout has <b>See in the reporting lines</b>, which goes back to their plate on Lines.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-org-callout.png" alt="A person's callout on the drawing"><figcaption><b>Fig. 10-4</b> Farhan Qureshi's callout</figcaption></figure>
+    <figure><img src="figures/fig-org-callout.png" alt="Farhan Qureshi's callout on the Lines sheet: status, grid, department, seat, extension, line manager, Write, Room, How we connect, Spaces, Card and Find on the floor"><figcaption><b>Fig. 10-4</b> Farhan Qureshi's callout, with <b>Find on the floor</b></figcaption></figure>
     <figure><img src="figures/fig-org-route.png" alt="How you connect: a route along the reporting lines with numbered steps"><figcaption><b>Fig. 10-5</b> <b>How we connect</b>: the route through the reporting lines</figcaption></figure>
   </div>
   <ul>
@@ -1292,7 +1295,10 @@
         callout (Fig. 10-9): the seat, its zone, <b>Held by</b> (a person, a reservation, or <i>Nobody: free</i>) and its type. Clicking a seat does the same.</li>
         <li><b>Walk there</b> (on a seat, on a person's callout, or on your seat notice) draws the walk from the entrance, or from your own seat,
         round the desks, with a dotted line and about how many steps it is (Fig. 10-10).</li>
-        <li><b>Hot desks</b> are seats anyone can use for a day. Click one and choose <b>Book for today</b>; <b>Cancel my booking</b> gives it back.</li>
+        <li><b>Hot desks</b> are seats anyone can use for a day. Click one: its callout shows who has it <b>Today</b>, a <b>Book for</b> day
+        (today, or a working day up to two weeks ahead; office holidays are left out) and, under <b>Booked</b>, the days it is already booked and by whom.
+        Choose the day and click <b>Book for today</b> (for another day the button names it: <b>Book for Tue, Nov 17</b>); <b>Cancel my booking</b> gives that day back. You have one hot
+        desk a day: booking another for the same day moves your booking.</li>
       </ul>
       <h4>When your seat changes</h4>
       <p>When the office manager moves you, Nib (or the system bot) tells you once, with a link that opens the plan at your new seat. On the
@@ -1307,9 +1313,19 @@
   <figure><img src="figures/fig-seat-walk.png" alt="Priya's seat notice, From Monday your seat is W-A19, with the walk drawn from W-A11 to W-A19 round the desks"><figcaption><b>Fig. 10-10</b> Priya's seat notice, and <b>Walk there</b> from her old seat to the new one</figcaption></figure>
 
   <h3>10.4 For office managers: arranging seats</h3>
-  <p>Seats are changed only by administrators and the <b>office managers</b> they name. Office managers are named on the hub, not in the
-  Control room: to make someone an office manager, ask IT. An office manager sees <b>Arrange</b> and <b>Revisions</b> on the Floor sheet.</p>
-  <figure><img src="figures/fig-seat-arrange.png" alt="Arrange seats: the People tab with the list of people and their seats, and a dashed arrow for Priya's move to W-A19 on the plan"><figcaption><b>Fig. 10-11</b> <b>Arrange</b>: Priya dragged from the list onto W-A19. The dashed arrow is a move still to take effect.</figcaption></figure>
+  <p>Seats are changed only by administrators and the <b>office managers</b> they name. An office manager sees <b>Arrange</b> and
+  <b>Revisions</b> on the Floor sheet.</p>
+  <h4>Naming the office managers (administrators)</h4>
+  <ol class="steps">
+    <li>Click your tile (your picture, top right) and choose <b>Control room</b>, then <b>Organisation</b>.</li>
+    <li>Under <b>Office managers</b>, type part of a name in <b>Add an office manager…</b> and pick the person from the list (the arrow keys and
+    <kbd>Enter</kbd> work too). They appear as a chip.</li>
+    <li>To take someone off, click the <b>×</b> on their chip.</li>
+    <li>Each change appears in the <b>Audit log</b> (Control room → <b>Audit log</b>) as <i>changed the office managers</i>.</li>
+  </ol>
+  <p>Only members can be named: administrators can arrange seats already.</p>
+  <figure class="narrow"><img src="figures/fig-cr-office-managers.png" alt="Control room, Organisation, Office managers: Bhavna Shah's chip, and Add an office manager with a name being typed and the list of matches"><figcaption><b>Fig. 10-11</b> <b>Office managers</b> in <b>Control room → Organisation</b></figcaption></figure>
+  <figure><img src="figures/fig-seat-arrange.png" alt="Arrange seats: the People tab with the list of people and their seats, and a dashed arrow for Priya's move to W-A19 on the plan"><figcaption><b>Fig. 10-12</b> <b>Arrange</b>: Priya dragged from the list onto W-A19. The dashed arrow is a move still to take effect.</figcaption></figure>
   <p>Every change goes into a <b>move plan</b>: a list of moves, drawn on the plan as dashed arrows (amber while it is a draft, teal once
   published), which takes effect on a day you choose. Nothing changes for anyone until then. <b>Arrange</b> opens the panel, with five tabs:</p>
   <dl class="kv">
@@ -1321,12 +1337,12 @@
     link that walks them to their new seat; their Directory seat changes on the day. Until then, <b>Take back</b> returns a published plan to a draft.
     Under <b>Last applied</b>, <b>Undo</b> takes back the latest plan, as long as its seats have not changed since: everyone goes back to the seat they had.</dd>
     <dt>Move a team</dt><dd>A whole <b>Department</b> into a zone (<b>To</b>), optionally <b>Starting at seat</b>. <b>Preview</b> lists who goes where
-    (<i>W-C07 → W-B04</i>); <b>Add to the move plan</b> adds them (Fig. 10-12).</dd>
+    (<i>W-C07 → W-B04</i>); <b>Add to the move plan</b> adds them (Fig. 10-13).</dd>
     <dt>Import</dt><dd>Paste lines of seat and name under <b>Seats and names</b> (<code>W-A14, Priya Raman</code>), or <b>Open a CSV</b>, and click
     <b>Match names</b>. A full name or a Windows user name is matched for certain; a first name or an initial is only <b>Suggested</b>, and is used
     only when you tick <b>Use line …</b>. <b>From the directory's Seat field</b> takes seats from people's old free-text seats, where they name a seat
     plainly (<i>W-A14</i>, <i>Reception</i>).</dd>
-    <dt>Layout</dt><dd><b>Edit the layout</b> changes the drawing itself (Fig. 10-14): drag seats, nudge them with the arrow keys (by 3 inches; with
+    <dt>Layout</dt><dd><b>Edit the layout</b> changes the drawing itself (Fig. 10-15): drag seats, nudge them with the arrow keys (by 3 inches; with
     <kbd>Shift</kbd>, a foot), turn them with <kbd>R</kbd>, <b>Duplicate (Ctrl+D)</b>, <b>Remove (Delete)</b>, <b>Select its bench</b>, <b>Add a bench of</b>
     a number of seats, <b>Add a pod of 6</b>, rename rooms, and type exact <b>X (ft)</b>, <b>Y (ft)</b> and <b>Facing (°)</b>. <b>Undo (Ctrl+Z)</b> and
     <b>Redo (Ctrl+Y)</b> work as usual. Overlapping seats and duplicate IDs are listed under <b>Problems</b> and marked; a layout with problems cannot be
@@ -1334,22 +1350,22 @@
     <b>Add an underlay</b> lays a new drawing (a PDF page or an image) faintly under the plan, to trace when the office changes; only people who arrange seats see it.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-seat-team.png" alt="Move a team: Structural to the North-east benches, with the preview of who goes where"><figcaption><b>Fig. 10-12</b> <b>Move a team</b>, with its preview</figcaption></figure>
-    <figure><img src="figures/fig-seat-moveplan.png" alt="The move plan: Structural to North-east benches, six moves, From Monday, Apply from Mon, Nov 16, and the dashed arrows on the plan"><figcaption><b>Fig. 10-13</b> The <b>Move plan</b>, set for Monday</figcaption></figure>
+    <figure><img src="figures/fig-seat-team.png" alt="Move a team: Structural to the North-east benches, with the preview of who goes where"><figcaption><b>Fig. 10-13</b> <b>Move a team</b>, with its preview</figcaption></figure>
+    <figure><img src="figures/fig-seat-moveplan.png" alt="The move plan: Structural to North-east benches, six moves, From Monday, Apply from Mon, Nov 16, and the dashed arrows on the plan"><figcaption><b>Fig. 10-14</b> The <b>Move plan</b>, set for Monday</figcaption></figure>
   </div>
   <p><b>Seats from a callout.</b> On a free seat, <b>Reserve…</b> keeps it for a role or a team (<i>Piping · hot desk</i>), and <b>Make it a hot desk</b>
   makes it bookable by anyone; on a held seat, <b>Free it</b> empties it. Each is added to the move plan like any other move.</p>
-  <figure><img src="figures/fig-seat-layout.png" alt="The layout editor with a new bench of four seats selected"><figcaption><b>Fig. 10-14</b> The layout editor: a bench of 4 added, selected</figcaption></figure>
+  <figure><img src="figures/fig-seat-layout.png" alt="The layout editor with a new bench of four seats selected"><figcaption><b>Fig. 10-15</b> The layout editor: a bench of 4 added, selected</figcaption></figure>
   <div class="cols w60">
     <div>
       <h4>Revisions, compare and print</h4>
       <p>Every change that takes effect is a <b>revision</b> of the plan, lettered like a drawing's: Rev A is the drawing as it was built in,
       then B, C and so on, each with its date, who made it and what changed. <b>Revisions</b> lists them. Choose two under <b>Compare</b> and
       <b>with</b> and click <b>Compare</b>: the later one is drawn with a revision cloud and triangle round every seat that changed, and a notice says
-      how many (Fig. 10-15). <b>Stop comparing</b> ends it.</p>
+      how many (Fig. 10-16). <b>Stop comparing</b> ends it.</p>
       <p><b>For the notice wall</b>: <b>PDF</b> and <b>PNG</b> print the current plan on an A3 sheet with its title block and the names on the seats.</p>
     </div>
-    <figure><img src="figures/fig-seat-compare.png" alt="Revisions B and C compared: revision clouds round the seats that changed, and the list of revisions"><figcaption><b>Fig. 10-15</b> Rev B and Rev C compared</figcaption></figure>
+    <figure><img src="figures/fig-seat-compare.png" alt="Revisions B and C compared: revision clouds round the seats that changed, and the list of revisions"><figcaption><b>Fig. 10-16</b> Rev B and Rev C compared</figcaption></figure>
   </div>
 </section>
 
@@ -1373,7 +1389,7 @@
     <li><b>A desktop notification</b> when a notice is issued for you, and a line from Nib (section 11.8) while one waits for you.</li>
     <li><b>Search.</b> <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> and GO TO find notices by their title, their text, their number and the text inside their PDFs.</li>
     <li><b>An urgent notice</b> (an IT outage, a safety alert) shows a banner under the title bar for everyone it is for (Fig. 11-7):
-    <span class="tag amber">URGENT</span>, its number and title, <b>Read</b> and <b>Dismiss</b> (the <b>×</b>). Dismissed on one device, it does not come back on your others.</li>
+    <span class="tag amber">URGENT</span>, its number and title, <b>Read</b> and <b>Dismiss</b> (the <b>×</b>). The banner has its own row: it pushes the page down rather than covering it. Dismissed on one device, it does not come back on your others.</li>
   </ul>
   <figure><img src="figures/fig-nb-pulse.png" alt="Pulse, Needs you: the fire drill and the leave policy with ACKNOWLEDGE, then a reminder and conversations"><figcaption><b>Fig. 11-2</b> Notices to acknowledge, at the top of <b>Needs you</b> on Pulse</figcaption></figure>
   <figure><img src="figures/fig-nb-week.png" alt="This week at the office: seven day cells, and the notices issued this week with their numbers"><figcaption><b>Fig. 11-3</b> <b>This week at the office</b>, further down Pulse</figcaption></figure>
@@ -1382,8 +1398,8 @@
   <dl class="kv">
     <dt>The title block</dt><dd><b>Notice board</b>, with how many notices are in force, how many need you and how many are in the archive, and
     <b>Search notices and their PDFs</b>. Search results say where the words were found, for example <b>In the PDF</b>.</dd>
-    <dt>In force · standing policies</dt><dd>Policies and other standing notices, drawn as pinned sheets: the number, the title, the revision and
-    date, and a teal tick once you have acknowledged it or an amber <span class="tag amber">ACKNOWLEDGE</span> while it waits for you. A sheet behind it for each earlier revision.</dd>
+    <dt>In force · standing policies</dt><dd>Policies and other standing notices, drawn as pinned sheets: the number (with an amber <span class="tag amber">ACKNOWLEDGE</span> beside it while it waits for you), the title, and the
+    revision and date, with a teal tick once you have acknowledged it. A sheet behind it for each earlier revision.</dd>
     <dt>Filters</dt><dd>The desk (<b>All desks</b>, <b>Admin</b>, <b>HR</b>, <b>IT</b>, <b>Management</b>…), <b>Every kind</b> (Policy, Notice, Circular,
     Holiday, IT advisory, Safety, Event), <b>Every year</b>, <b>Needs my acknowledgement</b> and <b>Archive</b> (expired and withdrawn notices).</dd>
     <dt>The register</dt><dd>One ruled row per notice: <b>No. · Rev</b> (<i>HR-POL-0001 · Rev A</i>), <b>Title</b> (with a <span class="tag">PDF</span> tag when it has one),
@@ -1670,7 +1686,7 @@
     seat free?</i> asks the Software seat bot. Pick the question from the blocks (<b>Find a skill: seat, leave, lead…</b>), grouped by the bot that
     answers and tagged <span class="tag">SYSTEM</span>, <span class="tag">OFFICE</span> or <span class="tag">YOURS</span>; fill in what it needs (<b>Which</b>:
     <i>CAESAR II</i>); and choose <b>If it cannot answer</b>: <b>Ask the person instead</b>, <b>Carry on without it</b>, or <b>Stop, and say why</b>
-    (Fig. 12-8). The answer is used like any answer, in later questions, routes and messages. Every office bot that follows requests answers <i>How
+    (Fig. 12-8). <b>Make it a plain question</b>, under the bot's part, takes the bot away again, so the person answers it. The answer is used like any answer, in later questions, routes and messages. Every office bot that follows requests answers <i>How
     many are open?</i> and <i>Where is a request?</i>; Nib answers <i>Are they on leave?</i>, the Directory <i>Who is their lead?</i> and the office
     calendar <i>Is it a working day?</i></dd>
     <dt>Hand to a bot</dt><dd>In <b>03 At the end</b>, <b>Hand to a bot</b> hands the request on (<i>Hand it to another bot</i>), with the answers it
@@ -2014,7 +2030,7 @@
   </div>
   <dl class="kv">
     <dt>03 People &amp; roles</dt><dd>Everyone with their Windows account and <b>Role</b>: <b>Owner</b>, <b>Admin</b>, <b>Member</b> or <b>Guest</b>. At the top, the <b>IT desk</b>: <b>Add someone to the IT desk…</b> gives them the Help desk queue and support sessions (section 14).</dd>
-    <dt>04 Organisation</dt><dd>Departments (nested under each other, each with its head), designations, reporting lines, extensions, seats, joining dates, birthdays and custom fields: what the Directory and the office drawing show. Import it from a CSV saved from Excel or Dexterity Sheets, including people who have not joined yet. Further down, <b>Conference rooms and cabins</b> that people can book with a meeting.</dd>
+    <dt>04 Organisation</dt><dd>Departments (nested under each other, each with its head), designations, reporting lines, extensions, seats, joining dates, birthdays and custom fields: what the Directory and the office drawing show. Import it from a CSV saved from Excel or Dexterity Sheets, including people who have not joined yet. Further down, <b>Conference rooms and cabins</b> that people can book with a meeting, and <b>Office managers</b>, the members who arrange seats on the floor plan: type part of a name in <b>Add an office manager…</b> and pick the person; the <b>×</b> on a chip takes them off (section 10.4). Each change shows in the audit log as <i>changed the office managers</i>.</dd>
   </dl>
   <figure><img src="figures/fig-cr-organisation.png" alt="Control room, Organisation: departments with their heads"><figcaption><b>Fig. 19-4</b> <b>04 Organisation</b></figcaption></figure>
   <dl class="kv">
@@ -2286,7 +2302,7 @@
     <tr><th style="width:22mm">Revision</th><th style="width:30mm">Date</th><th>Change</th></tr>
     <tr><td>0</td><td>15-Nov-2026</td><td>First issue.</td></tr>
     <tr><td>1</td><td>15-Nov-2026</td><td>New chapters: Nib and day sheets, office bots, share paths, Dexterity Meet links</td></tr>
-    <tr><td>2</td><td>16-Nov-2026</td><td>Meeting threads, action points and recaps; Notice board; bot network and scheduled jobs; the real office floor plan and seating</td></tr>
+    <tr><td>2</td><td>16-Nov-2026</td><td>Meeting threads, action points and recaps; Notice board; bot network and scheduled jobs; the real office floor plan and seating, with office managers named in the Control room, hot desks booked up to two weeks ahead, and the way across between the Lines and Floor sheets; <b>Make it a plain question</b> in the bot maker; the urgent banner on its own row and the ACKNOWLEDGE tag beside the number on the In force shelf; recap times in your time format</td></tr>
   </table>
 </section>
 
