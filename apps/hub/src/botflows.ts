@@ -958,7 +958,7 @@ export class BotFlows {
       ON CONFLICT(name) DO UPDATE SET def = excluded.def, source = excluded.source, updated_at = excluded.updated_at, updated_by = excluded.updated_by,
         version = excluded.version, pending_version = NULL, requested = NULL`)
       .run(def.name, bot.id, JSON.stringify(def), keep, Date.now(), actor, version);
-    if (keep === 'member') this.d.store.updateUser(bot.id, { displayName: def.title });
+    if (keep === 'member' && bot.displayName !== def.title) this.d.broadcast('user.updated', this.d.store.updateUser(bot.id, { displayName: def.title }));
     this.d.store.audit(actor, 'botflow.saved', bot.id, { flow: def.name, steps: def.steps.length, source, version });
     this.d.broadcast('botflow.catalog', { changed: true });
     return this.info(this.flowRow(def.name)!);
@@ -1003,8 +1003,9 @@ export class BotFlows {
   private botUser(name: string, title: string, me: PublicUser): PublicUser {
     const account = `${MADE_PREFIX}${name}`;
     let bot = this.d.store.userByAccount(account);
-    if (!bot) bot = this.d.store.createUser(account, title, 'bot');
-    else if (bot.displayName !== title) bot = this.d.store.updateUser(bot.id, { displayName: title });
+    // everyone's apps learn the bot's name (and their tiles its mark) as soon as it exists
+    if (!bot) { bot = this.d.store.createUser(account, title, 'bot'); this.d.broadcast('user.added', bot); }
+    else if (bot.displayName !== title) { bot = this.d.store.updateUser(bot.id, { displayName: title }); this.d.broadcast('user.updated', bot); }
     // active while it has a token; no one is ever given this one
     if (!this.d.store.botActive(bot.id)) this.d.store.createBotToken(bot.id, crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'), me.id);
     return bot;
@@ -1016,6 +1017,11 @@ export class BotFlows {
     let def: BotFlowDefinition;
     try { def = validateFlow(d.definition); } catch (err) { throw new BotFlowsError((err as Error).message); }
     if (!BOTFLOW_NAME_RE.test(def.name)) throw new BotFlowsError('Give the bot a name.');
+    // a new bot whose short name is taken gets the next free one (plot-request-2)
+    if (d.newBot === true && this.flowRow(def.name)) {
+      const base = def.name.slice(0, 36).replace(/-+$/, '');
+      for (let n = 2; n < 1000; n++) if (!this.flowRow(`${base}-${n}`)) { def = { ...def, name: `${base}-${n}` }; break; }
+    }
     const admin = this.isAdmin(me);
     const existing = this.flowRow(def.name);
     if (existing && (existing.source !== 'member' || existing.owner_id !== me.id)) throw new BotFlowsError('Another bot already uses that name. Choose a different short name.', 409);
@@ -1039,7 +1045,9 @@ export class BotFlows {
     // a slash command belongs to the whole office
     if (def.command && scope !== 'office' && existing?.scope !== 'office') throw new BotFlowsError('A slash command is for office-wide bots. Share it with the office, or leave the command out.');
     if (def.command) { const why = this.commandTaken(def.command, def.name); if (why) throw new BotFlowsError(why, 409); }
-    const bot = this.botUser(def.name, def.title, me);
+    const holdsBack = scope === 'office' && !admin && existing?.scope === 'office';
+    const liveTitle = existing ? parse<BotFlowDefinition | null>(existing.def, null)?.title ?? def.title : def.title;
+    const bot = this.botUser(def.name, holdsBack ? liveTitle : def.title, me);
     const version = existing ? this.nextVersion(def.name) : 1;
     this.keepVersion(def.name, version, def, me.id);
     const now = Date.now();
@@ -1059,7 +1067,6 @@ export class BotFlows {
       this.db.prepare('UPDATE bot_flows SET def = ?, version = ?, scope = ?, space_id = ?, requested = ?, pending_version = NULL, updated_at = ?, updated_by = ? WHERE name = ?')
         .run(JSON.stringify(def), version, liveScope, liveSpace, asksOffice ? 'office' : null, now, me.id, def.name);
     }
-    if (!holdBack) this.d.store.updateUser(bot.id, { displayName: def.title });
     this.d.store.audit(me.id, asksOffice ? 'botflow.requested' : 'botflow.saved', bot.id, { flow: def.name, steps: def.steps.length, source: 'member', version, scope });
     // shared with a Space for the first time: offer it there
     if (liveScope === 'space' && liveSpace && (existing?.scope !== 'space' || existing.space_id !== liveSpace)) {
@@ -1078,7 +1085,7 @@ export class BotFlows {
     return {
       runs: runs.length, finished: count('done'), cancelled: count('cancelled'), expired: count('expired'), active: count('active'),
       steps: def.steps.map((st) => ({
-        id: st.id, label: st.label ?? st.id,
+        id: st.id, label: st.label ?? (st.input.kind === 'confirm' ? 'Confirmation' : st.id),
         reached: runs.filter((x) => x.h.has(st.id) || x.step === st.id).length,
         stopped: runs.filter((x) => (x.status === 'cancelled' || x.status === 'expired') && x.step === st.id).length,
         waiting: runs.filter((x) => x.status === 'active' && x.step === st.id).length,
@@ -1097,7 +1104,7 @@ export class BotFlows {
       const def = r.pending_version ? this.versionDef(name, r.pending_version) : null;
       this.db.prepare('UPDATE bot_flows SET scope = ?, space_id = NULL, requested = NULL, pending_version = NULL, review = ?, def = ?, version = ?, updated_at = ? WHERE name = ?')
         .run('office', review, def ? JSON.stringify(def) : r.def, r.pending_version ?? r.version, Date.now(), name);
-      if (def) this.d.store.updateUser(r.bot_id, { displayName: def.title });
+      if (def && this.d.store.userById(r.bot_id)?.displayName !== def.title) this.d.broadcast('user.updated', this.d.store.updateUser(r.bot_id, { displayName: def.title }));
     } else {
       this.db.prepare('UPDATE bot_flows SET requested = NULL, pending_version = NULL, review = ? WHERE name = ?').run(review, name);
     }

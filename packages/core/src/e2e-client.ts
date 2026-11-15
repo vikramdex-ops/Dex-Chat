@@ -181,7 +181,8 @@ export class E2EClient {
     const c = await this.conv(convId);
     if (!c || c.kind !== 'direct') return { encrypted: false, code: null, missing: [] };
     const keys = await this.keysOf(c.members, true);
-    const missing = c.members.filter((m) => !(keys.get(m)?.length));
+    // a bot has no keys by nature: it is not "on an older version"
+    const missing = c.members.filter((m) => !(keys.get(m)?.length) && !this.bots.has(m));
     const all = [...keys.values()].flat();
     const bot = c.members.some((m) => this.bots.has(m));
     return { encrypted: !missing.length && !bot, code: missing.length ? null : safetyCode(all), missing, required: this.requireE2E && !bot };

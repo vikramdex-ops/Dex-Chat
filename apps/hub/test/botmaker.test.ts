@@ -51,6 +51,10 @@ test('a member makes a private bot: theirs only; shared with a Space: its people
   await assert.rejects(ravi.request('botflow.stats', { name: 'plot-desk' }), /Only the person who made/);
   await assert.rejects(ravi.request('botflow.status', { name: 'plot-desk', status: 'paused' }), /Only the person who made/);
   await assert.rejects(ravi.request('botflow.definition', { name: 'plot-desk' }), /not found/);
+  // a new bot whose short name is taken gets the next free one
+  const theirs = await ravi.request('botflow.make', { definition: { ...PLOT, title: 'Plot desk' }, scope: 'private', newBot: true });
+  assert.equal(theirs.name, 'plot-desk-2');
+  await ravi.request('botflow.delete', { name: 'plot-desk-2' });
   // marks are public (they draw the bot's tile in conversations), its definition is not
   assert.ok((await ravi.request('botflow.marks')).some((m) => m.botId === made.botId && m.mark.glyph === 'plotter'));
 

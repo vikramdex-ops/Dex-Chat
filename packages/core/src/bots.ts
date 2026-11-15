@@ -355,9 +355,10 @@ export interface BotOps {
   'botflow.mine': { req: void; res: BotMakerBot[] };
   /**
    * Make or change your own bot. "office" is asked of an administrator (the bot stays as it was
-   * until then); `baseVersion` refuses the save when someone saved a newer revision meanwhile.
+   * until then); `baseVersion` refuses the save when someone saved a newer revision meanwhile;
+   * `newBot` gives a new bot the next free short name when its own is taken.
    */
-  'botflow.make': { req: { definition: BotFlowDefinition; scope: BotScope; spaceId?: string | null; baseVersion?: number }; res: BotMakerBot };
+  'botflow.make': { req: { definition: BotFlowDefinition; scope: BotScope; spaceId?: string | null; baseVersion?: number; newBot?: boolean }; res: BotMakerBot };
   'botflow.status': { req: { name: string; status: BotStatus }; res: BotFlowInfo };
   'botflow.delete': { req: { name: string }; res: { ok: true } };
   'botflow.stats': { req: { name: string }; res: BotStats };
