@@ -5,8 +5,8 @@
   //   npx wrangler secret put HUB_FINGERPRINT    (paste the fingerprint shown in Control room > Remote access)
   "name": "dexconnect-gateway",
   "main": "src/index.ts",
-  // the guest meeting page (guest/) and the webinar pages (webinar/) are built into src/guest-assets.gen.ts first
-  "build": { "command": "node scripts/build-guest.mjs", "watch_dir": ["guest", "webinar"] },
+  // Dexterity Meet's pages (meet/: the landing page and the meeting) and the webinar pages (webinar/) are built into src/site-assets.gen.ts first
+  "build": { "command": "node scripts/build-guest.mjs", "watch_dir": ["meet", "webinar"] },
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
   "preview_urls": false,

@@ -1,0 +1,94 @@
+/* The meeting itself, for a guest in a browser (room.ts): loaded with it, on Join. Tiles in zones
+   (A1, B1 …) on a ruled field, the meeting's title block with the guest's controls, the meeting
+   chat as a ruled panel. Tokens and the controls it shares with the landing page come from
+   base.css and parts.css. */
+@import './parts.css';
+
+/* ------------------------------------------------------------------ the meeting */
+body.in-room { background-image: none; }
+body.in-room #app { display: block; padding: 0; }
+.room {
+  height: 100vh; height: 100dvh; display: grid; padding: 14px; gap: 12px;
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'banners' 'field' 'block';
+}
+.room.chat-open { grid-template-columns: minmax(0, 1fr) 320px; grid-template-areas: 'banners banners' 'field chat' 'block chat'; }
+.banners { grid-area: banners; display: grid; gap: 6px; }
+.banners:empty { display: none; }
+.banner { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 12px; border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); background: var(--layer); font-size: 14px; }
+.banner .mono { font-weight: 700; letter-spacing: .08em; color: var(--accent); }
+.banner.amber { border-left-color: var(--amber); background: var(--amber-soft); }
+.banner.amber .mono { color: var(--amber-ink); }
+.banner .icon-btn { margin-left: auto; }
+.field { grid-area: field; min-height: 0; overflow: auto; display: grid; align-content: center; gap: 14px; padding: 18px; border: 1px solid var(--text-3); outline: 1px solid var(--stroke-strong); outline-offset: 4px; background: var(--layer); }
+.field.sharing { grid-template-rows: minmax(0, 1fr) auto; align-content: stretch; }
+.grid { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 16px; }
+.grid.strip { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(140px, 180px); justify-content: center; overflow-x: auto; }
+.tile { position: relative; aspect-ratio: 16 / 10; min-width: 0; }
+.face-box { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--stroke-strong); background-color: color-mix(in srgb, var(--tint) 12%, var(--tile)); }
+.tile .face { background: var(--tint); }
+.tile.hand-up .face-box { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft); }
+.tags { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
+.flag, .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
+.hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
+.chat .flag { background: var(--subtle-2); color: var(--text-2); border-color: var(--stroke-strong); }
+.reacts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.reacts span { position: absolute; bottom: 8px; animation: rise 2.4s ease-out forwards; }
+.reacts b { display: inline-grid; place-items: center; min-width: 34px; height: 34px; font-size: 20px; background: var(--layer); border: 1px solid var(--stroke-strong); border-radius: 6px; }
+@keyframes rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-120px); opacity: 0; } }
+.share { position: relative; margin: 0; min-height: 0; border: 1px solid var(--stroke-strong); border-radius: var(--radius); background: #0b1416; overflow: hidden; display: grid; }
+.share video { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+
+/* the title block of the meeting: its name and time, and the guest's controls */
+.room-block { grid-area: block; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 10px 14px; border: 1px solid var(--text-3); background: var(--layer); }
+.rb-name { display: grid; gap: 2px; min-width: 0; max-width: 240px; }
+.rb-name h2 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-facts { display: flex; gap: 16px; padding: 0 16px; border-left: 1px solid var(--stroke-strong); border-right: 1px solid var(--stroke-strong); }
+.rb-facts > div { display: grid; gap: 2px; }
+.mono.big { font-size: 18px; font-weight: 600; }
+.controls { justify-content: flex-end; flex-wrap: nowrap; }
+/* with the chat open the title block is narrower: the clock alone tells the time */
+@media (max-width: 1360px) { .chat-open .rb-facts > div + div { display: none; } }
+/* Leave, as in the app's Rooms: an amber outline (red is kept for errors) */
+.leave { display: inline-flex; align-items: center; gap: 8px; height: 54px; padding: 0 14px; flex: none; border: 1.5px solid var(--amber); border-radius: 4px; background: transparent; color: var(--amber-ink); font-weight: 700; }
+.leave:hover { background: var(--amber-soft); }
+
+/* the meeting chat: a ruled panel */
+.chat { grid-area: chat; display: none; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; border: 1px solid var(--text-3); background: var(--layer); }
+.chat-open .chat { display: grid; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--stroke-strong); }
+.chat-list { overflow: auto; padding: 10px 12px; display: grid; align-content: start; gap: 2px; background-image: linear-gradient(var(--stroke) 1px, transparent 1px); background-size: 100% 28px; }
+.chat-list .empty { margin: 4px 0; }
+.line { padding: 4px 0; }
+.line.run { padding-top: 0; }
+.line-head { display: flex; align-items: center; gap: 8px; }
+.line-head .mono:first-child { font-weight: 700; color: var(--accent); }
+.line.mine .line-head .mono:first-child { color: var(--text-2); }
+.line-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--stroke-strong); }
+.compose .input { resize: none; padding: 8px 10px; min-height: 38px; }
+
+.react-menu { position: fixed; z-index: 10; display: grid; gap: 6px; padding: 10px; background: var(--layer); border: 1px solid var(--stroke-strong); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.react-row { display: flex; gap: 4px; }
+.react-row { gap: 0; }
+.react-row button { width: 40px; height: 40px; border: 1px solid var(--stroke-strong); border-radius: 0; background: var(--layer-2); font-size: 20px; }
+.react-row button + button { margin-left: -1px; }
+.react-row button:hover { position: relative; z-index: 1; }
+.react-row button:hover { border-color: var(--accent); }
+/* ------------------------------------------------------------------ phones */
+@media (max-width: 720px) {
+  .room { padding: 8px; gap: 8px; }
+  .room.chat-open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'banners' 'chat' 'block'; }
+  .room.chat-open .field { display: none; }
+  .field { padding: 10px; outline-offset: 3px; }
+  .grid { gap: 10px; }
+  .room-block { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
+  .rb-facts { border-right: 0; padding-right: 0; }
+  .controls { grid-column: 1 / -1; justify-content: space-between; gap: 4px; }
+  .controls .tool { min-width: 0; flex: 1 1 0; height: 50px; padding: 4px 2px; font-size: 10.5px; }
+  .leave { height: 50px; padding: 0 10px; flex: 1 1 0; justify-content: center; }
+  .grid.strip { grid-auto-columns: 120px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reacts span { animation: none; }
+}

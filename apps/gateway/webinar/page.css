@@ -1,8 +1,8 @@
-/* The webinar pages: the guest page's sheet, title block and tokens, and the webinar's own
+/* The webinar pages: the meeting site's sheet, title block and tokens (sheet.css), and the webinar's own
    sheets: the registration form beside the webinar's facts, the "starting soon" countdown in
    ruled cells, the stage with its caption, and the side panel (questions, the poll, handouts).
    Amber only for what is live or needs the attendee (the live marker, an open poll, a hand). */
-@import '../guest/page.css';
+@import './sheet.css';
 
 .sheet.wide { width: min(1120px, 100%); }
 .req { color: var(--amber-ink); }

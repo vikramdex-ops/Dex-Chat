@@ -10,5 +10,5 @@
     "types": [],
     "skipLibCheck": true
   },
-  "include": ["page.ts"]
+  "include": ["landing.ts", "room.ts", "shared.ts"]
 }
