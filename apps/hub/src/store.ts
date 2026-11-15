@@ -284,7 +284,7 @@ export class Store {
 
   bots(): Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> {
     const rows = this.db.prepare(`SELECT u.*, MIN(t.created_at) AS t_created, MAX(t.last_used) AS t_used, COUNT(t.token_hash) AS n
-      FROM users u LEFT JOIN bot_tokens t ON t.user_id = u.id WHERE u.role = 'bot' AND u.account != 'system\\dexterity-connect' GROUP BY u.id ORDER BY u.display_name`).all() as unknown as Array<UserRow & { t_created: number | null; t_used: number | null; n: number }>;
+      FROM users u LEFT JOIN bot_tokens t ON t.user_id = u.id WHERE u.role = 'bot' AND u.account != 'system\\dexterity-connect' AND u.account NOT LIKE 'botmaker%' GROUP BY u.id ORDER BY u.display_name`).all() as unknown as Array<UserRow & { t_created: number | null; t_used: number | null; n: number }>;
     return rows.map((r) => ({ bot: toPublicUser(r), createdAt: r.t_created ?? r.created_at, lastUsed: r.t_used, active: r.n > 0 }));
   }
 

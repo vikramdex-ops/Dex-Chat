@@ -15,8 +15,8 @@ import crypto from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
-import type { BotSession, Conversation, BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotFlowInfo, BotFlowInput, Message, Ops, PublicUser, SlashCommand } from '@dex/core';
-import { BOTFLOW_DEFAULT_DAYS, BotFlowError, checkAnswer, checkInput, localDate, nextAfter, remainingPath, renderTemplate, saveKey, startVars, stepById, summaryLines, validateFlow } from '@dex/core/botflows';
+import type { BotSession, Conversation, BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotFlowInfo, BotFlowInput, BotMakerBot, BotScope, BotStats, BotStatus, Message, Ops, PublicUser, SlashCommand } from '@dex/core';
+import { BOTFLOW_DEFAULT_DAYS, BOTFLOW_NAME_RE, BotFlowError, checkAnswer, checkInput, doneLine, effectiveVars, flowPosition, hoursText, isUserVar, localDate, nextAfter, nextOpening, rememberable, renderTemplate, saveKey, startVars, stepById, stepCard, summaryLines, summaryText, validateFlow, voiceOf, withinHours } from '@dex/core/botflows';
 import type { BotFlowVars } from '@dex/core/botflows';
 import { isSealed } from '@dex/core/e2e';
 import { BUILT_IN, post } from './commands.ts';
@@ -74,7 +74,40 @@ CREATE TABLE IF NOT EXISTS bot_cards (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_bot_cards_session ON bot_cards(session_id);
+CREATE TABLE IF NOT EXISTS bot_flow_versions (
+  name TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  def TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  created_by TEXT,
+  PRIMARY KEY (name, version)
+);
+CREATE TABLE IF NOT EXISTS bot_memory (
+  flow TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  label TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (flow, user_id, key)
+);
 `;
+
+/** Columns added after the first release (each added once, on an older hub's database). */
+const COLUMNS: Array<[string, string, string]> = [
+  ['bot_flows', 'owner_id', 'TEXT'],
+  ['bot_flows', 'scope', "TEXT NOT NULL DEFAULT 'office'"],
+  ['bot_flows', 'space_id', 'TEXT'],
+  ['bot_flows', 'status', "TEXT NOT NULL DEFAULT 'live'"],
+  ['bot_flows', 'version', 'INTEGER NOT NULL DEFAULT 1'],
+  ['bot_flows', 'requested', 'TEXT'],
+  ['bot_flows', 'pending_version', 'INTEGER'],
+  ['bot_flows', 'review', 'TEXT'],
+  ['bot_sessions', 'flow_version', 'INTEGER'],
+];
+
+/** Member-made bots each get their own identity in conversations, under this account prefix. */
+const MADE_PREFIX = 'botmaker\\';
 
 const DAY = 24 * 3600_000;
 const MAX_BODY = 256 * 1024;
@@ -87,17 +120,22 @@ interface ExtPrompt { text: string; input: BotFlowInput; title?: string; of?: nu
 interface SessionRow {
   id: string; bot_id: string; user_id: string; flow: string | null; conv_id: string; origin_conv_id: string | null;
   step: string | null; history: string; answers: string; vars: string; prompts: string; status: BotSession['status'];
-  started_at: number; updated_at: number; expires_at: number; offered_at: number | null; card: string | null;
+  started_at: number; updated_at: number; expires_at: number; offered_at: number | null; card: string | null; flow_version: number | null;
 }
 interface S {
   id: string; botId: string; userId: string; flow: string | null; convId: string; originConvId: string | null;
   step: string | null; history: string[]; answers: Record<string, BotFlowAnswer>; vars: Record<string, unknown>;
   prompts: Record<string, ExtPrompt>; status: BotSession['status']; startedAt: number; updatedAt: number; expiresAt: number;
   offeredAt: number | null; card: string | null;
+  /** The flow revision this run started on (an edit does not change a run in progress). */
+  flowVersion: number | null;
 }
-interface FlowRow { name: string; bot_id: string; def: string; enabled: number; source: BotFlowInfo['source']; updated_at: number; updated_by: string | null }
+interface FlowRow {
+  name: string; bot_id: string; def: string; enabled: number; source: BotFlowInfo['source']; updated_at: number; updated_by: string | null;
+  owner_id: string | null; scope: BotScope; space_id: string | null; status: BotStatus; version: number; requested: 'office' | null; pending_version: number | null; review: string | null;
+}
 interface CardRow { client_id: string; bot_id: string; session_id: string | null; kind: BotFlowCard['kind']; step: string | null; data: string; message_id: string | null; created_at: number }
-type CardData = Partial<Pick<BotFlowCard, 'title' | 'stepNo' | 'stepCount' | 'prompt' | 'input' | 'answer' | 'previous' | 'canBack' | 'flows' | 'lines' | 'notes' | 'requesterId'>> & { ownerId?: string };
+type CardData = Partial<Pick<BotFlowCard, 'title' | 'stepNo' | 'stepCount' | 'prompt' | 'input' | 'answer' | 'previous' | 'canBack' | 'flows' | 'lines' | 'notes' | 'requesterId' | 'persona' | 'intro' | 'lastTime' | 'lastTimeWords'>> & { ownerId?: string };
 
 function parse<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;
@@ -107,7 +145,7 @@ function parse<T>(raw: string | null | undefined, fallback: T): T {
 const toS = (r: SessionRow): S => ({
   id: r.id, botId: r.bot_id, userId: r.user_id, flow: r.flow, convId: r.conv_id, originConvId: r.origin_conv_id, step: r.step,
   history: parse(r.history, []), answers: parse(r.answers, {}), vars: parse(r.vars, {}), prompts: parse(r.prompts, {}),
-  status: r.status, startedAt: r.started_at, updatedAt: r.updated_at, expiresAt: r.expires_at, offeredAt: r.offered_at, card: r.card,
+  status: r.status, startedAt: r.started_at, updatedAt: r.updated_at, expiresAt: r.expires_at, offeredAt: r.offered_at, card: r.card, flowVersion: r.flow_version ?? null,
 });
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -134,6 +172,9 @@ export class BotFlows {
     this.d = deps;
     this.db = deps.store.db;
     this.db.exec(SCHEMA);
+    for (const [table, col, type] of COLUMNS) {
+      if (!(this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+    }
     this.seed();
   }
 
@@ -171,23 +212,63 @@ export class BotFlows {
       name: r.name, title: def?.title ?? r.name, description: def?.description ?? null, command: def?.command ?? null,
       botId: r.bot_id, botName: this.d.store.userById(r.bot_id)?.displayName ?? 'Integration', enabled: !!r.enabled,
       source: r.source, steps: def?.steps.length ?? 0, updatedAt: r.updated_at,
+      persona: def?.persona ?? null, ownerId: r.owner_id ?? null, scope: r.scope ?? 'office', spaceId: r.space_id ?? null, status: r.status ?? 'live',
+      version: r.version ?? 1, requested: r.requested ?? null, pendingVersion: r.pending_version ?? null, openNow: withinHours(def?.persona?.hours, Date.now()),
     };
   }
 
-  /** A flow people can use now: switched on, and its integration not revoked. */
-  private usable(name: string): { def: BotFlowDefinition; bot: PublicUser } | null {
+  /** A flow people can use now: switched on, and its integration not revoked (the live revision). */
+  private usable(name: string): { def: BotFlowDefinition; bot: PublicUser; row: FlowRow } | null {
     const r = this.flowRow(name);
     if (!r || !r.enabled || !this.d.store.botActive(r.bot_id)) return null;
     const bot = this.d.store.userById(r.bot_id);
     const def = parse<BotFlowDefinition | null>(r.def, null);
-    return bot && def ? { def, bot } : null;
+    return bot && def ? { def, bot, row: r } : null;
   }
 
-  private usableFlows(botId?: string): FlowRow[] {
+  /**
+   * Who may start a flow: an integration's or the office's flows, everyone; a member's bot, its
+   * maker, the people of the Space it is shared with, or everyone once approved office-wide.
+   */
+  private canUse(r: FlowRow, me: PublicUser): boolean {
+    if (r.owner_id && r.owner_id === me.id) return true;
+    if (r.scope === 'private') return false;
+    if (r.scope === 'space') return !!r.space_id && this.d.messaging.members(r.space_id).includes(me.id);
+    return true;
+  }
+
+  /** A flow this person may start now: usable, live, theirs to use. */
+  private startable(name: string, me: PublicUser): { def: BotFlowDefinition; bot: PublicUser; row: FlowRow } | null {
+    const u = this.usable(name);
+    if (!u || !this.canUse(u.row, me)) return null;
+    if (u.row.status === 'paused') throw new BotFlowsError(`${u.def.title} is paused by the person who made it.`, 409);
+    if (u.row.status === 'retired') throw new BotFlowsError(`${u.def.title} has been retired.`, 409);
+    return u;
+  }
+
+  /** The revision a run started on (runs in progress are not changed by later edits). */
+  private versionDef(name: string, version: number): BotFlowDefinition | null {
+    const r = this.db.prepare('SELECT def FROM bot_flow_versions WHERE name = ? AND version = ?').get(name, version) as { def: string } | undefined;
+    return r ? parse<BotFlowDefinition | null>(r.def, null) : null;
+  }
+
+  /** The flow a run in progress follows: switched on and its integration active, at the revision it started on. */
+  private running(s: S): { def: BotFlowDefinition; bot: PublicUser } | null {
+    if (!s.flow) return null;
+    const u = this.usable(s.flow);
+    if (!u) return null;
+    if (s.flowVersion && s.flowVersion !== u.row.version) {
+      const def = this.versionDef(s.flow, s.flowVersion);
+      if (def) return { def, bot: u.bot };
+    }
+    return { def: u.def, bot: u.bot };
+  }
+
+  private usableFlows(botId?: string, me?: PublicUser): FlowRow[] {
     const rows = (botId
       ? this.db.prepare('SELECT * FROM bot_flows WHERE bot_id = ? AND enabled = 1 ORDER BY name').all(botId)
       : this.db.prepare('SELECT * FROM bot_flows WHERE enabled = 1 ORDER BY name').all()) as unknown as FlowRow[];
-    return rows.filter((r) => this.d.store.botActive(r.bot_id));
+    return rows.filter((r) => this.d.store.botActive(r.bot_id) && (r.status ?? 'live') === 'live' && (me ? this.canUse(r, me) : (r.scope ?? 'office') === 'office'));
   }
 
   private row(id: string): S | null {
@@ -201,12 +282,13 @@ export class BotFlows {
   }
 
   private save(s: S): void {
-    this.db.prepare(`INSERT INTO bot_sessions (id, bot_id, user_id, flow, conv_id, origin_conv_id, step, history, answers, vars, prompts, status, started_at, updated_at, expires_at, offered_at, card)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    this.db.prepare(`INSERT INTO bot_sessions (id, bot_id, user_id, flow, conv_id, origin_conv_id, step, history, answers, vars, prompts, status, started_at, updated_at, expires_at, offered_at, card, flow_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET step = excluded.step, history = excluded.history, answers = excluded.answers, vars = excluded.vars, prompts = excluded.prompts,
-        status = excluded.status, updated_at = excluded.updated_at, expires_at = excluded.expires_at, offered_at = excluded.offered_at, card = excluded.card, origin_conv_id = excluded.origin_conv_id`)
+        status = excluded.status, updated_at = excluded.updated_at, expires_at = excluded.expires_at, offered_at = excluded.offered_at, card = excluded.card, origin_conv_id = excluded.origin_conv_id,
+        flow_version = excluded.flow_version`)
       .run(s.id, s.botId, s.userId, s.flow, s.convId, s.originConvId, s.step, JSON.stringify(s.history), JSON.stringify(s.answers), JSON.stringify(s.vars),
-        JSON.stringify(s.prompts), s.status, s.startedAt, s.updatedAt, s.expiresAt, s.offeredAt, s.card);
+        JSON.stringify(s.prompts), s.status, s.startedAt, s.updatedAt, s.expiresAt, s.offeredAt, s.card, s.flowVersion);
   }
 
   /** The session as integrations and apps see it. */
@@ -235,6 +317,9 @@ export class BotFlows {
     } else if (c.kind === 'menu' || c.kind === 'offer') state = 'active';
     const card: BotFlowCard = {
       kind: c.kind, botId: c.bot_id, sessionId: c.session_id, ownerId: s?.userId ?? data.ownerId ?? null, title: data.title ?? '', state,
+      ...(data.persona ? { persona: data.persona } : {}),
+      ...(data.intro ? { intro: data.intro } : {}),
+      ...(data.lastTime && state === 'active' ? { lastTime: data.lastTime, lastTimeWords: data.lastTimeWords ?? '' } : {}),
       ...(c.step ? { stepId: c.step } : {}),
       ...(data.stepNo !== undefined ? { stepNo: data.stepNo } : {}),
       ...(data.stepCount !== undefined ? { stepCount: data.stepCount } : {}),
@@ -299,39 +384,39 @@ export class BotFlows {
   // ------------------------------------------------------------ running a flow
   /** Starting variables plus the answers on the route actually taken (Back leaves answers that no longer count). */
   private effective(s: S): BotFlowVars {
+    const def = this.running(s)?.def;
+    if (def) return effectiveVars(def, { step: s.step, history: s.history, answers: s.answers, vars: s.vars as BotFlowVars });
     const vars = { ...(s.vars as BotFlowVars) };
-    const def = s.flow ? this.usable(s.flow)?.def : null;
-    for (const id of s.history) {
-      const step = def ? stepById(def, id) : undefined;
-      const key = step ? saveKey(step) : id;
-      if (s.answers[key]) vars[key] = s.answers[key];
-    }
+    for (const id of s.history) if (s.answers[id]) vars[id] = s.answers[id];
     return vars;
   }
 
   private position(s: S, def: BotFlowDefinition): { stepNo: number; stepCount: number } {
-    const known = { ...(s.vars as BotFlowVars), ...s.answers };
-    const all = remainingPath(def, def.steps[0].id, known);
-    const at = s.step ? all.indexOf(s.step) : -1;
-    if (at >= 0) return { stepNo: at + 1, stepCount: all.length };
-    const ahead = s.step ? remainingPath(def, s.step, known).length : 0;
-    const done = new Set(s.history).size;
-    return { stepNo: done + 1, stepCount: done + Math.max(1, ahead) };
+    return flowPosition(def, s.step, s.history, { ...(s.vars as BotFlowVars), ...s.answers });
   }
 
   private summaryOf(def: BotFlowDefinition, s: S): { lines: Array<{ label: string; value: string }>; text: string } {
     const lines = summaryLines(def, s.history, this.effective(s));
-    return { lines, text: lines.map((l) => `- **${l.label}:** ${l.value.replace(/\n+/g, '; ')}`).join('\n') };
+    return { lines, text: summaryText(lines) };
   }
 
-  private postStep(s: S, def: BotFlowDefinition, bot: PublicUser): void {
+  /** This person's answer to a step last time, if the bot remembers and it is still a good answer. */
+  private lastTime(s: S, def: BotFlowDefinition, me: PublicUser | null): BotFlowAnswer | null {
     const step = stepById(def, s.step);
-    if (!step) throw new BotFlowsError('This flow changed while you were in it. Start it again.');
-    const vars = { ...this.effective(s) };
-    const { stepNo, stepCount } = this.position(s, def);
-    const prompt = renderTemplate(step.prompt, vars, { summary: this.summaryOf(def, s).text, title: def.title });
-    const previous = step.input.kind !== 'confirm' ? s.answers[saveKey(step)] ?? null : null;
-    this.postCard(bot, s.convId, prompt, 'step', s.id, step.id, { title: def.title, stepNo, stepCount, prompt, input: step.input, previous, canBack: s.history.length > 0 }, [], s);
+    if (!def.persona?.remember || !step || !rememberable(step) || !s.flow) return null;
+    const r = this.db.prepare('SELECT value, label FROM bot_memory WHERE flow = ? AND user_id = ? AND key = ?').get(s.flow, s.userId, saveKey(step)) as { value: string; label: string } | undefined;
+    if (!r) return null;
+    const who = me ?? this.d.store.userById(s.userId);
+    if (!who) return null;
+    try { return checkAnswer(step, r.value, this.answerContext(who, def)); } catch { return null; }
+  }
+
+  private postStep(s: S, def: BotFlowDefinition, bot: PublicUser, fresh = false): void {
+    let data;
+    try {
+      data = stepCard(def, { step: s.step, history: s.history, answers: s.answers, vars: s.vars as BotFlowVars }, { fresh, lastTime: this.lastTime(s, def, null) });
+    } catch (err) { throw new BotFlowsError((err as Error).message); }
+    this.postCard(bot, s.convId, data.prompt, 'step', s.id, s.step, data, [], s);
   }
 
   private postExtStep(s: S, bot: PublicUser): void {
@@ -350,22 +435,27 @@ export class BotFlows {
   }
 
   private days(s: S): number {
-    const def = s.flow ? this.usable(s.flow)?.def : null;
+    const def = this.running(s)?.def;
     return def?.expiresInDays ?? (typeof (s.vars as { __days?: unknown }).__days === 'number' ? (s.vars as { __days: number }).__days : BOTFLOW_DEFAULT_DAYS);
   }
 
   /** Start a flow for someone: the first step appears in their conversation with the integration. */
   async start(me: PublicUser, name: string, originConvId: string | null): Promise<{ sessionId: string; convId: string; resumed: boolean }> {
     if (me.role === 'bot') throw new BotFlowsError('Integrations cannot start flows.');
-    const u = this.usable(name);
+    const u = this.startable(name, me);
     if (!u) throw new BotFlowsError('That flow is not available.', 404);
     const { def, bot } = u;
     const existing = this.activeFor(bot.id, me.id);
     if (existing?.flow === name) {
-      // the same flow again: carry on where they are
-      this.postStep(existing, def, bot);
-      return { sessionId: existing.id, convId: existing.convId, resumed: true };
+      // the same flow again: carry on where they are (on the revision they started)
+      const r = this.running(existing);
+      if (r) {
+        this.postStep(existing, r.def, bot);
+        return { sessionId: existing.id, convId: existing.convId, resumed: true };
+      }
     }
+    const hours = def.persona?.hours;
+    if (hours && !withinHours(hours, Date.now())) throw new BotFlowsError(voiceOf(def.persona?.tone).closed(def.title, hoursText(hours), nextOpening(hours, Date.now())), 409);
     if (existing) this.end(existing, 'cancelled');
     const dm = this.dm(bot, me.id);
     let origin: string | null = null;
@@ -374,10 +464,10 @@ export class BotFlows {
     const s: S = {
       id: ulid(), botId: bot.id, userId: me.id, flow: name, convId: dm, originConvId: origin, step: def.steps[0].id, history: [], answers: {},
       vars: startVars(def, { id: me.id, name: me.displayName, account: me.account }), prompts: {}, status: 'active',
-      startedAt: now, updatedAt: now, expiresAt: now + (def.expiresInDays ?? BOTFLOW_DEFAULT_DAYS) * DAY, offeredAt: null, card: null,
+      startedAt: now, updatedAt: now, expiresAt: now + (def.expiresInDays ?? BOTFLOW_DEFAULT_DAYS) * DAY, offeredAt: null, card: null, flowVersion: u.row.version ?? 1,
     };
     this.save(s);
-    this.postStep(s, def, bot);
+    this.postStep(s, def, bot, true);
     return { sessionId: s.id, convId: dm, resumed: false };
   }
 
@@ -388,10 +478,11 @@ export class BotFlows {
     this.refreshCard(s.card);
   }
 
-  private answerContext(me: PublicUser) {
+  private answerContext(me: PublicUser, def?: BotFlowDefinition | null) {
     const people = () => this.d.store.activeUsers().filter((u) => u.role !== 'bot' && u.id !== me.id);
     return {
       now: Date.now(),
+      tone: def?.persona?.tone,
       person: (v: string) => {
         const id = v.replace(/^<@([0-9A-Z]{26})>$/, '$1').replace(/^@/, '').trim();
         const all = people();
@@ -419,11 +510,11 @@ export class BotFlows {
       if (s.step !== stepId) throw new BotFlowsError('That step was already answered. Answer the newest card.');
       const bot = this.botOf(s);
       if (!s.flow) return await this.answerExternal(me, s, bot, raw);
-      const u = this.usable(s.flow);
+      const u = this.running(s);
       if (!u) { this.end(s, 'cancelled'); throw new BotFlowsError('This flow was switched off by an administrator.'); }
       const step = stepById(u.def, s.step);
       if (!step) { this.end(s, 'cancelled'); throw new BotFlowsError('This flow changed while you were in it. Start it again.'); }
-      const answer = checkAnswer(step, raw, this.answerContext(me));
+      const answer = checkAnswer(step, raw, this.answerContext(me, u.def));
       this.setCardAnswer(s.card, answer);
       s.answers[saveKey(step)] = answer;
       s.history.push(step.id);
@@ -471,7 +562,7 @@ export class BotFlows {
       void this.notify(bot, s, me, { type: 'back' });
       return;
     }
-    const u = this.usable(s.flow);
+    const u = this.running(s);
     if (!u) { this.end(s, 'cancelled'); throw new BotFlowsError('This flow was switched off by an administrator.'); }
     s.history.pop();
     s.step = prev;
@@ -499,16 +590,19 @@ export class BotFlows {
       this.postExtStep(s, bot);
       return;
     }
-    const u = this.usable(s.flow);
+    let u = this.running(s);
     if (!u) { this.end(s, 'cancelled'); throw new BotFlowsError('This flow was switched off by an administrator.'); }
     if (over) {
+      // beginning again: on the newest live revision
+      const live = this.usable(s.flow);
+      if (live) { u = { def: live.def, bot: live.bot }; s.flowVersion = live.row.version ?? 1; }
       s.history = [];
       s.answers = {};
       s.vars = startVars(u.def, { id: me.id, name: me.displayName, account: me.account });
       s.step = u.def.steps[0].id;
     }
     this.touch(s, this.days(s));
-    this.postStep(s, u.def, u.bot);
+    this.postStep(s, u.def, u.bot, over);
   }
 
   /** Due date for a task: 09:00 on the chosen day (or an hour from now if that has passed). */
@@ -534,7 +628,11 @@ export class BotFlows {
     const notes: string[] = [];
     for (const a of def.finish) {
       try {
-        if (a.do === 'task') {
+        if (a.do === 'remind') {
+          const dueAt = this.dueAt(vars, a);
+          this.d.desk.handle('remind.create', me, { text: fill(a.text).slice(0, 500), dueAt });
+          notes.push(`A reminder is on your Desk for ${localDate(dueAt) === localDate(Date.now()) ? 'today' : new Date(dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`);
+        } else if (a.do === 'task') {
           const who = vars[a.assignee]?.value ? this.d.store.userById(vars[a.assignee].value) : null;
           if (!who || who.role === 'bot') { notes.push('No task was created: no one was chosen to do it.'); continue; }
           const dueAt = this.dueAt(vars, a);
@@ -572,8 +670,8 @@ export class BotFlows {
           const reply = await this.callWebhook(bot, {
             type: 'botflow.completed', flow: def.name, sessionId: s.id, at: new Date().toISOString(),
             user: { id: me.id, name: me.displayName, account: me.account },
-            answers: Object.fromEntries(Object.entries(vars).filter(([k]) => k !== 'user' && k !== 'user.account').map(([k, v]) => [k, v.value])),
-            labels: Object.fromEntries(Object.entries(vars).filter(([k]) => k !== 'user' && k !== 'user.account').map(([k, v]) => [k, v.label])),
+            answers: Object.fromEntries(Object.entries(vars).filter(([k]) => !isUserVar(k)).map(([k, v]) => [k, v.value])),
+            labels: Object.fromEntries(Object.entries(vars).filter(([k]) => !isUserVar(k)).map(([k, v]) => [k, v.label])),
             files: fileIds.map((id) => this.d.files.info(id)).filter((f) => f !== null).map((f) => ({ id: f.id, name: f.name, size: f.size, type: f.mime })),
             conversation: s.originConvId ? { id: s.originConvId } : null,
           });
@@ -591,8 +689,16 @@ export class BotFlows {
     s.status = 'done';
     s.step = null;
     this.save(s);
-    const done = fill(def.done ?? 'Done. Thank you.');
-    this.postCard(bot, s.convId, done, 'done', s.id, null, { title: def.title, lines, notes, prompt: done });
+    if (def.persona?.remember && s.flow) {
+      // next time, these answers are offered as the default
+      const keep = this.db.prepare('INSERT INTO bot_memory (flow, user_id, key, value, label, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(flow, user_id, key) DO UPDATE SET value = excluded.value, label = excluded.label, updated_at = excluded.updated_at');
+      for (const st of def.steps) {
+        const a = vars[saveKey(st)];
+        if (rememberable(st) && s.history.includes(st.id) && a?.value) keep.run(s.flow, me.id, saveKey(st), a.value.slice(0, 500), a.label.slice(0, 500), Date.now());
+      }
+    }
+    const done = doneLine(def, vars, summary);
+    this.postCard(bot, s.convId, done, 'done', s.id, null, { title: def.title, lines, notes, prompt: done, ...(def.persona ? { persona: { mark: def.persona.mark, colour: def.persona.colour } } : {}) });
     this.refreshCard(s.card);
     this.d.store.audit(me.id, 'botflow.completed', s.id, { flow: def.name });
   }
@@ -657,7 +763,7 @@ export class BotFlows {
   /** PUT /api/sessions/<user> (and the session in a webhook reply): keep an integration's own state. */
   putSession(bot: PublicUser, user: PublicUser, body: Record<string, unknown>): BotSession {
     let s = this.activeFor(bot.id, user.id);
-    if (s?.flow) throw new BotFlowsError(`${user.displayName} is in the middle of ${this.usable(s.flow)?.def.title ?? 'a flow'} with this integration.`, 409);
+    if (s?.flow) throw new BotFlowsError(`${user.displayName} is in the middle of ${this.running(s)?.def.title ?? 'a flow'} with this integration.`, 409);
     if (body.end === 'done' || body.end === 'cancelled') {
       if (!s) throw new BotFlowsError('There is no conversation in progress.', 404);
       this.end(s, body.end);
@@ -683,7 +789,7 @@ export class BotFlows {
     if (!s) {
       s = {
         id: ulid(), botId: bot.id, userId: user.id, flow: null, convId: this.dm(bot, user.id), originConvId: null, step: step ?? null, history: [], answers: {},
-        vars: {}, prompts: {}, status: 'active', startedAt: now, updatedAt: now, expiresAt: now + days * DAY, offeredAt: null, card: null,
+        vars: {}, prompts: {}, status: 'active', startedAt: now, updatedAt: now, expiresAt: now + days * DAY, offeredAt: null, card: null, flowVersion: null,
       };
     } else if (step !== undefined && step !== s.step && s.step) s.history.push(s.step);
     if (step !== undefined) s.step = step;
@@ -718,22 +824,23 @@ export class BotFlows {
     const text = msg.body.trim();
     const s = this.activeFor(bot.id, author.id);
     if (s?.flow) {
-      if (/^(cancel|stop|quit)$/i.test(text)) { await this.cancel(author, s.id); this.say(bot, convId, 'Cancelled. Nothing was sent.'); return; }
+      const voice = voiceOf(this.running(s)?.def.persona?.tone);
+      if (/^(cancel|stop|quit)$/i.test(text)) { await this.cancel(author, s.id); this.say(bot, convId, voice.cancelled); return; }
       if (/^(back|go back|previous)$/i.test(text)) { await this.back(author, s.id).catch((e: Error) => this.say(bot, convId, e.message)); return; }
       if (/^(resume|continue)$/i.test(text)) { await this.resume(author, s.id, false); return; }
-      const u = this.usable(s.flow);
+      const u = this.running(s);
       const step = u ? stepById(u.def, s.step) : undefined;
       if (!u || !step) { this.end(s, 'cancelled'); this.say(bot, convId, 'That flow is no longer available.'); return; }
       let raw = text;
       if (step.input.kind === 'file' && msg.files.length) raw = msg.files[0].id;
       if (step.input.kind === 'person' && msg.mentions.length && msg.mentions[0] !== 'all') raw = msg.mentions[0];
       try { await this.answer(author, s.id, step.id, raw); } catch (err) {
-        if (err instanceof BotFlowError || err instanceof BotFlowsError) this.say(bot, convId, `${err.message} (Write "cancel" to stop, or "back" for the step before.)`);
+        if (err instanceof BotFlowError || err instanceof BotFlowsError) this.say(bot, convId, `${err.message} ${voice.typedHint}`);
         else throw err;
       }
       return;
     }
-    const flows = this.usableFlows(bot.id).map((r) => ({ r, def: parse<BotFlowDefinition | null>(r.def, null) })).filter((x): x is { r: FlowRow; def: BotFlowDefinition } => !!x.def);
+    const flows = this.usableFlows(bot.id, author).map((r) => ({ r, def: parse<BotFlowDefinition | null>(r.def, null) })).filter((x): x is { r: FlowRow; def: BotFlowDefinition } => !!x.def);
     if (s || !flows.length) {
       // an integration with its own logic: what was written goes to its webhook
       const reply = await this.callWebhook(bot, {
@@ -746,8 +853,8 @@ export class BotFlows {
     const t = text.toLowerCase().replace(/^\//, '');
     const hit = flows.find(({ def }) => [def.name, def.command ?? '', def.title.toLowerCase(), ...(def.keywords ?? [])].filter((k) => k.length > 1)
       .some((k) => t === k || new RegExp(`(^|\\W)${escapeRe(k)}($|\\W)`, 'i').test(t)));
-    if (hit) { await this.start(author, hit.def.name, null); return; }
-    this.postCard(bot, convId, `Here is what ${bot.displayName} can do. Choose one, or write its name.`, 'menu', null, null, {
+    if (hit) { await this.start(author, hit.def.name, null).catch((e: Error) => this.say(bot, convId, e.message)); return; }
+    this.postCard(bot, convId, voiceOf(flows[0]?.def.persona?.tone).menu(bot.displayName), 'menu', null, null, {
       title: bot.displayName, ownerId: author.id,
       flows: flows.map(({ def }) => ({ name: def.name, title: def.title, description: def.description ?? null })),
     });
@@ -765,7 +872,7 @@ export class BotFlows {
         let title = bot.displayName;
         let pos: { stepNo: number; stepCount?: number } = { stepNo: r.history.length + 1 };
         if (r.flow) {
-          const u = this.usable(r.flow);
+          const u = this.running(r);
           if (!u || !stepById(u.def, r.step)) continue;
           title = u.def.title;
           pos = this.position(r, u.def);
@@ -801,7 +908,8 @@ export class BotFlows {
     if (!hit) return null;
     return (async () => {
       const r = await this.start(me, hit.name, convId);
-      const u = this.usable(hit.name)!;
+      const u = this.usable(hit.name);
+      if (!u) return { text: null, ephemeral: true };
       return {
         text: `${r.resumed ? `You already have ${u.def.title} open` : `${u.def.title} started`} in your conversation with ${u.bot.displayName}.`,
         ephemeral: true,
@@ -819,17 +927,39 @@ export class BotFlows {
     return other ? `/${command} already starts ${other.name}.` : null;
   }
 
-  /** Save a flow for an integration (from the Bot API or the Control room). */
+  /** The next revision number of a flow (every saved revision is kept, so runs in progress keep theirs). */
+  private nextVersion(name: string): number {
+    const r = this.db.prepare('SELECT MAX(version) AS v FROM bot_flow_versions WHERE name = ?').get(name) as { v: number | null };
+    const row = this.flowRow(name);
+    return Math.max(r.v ?? 0, row?.version ?? 0, row?.pending_version ?? 0) + 1;
+  }
+
+  /** Keep a revision; the one it replaces is kept first if it never was (flows saved before revisions). */
+  private keepVersion(name: string, version: number, def: BotFlowDefinition, actor: string | null): void {
+    const row = this.flowRow(name);
+    if (row && !this.versionDef(name, row.version ?? 1)) {
+      this.db.prepare('INSERT OR IGNORE INTO bot_flow_versions (name, version, def, created_at, created_by) VALUES (?, ?, ?, ?, ?)').run(name, row.version ?? 1, row.def, row.updated_at, row.updated_by);
+    }
+    this.db.prepare('INSERT OR REPLACE INTO bot_flow_versions (name, version, def, created_at, created_by) VALUES (?, ?, ?, ?, ?)').run(name, version, JSON.stringify(def), Date.now(), actor);
+  }
+
+  /** Save a flow for an integration (from the Bot API or the Control room): it goes live as a new revision. */
   saveFlow(bot: PublicUser, raw: unknown, name: string | undefined, actor: string, source: BotFlowInfo['source']): BotFlowInfo {
     let def: BotFlowDefinition;
     try { def = validateFlow(raw, name); } catch (err) { throw new BotFlowsError((err as Error).message); }
     const existing = this.flowRow(def.name);
     if (existing && existing.bot_id !== bot.id) throw new BotFlowsError('Another integration already has a flow with that name.', 409);
     if (def.command) { const why = this.commandTaken(def.command, def.name); if (why) throw new BotFlowsError(why, 409); }
-    this.db.prepare(`INSERT INTO bot_flows (name, bot_id, def, enabled, source, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?, ?)
-      ON CONFLICT(name) DO UPDATE SET def = excluded.def, source = excluded.source, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
-      .run(def.name, bot.id, JSON.stringify(def), source, Date.now(), actor);
-    this.d.store.audit(actor, 'botflow.saved', bot.id, { flow: def.name, steps: def.steps.length, source });
+    const version = existing ? this.nextVersion(def.name) : 1;
+    this.keepVersion(def.name, version, def, actor);
+    // an administrator saving a member's bot keeps it theirs, and settles anything waiting for review
+    const keep = existing?.source === 'member' ? 'member' : source;
+    this.db.prepare(`INSERT INTO bot_flows (name, bot_id, def, enabled, source, updated_at, updated_by, version) VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET def = excluded.def, source = excluded.source, updated_at = excluded.updated_at, updated_by = excluded.updated_by,
+        version = excluded.version, pending_version = NULL, requested = NULL`)
+      .run(def.name, bot.id, JSON.stringify(def), keep, Date.now(), actor, version);
+    if (keep === 'member') this.d.store.updateUser(bot.id, { displayName: def.title });
+    this.d.store.audit(actor, 'botflow.saved', bot.id, { flow: def.name, steps: def.steps.length, source, version });
     this.d.broadcast('botflow.catalog', { changed: true });
     return this.info(this.flowRow(def.name)!);
   }
@@ -839,8 +969,141 @@ export class BotFlows {
     if (!r) throw new BotFlowsError('Flow not found.', 404);
     for (const s of (this.db.prepare("SELECT * FROM bot_sessions WHERE flow = ? AND status = 'active'").all(name) as unknown as SessionRow[]).map(toS)) this.end(s, 'cancelled');
     this.db.prepare('DELETE FROM bot_flows WHERE name = ?').run(name);
+    this.db.prepare('DELETE FROM bot_flow_versions WHERE name = ?').run(name);
+    this.db.prepare('DELETE FROM bot_memory WHERE flow = ?').run(name);
+    // a member's bot speaks for no one once it is gone (its old messages stay, read-only)
+    if (r.source === 'member') this.d.store.revokeBotTokens(r.bot_id);
     this.d.store.audit(actor, 'botflow.removed', r.bot_id, { flow: name });
     this.d.broadcast('botflow.catalog', { changed: true });
+  }
+
+  // ------------------------------------------------------------ bots members make
+  private isAdmin = (me: PublicUser) => me.role === 'owner' || me.role === 'admin';
+
+  /** The live definition, and the newest revision waiting for review (if any). */
+  private latest(r: FlowRow): BotFlowDefinition {
+    const live = parse<BotFlowDefinition>(r.def, { name: r.name, title: r.name, steps: [], finish: [] });
+    return (r.pending_version ? this.versionDef(r.name, r.pending_version) : null) ?? live;
+  }
+
+  private mineView(r: FlowRow): BotMakerBot {
+    const n = this.db.prepare("SELECT COUNT(*) AS runs, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS finished FROM bot_sessions WHERE flow = ?").get(r.name) as { runs: number; finished: number | null };
+    return { ...this.info(r), definition: this.latest(r), runs: n.runs, finished: n.finished ?? 0, review: parse(r.review, null) };
+  }
+
+  /** A member's own bot (or any, for an administrator). */
+  private ownBot(me: PublicUser, name: string, adminToo = true): FlowRow {
+    const r = this.flowRow(name);
+    if (!r || r.source !== 'member') throw new BotFlowsError('That bot was not found.', 404);
+    if (r.owner_id !== me.id && !(adminToo && this.isAdmin(me))) throw new BotFlowsError('Only the person who made this bot can change it.', 403);
+    return r;
+  }
+
+  /** The identity a member's bot speaks with in conversations (created once; renamed with the bot). */
+  private botUser(name: string, title: string, me: PublicUser): PublicUser {
+    const account = `${MADE_PREFIX}${name}`;
+    let bot = this.d.store.userByAccount(account);
+    if (!bot) bot = this.d.store.createUser(account, title, 'bot');
+    else if (bot.displayName !== title) bot = this.d.store.updateUser(bot.id, { displayName: title });
+    // active while it has a token; no one is ever given this one
+    if (!this.d.store.botActive(bot.id)) this.d.store.createBotToken(bot.id, crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'), me.id);
+    return bot;
+  }
+
+  /** Make or change one's own bot; see `botflow.make`. */
+  make(me: PublicUser, d: Record<string, unknown>): BotMakerBot {
+    if (me.role === 'guest' || me.role === 'bot') throw new BotFlowsError('Guests cannot make bots.', 403);
+    let def: BotFlowDefinition;
+    try { def = validateFlow(d.definition); } catch (err) { throw new BotFlowsError((err as Error).message); }
+    if (!BOTFLOW_NAME_RE.test(def.name)) throw new BotFlowsError('Give the bot a name.');
+    const admin = this.isAdmin(me);
+    const existing = this.flowRow(def.name);
+    if (existing && (existing.source !== 'member' || existing.owner_id !== me.id)) throw new BotFlowsError('Another bot already uses that name. Choose a different short name.', 409);
+    if (existing && typeof d.baseVersion === 'number' && d.baseVersion !== (existing.pending_version ?? existing.version)) {
+      throw new BotFlowsError(`This bot was saved elsewhere since you opened it (now revision ${existing.pending_version ?? existing.version}). Open it again to see the changes.`, 409);
+    }
+    if (!admin && def.finish.some((a) => a.do === 'webhook')) throw new BotFlowsError('Only administrators can call a webhook at the end. Use a Desk task, a post or a reminder.', 403);
+    for (const a of def.finish) {
+      if (a.do !== 'post' || !a.to.startsWith('space:')) continue;
+      const id = this.d.messaging.spaceByName(a.to.slice(6));
+      if (!id) throw new BotFlowsError(`There is no Space called ${a.to.slice(6)}.`);
+      if (!this.d.messaging.members(id).includes(me.id)) throw new BotFlowsError(`You can post to ${a.to.slice(6)} only if you are in that Space.`, 403);
+    }
+    const scope: BotScope = d.scope === 'space' || d.scope === 'office' ? d.scope : 'private';
+    let spaceId: string | null = null;
+    if (scope === 'space') {
+      spaceId = typeof d.spaceId === 'string' ? d.spaceId : '';
+      const conv = (() => { try { return this.d.messaging.memberConv(spaceId, me.id) as unknown as { id: string; kind: string }; } catch { return null; } })();
+      if (!conv || conv.kind !== 'space') throw new BotFlowsError('Choose a Space you are in to share it with.');
+    }
+    // a slash command belongs to the whole office
+    if (def.command && scope !== 'office' && existing?.scope !== 'office') throw new BotFlowsError('A slash command is for office-wide bots. Share it with the office, or leave the command out.');
+    if (def.command) { const why = this.commandTaken(def.command, def.name); if (why) throw new BotFlowsError(why, 409); }
+    const bot = this.botUser(def.name, def.title, me);
+    const version = existing ? this.nextVersion(def.name) : 1;
+    this.keepVersion(def.name, version, def, me.id);
+    const now = Date.now();
+    // office-wide needs an administrator: until then it stays as it was (private when new)
+    const wasOffice = existing?.scope === 'office';
+    const asksOffice = scope === 'office' && !admin;
+    const liveScope: BotScope = scope === 'office' ? (admin || wasOffice ? 'office' : existing?.scope === 'space' ? 'space' : 'private') : scope;
+    const liveSpace = liveScope === 'space' ? (scope === 'space' ? spaceId : existing?.space_id ?? null) : null;
+    // a newer revision of an office-wide bot waits for review; everyone keeps using the approved one
+    const holdBack = asksOffice && wasOffice;
+    if (!existing) {
+      this.db.prepare(`INSERT INTO bot_flows (name, bot_id, def, enabled, source, updated_at, updated_by, owner_id, scope, space_id, status, version, requested, pending_version)
+        VALUES (?, ?, ?, 1, 'member', ?, ?, ?, ?, ?, 'live', ?, ?, NULL)`).run(def.name, bot.id, JSON.stringify(def), now, me.id, me.id, liveScope, liveSpace, version, asksOffice ? 'office' : null);
+    } else if (holdBack) {
+      this.db.prepare('UPDATE bot_flows SET requested = ?, pending_version = ?, updated_at = ?, updated_by = ? WHERE name = ?').run('office', version, now, me.id, def.name);
+    } else {
+      this.db.prepare('UPDATE bot_flows SET def = ?, version = ?, scope = ?, space_id = ?, requested = ?, pending_version = NULL, updated_at = ?, updated_by = ? WHERE name = ?')
+        .run(JSON.stringify(def), version, liveScope, liveSpace, asksOffice ? 'office' : null, now, me.id, def.name);
+    }
+    if (!holdBack) this.d.store.updateUser(bot.id, { displayName: def.title });
+    this.d.store.audit(me.id, asksOffice ? 'botflow.requested' : 'botflow.saved', bot.id, { flow: def.name, steps: def.steps.length, source: 'member', version, scope });
+    // shared with a Space for the first time: offer it there
+    if (liveScope === 'space' && liveSpace && (existing?.scope !== 'space' || existing.space_id !== liveSpace)) {
+      try { this.d.messaging.ensureMember(liveSpace, bot.id); this.offer(bot, def, liveSpace); } catch (err) { this.d.log('warn', 'bot offer not posted', { error: (err as Error).message }); }
+    }
+    this.d.broadcast('botflow.catalog', { changed: true });
+    return this.mineView(this.flowRow(def.name)!);
+  }
+
+  /** How a bot is used: runs, where people stop, recent runs (who, only for finished ones). */
+  stats(r: FlowRow): BotStats {
+    const def = parse<BotFlowDefinition>(r.def, { name: r.name, title: r.name, steps: [], finish: [] });
+    const rows = this.db.prepare('SELECT status, step, history, started_at, user_id, flow_version FROM bot_sessions WHERE flow = ? ORDER BY started_at DESC LIMIT 5000').all(r.name) as unknown as Array<{ status: BotSession['status']; step: string | null; history: string; started_at: number; user_id: string; flow_version: number | null }>;
+    const runs = rows.map((x) => ({ ...x, h: new Set(parse<string[]>(x.history, [])) }));
+    const count = (st: BotSession['status']) => runs.filter((x) => x.status === st).length;
+    return {
+      runs: runs.length, finished: count('done'), cancelled: count('cancelled'), expired: count('expired'), active: count('active'),
+      steps: def.steps.map((st) => ({
+        id: st.id, label: st.label ?? st.id,
+        reached: runs.filter((x) => x.h.has(st.id) || x.step === st.id).length,
+        stopped: runs.filter((x) => (x.status === 'cancelled' || x.status === 'expired') && x.step === st.id).length,
+        waiting: runs.filter((x) => x.status === 'active' && x.step === st.id).length,
+      })),
+      recent: runs.slice(0, 15).map((x) => ({ at: x.started_at, status: x.status, reached: x.h.size, userId: x.status === 'done' ? x.user_id : null, version: x.flow_version ?? 1 })),
+      versions: (this.db.prepare('SELECT version, created_at, created_by FROM bot_flow_versions WHERE name = ? ORDER BY version DESC LIMIT 30').all(r.name) as Array<{ version: number; created_at: number; created_by: string | null }>)
+        .map((v) => ({ version: v.version, at: v.created_at, by: v.created_by })),
+    };
+  }
+
+  private review(me: PublicUser, name: string, approve: boolean, note: string | null): BotFlowInfo {
+    const r = this.flowRow(name);
+    if (!r || r.source !== 'member' || r.requested !== 'office') throw new BotFlowsError('Nothing is waiting for review on that bot.', 404);
+    const review = JSON.stringify({ approved: approve, note, by: me.id, at: Date.now() });
+    if (approve) {
+      const def = r.pending_version ? this.versionDef(name, r.pending_version) : null;
+      this.db.prepare('UPDATE bot_flows SET scope = ?, space_id = NULL, requested = NULL, pending_version = NULL, review = ?, def = ?, version = ?, updated_at = ? WHERE name = ?')
+        .run('office', review, def ? JSON.stringify(def) : r.def, r.pending_version ?? r.version, Date.now(), name);
+      if (def) this.d.store.updateUser(r.bot_id, { displayName: def.title });
+    } else {
+      this.db.prepare('UPDATE bot_flows SET requested = NULL, pending_version = NULL, review = ? WHERE name = ?').run(review, name);
+    }
+    this.d.store.audit(me.id, approve ? 'botflow.approved' : 'botflow.rejected', r.bot_id, { flow: name, version: r.pending_version ?? r.version, note });
+    this.d.broadcast('botflow.catalog', { changed: true });
+    return this.info(this.flowRow(name)!);
   }
 
   private offer(bot: PublicUser, def: BotFlowDefinition, convId: string): string {
@@ -856,7 +1119,41 @@ export class BotFlows {
     const sid = typeof d.sessionId === 'string' ? d.sessionId : '';
     switch (op) {
       case 'botflow.list':
-        return this.usableFlows().map((r) => this.info(r)) satisfies Ops['botflow.list']['res'];
+        return this.usableFlows(undefined, me).map((r) => this.info(r)) satisfies Ops['botflow.list']['res'];
+      case 'botflow.mine':
+        return (this.db.prepare("SELECT * FROM bot_flows WHERE source = 'member' AND owner_id = ? ORDER BY updated_at DESC").all(me.id) as unknown as FlowRow[])
+          .map((r) => this.mineView(r)) satisfies Ops['botflow.mine']['res'];
+      case 'botflow.make':
+        return this.make(me, d) satisfies Ops['botflow.make']['res'];
+      case 'botflow.status': {
+        const r = this.ownBot(me, String(d.name ?? ''));
+        const st = d.status === 'paused' || d.status === 'retired' ? d.status : d.status === 'live' ? 'live' : null;
+        if (!st) throw new BotFlowsError('The status is live, paused or retired.');
+        // runs in progress may finish; only new runs are refused
+        this.db.prepare('UPDATE bot_flows SET status = ?, updated_at = ?, updated_by = ? WHERE name = ?').run(st, Date.now(), me.id, r.name);
+        this.d.store.audit(me.id, `botflow.${st === 'live' ? 'resumed' : st}`, r.bot_id, { flow: r.name });
+        this.d.broadcast('botflow.catalog', { changed: true });
+        return this.info(this.flowRow(r.name)!) satisfies Ops['botflow.status']['res'];
+      }
+      case 'botflow.delete':
+        this.removeFlow(this.ownBot(me, String(d.name ?? '')).name, me.id);
+        return { ok: true } satisfies Ops['botflow.delete']['res'];
+      case 'botflow.stats':
+        return this.stats(this.ownBot(me, String(d.name ?? ''))) satisfies Ops['botflow.stats']['res'];
+      case 'botflow.definition': {
+        const r = this.flowRow(String(d.name ?? ''));
+        const mine = r && r.source === 'member' && r.owner_id === me.id;
+        if (!r || (!mine && (!this.usable(r.name) || !this.canUse(r, me)))) throw new BotFlowsError('That bot was not found.', 404);
+        return { definition: mine ? this.latest(r) : parse<BotFlowDefinition>(r.def, { name: r.name, title: r.name, steps: [], finish: [] }) } satisfies Ops['botflow.definition']['res'];
+      }
+      case 'botflow.forget':
+        this.db.prepare('DELETE FROM bot_memory WHERE flow = ? AND user_id = ?').run(String(d.name ?? ''), me.id);
+        return { ok: true } satisfies Ops['botflow.forget']['res'];
+      case 'botflow.marks':
+        return (this.db.prepare("SELECT * FROM bot_flows WHERE source = 'member'").all() as unknown as FlowRow[])
+          .map((r) => ({ r, p: parse<BotFlowDefinition | null>(r.def, null) }))
+          .filter((x) => !!x.p?.persona)
+          .map(({ r, p }) => ({ botId: r.bot_id, name: p!.title, mark: p!.persona!.mark, colour: p!.persona!.colour })) satisfies Ops['botflow.marks']['res'];
       case 'botflow.start':
         return await this.start(me, String(d.flow ?? ''), typeof d.convId === 'string' ? d.convId : null) satisfies Ops['botflow.start']['res'];
       case 'botflow.answer': {
@@ -871,10 +1168,12 @@ export class BotFlows {
           .map((r) => this.sessionView(toS(r))) satisfies Ops['botflow.sessions']['res'];
       case 'botflow.offer': {
         if (me.role === 'guest' || me.role === 'bot') throw new BotFlowsError('Guests cannot offer flows.', 403);
-        const u = this.usable(String(d.flow ?? ''));
+        const u = this.startable(String(d.flow ?? ''), me);
         if (!u) throw new BotFlowsError('That flow is not available.', 404);
         const conv = this.d.messaging.memberConv(String(d.convId ?? ''), me.id) as unknown as { id: string; kind: string };
         if (conv.kind !== 'space') throw new BotFlowsError('Offer a flow in a Space.');
+        if (u.row.scope === 'private') throw new BotFlowsError('Share the bot before offering it: it is private to you.');
+        if (u.row.scope === 'space' && u.row.space_id !== conv.id) throw new BotFlowsError('This bot is shared with another Space only.');
         this.d.messaging.ensureMember(conv.id, u.bot.id);
         const clientId = this.offer(u.bot, u.def, conv.id);
         const r = this.db.prepare('SELECT message_id FROM bot_cards WHERE client_id = ?').get(clientId) as { message_id: string };
@@ -883,7 +1182,13 @@ export class BotFlows {
       case 'admin.botflows.list':
         admin();
         return (this.db.prepare('SELECT * FROM bot_flows ORDER BY name').all() as unknown as FlowRow[])
-          .map((r) => ({ ...this.info(r), definition: parse<BotFlowDefinition>(r.def, { name: r.name, title: r.name, steps: [], finish: [] }) })) satisfies Ops['admin.botflows.list']['res'];
+          .map((r) => ({
+            ...this.info(r), definition: parse<BotFlowDefinition>(r.def, { name: r.name, title: r.name, steps: [], finish: [] }),
+            pending: r.pending_version ? this.versionDef(r.name, r.pending_version) : null,
+          })) satisfies Ops['admin.botflows.list']['res'];
+      case 'admin.botflows.review':
+        admin();
+        return this.review(me, String(d.name ?? ''), d.approve === true, typeof d.note === 'string' && d.note.trim() ? d.note.trim().slice(0, 300) : null) satisfies Ops['admin.botflows.review']['res'];
       case 'admin.botflows.save': {
         admin();
         const bot = typeof d.botId === 'string' ? this.d.store.userById(d.botId) : null;
