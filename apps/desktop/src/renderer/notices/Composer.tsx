@@ -178,7 +178,7 @@ export default function NoticeComposer({ id, deskId, session, onClose }: { id?: 
                 </section>
 
                 <section>
-                  <div className="label nb-num">{`04 · For · ${count === 1 ? '1 person now' : `${count} people now`}`}</div>
+                  <div className="label nb-num">{count === 1 ? '04 · For · 1 person now' : `04 · For · ${count} people now`}</div>
                   <ToggleRow checked={f.audience.everyone} onChange={(v) => set({ audience: { ...f.audience, everyone: v } })} label="Everyone in the office (never guests)" />
                   {!f.audience.everyone && (
                     <div className="nb-aud">
@@ -245,8 +245,8 @@ export default function NoticeComposer({ id, deskId, session, onClose }: { id?: 
                   {(['hi', 'ta'] as NoticeLang[]).map((l) => (
                     <details key={l} className="nb-tr" open={!!(f.translations[l]?.title || f.translations[l]?.body)}>
                       <summary><span translate="no">{LANG_NAME[l]}</span></summary>
-                      <input className="input" lang={l} aria-label={`Title in ${l === 'hi' ? 'Hindi' : 'Tamil'}`} maxLength={160} value={f.translations[l]?.title ?? ''} onChange={(e) => set({ translations: { ...f.translations, [l]: { title: e.target.value, body: f.translations[l]?.body ?? '' } } })} />
-                      <textarea className="input" lang={l} rows={5} aria-label={`The notice in ${l === 'hi' ? 'Hindi' : 'Tamil'}`} maxLength={20000} value={f.translations[l]?.body ?? ''} onChange={(e) => set({ translations: { ...f.translations, [l]: { title: f.translations[l]?.title ?? '', body: e.target.value } } })} />
+                      <input className="input" lang={l} aria-label={l === 'hi' ? 'Title in Hindi' : 'Title in Tamil'} maxLength={160} value={f.translations[l]?.title ?? ''} onChange={(e) => set({ translations: { ...f.translations, [l]: { title: e.target.value, body: f.translations[l]?.body ?? '' } } })} />
+                      <textarea className="input" lang={l} rows={5} aria-label={l === 'hi' ? 'The notice in Hindi' : 'The notice in Tamil'} maxLength={20000} value={f.translations[l]?.body ?? ''} onChange={(e) => set({ translations: { ...f.translations, [l]: { title: f.translations[l]?.title ?? '', body: e.target.value } } })} />
                     </details>
                   ))}
                 </section>

@@ -121,13 +121,13 @@ export function NoticeReading({ n, users, me, landing = false, preview = false, 
         </div>
         <dl className="nb-tb-cells">
           <div className="nb-cell wide"><dt>Issued by</dt><dd><span translate="no">{n.deskName}</span>{author && <> · <span translate="no">{author.displayName}</span></>}</dd></div>
-          <div className="nb-cell"><dt>No.</dt><dd className="mono" translate="no">{n.number ?? n.nextNumber}</dd></div>
+          <div className="nb-cell"><dt>Number</dt><dd className="mono" translate="no">{n.number ?? n.nextNumber}</dd></div>
           <div className="nb-cell"><dt>Rev</dt><dd className="mono nb-rev" translate="no">{shownRev.rev}</dd></div>
           <div className="nb-cell"><dt>Date</dt><dd>{shownRev.issuedAt ? dateText(shownRev.issuedAt) : preview ? 'On issue' : '—'}</dd></div>
           <div className="nb-cell"><dt>Effective</dt><dd>{dateText(shownRev.effectiveAt ?? shownRev.issuedAt) || (preview ? 'On issue' : '—')}</dd></div>
           <div className="nb-cell"><dt>Expires</dt><dd>{dateText(shownRev.expiresAt) || 'No expiry'}</dd></div>
-          <div className="nb-cell wide"><dt>For</dt><dd><AudienceWords a={shownRev.audience} departments={org.departments} users={users} /></dd></div>
-          <div className="nb-cell"><dt>Status</dt><dd>{old ? STATUS_LABEL[shownRev.status] : STATUS_LABEL[n.status]}</dd></div>
+          <div className="nb-cell wide for"><dt>Addressed to</dt><dd><AudienceWords a={shownRev.audience} departments={org.departments} users={users} /></dd></div>
+          <div className="nb-cell st"><dt>Status</dt><dd>{old ? STATUS_LABEL[shownRev.status] : STATUS_LABEL[n.status]}</dd></div>
         </dl>
         {n.status === 'withdrawn' && n.withdrawn && !old && (
           <div className="nb-big-stamp withdrawn" role="note"><span>Withdrawn</span><small>{dateText(n.withdrawn.at)}</small></div>
@@ -137,7 +137,7 @@ export function NoticeReading({ n, users, me, landing = false, preview = false, 
       </header>
 
       {n.status === 'withdrawn' && n.withdrawn && !old && (
-        <p className="nb-withdrawn-note" role="note">{`Withdrawn on ${dateText(n.withdrawn.at)} by ${users.get(n.withdrawn.by)?.displayName ?? 'the desk'}.`} <span translate="no">{n.withdrawn.reason}</span></p>
+        <p className="nb-withdrawn-note" role="note">{users.get(n.withdrawn.by) ? `Withdrawn on ${dateText(n.withdrawn.at)} by ${users.get(n.withdrawn.by)!.displayName}.` : `Withdrawn on ${dateText(n.withdrawn.at)}.`} <span translate="no">{n.withdrawn.reason}</span></p>
       )}
 
       {n.canIssue && !preview && !old && (

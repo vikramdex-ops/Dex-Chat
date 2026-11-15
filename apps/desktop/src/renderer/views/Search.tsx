@@ -188,7 +188,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <span className="file-ico"><Icon name="notice" size={18} /></span>
               <span className="sb-main">
                 <span className="search-meta"><b translate="no" className="sm-where">{titleOf(h.notice)}</b><span className="mono faint" translate="no">{refText(h.notice)}</span></span>
-                <span className="search-snippet">{h.where === 'pdf' && <span className="faint">In the PDF: </span>}<Snippet text={h.snippet} /></span>
+                <span className="search-snippet">{h.where === 'pdf' && <span className="chip accent nb-in-pdf">In the PDF</span>}<Snippet text={h.snippet} /></span>
               </span>
             </button>
           ))}

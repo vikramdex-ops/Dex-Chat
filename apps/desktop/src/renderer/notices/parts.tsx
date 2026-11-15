@@ -111,7 +111,7 @@ export function RevisionCloud({ rev, children }: { rev: string; children: ReactN
           <path d={cloudPath(size.w, size.h)} />
         </svg>
       )}
-      <span className="nb-rev-tri" title={`Changed in Rev ${rev}`}><svg viewBox="0 0 24 21" aria-hidden="true"><path d="M12 1.5 22.5 19.5h-21z" /></svg><b translate="no">{rev}</b></span>
+      <span className="nb-rev-tri" aria-hidden="true"><svg viewBox="0 0 24 21" aria-hidden="true"><path d="M12 1.5 22.5 19.5h-21z" /></svg><b translate="no">{rev}</b></span>
       <span className="nb-sr">{`Changed in Rev ${rev}.`}</span>
       {children}
     </div>

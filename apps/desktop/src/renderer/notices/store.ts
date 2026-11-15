@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import type { NoticeList, NoticeSummary } from '@dex/core';
 import { alertUser } from '../alerts.ts';
+import { tr } from '../i18n/index.ts';
 
 interface NoticeState {
   list: NoticeList | null;
@@ -40,7 +41,7 @@ export function startNotices(): void {
         set({ fresh: new Set([...state.fresh, d.id]) });
         const n = d.issued;
         const what = n.urgent ? 'Urgent notice' : n.ackRequired ? 'A notice for you to acknowledge' : 'A new notice';
-        alertUser(n.urgent || n.ackRequired ? 'personal' : 'message', `${what} · ${n.deskName}`, `${n.number ?? ''} ${n.title}`.trim(), `dexconnect://notices/${n.id}`);
+        alertUser(n.urgent || n.ackRequired ? 'personal' : 'message', `${tr(what)} · ${n.deskName}`, `${n.number ?? ''} ${n.title}`.trim(), `dexconnect://notices/${n.id}`);
       }
       soon();
     });

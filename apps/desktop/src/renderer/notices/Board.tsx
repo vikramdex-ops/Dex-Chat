@@ -152,7 +152,8 @@ export default function NoticeBoard({ session }: { session: Session }) {
 }
 
 function RegisterRow({ n, plot }: { n: NoticeSummary; plot: boolean }) {
-  const label = [`${n.number} Rev ${n.rev}`, titleOf(n), n.needsAck ? 'needs your acknowledgement' : !n.seen ? 'not opened yet' : ''].filter(Boolean).join(', ');
+  const t = titleOf(n);
+  const label = n.needsAck ? `${n.number} Rev ${n.rev}, ${t}, needs your acknowledgement` : !n.seen && n.status === 'issued' ? `${n.number} Rev ${n.rev}, ${t}, not opened yet` : `${n.number} Rev ${n.rev}, ${t}`;
   return (
     <div role="listitem" className="nb-li">
       <button className={`nb-row${n.needsAck ? ' need' : !n.seen && n.status === 'issued' ? ' unseen' : ''}${plot ? ' plot' : ''}${n.status === 'withdrawn' ? ' withdrawn' : ''}`} onClick={() => openNotice(n.id)} aria-label={label}>
@@ -172,7 +173,7 @@ function ShelfStack({ n }: { n: NoticeSummary }) {
   return (
     <div role="listitem" className="nb-stack-wrap">
       <button className={`nb-stack${n.needsAck ? ' need' : ''}`} style={{ '--behind': behind } as React.CSSProperties} onClick={() => openNotice(n.id)}
-        aria-label={`${n.number} Rev ${n.rev}, ${titleOf(n)}${n.needsAck ? ', needs your acknowledgement' : n.acked ? ', acknowledged' : ''}`}>
+        aria-label={n.needsAck ? `${n.number} Rev ${n.rev}, ${titleOf(n)}, needs your acknowledgement` : n.acked ? `${n.number} Rev ${n.rev}, ${titleOf(n)}, acknowledged` : `${n.number} Rev ${n.rev}, ${titleOf(n)}`}>
         {Array.from({ length: behind }, (_, i) => <span key={i} className="nb-stack-sheet" style={{ '--i': i + 1 } as React.CSSProperties} aria-hidden="true" />)}
         <span className="nb-stack-top">
           <span className="nb-pin" aria-hidden="true" />
