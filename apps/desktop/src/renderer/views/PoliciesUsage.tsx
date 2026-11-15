@@ -59,7 +59,7 @@ export function PoliciesAdmin() {
         </div>
       </section>
       <section className="card">
-        <div className="eyebrow">Calls</div>
+        <div className="eyebrow">Rooms</div>
         <div className="setting" style={{ marginTop: 6 }}>
           <div className="txt"><div>People can record calls</div><div className="faint">Everyone in the call sees that it is being recorded. The recording is kept on the hub (up to the size set under Meetings), and the person who recorded it chooses who can watch it.</div></div>
           <Toggle label="People can record calls" checked={p.allowRecording} onChange={(v) => save({ allowRecording: v })} />
@@ -129,7 +129,7 @@ function DailyChart({ daily }: { daily: UsageReport['daily'] }) {
             <b>{shortDay(h.day)}</b>
             <span><i className="sw s1" />Spaces <b>{h.space}</b></span>
             <span><i className="sw s2" />Direct <b>{h.direct}</b></span>
-            <span className="faint">{h.activePeople} {h.activePeople === 1 ? "person" : "people"} · {h.calls} {h.calls === 1 ? "call" : "calls"}{h.callMinutes ? ` · ${h.callMinutes} min` : ''}</span>
+            <span className="faint">{h.activePeople} {h.activePeople === 1 ? "person" : "people"} · {h.calls} {h.calls === 1 ? "Room" : "Rooms"}{h.callMinutes ? ` · ${h.callMinutes} min` : ''}</span>
           </div>
         )}
       </div>
@@ -156,14 +156,14 @@ export function UsageAdmin({ users }: { users: PublicUser[] }) {
           <div className="usage-tiles">
             <div className="card tile"><span className="eyebrow">People active</span><b>{r.totals.activePeople}</b><span className="faint">of {r.totals.people} · {r.totals.activeDevices} devices seen</span></div>
             <div className="card tile"><span className="eyebrow">Messages</span><b>{r.totals.messages.toLocaleString()}</b><span className="faint">{Math.round(r.totals.messages / r.days).toLocaleString()} a day · {r.totals.spaces} Spaces</span></div>
-            <div className="card tile"><span className="eyebrow">Calls</span><b>{r.totals.calls}</b><span className="faint">{r.totals.callMinutes.toLocaleString()} minutes talked</span></div>
+            <div className="card tile"><span className="eyebrow">Rooms</span><b>{r.totals.calls}</b><span className="faint">{r.totals.callMinutes.toLocaleString()} minutes talked</span></div>
             <div className="card tile"><span className="eyebrow">Files stored</span><b>{formatSize(r.totals.fileBytes)}</b><span className="faint">{r.totals.files.toLocaleString()} files on the hub</span></div>
           </div>
           <section className="card">
             <div className="eyebrow">Messages per day</div>
             {table ? (
               <div className="usage-table"><table>
-                <thead><tr><th>Day</th><th>Spaces</th><th>Direct</th><th>People</th><th>Calls</th><th>Call minutes</th></tr></thead>
+                <thead><tr><th>Day</th><th>Spaces</th><th>Direct</th><th>People</th><th>Rooms</th><th>Room minutes</th></tr></thead>
                 <tbody>{[...r.daily].reverse().map((d) => <tr key={d.day}><td>{shortDay(d.day)}</td><td>{d.space}</td><td>{d.direct}</td><td>{d.activePeople}</td><td>{d.calls}</td><td>{d.callMinutes}</td></tr>)}</tbody>
               </table></div>
             ) : <DailyChart daily={r.daily} />}

@@ -104,7 +104,7 @@ export function DiagnosticsSheet({ ticket, onClose }: { ticket: HelpTicket; onCl
             <section><div className="label">Network</div><dl>
               <div><dt>Route</dt><dd>{r.network.route}{r.network.gateway ? <span className="mono faint"> · {r.network.gateway}</span> : null}</dd></div>
               <div><dt>Hub</dt><dd className={r.network.hub.reachable ? '' : 'dg-bad'}>{r.network.hub.reachable ? `Answers in ${r.network.hub.medianMs} ms` : 'Does not answer'}<span className="mono faint"> {r.network.hub.address ?? ''}</span></dd></div>
-              {r.network.turn.length === 0 && <div><dt>Calls</dt><dd>Office network only (no TURN servers set)</dd></div>}
+              {r.network.turn.length === 0 && <div><dt>Rooms</dt><dd>Office network only (no TURN servers set)</dd></div>}
               {r.network.turn.map((t) => <div key={t.url}><dt>{t.url.split(':')[0].toUpperCase()}</dt><dd className={t.reachable ? '' : 'dg-bad'}><span className="mono">{t.url.split(':').slice(1).join(':')}</span> · {t.reachable ? `${t.ms} ms` : t.note ?? 'No answer'}</dd></div>)}
             </dl></section>
             <section className="wide"><div className="label">Recent app log · {r.log.length} lines · errors in the window · {r.rendererErrors.length}</div>

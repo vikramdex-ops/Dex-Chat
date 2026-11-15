@@ -103,7 +103,7 @@ Reply `{ "text": "RFI-0042 raised" }` to post in the message's side-track, or ad
 to show it only to the person who chose the action. For an encrypted Direct message the text is
 sent by the person's own app, because the hub cannot read it.
 
-### Pulse widgets
+### Pulse cards
 
 An integration keeps up to 5 cards on everyone's Pulse up to date with its token:
 
@@ -115,7 +115,7 @@ Authorization: Bearer <token>
 ```
 
 Send the same `key` again to update it, or `{ "key": "plotter", "remove": true }` to take it down.
-Up to 8 lines of 200 characters. Revoking the integration removes its widgets.
+Up to 8 lines of 200 characters. Revoking the integration removes its cards. (The address keeps its older name, `/api/bot/widget`.)
 
 ### Automations
 
