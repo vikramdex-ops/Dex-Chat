@@ -1,7 +1,8 @@
 // The app's side of a large Room: one connection out to the hub's relay (mediasoup-client) for
 // this PC's microphone, camera and screen, and one in, carrying everyone else's.
-import { Device } from 'mediasoup-client';
-import type { types } from 'mediasoup-client';
+import type { Device, types } from 'mediasoup-client';
+// the relay's client loads with the first call through the relay, not with the app
+const loadDevice = async () => new (await import('mediasoup-client')).Device();
 import type { RelayProducer } from '@dex/core';
 
 type Source = RelayProducer['source'];
@@ -27,7 +28,7 @@ export class RelayClient {
 
   async join(local: MediaStream | null, screen: MediaStream | null): Promise<void> {
     const { rtpCapabilities } = await window.dex.request('relay.caps', { roomId: this.roomId });
-    this.device = new Device();
+    this.device = await loadDevice();
     await this.device.load({ routerRtpCapabilities: rtpCapabilities as types.RtpCapabilities });
     this.send = await this.transport('send');
     this.recv = await this.transport('recv');

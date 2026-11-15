@@ -127,9 +127,8 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <Icon name="globe" className="lead" />
             <div className="txt"><div>Language</div><div className="faint">The app's own words. What people write and their names are never translated.</div></div>
             <select className="input lang-pick" aria-label="Language" value={language()} onChange={(e) => {
-              setLanguage(e.target.value);
               // every screen is drawn again in the new language (the desktop window does not navigate, so no page reload)
-              window.dispatchEvent(new Event('dex-redraw'));
+              void setLanguage(e.target.value).then(() => window.dispatchEvent(new Event('dex-redraw')));
             }}>
               {LANGUAGES.map((l) => <option key={l.code} value={l.code} translate="no">{l.native}{l.native !== l.name ? ` · ${l.name}` : ''}</option>)}
             </select>
