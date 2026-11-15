@@ -56,15 +56,24 @@ const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
 export function SlugField({ meetingId, value, site, onSave, compact }: { meetingId: string | null; value: string | null; site: string | null; onSave: (slug: string | null) => void | Promise<void>; compact?: boolean }) {
   const [text, setText] = useState(value ?? '');
   const [check, setCheck] = useState<{ slug: string; ok: boolean; problem: string | null } | null>(null);
-  useEffect(() => { setText(value ?? ''); }, [value]);
+  // a new value from outside (saved, or a suggestion taken); what is being typed stays as typed
+  useEffect(() => { setText((t) => (normalizeSlug(t) === (value ?? '') ? t : value ?? '')); }, [value]);
   const slug = normalizeSlug(text);
   useEffect(() => {
     setCheck(null);
+    // a meeting not made yet (the new-meeting dialog): the name is kept as soon as it is free
+    if (!meetingId && !slug && value) void onSave(null);
     if (!slug || slug === value) return;
     let alive = true;
-    const t = setTimeout(() => { void window.dex.request('meet.slug.check', { slug, ...(meetingId ? { id: meetingId } : {}) }).then((c) => { if (alive) setCheck(c); }).catch(() => {}); }, 250);
+    const t = setTimeout(() => {
+      void window.dex.request('meet.slug.check', { slug, ...(meetingId ? { id: meetingId } : {}) }).then((c) => {
+        if (!alive) return;
+        setCheck(c);
+        if (!meetingId) void onSave(c.ok ? c.slug : null);
+      }).catch(() => {});
+    }, 250);
     return () => { alive = false; clearTimeout(t); };
-  }, [slug, value, meetingId]);
+  }, [slug, value, meetingId]); // eslint-disable-line react-hooks/exhaustive-deps
   const dirty = slug !== (value ?? '');
   const save = () => { if (dirty && (!slug || check?.ok)) void onSave(slug || null); };
   return (
@@ -72,11 +81,11 @@ export function SlugField({ meetingId, value, site, onSave, compact }: { meeting
       <div className="slug-row">
         <span className="mono slug-base" title={site ?? undefined}>{site ? `${site.replace(/^https?:\/\//, '')}/` : '…/'}</span>
         <input className="input mono" aria-label="The meeting's name on the meeting site" placeholder={meetingId ? formatMeetingId(meetingId) : 'p12-design-review'} maxLength={48} value={text}
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} onBlur={() => { if (!meetingId) save(); }} />
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} />
         {meetingId && <button className="btn sm" disabled={!dirty || (!!slug && !check?.ok)} onClick={save}>Save name</button>}
       </div>
       <span className={`slug-note${check && !check.ok ? ' bad' : ''}`} role="status">
-        {!slug ? 'No name: the page is at the meeting ID.' : !dirty ? 'Guests can type this name or click the link.' : !check ? 'Checking…' : check.ok ? `Free: …/${check.slug}` : check.problem}
+        {!slug ? 'No name: the page is at the meeting ID.' : !dirty && meetingId ? 'Guests can type this name or click the link.' : !check && slug !== value ? 'Checking…' : check && !check.ok ? check.problem : `Free: …/${slug}`}
       </span>
     </div>
   );
@@ -124,6 +133,9 @@ export function GuestLinkControls({ meetingId, compact, onChange }: { meetingId:
               <span className="faint guest-hint">{v.showTitle ? 'Anyone with the address sees the title and your first name before the passcode.' : 'Before the passcode, the page shows only the date, the time and the office.'}</span>
             </td></tr>
             {!compact && (
+              <tr><th className="label">Afterwards</th><td colSpan={2}><FollowUp value={v.followUp} onSave={(followUp) => change({ followUp }, followUp ? 'Guests see your note when they leave' : 'Note removed')} /></td></tr>
+            )}
+            {!compact && (
               <tr><th className="label">Lobby</th><td colSpan={2}>
                 <select className="input" aria-label="Who waits in the lobby" value={v.lobby} onChange={(e) => void change({ lobby: e.target.value as LobbyRule })}>{LOBBY_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select>
               </td></tr>
@@ -131,6 +143,20 @@ export function GuestLinkControls({ meetingId, compact, onChange }: { meetingId:
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+/** What guests read on the closing page when they leave (minutes coming, a link…), up to 280 characters. */
+function FollowUp({ value, onSave }: { value: string | null; onSave: (v: string | null) => void }) {
+  const [text, setText] = useState(value ?? '');
+  useEffect(() => { setText(value ?? ''); }, [value]);
+  const dirty = text.trim() !== (value ?? '');
+  return (
+    <div className="slug-row followup">
+      <input className="input" aria-label="A note guests see when they leave" placeholder="For example: minutes and drawings by Friday" maxLength={280} value={text}
+        onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && dirty) { e.preventDefault(); onSave(text.trim() || null); } }} />
+      <button className="btn sm" disabled={!dirty} onClick={() => onSave(text.trim() || null)}>Save note</button>
     </div>
   );
 }

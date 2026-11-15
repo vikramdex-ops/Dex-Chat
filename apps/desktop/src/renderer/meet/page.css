@@ -26,3 +26,4 @@
 .meet-rename summary { cursor: pointer; font-size: 10px; text-align: center; padding: 2px 0; color: var(--accent-ink); }
 .meet-rename .slug-field { margin-top: 6px; }
 .meet-row-main .page-link { margin-top: 2px; }
+.slug-row.followup .input { border-radius: 8px; min-height: 30px; padding: 4px 8px; font-size: 12.5px; }

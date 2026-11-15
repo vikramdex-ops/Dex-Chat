@@ -305,7 +305,7 @@ function calendarRow(f: ReturnType<typeof facts>, at: { startAt: number; endAt: 
   };
   return h('div', { class: 'cal-row', role: 'group', 'aria-label': label },
     h('span', { class: 'label' }, label),
-    h('button', { type: 'button', class: 'cal-cell', onclick: ics }, icon('down', 15), h('span', {}, 'Calendar file'), h('i', { class: 'mono' }, '.ICS')),
+    h('button', { type: 'button', class: 'cal-cell', onclick: ics, title: 'An .ics file for Outlook, Apple Calendar and others' }, icon('down', 15), h('span', {}, 'Calendar file')),
     h('a', { class: 'cal-cell', href: links.google, target: '_blank', rel: 'noopener noreferrer' }, icon('cal', 15), h('span', {}, 'Google Calendar')),
     h('a', { class: 'cal-cell', href: links.outlook, target: '_blank', rel: 'noopener noreferrer' }, icon('cal', 15), h('span', {}, 'Outlook.com')),
   );
@@ -702,7 +702,7 @@ async function join(): Promise<void> {
     admitted: () => { S.view = 'room'; S.reconnecting = 0; document.getElementById('reconnect')?.remove(); document.body.classList.add('in-room'); document.title = `${f?.title ?? 'Meeting'} · Dexterity Meet`; },
     problem: (message) => { S.problem = message; S.view = 'ready'; render(); },
     reconnecting: (n) => { S.reconnecting = n; showReconnecting(n); },
-    ended: (e) => { S.end = e; S.view = 'end'; room = null; document.getElementById('reconnect')?.remove(); if (e.kind !== 'left' || !e.joinedAt) { for (const t of S.local?.getTracks() ?? []) t.stop(); S.local = null; S.checking = false; } void afterMeeting(); },
+    ended: (e) => { S.end = e; S.view = 'end'; room = null; document.getElementById('reconnect')?.remove(); document.body.classList.remove('in-room'); for (const t of S.local?.getTracks() ?? []) t.stop(); S.local = null; S.checking = false; void afterMeeting(); },
     demoted: (to) => { store.del(`dex.webinar.speak.${meetingId}`); store.del(passKey(REF)); location.replace(to); },
   };
   room = api.start({ mount: root, meetingId, passcode: pass, name: S.name, local: S.local, micOn: S.micOn, camOn: S.camOn, speaker: S.devices.out, on: events });
@@ -827,11 +827,13 @@ async function refresh(): Promise<void> {
   const seen = JSON.stringify([S.view, S.det && { ...S.det, liveSince: S.det.liveSince }, S.pub, S.passError]);
   if (seen !== lastSeen || before !== S.view) {
     lastSeen = seen;
-    // keep what the guest typed and their camera across the redraw
+    // keep what the guest typed (their name, a passcode, an ID), and where they were, across the redraw
     const typed = (document.getElementById('join-name') as HTMLInputElement | null)?.value;
     if (typed !== undefined) S.name = typed;
+    const kept = [...document.querySelectorAll<HTMLInputElement>('input[id]')].map((i) => [i.id, i.value] as const);
     const focus = document.activeElement?.id;
     render();
+    for (const [id, value] of kept) { const el = document.getElementById(id) as HTMLInputElement | null; if (el && !el.value) el.value = value; }
     if (focus && focus !== 'work') (document.getElementById(focus) as HTMLElement | null)?.focus();
     const f = S.det ?? S.pub;
     if (f && before === S.view) say(f.state === 'live' ? 'The meeting is in progress.' : f.state === 'open' ? 'The room is open. You can ask to join.' : f.state === 'cancelled' ? 'This meeting was cancelled.' : 'The meeting details changed.');
@@ -853,3 +855,14 @@ void boot();
 // every 15 seconds: a reschedule, a cancellation or the host arriving shows without a reload
 setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 15_000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void refresh(); });
+// the whole link pasted into this tab again (only its #fragment changes, so the page is not reloaded)
+window.addEventListener('hashchange', () => {
+  const h2 = (() => { try { return decodeURIComponent(location.hash.slice(1)).trim(); } catch { return ''; } })();
+  if (!location.hash) return;
+  history.replaceState(null, '', location.pathname);
+  if (!PASS_RE.test(h2) || S.view === 'room' || S.view === 'lobby' || S.view === 'connecting') return;
+  S.passcode = h2;
+  store.set(passKey(REF), h2);
+  S.passError = '';
+  void load().then(render);
+});

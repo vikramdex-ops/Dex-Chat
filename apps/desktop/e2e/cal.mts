@@ -26,7 +26,7 @@ try {
   await page.keyboard.press('Escape');
   // plan a meeting that clashes with the room booking
   await page.getByRole('button', { name: 'New meeting' }).click();
-  await page.getByLabel('Title').fill('Stress check');
+  await page.getByLabel('Title', { exact: true }).fill('Stress check');
   const s = new Date(); s.setDate(s.getDate() + (s.getDay() === 6 ? 2 : s.getDay() === 5 ? 3 : 1)); s.setHours(11, 30, 0, 0);
   const local = new Date(s.getTime() - s.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   await page.getByLabel('Starts').fill(local);
