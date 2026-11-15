@@ -50,7 +50,15 @@ next pod number (`POD3-1`…).
 
 A seat is held by nobody, a person, a reservation for a role or team ("Piping · hot desk"), or is a
 hot desk that anyone can book for a day (today or up to two weeks ahead). A person holds at most one
-seat. Their directory **Seat** field follows the plan (`W-A14 · Left benches`) and becomes
+seat.
+
+Booking a hot desk: click it on the plan; the seat's callout shows who has it today, a **Book for**
+day (today, then each working day up to two weeks ahead: the office's working week and holidays,
+the same calendar scheduled bot jobs use) and the days it is already booked, with who. **Book for
+today** (or **Book for Tue 17 Nov**) books the chosen day; **Cancel my booking** frees it. A person
+has one hot desk a day: booking another for the same day moves the booking. The hub refuses a day
+that is not a working day, and a day further than two weeks out (`seating.book`; the days it
+offers are `bookDays` in `seating.get`). Their directory **Seat** field follows the plan (`W-A14 · Left benches`) and becomes
 read-only; the free text stays for offices with no plan.
 
 ## Changing seats: move plans

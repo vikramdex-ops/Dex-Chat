@@ -127,6 +127,8 @@ export interface SeatingView {
   notice: SeatNotice | null;
   /** Hot desks booked for days from today: seat -> day -> person. */
   bookings: Array<{ seatId: string; day: string; userId: string }>;
+  /** The days a hot desk can be booked for: today, then the office's working days up to two weeks ahead. */
+  bookDays: string[];
   underlay: { x: number; y: number; w: number; h: number; opacity: number } | null;
 }
 

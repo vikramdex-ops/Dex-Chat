@@ -529,6 +529,7 @@ export class Hub {
       userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
       audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
       log: (level, msg, extra) => this.log(level, msg, extra),
+      calendar: () => this.botflows.calendar(),
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');

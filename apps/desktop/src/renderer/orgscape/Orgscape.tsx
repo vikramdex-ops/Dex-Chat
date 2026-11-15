@@ -96,6 +96,9 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
   const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   const [reserve, setReserve] = useState<string | null>(null);
+  /** The day a hot desk is booked for in the seat callout (today, or a working day up to two weeks ahead). */
+  const [bookDay, setBookDay] = useState<string | null>(null);
+  useEffect(() => { setBookDay(null); }, [seatSel]);
   useEffect(() => { setReserve(null); }, [seatSel]);
   const canEdit = !!sv?.canEdit;
   const editing = !!editor && arrange === 'layout';
@@ -1020,7 +1023,11 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
             if (!q) return null;
             const zone = plan.plan.zones.find((z) => z.id === q.seat.zone)?.name ?? '';
             const h = q.holder;
-            const mine = sv?.bookings.find((b) => b.day === today && b.userId === meId);
+            const days = sv?.bookDays?.length ? sv.bookDays : [today];
+            const day = bookDay && days.includes(bookDay) ? bookDay : today;
+            const dayText = (x: string) => (x === today ? tr('Today') : new Date(`${x}T12:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }));
+            const seatBookings = h?.kind === 'hot' ? (sv?.bookings ?? []).filter((b) => b.seatId === seatSel).sort((a, b) => a.day.localeCompare(b.day)) : [];
+            const bookedOn = seatBookings.find((b) => b.day === day)?.userId ?? null;
             const run = (f: () => Promise<unknown>, ok: string) => void f().then(() => { toast(ok); return reloadSeating(); }).catch((err: Error) => toast(err.message, true));
             return (
               <div className="os-callout seat-callout" role="dialog" aria-label={tr(`Seat ${seatSel}`)} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { setSeatSel(null); stage.current?.focus(); } }}>
@@ -1033,14 +1040,30 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                   <div><dt className="tb-k">Held by</dt><dd>{h?.kind === 'person' ? <span translate="no">{users.get(h.userId)?.displayName ?? ''}</span> : h?.kind === 'reserved' ? <span translate="no">{h.label}</span> : h?.kind === 'hot' ? tr('Hot desk') : tr('Nobody: free')}</dd></div>
                   {h?.kind === 'person' && q.away && <div><dt className="tb-k">Today</dt><dd>{modeOf(h.userId) === 'home' ? 'Working from home' : modeOf(h.userId) === 'site' ? 'On site' : 'At a client'}</dd></div>}
                   {h?.kind === 'hot' && <div><dt className="tb-k">Today</dt><dd>{q.booked ? <span translate="no">{users.get(q.booked)?.displayName ?? ''}</span> : tr('Not booked')}</dd></div>}
+                  {h?.kind === 'hot' && (
+                    <div className="seat-book">
+                      <dt className="tb-k"><label htmlFor="seat-book-day">Book for</label></dt>
+                      <dd>
+                        <select id="seat-book-day" className="input" value={day} onChange={(e) => setBookDay(e.target.value)}>
+                          {days.map((x) => { const b = seatBookings.find((y) => y.day === x); return <option key={x} value={x}>{b ? `${dayText(x)} · ${b.userId === meId ? tr('You') : users.get(b.userId)?.displayName ?? ''}` : dayText(x)}</option>; })}
+                        </select>
+                      </dd>
+                    </div>
+                  )}
+                  {h?.kind === 'hot' && seatBookings.length > 0 && (
+                    <div className="seat-bookings">
+                      <dt className="tb-k">Booked</dt>
+                      <dd><ul>{seatBookings.slice(0, 10).map((b) => <li key={b.day}><span className="mono">{dayText(b.day)}</span> <span translate="no">{b.userId === meId ? tr('You') : users.get(b.userId)?.displayName ?? ''}</span></li>)}</ul></dd>
+                    </div>
+                  )}
                   {(h?.kind === 'reserved' || h?.kind === 'hot') && h.departmentId && <div><dt className="tb-k">Dept</dt><dd translate="no">{deptName(h.departmentId)}</dd></div>}
                   <div><dt className="tb-k">Type</dt><dd>{({ bench: 'Bench desk', pod: 'Pod seat', halfCabin: 'Half-cabin', cabin: 'Cabin', clientCabin: 'Client cabin', reception: 'Reception' } as const)[q.seat.type]}</dd></div>
                 </dl>
                 <div className="os-co-actions">
                   <button type="button" className="btn sm" onClick={() => startRoute(meId, seatSel)}><Icon name="branch" size={14} />Walk there</button>
                   {h?.kind === 'person' && h.userId !== meId && <button type="button" className="btn sm ghost" onClick={() => { setSeatSel(null); pick(h.userId); }}><Icon name="card" size={14} />Person</button>}
-                  {h?.kind === 'hot' && !q.booked && <button type="button" className="btn sm primary" onClick={() => run(() => window.dex.request('seating.book', { seatId: seatSel, day: today }), tr(`${seatSel} is yours today`))}>Book for today</button>}
-                  {h?.kind === 'hot' && q.booked === meId && mine && <button type="button" className="btn sm ghost" onClick={() => run(() => window.dex.request('seating.book', { seatId: null, day: today }), tr('Booking cancelled'))}>Cancel my booking</button>}
+                  {h?.kind === 'hot' && !bookedOn && <button type="button" className="btn sm primary" onClick={() => run(() => window.dex.request('seating.book', { seatId: seatSel, day }), day === today ? tr(`${seatSel} is yours today`) : tr(`${seatSel} is yours on ${dayText(day)}`))}>{day === today ? tr('Book for today') : tr(`Book for ${dayText(day)}`)}</button>}
+                  {h?.kind === 'hot' && bookedOn === meId && <button type="button" className="btn sm ghost" onClick={() => run(() => window.dex.request('seating.book', { seatId: null, day }), tr('Booking cancelled'))}>Cancel my booking</button>}
                   {canEdit && !h && reserve === null && <button type="button" className="btn sm ghost" onClick={() => setReserve('')}>Reserve…</button>}
                   {canEdit && h?.kind !== 'hot' && h?.kind !== 'person' && <button type="button" className="btn sm ghost" onClick={() => run(() => addToDraft([{ seatId: seatSel, to: { kind: 'hot' } }]), tr('Added to the move plan'))}>Make it a hot desk</button>}
                   {canEdit && h && <button type="button" className="btn sm ghost" onClick={() => run(() => addToDraft([{ seatId: seatSel, to: null }]), tr('Added to the move plan'))}>Free it</button>}

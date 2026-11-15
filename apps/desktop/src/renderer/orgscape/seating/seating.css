@@ -151,3 +151,11 @@ html:is([lang='hi'], [lang='ta']) .seat-import th { letter-spacing: 0; text-tran
 .seat-washkey li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .seat-washkey i { width: 14px; height: 10px; border-radius: 2px; opacity: .55; }
 @media (max-width: 720px) { .seat-washkey { left: 26px; bottom: 64px; max-height: 30%; } }
+
+/* booking a hot desk ahead: the day, and who has the seat on which days */
+.seat-callout .os-co-cells > .seat-book, .seat-callout .os-co-cells > .seat-bookings { grid-column: span 2; }
+.seat-book select { width: 100%; min-width: 0; }
+.seat-bookings ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.seat-bookings li { display: flex; gap: 8px; min-width: 0; }
+.seat-bookings li .mono { flex: none; min-width: 8ch; color: var(--text-2); }
+.seat-bookings li span[translate] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

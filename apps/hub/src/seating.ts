@@ -109,6 +109,8 @@ export interface SeatingDeps {
   userChanged: (userId: string) => void;
   audit: (actor: string, action: string, target: string | null, detail?: Record<string, unknown>) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
+  /** The office's working days (0 = Sunday) and holidays, for booking hot desks ahead. */
+  calendar?: () => { workdays: number[]; holidays: Array<{ date: string }> };
 }
 
 export class Seating {
@@ -182,6 +184,21 @@ export class Seating {
     return !!this.db.prepare('SELECT 1 FROM seat_managers WHERE user_id = ?').get(u.id);
   }
 
+  /** Today, then each working day (not a holiday) up to two weeks ahead: the days a hot desk can be booked. */
+  bookDays(): string[] {
+    const cal = this.d.calendar?.();
+    const off = new Set((cal?.holidays ?? []).map((h) => h.date));
+    const out: string[] = [];
+    const now = this.now();
+    for (let i = 0; i <= 14; i++) {
+      const t = new Date(now);
+      t.setDate(t.getDate() + i);
+      const day = ymd(t.getTime());
+      if (i === 0 || ((cal?.workdays ?? [1, 2, 3, 4, 5, 6]).includes(t.getDay()) && !off.has(day))) out.push(day);
+    }
+    return out;
+  }
+
   managers(): string[] { return (this.db.prepare('SELECT user_id FROM seat_managers').all() as Array<{ user_id: string }>).map((r) => r.user_id); }
 
   view(me: PublicUser): SeatingView {
@@ -195,7 +212,7 @@ export class Seating {
     const bookings = (this.db.prepare('SELECT seat_id, day, user_id FROM seat_bookings WHERE day >= ? ORDER BY day LIMIT 2000').all(this.today()) as Array<{ seat_id: string; day: string; user_id: string }>)
       .map((b) => ({ seatId: b.seat_id, day: b.day, userId: b.user_id }));
     const ul = edit ? this.db.prepare('SELECT x, y, w, h, opacity FROM seat_underlay WHERE id = 1').get() as SeatingView['underlay'] | undefined : undefined;
-    return { plan, version, holders: this.holders(), plans, revisions, canEdit: edit, managers: this.managers(), notice, bookings, underlay: ul ?? null };
+    return { plan, version, holders: this.holders(), plans, revisions, canEdit: edit, managers: this.managers(), notice, bookings, bookDays: this.bookDays(), underlay: ul ?? null };
   }
 
   // ------------------------------------------------------------ changing who sits where
@@ -558,6 +575,7 @@ export class Seating {
         const day = isYmd(d.day) ? d.day : null;
         if (!day) throw new SeatingError('The day should look like 2026-11-17.');
         if (day < this.today() || day > ymd(this.now() + 14 * 86_400_000)) throw new SeatingError('Hot desks can be booked for today and up to two weeks ahead.');
+        if (d.seatId !== null && !this.bookDays().includes(day)) throw new SeatingError('That is not a working day: book a working day.');
         if (d.seatId === null) { this.db.prepare('DELETE FROM seat_bookings WHERE user_id = ? AND day = ?').run(me.id, day); this.changed(); return { ok: true }; }
         if (!isSeatId(d.seatId)) throw new SeatingError('Choose a seat.');
         const h = this.holders()[d.seatId];

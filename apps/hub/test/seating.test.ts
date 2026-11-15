@@ -209,6 +209,19 @@ test('hot desks: bookable by the day, one person per seat; a leaver frees their 
   assert.deepEqual((await ravi.request('seating.get')).bookings, [{ seatId: 'W-C42', day: today, userId: me(priya) }]);
   await priya.request('seating.book', { seatId: null, day: today });
   assert.deepEqual((await ravi.request('seating.get')).bookings, []);
+  // ahead: the office's working days up to two weeks out (a holiday and the day off are not offered)
+  const days = Array.from({ length: 15 }, (_, i) => { const t = new Date(); t.setDate(t.getDate() + i); return { day: ymd(t.getTime()), dow: t.getDay() }; });
+  const holiday = days.find((x, i) => i > 0 && x.dow !== 0)!.day;
+  await owner.request('admin.botjob.holidays', { holidays: [{ date: holiday, name: 'Office holiday' }] });
+  const bookDays = (await ravi.request('seating.get')).bookDays;
+  assert.equal(bookDays[0], today, 'today is always offered');
+  assert.deepEqual(bookDays.slice(1), days.slice(1).filter((x) => x.dow !== 0 && x.day !== holiday).map((x) => x.day), 'working days only, Sunday and the holiday left out');
+  await assert.rejects(ravi.request('seating.book', { seatId: 'W-C42', day: holiday }), /not a working day/);
+  const ahead = bookDays[bookDays.length - 1];
+  await ravi.request('seating.book', { seatId: 'W-C42', day: ahead });
+  await assert.rejects(priya.request('seating.book', { seatId: 'W-C42', day: ahead }), /Ravi has booked it/);
+  assert.deepEqual((await priya.request('seating.get')).bookings, [{ seatId: 'W-C42', day: ahead, userId: me(ravi) }]);
+  await ravi.request('seating.book', { seatId: null, day: ahead });
   hub.seating.personLeft(me(ravi));
   assert.equal((await owner.request('seating.get')).holders['W-C41'], undefined);
   const raviNow = (await owner.request('directory.list')).users.find((u) => u.id === me(ravi))!;
