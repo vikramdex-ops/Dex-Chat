@@ -131,6 +131,15 @@ function parsePlain(raw: string): Message['plain'] {
   return null;
 }
 
+/** The smallest message id from a moment on (ids start with their time, in Crockford base32). */
+function idFrom(time: number): string {
+  const A = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  let t = Math.max(0, Math.floor(time));
+  let out = '';
+  for (let i = 0; i < 10; i++) { out = A[t % 32] + out; t = Math.floor(t / 32); }
+  return out + '0'.repeat(16);
+}
+
 const MAX_BODY = 8000;
 /** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
 const MAX_SEALED = 96_000;
@@ -244,15 +253,50 @@ export class Messaging {
     add('conversations', 'archived', 'INTEGER NOT NULL DEFAULT 0');
     add('conversations', 'post_policy', "TEXT NOT NULL DEFAULT 'everyone'");
     // hubs upgraded from a version without search: index what is already there
+    db.exec('CREATE TABLE IF NOT EXISTS search_rows (n INTEGER PRIMARY KEY, message_id TEXT NOT NULL UNIQUE)');
     const indexed = (db.prepare('SELECT COUNT(*) AS n FROM messages_fts').get() as { n: number }).n;
     if (!indexed) {
-      for (const r of db.prepare('SELECT id, conv_id, body FROM messages WHERE deleted = 0').all() as Array<{ id: string; conv_id: string; body: string }>) this.index(r.id, r.conv_id, r.body);
+      for (const r of db.prepare('SELECT id, conv_id, body FROM messages WHERE deleted = 0 ORDER BY id').all() as Array<{ id: string; conv_id: string; body: string }>) this.index(r.id, r.conv_id, r.body);
     }
+    this.alignSearchIndex();
+    // search with filters and the Activity feed walk messages newest first
+    db.exec('CREATE INDEX IF NOT EXISTS idx_messages_author ON messages(author_id, id)');
+  }
+
+  /**
+   * Search reads its index newest first and stops after a page. For that each indexed message has
+   * a number of its own in `search_rows` (an INTEGER PRIMARY KEY, so it never changes), given in
+   * the order messages are sent and kept when a message is indexed again after an edit; the index
+   * row uses that number as its rowid. It also finds a message's index row without a scan. Hubs
+   * from before this are renumbered once, in message order, keeping the indexed text.
+   */
+  private alignSearchIndex(): void {
+    const db = this.db;
+    db.exec('CREATE TABLE IF NOT EXISTS search_layout (v INTEGER NOT NULL)');
+    if ((db.prepare('SELECT v FROM search_layout').get() as { v: number } | undefined)?.v === 2) return;
+    db.exec('BEGIN');
+    try {
+      db.exec(`CREATE TEMP TABLE fts_move AS SELECT f.message_id AS message_id, MIN(f.body) AS body, MIN(f.conv_id) AS conv_id
+        FROM messages_fts f JOIN messages m ON m.id = f.message_id GROUP BY f.message_id ORDER BY f.message_id`);
+      db.exec('DELETE FROM messages_fts');
+      db.exec('DELETE FROM search_rows');
+      db.exec('INSERT INTO search_rows (message_id) SELECT message_id FROM fts_move ORDER BY message_id');
+      db.exec('INSERT INTO messages_fts (rowid, body, message_id, conv_id) SELECT s.n, x.body, x.message_id, x.conv_id FROM fts_move x JOIN search_rows s ON s.message_id = x.message_id');
+      db.exec('DROP TABLE temp.fts_move');
+      db.exec('DELETE FROM search_layout');
+      db.exec('INSERT INTO search_layout (v) VALUES (2)');
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+  }
+
+  /** Take a message out of the search index (it keeps its place for when it is indexed again). */
+  private unindex(messageId: string): void {
+    this.db.prepare('DELETE FROM messages_fts WHERE rowid = (SELECT n FROM search_rows WHERE message_id = ?)').run(messageId);
   }
 
   /** Searchable text: mentions become names so "@priya" and "priya" both find the message. */
   private index(messageId: string, convId: string, body: string): void {
-    this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(messageId);
+    this.unindex(messageId);
     this.db.prepare('DELETE FROM message_tags WHERE message_id = ?').run(messageId);
     // end-to-end encrypted text cannot be (and must not be) searched on the hub
     if (!body || isSealed(body)) return;
@@ -260,7 +304,8 @@ export class Messaging {
     for (const t of [...hashtags(body), ...this.keptTags(messageId)]) this.db.prepare('INSERT OR IGNORE INTO message_tags (message_id, conv_id, tag, created_at) VALUES (?, ?, ?, ?)').run(messageId, convId, t, tagAt);
     const names = new Map(this.users().map((u) => [u.id, u.displayName] as const));
     const text = body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${names.get(id) ?? ''}`);
-    this.db.prepare('INSERT INTO messages_fts (body, message_id, conv_id) VALUES (?, ?, ?)').run(text, messageId, convId);
+    this.db.prepare('INSERT OR IGNORE INTO search_rows (message_id) VALUES (?)').run(messageId);
+    this.db.prepare('INSERT INTO messages_fts (rowid, body, message_id, conv_id) SELECT n, ?, ?, ? FROM search_rows WHERE message_id = ?').run(text, messageId, convId, messageId);
   }
 
   // ------------------------------------------------------------ helpers
@@ -336,6 +381,47 @@ export class Messaging {
       archived: !!c.archived, postPolicy: c.post_policy ?? 'everyone',
       moderators: (this.db.prepare('SELECT user_id FROM conv_members WHERE conv_id = ? AND moderator = 1').all(c.id) as Array<{ user_id: string }>).map((r) => r.user_id),
     };
+  }
+
+  /**
+   * Many conversations as one person sees them (the Switchboard's list), the same as view() for
+   * each: members, read receipts, moderators and unread counts come from one query each rather
+   * than several per conversation.
+   */
+  private viewMany(rows: ConvRow[], viewer: string): Conversation[] {
+    if (!rows.length) return [];
+    const ids = new Set(rows.map((c) => c.id));
+    const byConv = new Map<string, Array<{ user_id: string; last_read_id: string | null; moderator: number; receipts: number }>>();
+    // everyone in the conversations the viewer is in (a conversation browsed, not joined, is looked up by itself below)
+    for (const r of this.db.prepare(`SELECT cm.conv_id, cm.user_id, cm.last_read_id, cm.moderator, COALESCE(u.receipts, 1) AS receipts
+      FROM conv_members mine JOIN conv_members cm ON cm.conv_id = mine.conv_id LEFT JOIN users u ON u.id = cm.user_id
+      WHERE mine.user_id = ? ORDER BY cm.conv_id, cm.joined_at`).all(viewer) as Array<{ conv_id: string; user_id: string; last_read_id: string | null; moderator: number; receipts: number }>) {
+      if (!ids.has(r.conv_id)) continue;
+      let list = byConv.get(r.conv_id);
+      if (!list) byConv.set(r.conv_id, list = []);
+      list.push(r);
+    }
+    const own = new Map((this.db.prepare('SELECT conv_id, muted, pinned_at, section, muted_until FROM conv_members WHERE user_id = ?').all(viewer) as Array<{ conv_id: string; muted: number; pinned_at: number | null; section: string | null; muted_until: number | null }>).map((r) => [r.conv_id, r] as const));
+    const unread = new Map((this.db.prepare(`SELECT m.conv_id, COUNT(*) AS n FROM conv_members cm CROSS JOIN messages m ON m.conv_id = cm.conv_id AND m.parent_id IS NULL AND m.id > COALESCE(cm.last_read_id, '')
+      WHERE cm.user_id = ? AND m.deleted = 0 AND m.system IS NULL AND m.author_id != ? GROUP BY m.conv_id`).all(viewer, viewer) as Array<{ conv_id: string; n: number }>).map((r) => [r.conv_id, r.n] as const));
+    const mentions = new Map((this.db.prepare(`SELECT mn.conv_id, COUNT(*) AS n FROM mentions mn JOIN conv_members cm ON cm.conv_id = mn.conv_id AND cm.user_id = mn.user_id
+      JOIN messages ms ON ms.id = mn.message_id WHERE mn.user_id = ? AND ms.deleted = 0 AND ms.author_id != ? AND mn.message_id > COALESCE(cm.last_read_id, '') GROUP BY mn.conv_id`).all(viewer, viewer) as Array<{ conv_id: string; n: number }>).map((r) => [r.conv_id, r.n] as const));
+    return rows.map((c) => {
+      const list = byConv.get(c.id);
+      if (!list) return this.view(c, viewer);
+      const mine = list.find((r) => r.user_id === viewer);
+      const o = own.get(c.id);
+      const share = mine?.receipts !== 0;
+      return {
+        id: c.id, kind: c.kind, name: c.name, topic: c.topic, private: !!c.private, everyone: !!c.everyone,
+        createdBy: c.created_by, createdAt: c.created_at, members: list.map((r) => r.user_id), lastMessage: this.preview(c.id),
+        joined: !!mine, unread: mine ? unread.get(c.id) ?? 0 : 0, mentions: mine ? mentions.get(c.id) ?? 0 : 0, lastReadId: mine?.last_read_id ?? null, muted: !!o?.muted,
+        reads: Object.fromEntries(list.filter((r) => r.user_id === viewer || (share && r.receipts !== 0)).map((r) => [r.user_id, r.last_read_id])),
+        pinnedAt: o?.pinned_at ?? null, section: o?.section ?? null, mutedUntil: o?.muted_until ?? null,
+        archived: !!c.archived, postPolicy: c.post_policy ?? 'everyone',
+        moderators: list.filter((r) => r.moderator === 1).map((r) => r.user_id),
+      };
+    });
   }
 
   private pollView(messageId: string, viewer: string | null): PollView | null {
@@ -551,7 +637,7 @@ export class Messaging {
     switch (op) {
       case 'conv.list': {
         const rows = this.db.prepare(`SELECT c.* FROM conversations c JOIN conv_members m ON m.conv_id = c.id WHERE m.user_id = ?`).all(me.id) as unknown as ConvRow[];
-        return rows.map((c) => this.view(c, me.id)) satisfies Ops['conv.list']['res'];
+        return this.viewMany(rows, me.id) satisfies Ops['conv.list']['res'];
       }
 
       case 'conv.browse': {
@@ -671,7 +757,8 @@ export class Messaging {
           if (msg && !msg.deleted) {
             this.beforeChange?.(msg, 'delete', me.id);
             this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ?, removed_by = ?, removed_reason = ? WHERE id = ?').run(Date.now(), me.id, str(d.reason, 200) || r.reason, msg.id);
-            for (const t of ['reactions', 'mentions', 'messages_fts']) this.db.prepare(`DELETE FROM ${t} WHERE message_id = ?`).run(msg.id);
+            for (const t of ['reactions', 'mentions']) this.db.prepare(`DELETE FROM ${t} WHERE message_id = ?`).run(msg.id);
+            this.unindex(msg.id);
             const row = this.message(msg.id)!;
             this.pushMessage('msg.updated', row);
             if (!row.parent_id) this.pushConv(row.conv_id);
@@ -824,15 +911,18 @@ export class Messaging {
         const before = typeof d.before === 'string' ? d.before.slice(0, 40) : null;
         const since = Date.now() - 60 * 86400_000;
         const mentionCond = `(mn.user_id IS NOT NULL OR m.body LIKE '%<@all>%')`;
+        // (+r.author_id: look the side-track up by its parent, not through everything this person wrote)
         const replyCond = `(m.parent_id IS NOT NULL AND (EXISTS (SELECT 1 FROM messages p WHERE p.id = m.parent_id AND p.author_id = ?)
-          OR EXISTS (SELECT 1 FROM messages r WHERE r.parent_id = m.parent_id AND r.author_id = ? AND r.id < m.id)))`;
+          OR EXISTS (SELECT 1 FROM messages r WHERE r.parent_id = m.parent_id AND +r.author_id = ? AND r.id < m.id)))`;
         const cond = kind === 'mentions' ? mentionCond : kind === 'replies' ? replyCond : `(${mentionCond} OR ${replyCond})`;
         const replyArgs = kind === 'mentions' ? [] : [me.id, me.id];
+        // newest first through the message ids (they start with the time they were sent, so the
+        // id bound keeps to the 60 days), stopping at a page, rather than sorting all of them
         const rows = this.db.prepare(`SELECT m.id, mn.user_id AS mentioned FROM messages m
-          JOIN conv_members cm ON cm.conv_id = m.conv_id AND cm.user_id = ?
+          CROSS JOIN conv_members cm ON cm.conv_id = m.conv_id AND cm.user_id = ?
           LEFT JOIN mentions mn ON mn.message_id = m.id AND mn.user_id = ?
-          WHERE m.deleted = 0 AND m.system IS NULL AND m.author_id != ? AND m.created_at > ? AND ${cond} ${before ? 'AND m.id < ?' : ''}
-          ORDER BY m.id DESC LIMIT 41`).all(me.id, me.id, me.id, since, ...replyArgs, ...(before ? [before] : [])) as Array<{ id: string; mentioned: string | null }>;
+          WHERE m.id > ? AND m.deleted = 0 AND m.system IS NULL AND m.author_id != ? AND m.created_at > ? AND ${cond} ${before ? 'AND m.id < ?' : ''}
+          ORDER BY m.id DESC LIMIT 41`).all(me.id, me.id, idFrom(since), me.id, since, ...replyArgs, ...(before ? [before] : [])) as Array<{ id: string; mentioned: string | null }>;
         const items = rows.slice(0, 40).map((r) => {
           const row = this.message(r.id)!;
           const mention = !!r.mentioned || row.body.includes('<@all>');
@@ -842,11 +932,14 @@ export class Messaging {
       }
 
       case 'activity.tracks': {
-        const rows = this.db.prepare(`SELECT p.id, MAX(r.created_at) AS last, COUNT(r.id) AS n FROM messages p
-          JOIN messages r ON r.parent_id = p.id AND r.deleted = 0
-          JOIN conv_members cm ON cm.conv_id = p.conv_id AND cm.user_id = ?
-          WHERE p.deleted = 0 AND (p.author_id = ? OR EXISTS (SELECT 1 FROM messages x WHERE x.parent_id = p.id AND x.author_id = ?))
-          GROUP BY p.id ORDER BY last DESC LIMIT 40`).all(me.id, me.id, me.id) as Array<{ id: string; last: number; n: number }>;
+        // count every side-track once (through its replies), then keep the ones this person is in
+        const rows = this.db.prepare(`SELECT p.id, g.last, g.n FROM
+          (SELECT parent_id AS id, MAX(created_at) AS last, COUNT(*) AS n FROM messages INDEXED BY idx_messages_parent
+            WHERE parent_id IS NOT NULL AND deleted = 0 GROUP BY parent_id) g
+          CROSS JOIN messages p ON p.id = g.id
+          CROSS JOIN conv_members cm ON cm.conv_id = p.conv_id AND cm.user_id = ?
+          WHERE p.deleted = 0 AND (p.author_id = ? OR EXISTS (SELECT 1 FROM messages x WHERE x.parent_id = p.id AND +x.author_id = ?))
+          ORDER BY g.last DESC LIMIT 40`).all(me.id, me.id, me.id) as Array<{ id: string; last: number; n: number }>;
         return rows.map((r) => ({ parent: this.messageView(this.message(r.id)!, me.id), lastReplyAt: r.last, replyCount: r.n })) satisfies Ops['activity.tracks']['res'];
       }
 
@@ -1097,7 +1190,7 @@ export class Messaging {
         this.db.prepare('UPDATE messages SET deleted = 1, pinned = 0, edited_at = ?, removed_by = ?, removed_reason = ? WHERE id = ?').run(Date.now(), me.id, msg.author_id === me.id ? null : why, msg.id);
         this.db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
-        this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(msg.id);
+        this.unindex(msg.id);
         const row = this.message(msg.id)!;
         this.pushMessage('msg.updated', row);
         if (!row.parent_id) this.pushConv(row.conv_id);
@@ -1181,11 +1274,14 @@ export class Messaging {
         if (before !== null) { where.push('m.created_at < ?'); args.push(before); }
         if (hasFile) where.push('EXISTS (SELECT 1 FROM message_files x WHERE x.message_id = m.id)');
         if (olderThan) { where.push('m.id < ?'); args.push(olderThan); }
+        // newest first without sorting every match: words read the index in its rowid order (the
+        // order messages were sent, see alignSearchIndex), filters walk the messages by id; either
+        // stops after a page, and only that page gets snippets
         const rows = this.db.prepare(`SELECT m.id AS message_id, ${terms.length ? "snippet(messages_fts, 0, '[[', ']]', '…', 12)" : "''"} AS snip
           FROM ${terms.length ? 'messages_fts f JOIN messages m ON m.id = f.message_id' : 'messages m'}
-          JOIN conv_members cm ON cm.conv_id = m.conv_id AND cm.user_id = ?
-          JOIN conversations c ON c.id = m.conv_id
-          WHERE ${where.join(' AND ')} ORDER BY m.id DESC LIMIT ?`)
+          CROSS JOIN conv_members cm ON cm.conv_id = m.conv_id AND cm.user_id = ?
+          CROSS JOIN conversations c ON c.id = m.conv_id
+          WHERE ${where.join(' AND ')} ORDER BY ${terms.length ? 'f.rowid' : 'm.id'} DESC LIMIT ?`)
           .all(...args, limit) as Array<{ message_id: string; snip: string }>;
         const messages = rows.map((r) => ({ message: this.messageView(this.message(r.message_id)!, me.id), snippet: r.snip })).filter((x) => !x.message.deleted);
         const fWhere: string[] = ['m.deleted = 0'];
@@ -1305,7 +1401,8 @@ export class Messaging {
       for (const t of ['reactions', 'mentions', 'polls', 'poll_votes', 'message_files', 'stars']) this.db.prepare(`DELETE FROM ${t} WHERE message_id = ?`).run(id);
       const form = this.db.prepare('SELECT id FROM forms WHERE message_id = ?').get(id) as { id: string } | undefined;
       if (form) { this.db.prepare('DELETE FROM form_responses WHERE form_id = ?').run(form.id); this.db.prepare('DELETE FROM forms WHERE id = ?').run(form.id); }
-      this.db.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
+      this.unindex(id);
+      this.db.prepare('DELETE FROM search_rows WHERE message_id = ?').run(id);
       for (const forget of this.purgeExtras) forget(id);
       this.db.prepare('DELETE FROM messages WHERE id = ?').run(id);
     }
