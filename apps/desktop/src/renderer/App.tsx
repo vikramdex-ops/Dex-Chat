@@ -21,14 +21,14 @@ import { Home } from './views/Home.tsx';
 import { People } from './views/People.tsx';
 import { SettingsView } from './views/Settings.tsx';
 import { ChatView } from './chat/ChatView.tsx';
-import { addConversation, chatState, loadDrafts, refreshConversations, startChat, useChat } from './chat/store.ts';
+import { addConversation, chatState, loadDrafts, startChat, useChat } from './chat/store.ts';
 import { convTitle } from './chat/Switchboard.tsx';
 import type { Chip } from './chat/Switchboard.tsx';
 import { closePane, focusPane, openInPane, panesNow } from './chat/panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, todayAt } from './chat/officeTime.ts';
 import { IncomingCall, RoomChip, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
-import { refreshDesk, startDesk, useDesk } from './desk/store.ts';
+import { startDesk, useDesk } from './desk/store.ts';
 import { startOrg } from './org/store.ts';
 import { startWork } from './work/store.ts';
 import { DayArc, DayMenu } from './work/WorkUi.tsx';
@@ -70,11 +70,44 @@ function useAppState(): AppState | null {
   const [state, setState] = useState<AppState | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.dex.getState().then((s) => { if (alive) setState(s); });
-    const off = window.dex.onState(setState);
+    const take = (s: AppState) => setState((prev) => keepUnchanged(prev, s));
+    void window.dex.getState().then((s) => { if (alive) take(s); });
+    const off = window.dex.onState(take);
     return () => { alive = false; off(); };
   }, []);
   return state;
+}
+
+/**
+ * The main process sends the whole state again for every change (someone coming online, a status,
+ * an update check), as a fresh copy. Keep the parts that did not change as they were, so the
+ * screens built from them (every message's sender and tile) are not drawn again for nothing.
+ */
+const userJson = new WeakMap<object, string>();
+const asJson = (u: object) => { let j = userJson.get(u); if (j === undefined) { j = JSON.stringify(u); userJson.set(u, j); } return j; };
+const sameList = (a: readonly string[] | undefined, b: readonly string[] | undefined) => !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
+function keepUnchanged(prev: AppState | null, next: AppState): AppState {
+  const was = prev?.session;
+  const now = next.session;
+  if (!was || !now) return next;
+  const before = new Map(was.users.map((u) => [u.id, u] as const));
+  let same = was.users.length === now.users.length;
+  const users = now.users.map((u, i) => {
+    const old = before.get(u.id);
+    if (old && asJson(old) === asJson(u)) { if (was.users[i] !== old) same = false; return old; }
+    same = false;
+    return u;
+  });
+  const session = {
+    ...now,
+    users: same ? was.users : users,
+    me: asJson(was.me) === asJson(now.me) ? was.me : now.me,
+    online: sameList(was.online, now.online) ? was.online : now.online,
+    away: sameList(was.away, now.away) ? was.away : now.away,
+    inRoom: sameList(was.inRoom, now.inRoom) ? was.inRoom : now.inRoom,
+    inMeeting: sameList(was.inMeeting, now.inMeeting) ? was.inMeeting : now.inMeeting,
+  };
+  return { ...next, session };
 }
 
 function useTheme(state: AppState | null): void {
@@ -118,6 +151,15 @@ export function App() {
         : <Onboarding state={state} />}
     </ToastHost>
   );
+}
+
+/** Run something once the first screen has been drawn and the page is idle (within a second). */
+function afterFirstPaint(fn: () => void): () => void {
+  let idle = 0;
+  const frame = requestAnimationFrame(() => {
+    idle = typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1000 }) : window.setTimeout(fn, 200);
+  });
+  return () => { cancelAnimationFrame(frame); if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idle); else clearTimeout(idle); };
 }
 
 /** How you show to others. The stored values stay available / busy / dnd / invisible. */
@@ -291,8 +333,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   useEffect(() => { loadDrafts(); }, []);
   useEffect(() => {
     if (state.phase !== 'ready') return;
-    void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
-    void startDesk(session.me.id, () => usersRef.current).then(() => refreshDesk());
+    // (each start loads its lists once; the Desk's, large and not on the first screen, after it is drawn)
+    void startChat(session.me.id, () => usersRef.current);
+    const desk = afterFirstPaint(() => {
+      void startDesk(session.me.id, () => usersRef.current);
+      // the Meet lens's code, read while nothing else is going on, so its first opening is quick
+      setTimeout(() => void import('./meet/MeetLens.tsx').catch(() => {}), 3000);
+    });
     void startOrg();
     startPolicy();
     startEmoji();
@@ -302,12 +349,17 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     startCalls(session.deviceId, (t, b) => window.dex.notify(tr(t), tr(b)), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startWebinars();
+    return desk;
   }, [state.phase, session.me.id, session.deviceId]);
 
+  // the lens and chip now, for handlers kept from an earlier render (links, events)
+  const now = useRef({ lens, chip });
+  now.current = { lens, chip };
   const openConversation = (id: string, kind: 'direct' | 'space') => {
     openInPane(id);
+    const { lens: l, chip: c } = now.current;
     // stay on the Switchboard's current chip when it already shows this conversation
-    if (!isTalk(lens) || (chip !== 'all' && (kind === 'space') !== (chip !== 'people'))) setLens(kind === 'space' ? 'spaces' : 'direct');
+    if (!isTalk(l) || (c !== 'all' && (kind === 'space') !== (c !== 'people'))) setLens(kind === 'space' ? 'spaces' : 'direct');
     setSheet(null);
   };
   /** Open a conversation and scroll to (or open the side-track of) a message. */
@@ -709,7 +761,7 @@ export function PopoutApp({ convId }: { convId: string }) {
   const ready = state?.phase === 'ready';
   useEffect(() => {
     if (!ready || !session) return;
-    void startChat(session.me.id, () => usersRef.current).then(() => refreshConversations());
+    void startChat(session.me.id, () => usersRef.current);
     void startDesk(session.me.id, () => usersRef.current);
     startPolicy();
     startEmoji();

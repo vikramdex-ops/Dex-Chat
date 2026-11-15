@@ -10,6 +10,7 @@ import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { renderBody } from '../chat/format.tsx';
 import { toLocalInput } from '../desk/store.ts';
+import { useProgressive } from '../progressive.ts';
 import { allZones, fromZoneInput, localZone, zoneOffsetMin, setCalPrefs, timeIn, toZoneInput, useCalPrefs, zoneName, zoneOffsetLabel } from './tz.ts';
 import './calendar.css';
 import { DAY, addDays, describeSpan, dismissSoon, hm, joinMeeting, startOfDay, startOfWeek, useCal } from './store.ts';
@@ -206,11 +207,20 @@ function Week({ from, zone2, list, meId, onSlot, onOpen }: { from: number; zone2
 function Agenda({ list, meId, users, onOpen }: { list: Occurrence[] | null; meId: string; users: Map<string, PublicUser>; onOpen: (o: Occurrence) => void }) {
   if (!list) return <div className="tl-more"><span className="spinner" /></div>;
   if (!list.length) return <div className="empty"><Icon name="calendar" size={36} /><span>Nothing in the next 60 days.</span></div>;
-  const groups = new Map<number, Occurrence[]>();
-  for (const o of list) { const k = startOfDay(Math.max(o.startAt, startOfDay(Date.now()))); groups.set(k, [...(groups.get(k) ?? []), o]); }
+  return <AgendaDays list={list} meId={meId} users={users} onOpen={onOpen} />;
+}
+
+/** The agenda's days: the first ones at once, later ones over the next frames (see progressive.ts). */
+function AgendaDays({ list, meId, users, onOpen }: { list: Occurrence[]; meId: string; users: Map<string, PublicUser>; onOpen: (o: Occurrence) => void }) {
+  const groups = useMemo(() => {
+    const g = new Map<number, Occurrence[]>();
+    for (const o of list) { const k = startOfDay(Math.max(o.startAt, startOfDay(Date.now()))); g.set(k, [...(g.get(k) ?? []), o]); }
+    return [...g];
+  }, [list]);
+  const days = useProgressive(groups, 8, 12);
   return (
     <div className="agenda">
-      {[...groups].map(([day, items]) => (
+      {days.map(([day, items]) => (
         <section key={day} className="agenda-day">
           <h3 className="label">{new Date(day).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
           {items.map((o) => {

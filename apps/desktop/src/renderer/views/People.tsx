@@ -1,8 +1,9 @@
 // The Directory lens: everyone in the office as people cards, an org chart that walks the
 // reporting lines, departments and the team's day log. Selecting someone opens their card beside
 // the list, drawn as a drawing title block.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { Presence } from '../ui.tsx';
 import type { Department, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
@@ -13,6 +14,7 @@ import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
 import { useWork, workLine } from '../work/store.ts';
 import { TeamDayLog } from '../work/WorkUi.tsx';
+import { useProgressive } from '../progressive.ts';
 import './people.css';
 import { LeftTheOffice } from './LeftOffice.tsx';
 
@@ -39,9 +41,42 @@ export function SheetTabs<T extends string>({ value, onChange, label, tabs }: {
 type View = 'people' | 'chart' | 'departments' | 'daylog';
 type Filter = 'all' | 'online';
 
-export function People({ state, session, query, setQuery, focusUser, onMessage }: {
+/** One person's card, drawn again only when something on it changes (not for every key typed in the search). */
+const PersonCard = memo(function PersonCard({ u, meId, selected, flash, online, presence, department, work, onPick }: {
+  u: PublicUser; meId: string; selected: boolean; flash: boolean; online: boolean; presence: Presence; department: string | undefined;
+  work: Parameters<typeof workLine>[0]; onPick: (id: string) => void;
+}) {
+  return (
+    <button id={`person-${u.id}`} className={`card person interactive${selected ? ' selected' : ''}${flash ? ' flash' : ''}`} onClick={() => onPick(u.id)}>
+      {u.profile.extension && <span className="person-ext mono" aria-label={`Extension ${u.profile.extension}`}>EXT {u.profile.extension}</span>}
+      <Avatar user={u} presence={presence} size="lg" />
+      <div className="who">
+        <div className="name">
+          <span className="line" translate="no" title={u.displayName}>{u.displayName}</span>
+          {u.id === meId && <span className="chip accent">You</span>}
+          {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
+          {u.role === 'guest' && <span className="chip guest">Guest</span>}
+        </div>
+        <div className="line muted" translate={u.title ? 'no' : undefined} title={u.title || undefined}>{u.title || (online ? 'Online' : 'Offline')}</div>
+        <div className="line faint" translate="no">{department ?? u.account}</div>
+        {workLine(work) && <div className={`work-line ${work?.status}`}><span className="work-dot" />{workLine(work)}</div>}
+        {u.ooo && u.ooo.until > Date.now() && <div className="work-line leave"><span className="work-dot" />On leave until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}</div>}
+        {u.statusText && <div className="status" translate="no">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
+      </div>
+    </button>
+  );
+});
+
+export function People({ state, session, query: kept, setQuery: keep, focusUser, onMessage }: {
   state: AppState; session: Session; query: string; setQuery: (q: string) => void; focusUser: string | null; onMessage: (userId: string) => void;
 }) {
+  // the search is typed here and handed back to be kept when the lens closes (typing in it does
+  // not draw the whole app again); the cards follow it a moment behind the keys
+  const [query, setQuery] = useState(kept);
+  const typed = useRef(query);
+  typed.current = query;
+  useEffect(() => () => keep(typed.current), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const search = useDeferredValue(query);
   const [view, setView] = useState<View>('people');
   const [filter, setFilter] = useState<Filter>('all');
   const [dept, setDept] = useState<string>('');
@@ -60,19 +95,26 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
   useEffect(() => { if (focusUser) { setSelected(focusUser); setView('people'); } }, [focusUser]);
 
   const people = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
     return everyone
       .filter((u) => filter === 'all' || online.has(u.id))
       .filter((u) => !dept || u.profile.departmentId === dept)
       .filter((u) => !q || [u.displayName, u.account, u.title ?? '', u.statusText ?? '', departments.get(u.profile.departmentId ?? '')?.name ?? '',
         u.profile.location ?? '', u.profile.extension ?? '', u.profile.employeeId ?? '', ...Object.values(u.profile.fields)].some((f) => f.toLowerCase().includes(q)))
       .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName));
-  }, [everyone, online, filter, query, dept, departments]);
+  }, [everyone, online, filter, search, dept, departments]);
 
+  // a screenful of cards at once, the rest over the next frames (see progressive.ts)
+  const shown = useProgressive(people, 36, 48);
+  // the person asked for, once their card is drawn
+  const scrolledTo = useRef<string | null>(null);
   useEffect(() => {
-    if (focusUser) document.getElementById(`person-${focusUser}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [focusUser]);
-
+    if (!focusUser || scrolledTo.current === focusUser) return;
+    const el = document.getElementById(`person-${focusUser}`);
+    if (!el) return;
+    scrolledTo.current = focusUser;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focusUser, shown.length]);
   const sel = selected ? users.get(selected) : undefined;
 
   return (
@@ -108,25 +150,8 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
               <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span>{(query.trim() || dept || filter !== 'all') && <button className="btn" onClick={() => { setQuery(''); setDept(''); setFilter('all'); }}>Show everyone</button>}</div>
             ) : (
               <div className="grid cols-people">
-                {people.map((u) => (
-                  <button key={u.id} id={`person-${u.id}`} className={`card person interactive${selected === u.id ? ' selected' : ''}${focusUser === u.id ? ' flash' : ''}`} onClick={() => setSelected(u.id)}>
-                    {u.profile.extension && <span className="person-ext mono" aria-label={`Extension ${u.profile.extension}`}>EXT {u.profile.extension}</span>}
-                    <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
-                    <div className="who">
-                      <div className="name">
-                        <span className="line" translate="no" title={u.displayName}>{u.displayName}</span>
-                        {u.id === session.me.id && <span className="chip accent">You</span>}
-                        {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
-                        {u.role === 'guest' && <span className="chip guest">Guest</span>}
-                      </div>
-                      <div className="line muted" translate={u.title ? 'no' : undefined} title={u.title || undefined}>{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
-                      <div className="line faint" translate="no">{departments.get(u.profile.departmentId ?? '')?.name ?? u.account}</div>
-                      {workLine(work.get(u.id)) && <div className={`work-line ${work.get(u.id)?.status}`}><span className="work-dot" />{workLine(work.get(u.id))}</div>}
-                      {u.ooo && u.ooo.until > Date.now() && <div className="work-line leave"><span className="work-dot" />On leave until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}</div>}
-                      {u.statusText && <div className="status" translate="no">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
-                    </div>
-                  </button>
-                ))}
+                {shown.map((u) => <PersonCard key={u.id} u={u} meId={session.me.id} selected={selected === u.id} flash={focusUser === u.id} online={online.has(u.id)}
+                  presence={presenceFor(u.id)} department={departments.get(u.profile.departmentId ?? '')?.name} work={work.get(u.id)} onPick={setSelected} />)}
               </div>
             )}
             <LeftTheOffice session={session} query={query} onOpen={setSelected} />
