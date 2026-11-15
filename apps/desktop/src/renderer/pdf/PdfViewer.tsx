@@ -30,6 +30,12 @@ export interface PdfViewerProps {
   onDownload?: (bytes: PdfSource | null) => Promise<void>;
   onOpenExternal?: (bytes: PdfSource | null) => Promise<void>;
   onClose: () => void;
+  /**
+   * Drawn in place (a notice's attachment on the notice board) rather than over the window: no
+   * Close, a Full screen button instead (onExpand), and its keys work only while it has focus.
+   */
+  inline?: boolean;
+  onExpand?: () => void;
 }
 
 type Status = { kind: 'loading' } | { kind: 'password'; wrong: boolean } | { kind: 'failed'; failure: PdfFailure | { kind: 'locked' } } | { kind: 'ready' };
@@ -86,7 +92,7 @@ async function writeClipboard(text: string): Promise<void> {
   ta.remove();
 }
 
-export default function PdfViewer({ name, size, load, onDownload, onOpenExternal, onClose }: PdfViewerProps) {
+export default function PdfViewer({ name, size, load, onDownload, onOpenExternal, onClose, inline = false, onExpand }: PdfViewerProps) {
   const toast = useToast();
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
   const [engine, setEngine] = useState<PdfEngine | null>(null);
@@ -104,6 +110,7 @@ export default function PdfViewer({ name, size, load, onDownload, onOpenExternal
   const [busy, setBusy] = useState<'download' | 'open' | 'copy' | null>(null);
   const [attempt, setAttempt] = useState(0);
   const stage = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const zoomBtn = useRef<HTMLButtonElement>(null);
   const findInput = useRef<HTMLInputElement>(null);
   const bytes = useRef<PdfSource | null>(null);
@@ -365,11 +372,14 @@ export default function PdfViewer({ name, size, load, onDownload, onOpenExternal
   // ---------------------------------------------------------------- keyboard
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      // in place, the viewer's keys are its own only while it has focus (the page around it keeps the rest)
+      if (inline && !root.current?.contains(document.activeElement)) return;
       const typing = (e.target as HTMLElement | null)?.closest?.('input, textarea');
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); return; }
       if (e.key === 'Escape') {
         if (zoomMenu) return;
-        if (find.open) { setFind((f) => ({ ...f, open: false, hits: [], active: -1 })); return; }
+        if (find.open) { e.preventDefault(); setFind((f) => ({ ...f, open: false, hits: [], active: -1 })); return; }
+        if (inline) return;
         onClose();
         return;
       }
@@ -412,8 +422,8 @@ export default function PdfViewer({ name, size, load, onDownload, onOpenExternal
     ...(status.kind === 'ready' && curSize ? [`${paper ? `${paper} · ` : ''}${sizeInMm(rotatedSize(curSize, 0))}`] : []), ...(size ? [formatBytes(size)] : [])];
   const ready = status.kind === 'ready' && !!engine;
 
-  return createPortal(
-    <div className={`lightbox pdfv tool-${tool}${dragging ? ' dragging' : ''}`} role="dialog" aria-modal="true" aria-label={name}>
+  const sheet = (
+    <div ref={root} className={`${inline ? 'pdfv-inline' : 'lightbox'} pdfv tool-${tool}${dragging ? ' dragging' : ''}`} role={inline ? 'region' : 'dialog'} aria-modal={inline ? undefined : true} aria-label={name}>
       <header className="pdfv-head">
         <span className="pdfv-title">
           <span className="sb-name" translate="no" title={name}>{name}</span>
@@ -456,7 +466,9 @@ export default function PdfViewer({ name, size, load, onDownload, onOpenExternal
             {onOpenExternal && <button className="btn sm pdfv-ext" title="Open in the default app" disabled={!!busy} onClick={() => void act('open')}>{busy === 'open' ? <span className="spinner" /> : <Icon name="open" size={14} />}<span>Open in the default app</span></button>}
           </span>
         </span>
-        <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+        {inline
+          ? onExpand && <button className="icon-btn" onClick={onExpand} aria-label="Full screen" title="Full screen"><Glyph name="fitp" /></button>
+          : <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>}
       </header>
 
       <div className="pdfv-body">
@@ -510,9 +522,9 @@ export default function PdfViewer({ name, size, load, onDownload, onOpenExternal
           ))}
         </Popover>
       )}
-    </div>,
-    document.body,
+    </div>
   );
+  return inline ? sheet : createPortal(sheet, document.body);
 }
 
 const formatBytes = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} KB` : `${n} B`);

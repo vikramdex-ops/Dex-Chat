@@ -171,7 +171,7 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 | 9 | Scheduled messages (25 per chat), reminders (message or standalone, others, recurring) | Full | 100% | M | Hub runs schedules; direct mode runs them locally |
 | 10 | Mentions (@user, @channel, @all, #channel), Mentions & Replies view, hashtags + trends | Full | 100% | M | Amber mention highlights; unified Activity inbox |
 | 11 | Chat types: 1:1, groups (500), channel conversion, bots | Full | 100% | M | — |
-| 12 | Channels: org / team / private, roles (admin, moderator, member), permission matrix, announcement-only, archive, join/leave notices | Full | 100% | M | Per-department team channels generated from the org chart |
+| 12 | Channels: org / team / private, roles (admin, moderator, member), permission matrix, announcement-only, archive, join/leave notices | Full | 100% | M | Per-department team channels generated from the org chart; official notices get a register of their own, with acknowledgements ([`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md)) |
 | 13 | Chat organisation: pinned chats (100), folders (50), custom sections, filters, resizable sidebar | Full | 100% | S | Keyboard-reorderable sections |
 | 14 | Chat tabs & chat actions (pin files, forms, links, widgets to a chat) | Full | 100% | M | — |
 | 15 | Presence: available, away, busy, invisible, DND (timed / scheduled), on-call / in-meeting auto, custom status, OOO with delegate | Full | 100% | M | Windows Focus Assist sync without a native addon |

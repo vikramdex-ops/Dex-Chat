@@ -2,7 +2,7 @@
 // Spaces, with files). Opened from the palette, Ctrl+Shift+F or a conversation's header (already
 // scoped to it).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
+import type { Conversation, FileInfo, Message, NoticeHit, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover } from '../ui.tsx';
 import { SheetTabs } from './People.tsx';
 import { convTitle } from '../chat/Switchboard.tsx';
@@ -12,6 +12,8 @@ import { searchLocal } from '../localsearch/service.ts';
 import { plainSnippet } from '../localsearch/tokenize.ts';
 import { formatTime } from '../time.ts';
 import { translating } from '../i18n/index.ts';
+import { openNotice } from '../notices/store.ts';
+import { refText, titleOf } from '../notices/parts.tsx';
 
 export interface SearchInit { q?: string; convId?: string | null }
 type When = 'any' | 'today' | 'week' | 'month' | 'year';
@@ -52,7 +54,8 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
   const [period, setPeriod] = useState<When>('any');
   const [kind, setKind] = useState<'all' | 'direct' | 'space'>('all');
   const [hasFile, setHasFile] = useState(false);
-  const [tab, setTab] = useState<'text' | 'files'>('text');
+  const [tab, setTab] = useState<'text' | 'files' | 'notices'>('text');
+  const [notices, setNotices] = useState<NoticeHit[]>([]);
   const [hits, setHits] = useState<Hit[]>([]);
   const [files, setFiles] = useState<FileHit[]>([]);
   const [busy, setBusy] = useState(false);
@@ -67,12 +70,12 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
   const ready = q.trim().length >= 2 || !!(from || convId || hasFile || period !== 'any');
   const key = JSON.stringify([q.trim(), filters]);
   useEffect(() => {
-    if (!ready) { setHits([]); setFiles([]); setMore(false); return; }
+    if (!ready) { setHits([]); setFiles([]); setNotices([]); setMore(false); return; }
     setBusy(true);
     const t = setTimeout(() => {
       const hub = window.dex.request('search', { q: q.trim(), limit: 30, ...filters }).catch(() => null);
       void Promise.all([hub, onDevice()])
-        .then(([r, mine]) => { setHits(merge(r?.messages ?? [], mine)); setFiles(r?.files ?? []); setMore((r?.messages.length ?? 0) === 30 || mine.length === 30); })
+        .then(([r, mine]) => { setHits(merge(r?.messages ?? [], mine)); setFiles(r?.files ?? []); setNotices(r?.notices ?? []); setMore((r?.messages.length ?? 0) === 30 || mine.length === 30); })
         .finally(() => setBusy(false));
     }, 120); // a pause in the typing (the hub answers in a few milliseconds)
     return () => clearTimeout(t);
@@ -168,14 +171,28 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
         </Popover>
       )}
 
-      <SheetTabs<'text' | 'files'> label="Results" value={tab} onChange={setTab} tabs={[
+      <SheetTabs<'text' | 'files' | 'notices'> label="Results" value={tab} onChange={setTab} tabs={[
         { value: 'text', label: 'Text', count: ready && hits.length ? `${hits.length}${more ? '+' : ''}` : undefined },
         { value: 'files', label: 'Files', count: ready ? files.length : undefined },
+        ...(convId ? [] : [{ value: 'notices' as const, label: 'Notices', count: ready ? notices.length : undefined }]),
       ]} />
 
       {!ready ? (
         <div className="empty"><Icon name="search" size={28} /><p>Type at least two letters, or set one of the filters above: by whom, in which conversation, when, or files attached.</p>
           <p className="faint" style={{ fontSize: 12.5 }}>End-to-end encrypted Direct messages are searched on this device, in an encrypted index of what it has received and sent: the hub cannot read them.</p></div>
+      ) : tab === 'notices' ? (
+        <div className="search-results" role="list">
+          {!busy && notices.length === 0 && <div className="empty"><p>No notices on the notice board match.</p></div>}
+          {notices.map((h) => (
+            <button key={h.notice.id} role="listitem" className="search-hit" onClick={() => openNotice(h.notice.id)}>
+              <span className="file-ico"><Icon name="notice" size={18} /></span>
+              <span className="sb-main">
+                <span className="search-meta"><b translate="no" className="sm-where">{titleOf(h.notice)}</b><span className="mono faint" translate="no">{refText(h.notice)}</span></span>
+                <span className="search-snippet">{h.where === 'pdf' && <span className="chip accent nb-in-pdf">In the PDF</span>}<Snippet text={h.snippet} /></span>
+              </span>
+            </button>
+          ))}
+        </div>
       ) : tab === 'text' ? (
         <div className="search-results" role="list">
           {!busy && hits.length === 0 && <div className="empty"><p>Nothing written matches.</p>{(from || convId || hasFile || period !== 'any' || kind !== 'all') && <button className="btn" onClick={() => { setFrom(null); setConvId(null); setHasFile(false); setPeriod('any'); setKind('all'); }}>Clear the filters</button>}</div>}

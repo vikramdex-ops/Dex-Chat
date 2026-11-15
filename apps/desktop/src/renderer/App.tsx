@@ -55,6 +55,8 @@ import { NetSheetsHost } from './bots/net/host.tsx';
 import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
 import { tr } from './i18n/index.ts';
 import { NibButton, NibHost, openNib } from './nib/NibHost.tsx';
+import { NoticeBanner, NoticeHost } from './notices/Host.tsx';
+import { openNotice, startNotices, useNotices, waitingForMe } from './notices/store.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 // last: the drawing-office layer decides the shape of the shared controls (after every screen's own sheet)
 import './drawing.css';
@@ -63,9 +65,11 @@ import './drawing.css';
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));
 // the Meet lens loads when it is first opened
 const MeetLens = lazy(() => import('./meet/MeetLens.tsx'));
+// the notice board's register loads when the Notices lens is first opened
+const NoticeBoardLens = lazy(() => import('./notices/Board.tsx'));
 const AutomationsSheet = lazy(() => import('./flows/FlowsPanel.tsx').then((m) => ({ default: m.AutomationsSheet })));
 
-export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory' | 'meet';
+export type Lens = 'pulse' | 'direct' | 'spaces' | 'desk' | 'calendar' | 'directory' | 'meet' | 'notices';
 export type SheetName = 'preferences' | 'control' | 'search' | null;
 /** Kept for older call sites: a section is a lens or a sheet. */
 export type Section = Lens | 'admin' | 'settings' | 'home' | 'people';
@@ -193,6 +197,7 @@ const LENSES: Array<{ id: Lens; label: string; icon: IconName }> = [
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'directory', label: 'Directory', icon: 'card' },
   { id: 'meet', label: 'Meet', icon: 'video' },
+  { id: 'notices', label: 'Notices', icon: 'notice' },
 ];
 
 /** The phone's lens strip: at most five, with Direct and Spaces sharing one Switchboard. */
@@ -209,9 +214,10 @@ const isTalk = (l: Lens) => l === 'direct' || l === 'spaces';
 function useLensBadges(): Record<Lens, { mentions: number; unread: boolean }> {
   const conversations = useChat((s) => s.conversations);
   const due = useDesk((s) => s.ringing.length);
+  const notices = waitingForMe(useNotices((s) => s.list)).length;
   const out: Record<Lens, { mentions: number; unread: boolean }> = {
     pulse: { mentions: 0, unread: false }, direct: { mentions: 0, unread: false }, spaces: { mentions: 0, unread: false },
-    desk: { mentions: due, unread: false }, calendar: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false }, meet: { mentions: 0, unread: false },
+    desk: { mentions: due, unread: false }, calendar: { mentions: 0, unread: false }, directory: { mentions: 0, unread: false }, meet: { mentions: 0, unread: false }, notices: { mentions: notices, unread: false },
   };
   for (const c of conversations.values()) {
     const k: Lens = c.kind === 'space' ? 'spaces' : 'direct';
@@ -354,6 +360,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startWebinars();
     startBotMarks();
+    if (session.me.role !== 'guest' && session.me.role !== 'bot') startNotices();
     return desk;
   }, [state.phase, session.me.id, session.deviceId]);
 
@@ -521,6 +528,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       else if (target === 'help') { setSheet(null); openHelp(m[2] === 'desk' ? { view: 'desk' } : { view: 'me' }); }
       else if (target === 'nib') { setSheet(null); openNib(m[2] === 'wrap' ? { v: 'wrap' } : m[2] === 'leave' ? { v: 'leave' } : { v: 'home' }); }
       else if (target === 'pulse') { setLens('pulse'); setSheet(null); }
+      else if (target === 'notices') { setLens('notices'); setSheet(null); if (m[2]) openNotice(m[2]); }
       else if (target === 'meet') {
         setLens('meet'); setSheet(null);
         const id = parseMeetingId(m[2] ?? '');
@@ -542,7 +550,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const go = (s: Section) => {
     if (s === 'admin') setSheet('control');
     else if (s === 'settings') setSheet('preferences');
-    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' || s === 'calendar' || s === 'meet' ? s : 'pulse');
+    else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' || s === 'calendar' || s === 'meet' || s === 'notices' ? s : 'pulse');
   };
 
   const conn = state.phase === 'ready'
@@ -565,6 +573,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'card' as IconName, run: () => setLens('directory') },
     { id: 'go-meet', label: 'Go to Meet: start or join a meeting', icon: 'video' as IconName, run: () => setLens('meet') },
+    ...(session.me.role !== 'guest' ? [{ id: 'go-notices', label: 'Go to the notice board: policies, circulars, holidays', icon: 'notice' as IconName, run: () => setLens('notices') }] : []),
     ...(session.me.role !== 'guest' ? [
       { id: 'nib', label: 'Tell Nib: work in plain words, reminders, who’s in', icon: 'nib' as IconName, hint: 'Ctrl+Alt+N', run: () => openNib() },
       { id: 'nib-wrap', label: 'Wrap up my day: send my day sheet', icon: 'daysheet' as IconName, run: () => openNib({ v: 'wrap' }) },
@@ -653,11 +662,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <main className={`stage${isTalk(lens) ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
         <BatteryPrompt state={state} />
+        <NoticeBanner />
         {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} onPerson={(id) => { setLens('directory'); setFocusUser(id); }} />}
         {isTalk(lens) && <ChatView chip={chip} setChip={setChip} state={state} session={session} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}
         {lens === 'calendar' && <CalendarView session={session} openConv={(id) => jump(id)} />}
         {lens === 'meet' && <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><MeetLens session={session} openConv={(id) => jump(id)} /></Suspense>}
+        {lens === 'notices' && <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><NoticeBoardLens session={session} /></Suspense>}
         {lens === 'directory' && <People state={state} session={session} query={query} setQuery={setQuery} focusUser={focusUser} onMessage={(id) => void messagePerson(id)} />}
       </main>
 
@@ -708,6 +719,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
       <AssistHost session={session} users={users} live={live} />
       <NibHost session={session} users={users} live={live} />
+      <NoticeHost session={session} />
       <RecapHost users={users} meId={session.me.id} jump={(c, mid) => jump(c, mid)} />
       <WebinarSeat />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />

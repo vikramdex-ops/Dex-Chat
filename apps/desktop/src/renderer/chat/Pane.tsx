@@ -4,7 +4,7 @@
 import { Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
-import { STICKER_RE, apRef } from '@dex/core';
+import { STICKER_RE, apRef, uniqueCommands } from '@dex/core';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
@@ -1362,7 +1362,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [slashIndex, setSlashIndex] = useState(0);
   const [botCmds, setBotCmds] = useState<CommandInfo[]>([]);
   const slashQuery = /^\/([\w-]*)$/.exec(text)?.[1]?.toLowerCase() ?? null;
-  const slashList = slashQuery === null ? [] : [...BUILT_INS, ...botCmds].filter((c) => c.command.startsWith(slashQuery)).slice(0, 8);
+  const slashList = slashQuery === null ? [] : uniqueCommands(BUILT_INS, botCmds).filter((c) => c.command.startsWith(slashQuery)).slice(0, 8);
   useEffect(() => { if (slashQuery !== null) void loadBotCommands().then(setBotCmds); }, [slashQuery !== null]); // eslint-disable-line react-hooks/exhaustive-deps
   const scheduledAll = useDesk((s) => s.scheduled);
   const scheduledHere = useMemo(() => [...scheduledAll.values()].filter((x) => x.convId === convId && (x.parentId ?? null) === parentId).sort((a, b) => a.sendAt - b.sendAt), [scheduledAll, convId, parentId]);
@@ -1779,7 +1779,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       {dockDialog === 'help' && (
         <Dialog title="Slash commands" onClose={() => setDockDialog(null)}>
           <div className="slash-help">
-            {[...BUILT_INS, ...botCmds].map((c) => (
+            {uniqueCommands(BUILT_INS, botCmds).map((c) => (
               <div key={c.command}><span className="mono">/{c.command}</span>{c.hint && <span className="faint mono"> {c.hint}</span>}<span className="muted">{c.description}</span></div>
             ))}
           </div>

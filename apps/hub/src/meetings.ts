@@ -63,7 +63,7 @@ export interface Meeting {
 
 interface Row { id: string; kind: MeetingKind; title: string; host_id: string; conv_id: string | null; event_id: string | null; co_hosts: string; lobby: LobbyRule; join_before_host: number; guest_on: number; guest_code: string | null }
 
-/** Defaults the office sets for new meetings (Control room ▸ Meetings). */
+/** Defaults the office sets for new meetings (Control room ▸ Policies ▸ Meetings). */
 export interface MeetingDefaults { lobby: LobbyRule; joinBeforeHost: boolean }
 
 const KINDS: MeetingKind[] = ['instant', 'personal', 'conversation', 'event', 'webinar'];
@@ -142,7 +142,7 @@ export class Meetings {
   /** Settings from a request, on top of what a meeting has now. */
   static settings(input: unknown, base: MeetingSettings): MeetingSettings {
     const d = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-    if (d.lobby !== undefined && !LOBBY.includes(d.lobby as LobbyRule)) throw new MeetingError('Choose who waits in the lobby: nobody, people from outside, or everyone.');
+    if (d.lobby !== undefined && !LOBBY.includes(d.lobby as LobbyRule)) throw new MeetingError('Choose who waits in the lobby: guests and people from outside, everyone, or only guests from a browser.');
     if (d.joinBeforeHost !== undefined && typeof d.joinBeforeHost !== 'boolean') throw new MeetingError('Join before the host is on or off.');
     return { lobby: (d.lobby as LobbyRule | undefined) ?? base.lobby, joinBeforeHost: (d.joinBeforeHost as boolean | undefined) ?? base.joinBeforeHost };
   }
@@ -309,7 +309,7 @@ export class Meetings {
 
   /** What a host sees about the guest link. */
   guestView(m: Meeting, opts: { gateway: string | null; allowed: boolean; relayOnly: boolean }): GuestLinkView {
-    const problem = !opts.allowed ? 'Your office has turned guest links off (Control room ▸ Meetings).'
+    const problem = !opts.allowed ? 'Your office has turned guest links off (Control room ▸ Policies ▸ Meetings).'
       : !opts.gateway ? 'Guest links work through the internet gateway, which is not set up (Control room ▸ Outside the office).'
         : opts.relayOnly ? 'This meeting runs on the office relay (more than 8 people), which browsers outside the office cannot reach. Guests can join meetings of up to 8.'
           : null;

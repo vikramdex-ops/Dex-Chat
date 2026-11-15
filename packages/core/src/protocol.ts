@@ -1124,7 +1124,7 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
       /** Page further back: only results older than this message id. */
       olderThan?: string;
     };
-    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string; textMatch?: string }> };
+    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string; textMatch?: string }>; /** Notices on the notice board (their text and their PDFs'). */ notices?: import('./notices.ts').NoticeHit[] };
   };
 }
 export type OpName = keyof Ops;

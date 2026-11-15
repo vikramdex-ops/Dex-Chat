@@ -54,6 +54,11 @@ when it needs you (amber only means "you"). It is not a robot, a face or a speec
   there as to anyone. Nib reads only its own conversation with you; Direct messages between people
   are end-to-end encrypted and the hub never sees them.
 
+The notice board ([`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md)) speaks through Nib too, as plain lines
+in the same conversation (`Nib.note`, once per key): one grouped reminder a day at most about
+notices waiting for your acknowledgement, the issuing desk's afternoon digest, and a line when the
+desk answers your question. With Nib turned off these come from the system bot.
+
 Nib is one permanent identity on the hub (`system\nib`, role `bot`, no token), made the first
 time anyone in the office opens the app. The older system bot ("Dexterity Connect") keeps sending
 account notices (devices, roles), so security notices stay in their own plain channel.
@@ -71,8 +76,9 @@ When you start your day (the day menu in your tile, `/startday`, Pulse), Nib's c
 - **Anyone else**: type a name; the Directory completes it.
 - Pick several. For each, optionally the job (`P-12`, from the office's project codes and your
   recent ones) and a few words.
-- **Log these**, **Nothing yet** (asks again later, once), **On leave today** (opens the leave
-  note), or **Later**.
+- **Log these**, **Someone else…** (the full start card in the tray, for anyone who is not a quick
+  pick), **Nothing yet** (asks again later, once) or **On leave today** (opens the leave note). The
+  **×** in the corner (**Not now**, or Esc) closes the card until the next ask.
 
 If you have not started your day by the **start prompt time** (09:45 by default), the same card
 opens gently in the callout: you can answer it without starting the day log.
@@ -146,8 +152,10 @@ cards follow ("changed after sending").
 5. **Adaptive**: *T* is the person's own wrap-up time if they set one; otherwise the office's,
    moved towards the time they usually send (the median of their last ten sends), never earlier
    than an hour before the office's time and never later than 30 minutes before the register.
-6. **Their choice**: snooze (30 min, 1 hour, until the current meeting ends), **Nothing today**,
-   **On leave**, or **set my wrap-up time**. A snooze moves the next ask; it does not count.
+6. **Their choice**, on the wrap-up callout: **Check and send**, a snooze (**In 30 min**, or
+   **After my meeting**: until the current meeting ends), **Nothing today** (when the sheet has no
+   work of today on it), or **×** (**Not now**). The wrap-up itself has **Ask me at …: change**, to
+   set your own wrap-up time. A snooze moves the next ask; it does not count.
 7. **Only asks people could see count**: an ask while none of their devices is connected is not
    counted, so "Nib asked 3 times" is true.
 8. **The morning after**: if yesterday's sheet was never sent, the start card offers to send it
@@ -166,8 +174,8 @@ arrive after the register, and nothing else is posted. It is a **transmittal** s
   bar, or their words), their note and blockers (blockers in amber);
 - totals per job and unit at the foot (`P-12 · 54 / 90 sheets · 12 isos`);
 - **Waiting for**: people who named this lead at the start of the day but have not sent yet;
-- actions per row: **Seen** (the person sees "Meera saw it" on their sheet) and **Write to…**
-  (opens your Direct conversation with them, quoting the item); **Seen all** at the top.
+- actions per row: **Seen** (the person sees "Meera saw it" on their sheet) and **Write** (opens
+  your Direct conversation with them, quoting the item); **Seen all** at the top.
 
 ## 5. What management receives
 
@@ -175,7 +183,8 @@ Management subscribers get **one daily register**, at the register time (19:00 b
 card in their Nib conversation. It is built for 40 to 200 people and never needs scrolling to
 understand:
 
-1. **Headline cells**: `EXPECTED 38 · IN 34 · REPORTED 31 · MISSING 4 · ON LEAVE 3 · AWAY 1`.
+1. **Headline cells**: `EXPECTED 38 · IN TODAY 34 · REPORTED 31 · NOT YET 4 · ON LEAVE 3 · BLOCKED 2`
+   (Not yet counts the missing and those not in who have not reported).
 2. **The register**: everyone as a small square cell, grouped by department, like a drawing
    register's sheet index. Solid teal: reported. Teal with an amber corner: reported with a blocker.
    Hatched: missing. Dashed with `L`: on leave. Paper: not in today. Each cell's fill height shows
@@ -205,8 +214,10 @@ bar per day.
 ## 6. Leave, made great
 
 The **leave note** is a Nib skill (tray chip **Going on leave**, `/leave`, "on leave tomorrow" to
-Nib, or **On leave today** on the start card). One short sheet asks, with sensible defaults
-already chosen:
+Nib, or **On leave today** on the start card). It is the office's way of going on leave: `/leave`
+is always Nib's, and Front Office's **Leave request** (an approval only) starts with
+`/leave-request` and points back to the note when it is sent. One short sheet asks, with sensible
+defaults already chosen:
 
 - **when**: Today · Tomorrow · Pick dates · Half day (morning or afternoon);
 - **kind**: annual, sick, comp-off, half day;
@@ -230,8 +241,9 @@ It shows exactly what will happen, then **Do it** does all of it:
 | Day sheets | No nudges on those days; one grouped line in the management register. |
 | Back | The first time you open the app on your return day, Nib's tray opens on **Welcome back**: conversations that moved and where you were mentioned, work your cover logged against your items, reminders moved to today, and today's meetings. |
 
-The bot maker's **Leave note** template gains an end action, **Mark me away** (`do: "away"`), that
-hands its answers to this skill, so a bot built from it does all of the above too.
+The bot maker's **Leave note** template gains an end action, **Nib marks the person away**
+(`do: "away"`), that hands its answers to this skill, so a bot built from it does all of the above
+too.
 
 ## 7. Everyday skills
 
@@ -250,19 +262,19 @@ every skill runs with that person's own access (their search, their calendar, th
 
 ## 8. Configuration (Control room ▸ Nib & day sheets)
 
-Administrators (the office manager, a director) set, on one ruled sheet:
+Administrators (the office manager, a director) set, on one ruled sheet in four parts:
 
 | | Default |
 | --- | --- |
-| 01 Activity givers: area leads, discipline leads and team leads, each with a scope (`Area 4`, `Piping`); **Add the department heads** fills it from the Organisation | none |
-| 02 Management: who receives the daily register, follow-up and weekly roll-up | none |
-| 03 Who reports: everyone except the exempted (the management by default) | |
-| 04 Times: start prompt, wrap-up, register, follow-up | 09:45, 18:00, 19:00, 21:00 |
-| 05 Nudges: asks a day (1–5) | 3 |
-| 06 Workdays | Mon–Sat |
-| 07 Job codes, one per line (`P-12 Refinery revamp`), used for parsing and grouping | none |
-| 08 Who sees day sheets: private (each person, their givers for their own items, the management for all) or open to everyone in the office | private |
-| 09 Day sheets on or off | on |
+| **01 Activity givers**: area leads, discipline leads and team leads, each with a scope (`Area 4`, `Piping`); **Add the department heads** fills it from the Organisation | none |
+| **02 Management**: **Who receives the register** (the daily register, the follow-up and the week) | none |
+| 02 Management: **Who keeps a day sheet**: **All but the management**, or **Choose** who keeps none | all but the management |
+| **03 Times**: start of the day card, wrap-up, register, follow-up | 09:45, 18:00, 19:00, 21:00 |
+| 03 Times: **Asks a day** (1–5) | 3 |
+| 03 Times: **Workdays** | Mon–Sat |
+| **04 Jobs and privacy**: **Job codes**, one per line (`P-12 Refinery revamp`), used for parsing and grouping | none |
+| 04 Jobs and privacy: **Who sees day sheets**: **Private** (each person, their givers for their own items, the management for all) or **Open to the office** | private |
+| 04 Jobs and privacy: **Day sheets** on or off | on |
 
 Every change is in the audit log (`nib.config`). **Send me a register now** posts today's register
 to the administrator to check the look before the first evening.
@@ -309,4 +321,4 @@ words, the nudge policy, permissions, lead cards, the register for 40 and 200 pe
 `apps/hub/test/nib.test.ts` (a whole day with the clock moved: start, capture in the conversation,
 wrap-up, one lead card filled in place, one register, a late sheet and exactly one follow-up;
 nudges counted and paused on Do not disturb; who sees whose sheet; the leave note end to end; the
-bot maker's Mark me away) and `apps/desktop/e2e/nib.mts` (the same day in three real apps).
+bot maker's Nib marks the person away) and `apps/desktop/e2e/nib.mts` (the same day in three real apps).

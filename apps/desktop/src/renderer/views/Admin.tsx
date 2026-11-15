@@ -16,8 +16,9 @@ import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast
 import { confirmAction } from '../confirm.tsx';
 import { auditLine } from './audit.ts';
 import { NibAdmin } from '../nib/NibAdmin.tsx';
+import { NoticeDesksAdmin } from '../notices/DesksAdmin.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'nib' | 'continuity' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'nib' | 'notices' | 'continuity' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -77,6 +78,25 @@ const AUDIT_TEXT: Record<string, string> = {
   'hook.revoked': 'stopped a webhook',
   'botflow.saved': 'saved a bot flow',
   'nib.config': 'changed Nib and day sheets',
+  'notice.drafted': 'drafted a notice',
+  'notice.revising': 'started a revision of a notice',
+  'notice.issued': 'issued a notice',
+  'notice.scheduled': 'scheduled a notice',
+  'notice.unscheduled': 'took a scheduled notice back to a draft',
+  'notice.discarded': 'threw away a draft notice',
+  'notice.withdrawn': 'withdrew a notice',
+  'notice.expired': 'a notice expired into the archive',
+  'notice.purged': 'removed notices past retention',
+  'notice.asked': 'asked an issuing desk about a notice',
+  'notice.answered': 'answered a question about a notice',
+  'notice.faqAdded': 'added an answer to a notice for everyone',
+  'notice.reminded': 'reminded people to acknowledge a notice',
+  'notice.emailCopy': 'made an email copy of a notice',
+  'notice.desk': 'changed an issuing desk',
+  'notice.deskRemoved': 'removed an issuing desk',
+  'notice.retention': 'changed how long old notices are kept',
+  'notice.imported': 'moved pinned messages onto the notice board',
+  'notice.exported': 'exported the notice register',
   'nib.leave': 'noted leave with Nib',
   'nib.leaveCancelled': 'cancelled leave noted with Nib',
   'botflow.removed': 'removed a bot flow',
@@ -184,6 +204,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'automations', label: 'Automations', icon: 'repeat' },
           { value: 'bots', label: 'Bots & tools', icon: 'branch' },
           { value: 'nib', label: 'Nib & day sheets', icon: 'nib' },
+          { value: 'notices', label: 'Notice desks', icon: 'notice' },
           { value: 'continuity', label: 'Backups & leavers', icon: 'archive' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
@@ -278,6 +299,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'automations' && <AutomationsAdmin session={session} />}
       {tab === 'bots' && <BotsAdmin users={session.users} />}
       {tab === 'nib' && <NibAdmin session={session} />}
+      {tab === 'notices' && <NoticeDesksAdmin session={session} />}
       {tab === 'continuity' && <ContinuityAdmin session={session} live={live} />}
 
       {tab === 'audit' && (audit.length === 0 ? (

@@ -16,6 +16,7 @@ import { MeetPulseCard } from '../meet/MeetPulse.tsx';
 import { OfficeDrawingCard } from '../orgscape/PulseCard.tsx';
 import { NibPulseCard } from '../nib/pulse.tsx';
 import { formatTime } from '../time.ts';
+import { NoticeNeedsRows, WeekStrip, useNoticesWaiting } from '../notices/Host.tsx';
 
 function greeting(d = new Date()): string {
   const h = d.getHours();
@@ -38,6 +39,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
   // until the conversations arrive, Pulse cannot say you are caught up
   const chatReady = useChat((s) => s.ready);
   const deskLoaded = useDesk((s) => s.loaded);
+  // notices waiting for my acknowledgement (the notice board)
+  const notices = useNoticesWaiting();
 
   const needsYou = useMemo(() => [...conversations.values()]
     .filter((c) => c.joined && (c.mentions > 0 || (c.unread > 0 && !c.muted)))
@@ -71,7 +74,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
       <DayLine live={live} />
 
       <section className="pulse-section">
-        <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length + dueToday.length ? ` · ${needsYou.length + dueToday.length}` : ''}</div>
+        <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length + dueToday.length + notices ? ` · ${needsYou.length + dueToday.length + notices}` : ''}</div>
+        <NoticeNeedsRows />
         {dueToday.length > 0 && (
           <div className="list" style={{ marginBottom: needsYou.length ? 10 : 0 }}>
             {dueToday.map((r) => (
@@ -86,9 +90,9 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
             ))}
           </div>
         )}
-        {(!chatReady || !deskLoaded) && needsYou.length === 0 && dueToday.length === 0 ? (
+        {(!chatReady || !deskLoaded) && needsYou.length === 0 && dueToday.length === 0 && notices === 0 ? (
           <div className="empty pulse-empty pulse-wait" aria-busy="true"><span className="spinner" /><span className="faint">Looking for what needs you…</span></div>
-        ) : needsYou.length === 0 && dueToday.length === 0 ? (
+        ) : needsYou.length === 0 && dueToday.length === 0 && notices === 0 ? (
           <div className="empty pulse-empty"><Icon name="check" size={28} /><span>You're all caught up.</span></div>
         ) : needsYou.length === 0 ? null : (
           <div className="list">
@@ -112,6 +116,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
           </div>
         )}
       </section>
+
+      {session.me.role !== 'guest' && <WeekStrip onOpenBoard={() => go('notices')} />}
 
       <div className="grid cols-3 pulse-sheet">
         {session.me.role !== 'guest' && <NibPulseCard />}

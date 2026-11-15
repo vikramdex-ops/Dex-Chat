@@ -74,6 +74,8 @@ const STATUSES: NibStatus[] = ['going', 'done', 'blocked'];
 const KINDS: NibLeaveKind[] = ['annual', 'sick', 'comp', 'half'];
 const SOURCES: NibSource[] = ['start', 'words', 'offer', 'slash', 'wrap', 'carried', 'cover', 'flow', 'meeting'];
 const MAX_ITEMS_A_DAY = 60;
+/** Operations that change the person's own day (their apps are sent nib.me after each). */
+const SHEET_OPS = new Set(['nib.start', 'nib.item.save', 'nib.item.delete', 'nib.wrap', 'nib.day', 'nib.leave.cancel', 'nib.cover.take', 'nib.welcome.seen']);
 const DAY_MS = 86400_000;
 
 const toItem = (r: ItemRow): NibItem => ({
@@ -293,6 +295,26 @@ export class Nib {
   private posted(kind: NibCardKind, ref: string, uid: string): boolean {
     return !!this.db.prepare('SELECT 1 FROM nib_posts WHERE kind = ? AND ref = ? AND user_id = ?').get(kind, ref, uid);
   }
+  /**
+   * One plain line from Nib in someone's conversation with Nib, once per key (the notice board's
+   * reminders and answers). False when Nib is off or cannot reach them, so the caller can use the
+   * system bot instead.
+   */
+  note(uid: string, key: string, text: string): boolean {
+    if (!this.config().enabled) return false;
+    const ref = key.slice(0, 80);
+    if (this.db.prepare(`SELECT 1 FROM nib_posts WHERE kind = 'line' AND ref = ? AND user_id = ?`).get(ref, uid)) return true;
+    const convId = this.convFor(uid);
+    if (!convId) return false;
+    try {
+      const msg = this.d.messaging.sendAs(this.bot(), this.d.messaging.memberConv(convId, this.id), text.slice(0, 2000), undefined, [], `nibline|${ref}|${uid}`.slice(0, 96), {});
+      this.db.prepare('INSERT OR IGNORE INTO nib_posts (kind, ref, user_id, message_id, created_at) VALUES (?, ?, ?, ?, ?)').run('line', ref, uid, msg.id, this.now());
+      return true;
+    } catch (err) {
+      this.d.log('warn', 'nib line not posted', { error: (err as Error).message });
+      return false;
+    }
+  }
   /** A Space line from Nib (a leave notice). */
   private postInSpace(convId: string, ref: string, body: string): void {
     try {
@@ -473,6 +495,14 @@ export class Nib {
   handle(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     if (op.startsWith('admin.nib.')) return this.admin(op, me, d);
     if (me.role === 'bot' || me.role === 'guest') throw new NibError('Nib keeps day sheets for members of the office.');
+    const out = this.op(op, me, d);
+    // the person's day changed: every app they have open (another PC, the phone, a tray left open)
+    // sees it now, whichever path changed it, not only the one that asked
+    if (SHEET_OPS.has(op)) this.pushMe([me.id]);
+    return out;
+  }
+
+  private op(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     const now = this.now();
     switch (op) {
       case 'nib.me': this.welcomeMember(me); return this.me(me);
@@ -925,7 +955,7 @@ export class Nib {
           const pd = prev ? this.dayRow(u.id, prev) : undefined;
           if (prev && pd && pd.state === 'open') { const y = this.dayOf(u.id, prev, pd); if (!y.asks.some((a) => a.kind === 'yesterday')) { y.asks.push({ at: now, level: 2, kind: 'yesterday' }); this.saveDay(y); } }
         }
-        if (r.ask === 3) this.post(u.id, 'ask', date, `Your day sheet for today is still open. Thirty seconds, before the ${cfg.digestAt} register.`);
+        if (r.ask === 3) this.post(u.id, 'ask', date, `Your day sheet for today is still open. Thirty seconds, before the register.`);
       }
       const view: NibNudgeView | null = r.kind && r.level ? { kind: r.kind, level: r.level as 1 | 2 | 3, asks: (r.ask ? day.asks.length + 1 : day.asks.length) } : null;
       const before = this.nudges.get(u.id) ?? null;

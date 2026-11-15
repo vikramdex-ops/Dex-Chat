@@ -767,7 +767,7 @@ export class Links {
     const rows: LinkCardMeta[] = [meta('author', 'Host', names.get(m.hostId) ?? 'Someone', m.hostId), meta('type', 'Kind', kinds[m.kind] ?? 'Meeting')];
     if (m.live) rows.push(meta('status', 'Status', found.insider ? `In progress · ${m.live.participants} ${m.live.participants === 1 ? 'person' : 'people'}` : 'In progress', m.live.participants));
     else rows.push(meta('status', 'Status', 'Not started'));
-    if (m.settings.lobby !== 'off') rows.push(meta('location', 'Lobby', m.settings.lobby === 'everyone' ? 'Everyone waits to be let in' : 'People from outside wait to be let in'));
+    if (m.settings.lobby !== 'off') rows.push(meta('location', 'Lobby', m.settings.lobby === 'everyone' ? 'Everyone waits to be let in' : 'Guests and people from outside wait'));
     return {
       url, kind: 'meeting', title: m.title || 'Meeting', subtitle: `Meeting ${formatMeetingId(m.id)}`, meta: rows, preview: null,
       actions: [action('join', m.live ? 'Join the meeting' : 'Start or join', m.link), action('copy-path', 'Copy meeting link', m.link)],

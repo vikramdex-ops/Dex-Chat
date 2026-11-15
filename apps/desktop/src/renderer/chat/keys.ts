@@ -31,7 +31,7 @@ export const RESERVED: Record<string, string> = {
 export const G_KEYS: Array<{ letter: string; lens: string; label: string }> = [
   { letter: 'P', lens: 'pulse', label: 'Pulse' }, { letter: 'D', lens: 'direct', label: 'Direct' }, { letter: 'S', lens: 'spaces', label: 'Spaces' },
   { letter: 'K', lens: 'desk', label: 'Desk' }, { letter: 'C', lens: 'calendar', label: 'Calendar' }, { letter: 'Y', lens: 'directory', label: 'Directory' },
-  { letter: 'M', lens: 'meet', label: 'Meet' },
+  { letter: 'M', lens: 'meet', label: 'Meet' }, { letter: 'N', lens: 'notices', label: 'Notices' },
 ];
 
 const STORE = 'dex.keys';

@@ -30,3 +30,14 @@ test('24-hour times follow the preference', () => {
   setTimeFormat('system');
   assert.equal(formatTime(at), at.toLocaleTimeString('hi-IN', { hour: 'numeric', minute: '2-digit' }));
 });
+
+test('Nib’s times of day ("18:00" from the hub) read the same way', async () => {
+  const { clockOf, wrapTimeText } = await import('../src/renderer/nib/words.ts');
+  setTimeFormat('12');
+  assert.match(clockOf('2026-11-15', '18:00'), /^6:00\s?pm$/);
+  assert.match(wrapTimeText({ date: '2026-11-15', wrapAt: '18:30' } as never), /^6:30\s?pm$/);
+  setTimeFormat('24');
+  assert.equal(clockOf('2026-11-15', '18:00'), '18:00');
+  assert.equal(clockOf('2026-11-15', '09:05'), '09:05');
+  setTimeFormat('system');
+});

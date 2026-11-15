@@ -29,7 +29,7 @@ export interface GuestLinkView {
   passcode: string | null;
   /** The whole link, when the office's gateway is set up and the link is on. */
   url: string | null;
-  /** The office allows guest links (Control room ▸ Meetings). */
+  /** The office allows guest links (Control room ▸ Policies ▸ Meetings). */
   allowed: boolean;
   /** Why guests cannot join right now, in plain words, or null. */
   problem: string | null;
