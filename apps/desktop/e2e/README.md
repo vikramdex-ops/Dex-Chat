@@ -36,7 +36,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
   - messaging: `nav`, `msgacts`, `search`, `format`, `links`, `polish`
   - meetings: `meet`, `m2-*`, `m3-webinar`, `lounge`, `pointers`, `meetrecap` (threads, action points, recaps; a browser guest through the gateway; a hub restart mid-meeting)
   - files: `files`, `pdf`, `media`, `ocr`, `dmsearch`
-  - bots: `bots-*`, `botmaker`, `flows`
+  - bots: `bots-*`, `botmaker`, `flows`, `templates`, `botnet` (bots talking to bots: a handoff with its relay card, a query in a flow, an event, a refusal, a loop stopped; scheduled jobs in plain words, a dry run, runs with the hub's clock moved, missed runs, the job sheet and the network sheet)
   - org chart: `org`, `orgscape`
   - devices: `pair`, `phone`, `phone-sec`
   - Control room: `admin2`, `m2-admin`, `policy`, `dlp`

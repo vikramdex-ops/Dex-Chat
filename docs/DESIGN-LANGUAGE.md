@@ -101,6 +101,16 @@ whole design is in [`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md).
 | **Urgent** | One banner under the title bar with an amber rule, for administrators' urgent notices only; dismissed once for every device. Amber is otherwise kept for "needs you". |
 | **Motion** | A new notice's row plots in once; the stamp lands once; cells fill as acknowledgements arrive. Reduced motion: all of it appears in place. |
 
+### Bots talking to bots, and the job sheet
+
+| Piece | Rule |
+| --- | --- |
+| **Relay card** | Bots are instrument tags (the ISA bubble of the Meet page's readiness tags: letters above the bar, `B-01` below, the bot's colour as a small swatch) on a small loop diagram. Asks are data links (a line with small circles), handoffs solid lines with an arrow, listening dash-dot. Each hop is labelled in mono capitals (`SEAT? · CAESAR II → 1 free`) and stamped in a ruled box turned a few degrees (ANSWERED, HANDED, BACK; REFUSED, STOPPED, NO ANSWER in the danger colour). A pulse runs along a fresh hop, out and back, amber while it is on its way; a bot waiting on its answer has an amber ring. The hops are also a ruled schedule under the drawing. Reduced motion: no pulse, no ring. |
+| **Stage strip** | A stage that waits on another bot carries the bot's mark and its request (`PLT-0004 · Plotting`), with the live dot while it is open there. |
+| **Network sheet** | A drawing sheet: a heavy frame in a hairline one, grid references, a title block (`BOT NETWORK · BN-261115`). Bots as tags on plates (YOURS, OFFICE, SPACE, PRIVATE, SYSTEM), connections as routed pipes with rounded bends, as heavy as the week's traffic, counts in mono, failures in an amber flag. A pulse runs along a line as a message passes. The lines are also a ruled list, and picking one opens its exchanges beside the drawing (below it on a phone). |
+| **Job sheet** | A programme on a time ruler in office time (Today, This week, This month as ruled cells): days off hatched, NOW an amber line with a tag, one lane per job with its title block on the left. Upcoming runs are diamonds (the next one filled, with its countdown), past runs stamps (RAN, SKIPPED dashed, FAILED in danger, DRY dashed); a run moved once is joined to its old place by a dashed arc. |
+| **Schedule in plain words** | What was read is marked on the words like dimensions (an underline with `EVERY`, `DAY`, `TIME`, `DATE`, `WINDOW` above); what was understood is a teal-ruled line; the next five runs are a ruled list. |
+
 ### The office drawing (Directory ▸ Org chart)
 
 The org chart is not a tree of cards. It is the office drawn as an engineering drawing, a sheet

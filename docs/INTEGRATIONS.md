@@ -216,6 +216,20 @@ A definition takes these optional parts besides those below: `persona` (`mark`
 (the first day away and the day back), the person steps (who covers, who to tell) and the answers
 for the kind of leave and a note.
 
+### Bots talking to bots, and scheduled jobs
+
+A bot can ask another bot's **skills** mid-flow (a step with `ask`: "Is a CAESAR II seat free?",
+"Who is their lead?", "Is Ravi on leave tomorrow?"), **hand a request on** with its answers (a
+`handoff` at the end, a stage whose `who` is `bot:<name>`, or a button with a `handoff`) and get it
+back with the other bot's stamp, and **listen** for another bot's requests or for someone going on
+leave (`network.on`). Tracked bots publish their skills from their own stages; Nib, the Directory
+and the office calendar publish system skills. Every hop is checked (only bots the maker may use,
+errands only for the person, no loops, four bots deep at most, rate limits, three seconds to
+answer), kept, audited, and shown to the person as a relay card; the bot network sheet draws all of
+them. A bot can also have **scheduled jobs** written in plain words (`jobs`: "every Monday at
+10:00"), in office time (IST) on working days, with a job sheet, a dry run and run history. The
+contract, the rules, the schedule grammar and the operations are in [`BOT-NETWORK.md`](BOT-NETWORK.md).
+
 ### After it is sent: tracked requests
 
 A bot with a `track` carries each request on after the last question. The request gets a number
