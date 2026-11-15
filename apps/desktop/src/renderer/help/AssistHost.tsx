@@ -2,6 +2,7 @@
 // desk and ticket sheets (from the tile menu, the command palette, the tray and links), shows the
 // "IT is ready to help" card and, after a session, "How did it go?". Also hosts "Look together".
 import { useEffect, useMemo, useState } from 'react';
+import { tr } from '../i18n/index.ts';
 import { ticketRef } from '@dex/core';
 import type { HelpTicket, PublicUser, Session } from '@dex/core';
 import { Avatar, Icon, useToast } from '../ui.tsx';
@@ -65,15 +66,15 @@ export function AssistHost({ session, users, live }: { session: Session; users: 
     const nameOf = (id: string | null) => (id ? users.get(id)?.displayName ?? 'Someone' : 'Someone');
     if (!before && t.status === 'open' && t.requesterId !== meId && helpNow().staff.includes(meId)) {
       toast(`${nameOf(t.requesterId)} asks IT: ${t.summary}`);
-      if (!document.hasFocus()) window.dex.notify(`Help request ${ticketRef(t.number)}`, `${nameOf(t.requesterId)}: ${t.summary}`, 'dexconnect://help/desk');
+      if (!document.hasFocus()) window.dex.notify(tr(`Help request ${ticketRef(t.number)}`), `${nameOf(t.requesterId)}: ${t.summary}`, 'dexconnect://help/desk');
     } else if (before && t.requesterId === meId && t.status === 'taken' && before.techId !== t.techId && t.techId) {
       toast(`${nameOf(t.techId)} took ${ticketRef(t.number)}`);
-      if (!document.hasFocus()) window.dex.notify(`${nameOf(t.techId)} is on ${ticketRef(t.number)}`, t.summary, 'dexconnect://help');
+      if (!document.hasFocus()) window.dex.notify(tr(`${nameOf(t.techId)} is on ${ticketRef(t.number)}`), t.summary, 'dexconnect://help');
     }
   }), [users, meId, toast]);
   // a technician started a session: the requester decides whether to join
   useEffect(() => {
-    if (invite && !document.hasFocus()) window.dex.notify(`${users.get(invite.techId)?.displayName ?? 'IT'} is ready to help`, 'Join the support session in Dexterity Connect', 'dexconnect://help');
+    if (invite && !document.hasFocus()) window.dex.notify(tr(`${users.get(invite.techId)?.displayName ?? 'IT'} is ready to help`), tr('Join the support session in Dexterity Connect'), 'dexconnect://help');
   }, [invite?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const rated = useMemo(() => (rate ? ticketById(rate) : null), [rate]);
   const close = () => setView(null);

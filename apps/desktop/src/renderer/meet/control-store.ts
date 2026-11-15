@@ -6,6 +6,7 @@
 // first, then the hub is told: Stop, the stop keys, the share bar, sharing ending, either person
 // leaving and the meeting ending all end it.
 import { useSyncExternalStore } from 'react';
+import { tr } from '../i18n/index.ts';
 import { controlEndText } from '@dex/core';
 import type { ControlEndReason, RoomControl, RoomInfo } from '@dex/core';
 import { callState, onRoomData, selfDevice, sendRoomDataTo, sharedSource, tell, toggleScreen, watchCall, setMinimized } from '../rooms/engine.ts';
@@ -46,7 +47,7 @@ export function startMeetControl(): void {
       set({ ask: d });
       // the presenter may be looking at what they share: bring the Room forward and say so
       setMinimized(false);
-      if (!document.hasFocus()) window.dex.notify(`${nameOf(d.fromUser)} asks for control`, 'Open Dexterity Connect to accept or refuse');
+      if (!document.hasFocus()) window.dex.notify(tr(`${nameOf(d.fromUser)} asks for control`), tr('Open Dexterity Connect to accept or refuse'));
     } else if (name === 'room.controlRefused') {
       const d = data as { roomId: string; by: string };
       if (room?.id !== d.roomId) return;

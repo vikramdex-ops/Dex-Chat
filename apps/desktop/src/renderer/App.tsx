@@ -49,6 +49,7 @@ import { parseMeetingId } from '@dex/core';
 import { AddToolHost } from './bots/AddTool.tsx';
 import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
 import { timeOpts } from './time.ts';
+import { tr } from './i18n/index.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 
 // the Control room is used by a few people now and then: load it when opened
@@ -284,7 +285,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startWork(session.me.id);
     void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);
-    startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
+    startCalls(session.deviceId, (t, b) => window.dex.notify(tr(t), tr(b)), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startWebinars();
   }, [state.phase, session.me.id, session.deviceId]);
@@ -422,7 +423,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   useEffect(() => window.dex.onHubEvent((name, data) => {
     if (name !== 'me.devicePaired') return;
     const host = (data as { hostname?: string }).hostname ?? 'A new device';
-    window.dex.notify('A device was added to your account', `${host} is now signed in as you. Not you? Remove it in Preferences → Your devices.`, 'dexconnect://settings');
+    window.dex.notify(tr('A device was added to your account'), tr(`${host} is now signed in as you. Not you? Remove it in Preferences → Your devices.`), 'dexconnect://settings');
   }), []);
 
   // links from other apps and notifications (through the main process), and the app's own (phones)
