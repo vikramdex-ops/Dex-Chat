@@ -7,15 +7,23 @@
 // Hardening, in the spirit of the relays it learnt from:
 // - Only the hub that proves it holds the pinned certificate key can take the hub side.
 // - Device sockets are binary-only, at most 1 MiB a frame, rate limited per address, and capped.
-// - Nothing but /hub/<id>, /c/<id>, /join, /m/<meeting> and /health answers; every reply carries strict headers.
+// - Nothing but /hub/<id>, /c/<id>, /join, /m/<meeting>, /w/<webinar> and /health answers; every reply carries strict headers.
 //
 // Guests (meetings, M2): /m/<meeting ID> serves a small join page (guest/page.ts, built into
 // guest-assets.gen.ts). Its WebSocket, /m/<meeting ID>/ws, goes to the office hub's relay as a
 // "guest" socket: JSON frames, passed to the hub as guest frames on the hub's own connection.
 // The page sends the passcode (from the link's #fragment, which never reaches a server log) in
 // its first frame; the hub checks it. Connections and wrong passcodes are limited per address.
+//
+// Webinars (M3): /w/<meeting ID> is the public registration page, /w/<ID>/watch#<token> an
+// attendee's personal link and /w/<ID>/survey#<token> the follow-up survey (webinar/page.ts). The
+// page's requests (the webinar's details, registering, the survey) are passed to the hub over its
+// own connection and answered there; the gateway limits them per address (in the Durable
+// Object's storage), drops a form whose hidden honeypot field is filled, and caps how many
+// registrations it passes on in an hour. The watch page's socket, /w/<ID>/ws, is a guest socket
+// like the meeting page's (the token is checked by the hub; a wrong one counts as a wrong passcode).
 import { DurableObject } from 'cloudflare:workers';
-import { GUEST_CSS, GUEST_JS } from './guest-assets.gen.ts';
+import { GUEST_CSS, GUEST_JS, WEBINAR_CSS, WEBINAR_JS } from './guest-assets.gen.ts';
 
 interface Env {
   RELAY: DurableObjectNamespace<Relay>;
@@ -37,6 +45,16 @@ const GUEST_FRAMES_PER_10S = 400;
 /** The relay that remembers which hub's meetings /m/ leads to (not a hub id: ID_RE never matches it). */
 const HOME = '~home';
 const MEETING_RE = /^\/m\/([1-9]\d{8})(\/ws)?\/?$/;
+/** Webinar pages and their requests. */
+const WEBINAR_RE = /^\/w\/([1-9]\d{8})(?:\/(watch|survey|info|register|survey-info|answers|ws))?\/?$/;
+const WEBINAR_PAGES = new Set(['', 'watch', 'survey']);
+/** Registrations passed to the hub: per address an hour, and for the whole gateway an hour. */
+const REGISTER_PER_HOUR = 5;
+const REGISTER_ALL_PER_HOUR = 300;
+const SURVEY_PER_HOUR = 10;
+const INFO_PER_MINUTE = 60;
+const MAX_FORM = 16 * 1024;
+const HUB_ANSWER_MS = 10_000;
 
 const SECURITY_HEADERS: Record<string, string> = {
   'x-content-type-options': 'nosniff',
@@ -47,6 +65,8 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 const text = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS, ...extra } });
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...SECURITY_HEADERS } });
 
 /** A socket that closes with a code as soon as it opens: a browser cannot read why an upgrade was refused. */
 function refuse(code: number, reason: string): Response {
@@ -63,6 +83,21 @@ export default {
     if (url.pathname === '/join') return joinPage();
     if (url.pathname === '/guest/app.js') return asset(GUEST_JS, 'text/javascript; charset=utf-8');
     if (url.pathname === '/guest/app.css') return asset(GUEST_CSS, 'text/css; charset=utf-8');
+    if (url.pathname === '/webinar/app.js') return asset(WEBINAR_JS, 'text/javascript; charset=utf-8');
+    if (url.pathname === '/webinar/app.css') return asset(WEBINAR_CSS, 'text/css; charset=utf-8');
+    const wb = url.pathname.match(WEBINAR_RE);
+    if (wb) {
+      const sub = wb[2] ?? '';
+      if (WEBINAR_PAGES.has(sub) && req.method !== 'POST') {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return text('Method not allowed\n', 405);
+        return webinarPage(wb[1], sub === 'watch' || sub === 'survey' ? sub : 'register');
+      }
+      if (sub === 'ws' && req.headers.get('upgrade')?.toLowerCase() !== 'websocket') return text('Expected a WebSocket\n', 426);
+      const home = await env.RELAY.get(env.RELAY.idFromName(HOME)).fetch('https://gateway/~home/get');
+      const hubId = home.ok ? ((await home.json()) as { hubId?: string }).hubId : undefined;
+      if (!hubId) return sub === 'ws' ? refuse(4404, 'The office is not connected to the gateway') : json({ error: 'The office is not connected right now. Try again later.' }, 503);
+      return env.RELAY.get(env.RELAY.idFromName(hubId)).fetch(req);
+    }
     const meet = url.pathname.match(MEETING_RE);
     if (meet) {
       if (req.method !== 'GET' && req.method !== 'HEAD') return text('Method not allowed\n', 405);
@@ -80,7 +115,7 @@ export default {
   },
 };
 
-interface Attachment { kind: 'hub' | 'device' | 'guest'; hubId: string; authed?: boolean; nonce?: string; sid?: number; gid?: number; ip?: string; meetingId?: string }
+interface Attachment { kind: 'hub' | 'device' | 'guest'; hubId: string; authed?: boolean; nonce?: string; sid?: number; gid?: number; ip?: string; meetingId?: string; webinar?: boolean }
 
 const u32 = (n: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n >>> 0); return b; };
 const b64d = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -97,6 +132,9 @@ function contains(hay: Uint8Array, needle: Uint8Array): boolean {
 export class Relay extends DurableObject<Env> {
   private readonly attempts = new Map<string, { n: number; until: number }>();
   private readonly frames = new Map<number, { n: number; until: number }>();
+  /** Webinar page requests waiting for the hub's answer. */
+  private readonly answers = new Map<number, (r: { s: number; d: string }) => void>();
+  private nextAnswer = 1;
 
   private limited(ip: string, max = CONNECTS_PER_MINUTE, key = ip): boolean {
     const now = Date.now();
@@ -146,6 +184,7 @@ export class Relay extends DurableObject<Env> {
     const [, kind, hubId] = url.pathname.split('/');
     const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
     if (kind === 'm') return this.guest(req, ip, hubId);
+    if (kind === 'w') return this.webinar(req, ip, hubId, url.pathname.split('/')[3] ?? '');
     if (this.limited(ip)) return refuse(4429, 'Too many connections; try again in a minute');
     const { 0: client, 1: server } = new WebSocketPair();
 
@@ -170,8 +209,62 @@ export class Relay extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  /** A browser guest's socket for a meeting: limited per address, then announced to the hub. */
-  private async guest(req: Request, ip: string, meetingId: string): Promise<Response> {
+  /** Timestamps in storage for a key, within the last hour (they outlast hibernation). */
+  private async hourly(key: string, max: number, add: boolean): Promise<boolean> {
+    const now = Date.now();
+    const list = ((await this.ctx.storage.get<number[]>(key)) ?? []).filter((t) => now - t < 3600_000);
+    if (list.length >= max) return false;
+    if (add) { list.push(now); await this.ctx.storage.put(key, list.slice(-max)); }
+    return true;
+  }
+
+  /** Ask the hub (over its own connection) and wait for its answer. */
+  private ask(op: string, meetingId: string, ip: string, country: string | null, body: unknown): Promise<Response> {
+    const hub = this.hub();
+    if (!hub) return Promise.resolve(json({ error: 'The office is not connected right now. Try again later.' }, 503));
+    const r = this.nextAnswer++;
+    if (this.nextAnswer > 0x7fffffff) this.nextAnswer = 1;
+    return new Promise<Response>((resolve) => {
+      const t = setTimeout(() => { this.answers.delete(r); resolve(json({ error: 'The office did not answer. Try again in a moment.' }, 504)); }, HUB_ANSWER_MS);
+      this.answers.set(r, (a) => { clearTimeout(t); resolve(new Response(a.d, { status: a.s >= 200 && a.s < 600 ? a.s : 502, headers: { 'content-type': 'application/json; charset=utf-8', ...SECURITY_HEADERS } })); });
+      hub.send(JSON.stringify({ t: 'w', r, op, m: meetingId, ip, country, b: body }));
+    });
+  }
+
+  /** The webinar pages' requests and the watch page's socket. */
+  private async webinar(req: Request, ip: string, meetingId: string, sub: string): Promise<Response> {
+    if (sub === 'ws') return this.guest(req, ip, meetingId, true);
+    const country = (req as Request & { cf?: { country?: string } }).cf?.country ?? null;
+    if (sub === 'info') {
+      if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+      if (this.limited(ip, INFO_PER_MINUTE, `wi:${ip}`)) return json({ error: 'Too many requests from your network. Wait a minute.' }, 429);
+      return this.ask('info', meetingId, ip, country, {});
+    }
+    if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (!(req.headers.get('content-type') ?? '').startsWith('application/json')) return json({ error: 'Send the form as JSON.' }, 415);
+    const raw = await req.text();
+    if (raw.length > MAX_FORM) return json({ error: 'That is more than the form takes.' }, 413);
+    let body: Record<string, unknown>;
+    try { const v = JSON.parse(raw) as unknown; if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('not an object'); body = v as Record<string, unknown>; } catch { return json({ error: 'The form could not be read.' }, 400); }
+    if (sub === 'register') {
+      // the honeypot: a field people never see. A form with it filled is thanked and dropped.
+      if (typeof body.website === 'string' && body.website.trim()) return json({ status: 'pending', name: '' });
+      if (!(await this.hourly(`wr:${ip}`, REGISTER_PER_HOUR, false))) return json({ error: 'Too many registrations from your network. Try again in an hour.' }, 429);
+      if (!(await this.hourly('wr:*', REGISTER_ALL_PER_HOUR, false))) return json({ error: 'Registration is very busy. Try again in a while.' }, 429);
+      await this.hourly(`wr:${ip}`, REGISTER_PER_HOUR, true);
+      await this.hourly('wr:*', REGISTER_ALL_PER_HOUR, true);
+      return this.ask('register', meetingId, ip, country, body);
+    }
+    if (sub === 'survey-info' || sub === 'answers') {
+      if (this.limited(ip, INFO_PER_MINUTE, `wi:${ip}`)) return json({ error: 'Too many requests from your network. Wait a minute.' }, 429);
+      if (sub === 'answers' && !(await this.hourly(`ws:${ip}`, SURVEY_PER_HOUR, true))) return json({ error: 'Too many answers from your network. Try again in an hour.' }, 429);
+      return this.ask(sub === 'answers' ? 'survey' : 'surveyInfo', meetingId, ip, country, body);
+    }
+    return json({ error: 'Not found' }, 404);
+  }
+
+  /** A browser guest's socket for a meeting (or a webinar's watch page): limited per address, then announced to the hub. */
+  private async guest(req: Request, ip: string, meetingId: string, webinar = false): Promise<Response> {
     if (this.limited(ip, GUEST_CONNECTS_PER_MINUTE, `g:${ip}`)) return refuse(4429, 'Too many tries from your network. Wait a minute.');
     if ((await this.guestFails(ip)).length >= GUEST_FAILS) return refuse(4429, 'Too many wrong passcodes from your network. Try again in 10 minutes.');
     const hub = this.hub();
@@ -181,9 +274,9 @@ export class Relay extends DurableObject<Env> {
     do gid = crypto.getRandomValues(new Uint32Array(1))[0] || 1; while (this.ctx.getWebSockets(`g:${gid}`).length);
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ['guest', `g:${gid}`]);
-    server.serializeAttachment({ kind: 'guest', hubId: (hub.deserializeAttachment() as Attachment).hubId, gid, ip, meetingId } satisfies Attachment);
+    server.serializeAttachment({ kind: 'guest', hubId: (hub.deserializeAttachment() as Attachment).hubId, gid, ip, meetingId, webinar } satisfies Attachment);
     const cf = (req as Request & { cf?: { country?: string } }).cf;
-    hub.send(JSON.stringify({ t: 'g-open', g: gid, ip, country: cf?.country ?? null, m: meetingId }));
+    hub.send(JSON.stringify({ t: 'g-open', g: gid, ip, country: cf?.country ?? null, m: meetingId, ...(webinar ? { k: 'w' } : {}) }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -223,8 +316,14 @@ export class Relay extends DurableObject<Env> {
       return;
     }
     if (typeof msg === 'string') {
-      let c: { t?: string; s?: number; g?: number; d?: string; code?: number; reason?: string };
+      let c: { t?: string; s?: number; g?: number; r?: number; d?: string; code?: number; reason?: string };
       try { c = JSON.parse(msg); } catch { return; }
+      if (c.t === 'w-res' && typeof c.r === 'number' && typeof c.d === 'string') {
+        const done = this.answers.get(c.r);
+        this.answers.delete(c.r);
+        done?.({ s: Number((c as { s?: unknown }).s) || 502, d: c.d });
+        return;
+      }
       const code = c.code && c.code >= 4000 && c.code < 5000 ? c.code : 4000;
       if (c.t === 'close' && typeof c.s === 'number') {
         for (const d of this.ctx.getWebSockets(`s:${c.s}`)) d.close(code, (c.reason ?? 'Closed by the hub').slice(0, 120));
@@ -341,6 +440,26 @@ function guestPage(meetingId: string): Response {
       'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS,
       'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       'permissions-policy': 'camera=(self), microphone=(self), display-capture=(self), geolocation=()',
+    },
+  });
+}
+
+/**
+ * /w/<meeting ID> (register), /w/<ID>/watch#<token> and /w/<ID>/survey#<token>: one page with
+ * three sheets. The token stays in the fragment; the page sends it to the hub itself.
+ */
+function webinarPage(meetingId: string, mode: 'register' | 'watch' | 'survey'): Response {
+  const id = `${meetingId.slice(0, 3)}-${meetingId.slice(3, 6)}-${meetingId.slice(6)}`;
+  const what = mode === 'watch' ? 'Watch' : mode === 'survey' ? 'Survey' : 'Register';
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark"><meta name="robots" content="noindex">
+<title>${what} · Webinar ${id} · Dexterity Connect</title><link rel="stylesheet" href="/webinar/app.css"></head>
+<body><main id="app" data-webinar="${meetingId}" data-mode="${mode}"><noscript>This page needs JavaScript.</noscript></main><script src="/webinar/app.js" defer></script></body></html>`;
+  return new Response(html, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS,
+      'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'permissions-policy': 'camera=(), microphone=(), display-capture=(), geolocation=()',
     },
   });
 }

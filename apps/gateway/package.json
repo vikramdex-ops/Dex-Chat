@@ -8,7 +8,7 @@
     "build": "node scripts/build-guest.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "node scripts/build-guest.mjs && tsc -p tsconfig.json && tsc -p guest/tsconfig.json"
+    "typecheck": "node scripts/build-guest.mjs && tsc -p tsconfig.json && tsc -p guest/tsconfig.json && tsc -p webinar/tsconfig.json"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261114.1",
