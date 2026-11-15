@@ -5,6 +5,7 @@
 //   npm run e2e -- --isolated ...   each hub on a free port (apps join by address), for busy machines
 //
 // Build first (npm run desktop:build; the phone scripts also need npm run build -w @dex/mobile).
+// Set DEX_E2E_KEEP=1 to keep the hubs and app profiles of passing scripts (they are removed to save disk).
 // On Linux without a display the scripts run under xvfb-run when it is installed. Screenshots and
 // hub data go to apps/desktop/e2e/out. A script that lost the hub port to another program is run again.
 import { spawn, spawnSync } from 'node:child_process';
@@ -59,6 +60,12 @@ for (const name of names) {
     await sleep(15000);
   }
   results.push(r);
+  // a passing script's hubs and app profiles are not needed again: they fill the disk on long runs
+  if (r.passed && !process.env.DEX_E2E_KEEP) {
+    for (const d of fs.readdirSync(path.join(HERE, 'out'))) {
+      if (/^(hub|ud|gw-state)-/.test(d)) fs.rmSync(path.join(HERE, 'out', d), { recursive: true, force: true });
+    }
+  }
   console.log(`${r.passed ? 'PASS' : 'FAIL'}  ${name.padEnd(14)} ${String(r.secs).padStart(4)} s${r.passed ? '' : `   see ${path.relative(process.cwd(), r.log)}`}`);
 }
 const failed = results.filter((r) => !r.passed);
