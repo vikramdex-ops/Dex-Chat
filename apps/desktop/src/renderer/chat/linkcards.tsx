@@ -6,11 +6,15 @@
 // for file links, and the Control room's settings for web previews.
 import { memo, useEffect, useRef, useState } from 'react';
 import type { FileInfo, LinkAction, LinkCard, LinkCardKind, LinkSettings, Message } from '@dex/core';
-import { Icon, Toggle, useToast } from '../ui.tsx';
+import { Icon, Popover, Toggle, useToast } from '../ui.tsx';
+import { findPaths, folderOf, parsePath } from '@dex/core/sharepaths';
+import type { PathView } from '@dex/core/sharepaths';
+import { usePathAccess, usePathView } from './sharepaths.ts';
 import type { IconName } from '../ui.tsx';
 import { FileImg, isImage } from './files.tsx';
 import { Viewer } from './Viewer.tsx';
 import { addConversation, chatState } from './store.ts';
+import { peopleNow } from '../people.ts';
 import { startCall } from '../rooms/engine.ts';
 import { onOpenRequest, openUrl, requestOpen } from './deeplinks.ts';
 import './messages.css';
@@ -19,23 +23,31 @@ import './messages.css';
 export const MAX_CARDS = 3;
 
 // ------------------------------------------------------------------ finding links in a message
-const LINK_RE = /(?:https?|dexconnect|projectopener|dexterity|sleuth|datum|file):\/\/[^\s<>()"'`]+[^\s<>().,;:!?'"\]`*_~]|\\\\[\w.$-]+(?:\\[^\s\\<>"|?*`]+)+\\?|(?<![\w/\\])[A-Za-z]:\\(?:[^\s\\<>"|?*`]+\\?)*/g;
+const LINK_RE = /(?:https?|dexconnect|projectopener|dexterity|sleuth|datum):\/\/[^\s<>()"'`]+[^\s<>().,;:!?'"\]`*_~]/g;
+
+/** A path on the office share or a drive (\\server\share\…, X:\…, file://…): its card is drawn here, not by the hub. */
+export const isPathLink = (url: string): boolean => !!parsePath(url);
 
 /** The links in a message body worth a card: code and quoted examples are left out. */
 export function linksIn(body: string, encrypted = false): string[] {
   if (!body) return [];
-  const text = body.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ').replace(/^>.*$/gm, ' ');
-  const out: string[] = [];
+  const text = body.replace(/```[\s\S]*?```/g, (x) => ' '.repeat(x.length)).replace(/`[^`\n]*`/g, (x) => ' '.repeat(x.length)).replace(/^>.*$/gm, (x) => ' '.repeat(x.length));
+  const found: Array<{ at: number; url: string }> = [];
   for (const m of text.matchAll(LINK_RE)) {
-    const url = m[0].replace(/\\+$/, (s) => (s.length === m[0].length ? s : '\\'));
+    const url = m[0];
     // our share links are requests, not things to preview
     if (/^dexconnect:\/\/share\b/i.test(url)) continue;
     // a link to a message is already that message's card in the text (format.tsx)
     if (/^dexconnect:\/\/message\/[\w-]+\/[\w-]+$/i.test(url)) continue;
     // an encrypted message's links stay on this device: only links into the office (already on the hub) get cards
     if (encrypted && !/^dexconnect:\/\//i.test(url)) continue;
-    if (!out.includes(url)) out.push(url);
+    found.push({ at: m.index, url });
   }
+  // share and drive paths (in quotes, as file:// URLs, with / or \\?\UNC\): their cards are made on
+  // this device from the path alone, so encrypted messages get them too
+  for (const p of findPaths(text)) found.push({ at: p.start, url: p.path });
+  const out: string[] = [];
+  for (const f of found.sort((a, b) => a.at - b.at)) if (!out.includes(f.url)) out.push(f.url);
   return out;
 }
 
@@ -216,7 +228,12 @@ function Placeholder({ url, failed }: { url: string; failed?: boolean }) {
 }
 
 /** A card slot: the reserved box, filled when the message is on screen. */
-const CardSlot = memo(function CardSlot({ url, discuss, onRemove }: { url: string; discuss: ((url: string) => void) | null; onRemove: ((url: string) => void) | null }) {
+const CardSlot = memo(function CardSlot({ url, discuss, onRemove, authorId, meId }: { url: string; discuss: ((url: string) => void) | null; onRemove: ((url: string) => void) | null; authorId: string; meId: string }) {
+  if (isPathLink(url)) return <PathSlot url={url} discuss={discuss} onRemove={onRemove} authorId={authorId} meId={meId} />;
+  return <HubSlot url={url} discuss={discuss} onRemove={onRemove} />;
+});
+
+function HubSlot({ url, discuss, onRemove }: { url: string; discuss: ((url: string) => void) | null; onRemove: ((url: string) => void) | null }) {
   const [card, setCard] = useState<LinkCard | null>(() => cachedCard(url));
   const [failed, setFailed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -233,7 +250,105 @@ const CardSlot = memo(function CardSlot({ url, discuss, onRemove }: { url: strin
       {card ? <CardBody card={card} url={url} discuss={discuss && card.kind !== 'restricted' ? () => discuss(url) : null} onRemove={onRemove ? () => onRemove(url) : null} /> : <Placeholder url={url} failed={failed} />}
     </div>
   );
-});
+}
+
+// ------------------------------------------------------------------ paths on the office share
+const PATH_TYPES: Record<string, string> = {
+  dwg: 'AutoCAD drawing', dxf: 'Drawing exchange file', dgn: 'MicroStation drawing', pdf: 'PDF document', xlsx: 'Excel workbook', xls: 'Excel workbook',
+  xlsm: 'Excel workbook (macros)', csv: 'CSV table', docx: 'Word document', doc: 'Word document', pptx: 'PowerPoint presentation', txt: 'Text file',
+  pcf: 'Piping component file', idf: 'Isogen data file', nwd: 'Navisworks model', nwc: 'Navisworks cache', nwf: 'Navisworks file set', rvt: 'Revit model',
+  ifc: 'IFC model', step: 'STEP model', stp: 'STEP model', zip: 'ZIP archive', png: 'PNG image', jpg: 'JPEG image', jpeg: 'JPEG image', tif: 'TIFF image', tiff: 'TIFF image',
+};
+
+/** What the quiet line of a path card says, if anything: whose PC, no access, not reachable. */
+function pathNote(v: PathView, access: string | null, writer: string): string | null {
+  if (v.scope === 'local') return v.owner === 'me' ? 'Only on this PC: others cannot open it' : writer ? `Only on ${writer}'s PC` : "Only on the writer's PC";
+  if (access === 'denied') return v.folder ? "You don't have access to this folder" : "You don't have access to this file";
+  if (access === 'offline') return "The file server isn't reachable from here";
+  if (access === 'missing') return 'Not found from this PC';
+  if (v.hint) return 'May be mapped differently on your PC';
+  return null;
+}
+
+/**
+ * A card for a share or drive path, made on this device: the hub never reads paths, and the
+ * card is the reader's own (their drive letter, whether they can reach it). Copy path copies the
+ * reader's form, Copy UNC path the form that works for everyone; Open and Open folder go through
+ * whichever form works on this PC.
+ */
+function PathSlot({ url, discuss, onRemove, authorId, meId }: { url: string; discuss: ((url: string) => void) | null; onRemove: ((url: string) => void) | null; authorId: string; meId: string }) {
+  const toast = useToast();
+  const v = usePathView(url, authorId, meId);
+  const box = useRef<HTMLDivElement>(null);
+  const copyBtn = useRef<HTMLButtonElement>(null);
+  const [seen, setSeen] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => { const el = box.current; if (!el || seen) return; return watch(el, () => setSeen(true)); }, [seen]);
+  const canOpen = !!v?.open && !!window.dex.openFolder;
+  const access = usePathAccess(v?.open ?? null, seen && canOpen);
+  if (!v) return <div ref={box} className="lcard-slot" data-url={url}><Placeholder url={url} failed /></div>;
+  const segs = v.shown.replace(/\\+$/, '').split('\\').filter(Boolean);
+  const name = segs[segs.length - 1] ?? v.shown;
+  const parent = v.folder ? segs.slice(0, -1).join('\\') : segs.slice(0, -1).join('\\');
+  const where = (v.shown.startsWith('\\\\') ? '\\\\' : '') + parent;
+  const ext = /\.([a-z0-9]{1,8})$/i.exec(name)?.[1]?.toLowerCase() ?? '';
+  const type = v.folder ? 'Folder' : PATH_TYPES[ext] ?? (ext ? `${ext.toUpperCase()} file` : 'File');
+  const writer = authorId === meId ? '' : peopleNow().users.get(authorId)?.displayName ?? '';
+  const note = pathNote(v, access, writer);
+  const reachable = canOpen && access !== 'denied' && access !== 'offline' && access !== 'missing';
+  const kindLabel = v.scope === 'local' ? 'One PC' : v.folder ? 'Folder' : 'Office share';
+  const run = (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
+    void fn().catch((e: Error) => toast(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), true)).finally(() => setBusy(null));
+  };
+  const copy = async (text: string, unc: boolean) => { await navigator.clipboard.writeText(text); toast(unc ? 'UNC path copied: it works on every PC' : 'Path copied: paste it into Explorer'); };
+  const showUnc = !!v.unc && v.unc.toLowerCase() !== v.shown.replace(/\\$/, '').toLowerCase();
+  const uncText = v.unc ? (/\\$/.test(v.shown) ? `${v.unc}\\` : v.unc) : null;
+  return (
+    <div ref={box} className="lcard-slot" data-url={url}>
+      <div className={`lcard k-${v.folder ? 'folder' : 'path'}${v.scope === 'local' ? ' local' : ''}`} role="group" aria-label={`Link card: ${v.folder ? 'Folder' : 'Office share'}`}>
+        <span className={`lcard-tile${v.scope === 'local' ? ' quiet' : ''}`} aria-hidden="true">
+          <Icon name={v.scope === 'local' ? 'laptop' : v.folder ? 'drawer' : 'doc'} size={20} />
+          <span className="lcard-kind">{kindLabel}</span>
+        </span>
+        <div className="lcard-main">
+          <div className="lcard-title" translate="no" title={v.unc ?? v.shown}>{name}</div>
+          <div className="lcard-sub"><span translate="no" title={v.unc ? folderOf(v.unc, v.folder) : undefined}>{where || v.shown}</span> · {type}</div>
+          {note
+            ? <div className="lcard-excerpt"><span className={`path-note${access === 'denied' || access === 'offline' ? ' no-access' : ''}`}>{note}</span></div>
+            : <div className="lcard-sub second"><span className="faint mono" translate="no" title={uncText ?? undefined}>{showUnc ? uncText : v.unc ? `Server ${/^\\\\([^\\]+)/.exec(v.unc)?.[1] ?? ''}` : v.shown}</span></div>}
+          <div className="lcard-actions">
+            {reachable && !v.folder && window.dex.openSharePath && (
+              <button className="lbtn opener" aria-label="Open" title={`Open ${name}`} disabled={!!busy} onClick={() => run('open', () => window.dex.openSharePath!(v.open!))}>
+                {busy === 'open' ? <span className="spinner" /> : <Icon name="open" size={13} />}<span className="lbtn-label">Open</span>
+              </button>
+            )}
+            {reachable && (
+              <button className="lbtn opener" aria-label="Open folder" disabled={!!busy} onClick={() => run('folder', () => window.dex.openFolder!(folderOf(v.open!, v.folder)))}>
+                {busy === 'folder' ? <span className="spinner" /> : <Icon name="drawer" size={13} />}<span className="lbtn-label">Open folder</span>
+              </button>
+            )}
+            <span className="lbtn-split">
+              <button className="lbtn" aria-label="Copy path" title={v.shown} onClick={() => run('copy', () => copy(v.shown, false))}><Icon name="copy" size={13} /><span className="lbtn-label">Copy path</span></button>
+              {showUnc && (
+                <button ref={copyBtn} className="lbtn more" aria-label="More ways to copy" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={12} /></button>
+              )}
+            </span>
+            {discuss && <button className="lbtn discuss" aria-label="Discuss" onClick={() => discuss(url)} title="Talk about this link in its own side-track"><Icon name="branch" size={13} /><span className="lbtn-label">Discuss</span></button>}
+          </div>
+        </div>
+        {onRemove && <RemoveButton onRemove={() => onRemove(url)} />}
+      </div>
+      {menu && uncText && (
+        <Popover anchor={copyBtn.current} onClose={() => setMenu(false)} className="menu path-copy" align="start">
+          <button role="menuitem" onClick={() => { setMenu(false); run('copy', () => copy(v.shown, false)); }}><Icon name="copy" size={16} /><span>Copy path <span className="mono faint" translate="no">{v.shown}</span></span></button>
+          <button role="menuitem" onClick={() => { setMenu(false); run('copy', () => copy(uncText, true)); }}><Icon name="copy" size={16} /><span>Copy UNC path <span className="mono faint" translate="no">{uncText}</span></span></button>
+        </Popover>
+      )}
+    </div>
+  );
+}
 
 /** The cards under a message. */
 export function LinkCards({ m, meId, inTrack }: { m: Message; meId: string; inTrack?: boolean }) {
@@ -253,7 +368,7 @@ export function LinkCards({ m, meId, inTrack }: { m: Message; meId: string; inTr
   } : null;
   return (
     <div className="lcards" aria-label="Link cards">
-      {urls.map((u) => <CardSlot key={u} url={u} discuss={discuss} onRemove={remove} />)}
+      {urls.map((u) => <CardSlot key={u} url={u} discuss={discuss} onRemove={remove} authorId={m.authorId} meId={meId} />)}
     </div>
   );
 }

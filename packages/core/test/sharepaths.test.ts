@@ -154,6 +154,8 @@ test('reader: legacy drive-letter paths go through the writer\'s map when the hu
   assert.equal(unknown.scope, 'unknown');
   assert.equal(unknown.hint, true);
   assert.equal(unknown.shown, 'X:\\P12513');
+  assert.equal(unknown.open, null, 'Priya has no X: to try');
+  assert.equal(viewPath('Z:\\P12513', { mine: known(PRIYA), writer: none, writerIsMe: false })!.open, 'Z:\\P12513', 'her own Z: is worth a try');
 });
 
 test('reader: the writer sees what they typed; their own local paths are only on this PC', () => {

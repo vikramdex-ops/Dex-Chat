@@ -172,3 +172,14 @@ html:is([lang='hi'], [lang='ta']) .settings section > h3 { letter-spacing: 0; fo
 .seg-register button[aria-pressed='true']::before { color: var(--accent-ink); }
 .seg-register button:focus-visible { box-shadow: 0 0 0 1px var(--stroke-strong), inset 0 0 0 2px var(--accent); }
 .seg-register button .badge { margin-left: auto; }
+
+/* Preferences → Your network drives: a ruled schedule of letters and the shares they stand for */
+.net-drives .drive-table { width: 100%; margin-top: -1px; border-collapse: collapse; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 0 0 var(--radius-s) var(--radius-s); font-size: 12.5px; }
+.net-drives .drive-table th { padding: 5px 12px; text-align: left; font: 600 10px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--stroke); }
+.net-drives .drive-table td { padding: 7px 12px; border-top: 1px solid var(--stroke); vertical-align: top; }
+.net-drives .drive-table td.mono { overflow-wrap: anywhere; }
+.net-drives .drive-table td:first-child { width: 56px; font-weight: 600; color: var(--accent-ink); }
+.net-drives .drive-table tr.local td:first-child { color: var(--text-3); }
+.net-drives .drive-none { margin-top: -1px; padding: 9px 12px; border: 1px solid var(--stroke-strong); border-radius: 0 0 var(--radius-s) var(--radius-s); background: var(--layer-solid); font-size: 12.5px; }
+@media (max-width: 520px) { .net-drives .drive-table td:last-child, .net-drives .drive-table th:last-child { display: none; } }
+html:is([lang='hi'], [lang='ta']) .net-drives .drive-table th { letter-spacing: 0; }

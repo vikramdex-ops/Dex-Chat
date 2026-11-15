@@ -7,6 +7,7 @@ import { playSound } from '../sounds.ts';
 import { RemoteSettings } from './Remote.tsx';
 import { YourDevices } from './Pairing.tsx';
 import { CalendarFeedSettings } from './CalendarFeed.tsx';
+import { NetworkDrives } from './NetworkDrives.tsx';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Popover, Segmented, Toggle, confirmAction, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
@@ -239,6 +240,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
         </section>}
 
         <YourDevices state={state} />
+        <NetworkDrives state={state} />
         <CalendarFeedSettings state={state} session={session} />
         <RemoteSettings state={state} />
 

@@ -50,6 +50,7 @@ import { keyFor, keyHint, keyText, pressed, useKeys } from './keys.ts';
 import './chat.css';
 import { LoungeStrip } from '../lounges/Lounges.tsx';
 import { isMadeBot } from '../bots/BotMark.tsx';
+import { toLocalText, toShareable } from './sharepaths.ts';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
@@ -272,7 +273,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
-    const files = [...e.dataTransfer.files];
+    // a dropped folder is not uploaded: its path goes into the Dock (stored as UNC when it is on a mapped drive)
+    const entries = [...e.dataTransfer.items].filter((it) => it.kind === 'file').map((it) => it.webkitGetAsEntry?.() ?? null);
+    const folders: string[] = [];
+    const files = [...e.dataTransfer.files].filter((f, i) => {
+      if (!entries[i]?.isDirectory) return true;
+      const p = window.dex.pathForFile?.(f);
+      if (p) folders.push(/\s/.test(p) ? `"${p}"` : p);
+      return false;
+    });
+    if (folders.length) window.dispatchEvent(new CustomEvent('dex-insert', { detail: { key: tlKey(convId), text: folders.join(' ') } }));
     if (files.length && canAttach) window.dispatchEvent(new CustomEvent('dex-attach', { detail: { key: tlKey(convId), files } }));
   };
   const title = convTitle(conv, users, meId);
@@ -1062,7 +1072,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
         m.body ? (
           <div className={`msg-text selectable${isEmojiOnly(m.body) ? ' big' : ''}`}>
             {m.plain && <PlainMark m={m as Message} users={ctx.users} />}
-            {renderBody(m.body, ctx.users, ctx.meId)}
+            {renderBody(m.body, ctx.users, ctx.meId, m.authorId)}
             {m.editedAt && <span className="edited"> (edited)</span>}
             {m.via === 'direct' && <span className="via-direct" title="Passed straight between PCs while the hub was off">sent directly</span>}
             {m.e2e === 'unverified' && <span className="unverified" title="Encrypted, but this device could not confirm which device sent it"><Icon name="warning" size={12} /></span>}
@@ -1267,7 +1277,8 @@ const autoGrow = (el: HTMLTextAreaElement) => {
 
 /** Stored bodies use <@id> and <#space>; while typing people see @Name and #Space name. */
 function toEditable(body: string, users: Map<string, PublicUser>): string {
-  return body.replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
+  // share paths with this PC's drive letters, as the writer typed them (toWire stores them as UNC again)
+  return toLocalText(body).replace(/<@all>/g, '@everyone').replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(SPACE_REF_RE, (x, id: string) => { const n = spaceName(id); return n ? `#${n}` : x; });
 }
 
@@ -1281,7 +1292,8 @@ function toWire(text: string, users: Map<string, PublicUser>, conv: Conversation
     out = out.split(`@${u.displayName}`).join(`<@${u.id}>`);
   }
   if (conv.kind === 'space') out = out.replace(/@everyone\b/g, '<@all>');
-  return out.trim();
+  // this PC's mapped drive letters become the share's UNC path, the same for every reader
+  return toShareable(out).trim();
 }
 
 const FORMATS: Array<[string, React.ReactNode, string]> = [
@@ -1360,6 +1372,17 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     };
     window.addEventListener('dex-quote', onQuote);
     return () => window.removeEventListener('dex-quote', onQuote);
+  }, [key]);
+  useEffect(() => {
+    // a folder dropped on the Pane: its path at the end of the draft
+    const onInsert = (e: Event) => {
+      const d = (e as CustomEvent).detail as { key: string; text: string };
+      if (d.key !== key) return;
+      setText((t) => { const v = t && !/\s$/.test(t) ? `${t} ${d.text}` : `${t}${d.text}`; setDraft(key, v); return v; });
+      requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); autoGrow(el); } });
+    };
+    window.addEventListener('dex-insert', onInsert);
+    return () => window.removeEventListener('dex-insert', onInsert);
   }, [key]);
   useEffect(() => {
     const onAttach = (e: Event) => { const d = (e as CustomEvent).detail as { key: string; files: File[] }; if (d.key === key) addFiles(d.files); };

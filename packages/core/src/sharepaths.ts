@@ -235,6 +235,36 @@ export function findPaths(text: string, opts: { skipCode?: boolean } = {}): Path
   return out.sort((a, b) => a.start - b.start);
 }
 
+const PATH_AT = new RegExp(PATH_RE.source, 'uy');
+const QUOTED_AT = new RegExp(QUOTED_RE.source, 'y');
+
+/** The path that starts exactly at `at` in a text, if one does (for drawing a message piece by piece). */
+export function pathAt(text: string, at: number): PathSpan | null {
+  const c = text[at];
+  if (c === '"' || c === '“' || c === '‘' || c === '«') {
+    QUOTED_AT.lastIndex = at;
+    const m = QUOTED_AT.exec(text);
+    const inner = m ? (m[1] ?? m[2] ?? m[3] ?? m[4] ?? '').trim() : '';
+    if (m && parsePath(inner)) return { start: at, end: at + m[0].length, raw: m[0], path: inner, quoted: true };
+    return null;
+  }
+  PATH_AT.lastIndex = at;
+  const m = PATH_AT.exec(text);
+  if (!m) return null;
+  const raw = trimEnd(m[0]);
+  return parsePath(raw) ? { start: at, end: at + raw.length, raw, path: raw, quoted: false } : null;
+}
+
+/** Could a path start here? A cheap test before pathAt. */
+export function mayStartPath(text: string, at: number): boolean {
+  const c = text[at];
+  if (c === '\\') return text[at + 1] === '\\';
+  if (c === '/') return text[at + 1] === '/';
+  if (c === '"' || c === '“' || c === '‘' || c === '«') return true;
+  if (c === 'f' || c === 'F') return /^file:\/\//i.test(text.slice(at, at + 7));
+  return /[A-Za-z]/.test(c ?? '') && text[at + 1] === ':' && (text[at + 2] === '\\' || text[at + 2] === '/');
+}
+
 /** Rewrite each path in a text with `fn` (null leaves it). Quotes and file:// form are kept around the new path. */
 export function mapPaths(text: string, fn: (p: ParsedPath, span: PathSpan) => string | null, opts: { skipCode?: boolean } = {}): string {
   const spans = findPaths(text, opts);
@@ -338,7 +368,9 @@ export function viewPath(raw: string, ctx: { mine: DriveMap; writer: DriveMap | 
     }
     return { ...base, unc: null, shown: withTrailing(p), scope: 'local', owner: 'writer', via: null, hint: false, open: null };
   }
-  return { ...base, unc: null, shown: withTrailing(p), scope: 'unknown', via: null, hint: true, open: p.path };
+  // nobody can place the letter: it is worth trying only where this PC has a drive by that letter
+  const here = ctx.mine.drives.some((d) => d.letter === p.letter);
+  return { ...base, unc: null, shown: withTrailing(p), scope: 'unknown', via: null, hint: true, open: here ? p.path : null };
 }
 
 /** The folder a path is in (for a file), or the path itself (for a folder). */
