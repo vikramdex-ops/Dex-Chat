@@ -49,7 +49,7 @@ import { SITE_FILES, SITE_NAMES } from './site-assets.gen.ts';
 
 interface Env {
   RELAY: DurableObjectNamespace<Relay>;
-  /** The hub's certificate fingerprint (Control room > Remote access). Without it, the first hub to connect is trusted. */
+  /** The hub's certificate fingerprint (Control room ▸ Outside the office). Without it, the first hub to connect is trusted. */
   HUB_FINGERPRINT?: string;
 }
 

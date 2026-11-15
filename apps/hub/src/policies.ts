@@ -67,7 +67,7 @@ export class Policies {
       blockedFileTypes: this.json('policy_blocked_types', []),
       outsideNetworks: this.json('policy_outside_networks', []),
       defaultSpaces: (() => { try { return JSON.parse(this.meta('policy_default_spaces') ?? '[]') as string[]; } catch { return []; } })(),
-      // meetings (Control room ▸ Meetings)
+      // meetings (Control room ▸ Policies ▸ Meetings)
       meetingLobby: (['off', 'outside', 'everyone'] as const).find((v) => v === this.meta('policy_meeting_lobby')) ?? 'outside',
       guestLinks: this.meta('policy_guest_links') !== '0',
       joinBeforeHost: this.meta('policy_join_before_host') !== '0',

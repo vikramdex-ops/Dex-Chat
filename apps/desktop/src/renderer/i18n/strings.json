@@ -286,7 +286,7 @@
  "You cannot change your own role.": "../../../../hub/hub.ts",
  "You cannot remove the device you are using.": "../../../../hub/hub.ts",
  "Your administrator has turned off adding personal devices.": "../../../../hub/hub.ts",
- "Your office has turned guest links off (Control room ▸ Meetings).": "../../../../hub/hub.ts",
+ "Your office has turned guest links off (Control room ▸ Policies ▸ Meetings).": "../../../../hub/hub.ts",
  "Cloudflare answered {0}": "../../../../hub/ice.ts",
  "“{0}” is not a host name.": "../../../../hub/links.ts",
  "Give a link to preview.": "../../../../hub/links.ts",

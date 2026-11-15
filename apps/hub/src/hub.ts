@@ -1384,7 +1384,7 @@ export class Hub {
         const allowed = this.policies.get().guestLinks !== false;
         let next = m;
         if (d.enabled !== undefined || d.regenerate === true) {
-          if (d.enabled === true && !allowed) throw new OpError('Your office has turned guest links off (Control room ▸ Meetings).');
+          if (d.enabled === true && !allowed) throw new OpError('Your office has turned guest links off (Control room ▸ Policies ▸ Meetings).');
           next = this.meetings.setGuest(m, typeof d.enabled === 'boolean' ? d.enabled : undefined, d.regenerate === true);
           this.store.audit(me.id, d.regenerate === true ? 'meeting.guestLinkRenewed' : next.guest.enabled ? 'meeting.guestLinkOn' : 'meeting.guestLinkOff', m.id, {});
         }
