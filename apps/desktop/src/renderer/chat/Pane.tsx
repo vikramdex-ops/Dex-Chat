@@ -37,6 +37,13 @@ import { Dialog } from '../ui.tsx';
 import { timeOpts } from '../time.ts';
 import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeople, openWithQuote, pinEnd, runAction, useActions } from './wire.tsx';
 import { useMsgLayout } from './prefs.ts';
+import { LinkCards } from './linkcards.tsx';
+import { DecisionBuilder, DecisionCard } from './decisions.tsx';
+import { ReactionInsightsPanel } from './insights.tsx';
+import { RestyleControl, RestyleSheet, readable } from './restyle.tsx';
+import type { RestyleStyle } from '@dex/core/restyle';
+import { RefCard, RefChips, ReferenceDialog, payloadFor, refDragProps, shareRef, startHoldDrag, useRefTarget } from './refs.tsx';
+import type { RefPayload } from './refs.tsx';
 import { keyFor, keyHint, keyText, pressed, useKeys } from './keys.ts';
 import './chat.css';
 
@@ -217,6 +224,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
     return hide;
   }, [convId]);
 
+  const refDrop = useRefTarget({ kind: 'conv', convId });
   if (!conv) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
   const ctx: Ctx = {
     users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }), selected, cards: layout === 'cards',
@@ -337,7 +345,10 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <span><b>{u!.displayName.split(' ')[0]}</b> is away from the office until {new Date(u!.ooo!.until).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}.{u!.ooo!.message ? ` “${u!.ooo!.message}”` : ''}{u!.ooo!.delegateId ? ` For anything urgent, contact ${users.get(u!.ooo!.delegateId)?.displayName ?? 'a colleague'}.` : ''}</span>
           </div>
         ))}
-        <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
+        <div className={`ref-zone${refDrop.valid ? ' ref-valid' : ''}${refDrop.over ? ' ref-over' : ''}`} {...refDrop.props}>
+          <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
+          {refDrop.valid && <span className="ref-drop-label" aria-hidden={!refDrop.over}>{refDrop.over ? 'Drop to reference here' : `Reference in ${title}`}</span>}
+        </div>
         {selected && (
           <div className="select-bar" role="toolbar" aria-label="Picked messages">
             <b className="mono">{selected.size} picked</b>
@@ -656,7 +667,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   const moreBtn = useRef<HTMLButtonElement>(null);
   const stampBtn = useRef<HTMLButtonElement>(null);
   const keepBtn = useRef<HTMLButtonElement>(null);
-  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | 'fork' | null>(null);
+  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | 'fork' | 'insights' | 'restyle' | 'reference' | null>(null);
   const kept = useDesk((s) => s.saved.get(m.id));
   const saved = !!kept;
   const pending = 'pending' in m;
@@ -669,7 +680,9 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   const inWindow = withinEditWindow(m.createdAt, policy);
   const sticker = STICKER_RE.exec(m.body)?.[1] ?? null;
   const moderator = ctx.conv.kind === 'space' && (ctx.isAdmin || ctx.conv.moderators?.includes(ctx.meId) || ctx.conv.createdBy === ctx.meId);
-  const canEdit = mine && inWindow && !!m.body && !m.poll && !m.form && !sticker;
+  const canEdit = mine && inWindow && !!m.body && !m.poll && !m.form && !m.decision && !m.ref && !sticker;
+  // what dragging this message (or Reference in…) points at
+  const refPayload = pending ? null : payloadFor(m as Message, ctx.users);
   const canDelete = (mine && inWindow) || moderator;
   const mentioned = m.mentions.includes(ctx.meId) || (m.mentions.includes('all') && !mine);
   const guest = ctx.users.get(ctx.meId)?.role === 'guest';
@@ -720,6 +733,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
 
   return (
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
+      onPointerDown={refPayload && !ctx.selected && !editing ? (e) => startHoldDrag(e, refPayload, ctx.users) : undefined}
       onMouseEnter={inTrack ? undefined : toolsFit} onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
       {ctx.cards && !inTrack && <span className="card-time mono" aria-hidden="true">{clock(m.createdAt)}</span>}
@@ -733,7 +747,9 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
       )}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
-      ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} /> : sticker ? (
+      ) : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} />
+        : m.decision ? <DecisionCard m={m as Message} meId={ctx.meId} users={ctx.users} />
+        : m.ref ? <RefCard m={m as Message} users={ctx.users} meId={ctx.meId} onView={ctx.view} /> : sticker ? (
         <div className="sticker-body"><StickerImg id={sticker} size={ctx.cards ? 112 : 132} /></div>
       ) : editing ? (
         <EditBox m={m} ctx={ctx} onDone={() => setEditing(false)} />
@@ -747,7 +763,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
           </div>
         ) : null
       )}
-      <MessageFiles files={m.files ?? []} onView={ctx.view} />
+      <MessageFiles files={m.files ?? []} onView={ctx.view} draggableAs={pending ? undefined : (f) => refDragProps({ kind: 'file', convId: m.convId, fileId: f.id, name: f.name }, ctx.users)} />
+      {!pending && !editing && <LinkCards m={m as Message} meId={ctx.meId} inTrack={inTrack} />}
       {!pending && <MsgFlags m={m as Message} />}
 
       {Object.keys(m.reactions).length > 0 && (
@@ -758,6 +775,11 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
               <span><EmojiGlyph emoji={emoji} size={16} /></span><span className="n">{who.length}</span>
             </button>
           ))}
+          {!pending && (
+            <button className="reaction-count" title="Reaction insights" aria-label={`Reaction insights: ${Object.values(m.reactions).reduce((n, w) => n + w.length, 0)} stamps`} onClick={() => setDialog('insights')}>
+              <Icon name="insight" size={13} /><span className="mono">{Object.values(m.reactions).reduce((n, w) => n + w.length, 0)}</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -777,6 +799,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
 
       {!pending && !editing && (
         <div className={`spine-tools${stamp || more || keep ? ' open' : ''}`} role="toolbar" aria-label="Tools for this message" aria-orientation="vertical">
+          {refPayload && <button className="grip" {...refDragProps(refPayload, ctx.users)} title="Drag to reference in another conversation (or click: Reference in…)" aria-label="Drag to reference" onClick={() => setDialog('reference')}><Icon name="grip" size={13} /></button>}
           {!inTrack && onTrack && <button onClick={() => onTrack(m.id)} title="Side-track" aria-label="Side-track"><Icon name="branch" size={15} /></button>}
           <button ref={stampBtn} className={stamp ? 'on' : undefined} onClick={() => setStamp(stamp ? null : 'chips')} title="Stamp" aria-label="Stamp" aria-haspopup="dialog" aria-expanded={!!stamp}><Icon name="stamp" size={15} /></button>
           <button ref={keepBtn} className={saved ? 'on kept' : undefined} onClick={keepClick}
@@ -810,6 +833,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
             <Popover anchor={moreBtn.current} onClose={() => close()} className="menu msg-menu" align="right">
               <div className="menu-label label">Send on</div>
               <button role="menuitem" onClick={() => close(() => setDialog('forward'))}><Icon name="forward" size={16} />Forward</button>
+              {refPayload && <button role="menuitem" onClick={() => close(() => setDialog('reference'))}><Icon name="reference" size={16} />Reference in…</button>}
               {m.body && <button role="menuitem" onClick={() => close(() => window.dispatchEvent(new CustomEvent('dex-quote', { detail: { key: tlKey(m.convId, inTrack ? m.parentId : null), text: quoteOf(m, ctx.users) } })))}><Icon name="reply" size={16} />Quote</button>}
               {ctx.conv.kind === 'space' && !mine && author?.role !== 'bot' && (
                 <button role="menuitem" onClick={() => close(() => {
@@ -860,6 +884,8 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
               <div className="menu-label label">This message</div>
               {canEdit && <button role="menuitem" onClick={() => close(() => setEditing(true))}><Icon name="edit" size={16} />Edit<span className="kbd">{keyHint(keyFor('editLast'))}</span></button>}
               {mine && receiptsOn && ctx.conv.members.length > 1 && <button role="menuitem" onClick={() => close(() => setDialog('readers'))}><Icon name="eye" size={16} />Who has seen it</button>}
+              <button role="menuitem" onClick={() => close(() => setDialog('insights'))}><Icon name="insight" size={16} />Reaction insights</button>
+              {!mine && !!m.body && !sticker && !m.ref && !m.poll && !m.form && !m.decision && m.e2e !== 'locked' && <button role="menuitem" onClick={() => close(() => setDialog('restyle'))}><Icon name="restyle" size={16} />Restyle a copy</button>}
               {!inTrack && <button role="menuitem" onClick={() => close(() => ctx.select(m.id))}><Icon name="check" size={16} />Pick several</button>}
               {!mine && author?.role !== 'bot' && <button role="menuitem" onClick={() => close(() => setDialog('report'))}><Icon name="warning" size={16} />Report to administrators…</button>}
               {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => close(() => {
@@ -877,6 +903,9 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
       {(dialog === 'report' || dialog === 'remove') && <ReasonDialog kind={dialog} m={m as Message} ctx={ctx} onClose={() => setDialog(null)} />}
       {dialog === 'forward' && <ForwardDialog message={m} users={ctx.users} meId={ctx.meId} online={ctx.online} onClose={() => setDialog(null)} />}
       {dialog === 'fork' && <StartSpaceDialog m={m as Message} users={ctx.users} onClose={() => setDialog(null)} />}
+      {dialog === 'insights' && <ReactionInsightsPanel messageId={m.id} onClose={() => setDialog(null)} />}
+      {dialog === 'restyle' && <RestyleSheet mode="copy" text={readable(m.body, ctx.users)} style="concise" users={ctx.users} onClose={() => setDialog(null)} />}
+      {dialog === 'reference' && refPayload && <ReferenceDialog payload={refPayload} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
     </div>
   );
 }
@@ -970,7 +999,11 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   const [mdHelp, setMdHelp] = useState(false);
   const mdBtn = useRef<HTMLButtonElement>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | null>(null);
+  const [dockDialog, setDockDialog] = useState<'poll' | 'schedule' | 'remind' | 'help' | 'form' | 'decision' | null>(null);
+  const [restyling, setRestyling] = useState<RestyleStyle | null>(null);
+  /** References dropped on the Dock, sent after the text. */
+  const [refs, setRefs] = useState<RefPayload[]>([]);
+  const dockDrop = useRefTarget({ kind: 'dock', convId, key });
   const [addMenu, setAddMenu] = useState(false);
   const [sendMenu, setSendMenu] = useState(false);
   const sendMore = useRef<HTMLButtonElement>(null);
@@ -1018,6 +1051,17 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     return () => window.removeEventListener('dex-attach', onAttach);
   });
   useEffect(() => () => { for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview); }, [key]);
+  useEffect(() => {
+    setRefs([]);
+    const onRef = (e: Event) => {
+      const d = (e as CustomEvent).detail as { key: string; payload: RefPayload };
+      if (d.key !== key) return;
+      setRefs((list) => (list.some((x) => JSON.stringify(x) === JSON.stringify(d.payload)) || list.length >= 5 ? list : [...list, d.payload]));
+      ref.current?.focus();
+    };
+    window.addEventListener('dex-ref-attach', onRef);
+    return () => window.removeEventListener('dex-ref-attach', onRef);
+  }, [key]);
   const uploading = attachments.some((a) => !a.info && !a.error);
   const ready = attachments.filter((a) => a.info);
 
@@ -1127,8 +1171,23 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   };
 
   const clear = () => { setText(''); setDraft(key, ''); setMention(null); setHash(null); picked.current = []; };
+  const sendRefs = async (list: RefPayload[]) => {
+    for (const p of list) if (!(await shareRef(convId, p, parentId))) return;
+  };
   const send = () => {
     const body = wire();
+    if (refs.length && live && !uploading && !direct && !text.startsWith('/')) {
+      const list = refs;
+      setRefs([]);
+      if (body || ready.length) {
+        void sendMessage(convId, body, parentId, ready.map((a) => a.info!), { alsoToConv });
+        for (const a of attachments) if (a.preview) URL.revokeObjectURL(a.preview);
+        setAttachments([]);
+        clear();
+      }
+      void sendRefs(list);
+      return;
+    }
     if ((!body && !ready.length) || !live || uploading) return;
     if (text.startsWith('/') && !ready.length) {
       const typed = text;
@@ -1219,7 +1278,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   useKeys();
 
   return (
-    <div className="dock-wrap">
+    <div className="dock-wrap" {...dockDrop.props}>
       {slashList.length > 0 && (
         <ul className="mention-pop slash-pop" role="listbox" aria-label="Commands">
           <li className="slash-head label" role="presentation">Commands</li>
@@ -1262,7 +1321,9 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         </ul>
       )}
       <AttachmentTray items={attachments} onRemove={(k) => setAttachments((l) => l.filter((a) => a.key !== k))} />
-      <div className={`dock${text.trim() || (ready.length && !uploading) ? ' has-text' : ''}${recording ? ' recording' : ''}`}>
+      <RefChips items={refs} users={ctx.users} onRemove={(i) => setRefs((l) => l.filter((_, j) => j !== i))} />
+      {dockDrop.valid && <span className={`ref-drop-label dock-label${dockDrop.over ? ' on' : ''}`}>{dockDrop.over ? 'Drop to reference here' : 'Drop on the Dock to add it to your message'}</span>}
+      <div className={`dock${text.trim() || (ready.length && !uploading) || refs.length ? ' has-text' : ''}${recording ? ' recording' : ''}${dockDrop.valid ? ' ref-valid' : ''}${dockDrop.over ? ' ref-over' : ''}`}>
         <div className="dock-tools">
           {canAttach && (
             <>
@@ -1281,6 +1342,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
                 {screenClipsSupported() && <button role="menuitem" onClick={() => { setAddMenu(false); setClipMode('screen'); }}><Icon name="screen" size={16} />Screen recording</button>}
                 <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('poll'); }}><Icon name="poll" size={16} />Poll</button>
                 {!guest && <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('form'); }}><Icon name="list" size={16} />Form</button>}
+                {!guest && <button role="menuitem" onClick={() => { setAddMenu(false); setDockDialog('decision'); }}><Icon name="decision" size={16} />Decision</button>}
                 <button role="menuitem" onClick={() => { setAddMenu(false); sideEvent('notes-new'); }}><Icon name="doc" size={16} />Note</button>
                 <button role="menuitem" onClick={() => { setAddMenu(false); sideEvent('boards'); }}><Icon name="drawing" size={16} />Whiteboard</button>
                 {!guest && <button role="menuitem" onClick={() => { setAddMenu(false); window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); }}><Icon name="calendar" size={16} />Meeting</button>}
@@ -1289,6 +1351,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               </>}
             </Popover>
           )}
+          {!recording && <RestyleControl text={text} disabled={!live} onPick={setRestyling} />}
           {emoji && (
             <Popover anchor={addBtn.current ?? ref.current} onClose={() => setEmoji(false)} className="emoji-pop-wrap" align="start">
               <EmojiPicker onClose={() => { setEmoji(false); ref.current?.focus(); }} onPick={insertEmoji} />
@@ -1317,7 +1380,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         />
         {!recording && (
           <span className="send-split">
-            <button className="send" onClick={send} disabled={(!text.trim() && !ready.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
+            <button className="send" onClick={send} disabled={(!text.trim() && !ready.length && !refs.length) || !live || uploading} title={uploading ? 'Waiting for uploads to finish' : 'Send (Enter)'} aria-label="Send">
               <Icon name="dimsend" size={19} />
             </button>
             <button ref={sendMore} className="send-more" onClick={() => setSendMenu(!sendMenu)} disabled={!canLater} aria-label="More ways to send" title="Send later" aria-haspopup="menu" aria-expanded={sendMenu}>
@@ -1332,6 +1395,9 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
         )}
       </div>
       {dockDialog === 'form' && <FormBuilder conv={ctx.conv} onClose={() => setDockDialog(null)} />}
+      {dockDialog === 'decision' && <DecisionBuilder conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
+      {restyling && <RestyleSheet mode="draft" text={text} style={restyling} users={ctx.users} onClose={() => { setRestyling(null); ref.current?.focus(); }}
+        onUse={(v) => { setText(v); setDraft(key, v); requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(v.length, v.length); autoGrow(el); } }); }} />}
       {dockDialog === 'poll' && <PollDialog conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'remind' && <RemindDialog users={ctx.users} meId={ctx.meId} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'help' && (
