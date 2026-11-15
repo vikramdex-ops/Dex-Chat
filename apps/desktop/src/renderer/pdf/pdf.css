@@ -1,14 +1,17 @@
 /* The PDF viewer: white sheets on a drafting-table ground, a title block for the file, toolbar
    groups ruled off with hairlines. Follows the light and dark themes (the paper stays white). */
-.lightbox.pdfv { --pdfv-desk: #d3dddf; --pdfv-paper-edge: rgba(19, 43, 46, .2); background: var(--pdfv-desk); color: var(--text); }
-:root[data-theme='dark'] .lightbox.pdfv { --pdfv-desk: #0a1517; --pdfv-paper-edge: rgba(0, 0, 0, .6); }
-.lightbox.pdfv header.pdfv-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: var(--text); background: var(--layer-solid); border-bottom: 1px solid var(--stroke-strong); min-width: 0; }
-.lightbox.pdfv header .icon-btn { color: var(--text-2); border-radius: 4px; }
-.lightbox.pdfv header .icon-btn:hover { background: var(--subtle); color: var(--text); }
-.lightbox.pdfv header .icon-btn:disabled { opacity: .4; }
-.lightbox.pdfv header .icon-btn.on { background: var(--accent-soft); color: var(--accent-ink); }
-.lightbox.pdfv .btn.ghost { color: var(--text-2); }
-.lightbox.pdfv .btn.ghost:hover { background: var(--subtle); color: var(--text); }
+.lightbox.pdfv, .pdfv-inline.pdfv { --pdfv-desk: #d3dddf; --pdfv-paper-edge: rgba(19, 43, 46, .2); background: var(--pdfv-desk); color: var(--text); }
+:root[data-theme='dark'] :is(.lightbox, .pdfv-inline).pdfv { --pdfv-desk: #0a1517; --pdfv-paper-edge: rgba(0, 0, 0, .6); }
+/* in place (a notice's attachment): a framed sheet of its own height inside the page */
+.pdfv-inline.pdfv { display: grid; grid-template-rows: auto 1fr; height: min(72vh, 760px); min-height: 360px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); overflow: hidden; }
+.pdfv-inline.pdfv:focus-within { box-shadow: 0 0 0 1px var(--accent); }
+:is(.lightbox, .pdfv-inline).pdfv header.pdfv-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: var(--text); background: var(--layer-solid); border-bottom: 1px solid var(--stroke-strong); min-width: 0; }
+:is(.lightbox, .pdfv-inline).pdfv header .icon-btn { color: var(--text-2); border-radius: 4px; }
+:is(.lightbox, .pdfv-inline).pdfv header .icon-btn:hover { background: var(--subtle); color: var(--text); }
+:is(.lightbox, .pdfv-inline).pdfv header .icon-btn:disabled { opacity: .4; }
+:is(.lightbox, .pdfv-inline).pdfv header .icon-btn.on { background: var(--accent-soft); color: var(--accent-ink); }
+:is(.lightbox, .pdfv-inline).pdfv .btn.ghost { color: var(--text-2); }
+:is(.lightbox, .pdfv-inline).pdfv .btn.ghost:hover { background: var(--subtle); color: var(--text); }
 .pdfv-title { display: grid; gap: 2px; min-width: 0; flex: 1 1 160px; padding-left: 10px; border-left: 2px solid var(--accent); }
 .pdfv-title .sb-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdfv-meta { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
@@ -77,9 +80,10 @@
 .pdfv.tool-hand .textLayer, .pdfv.tool-hand .textLayer :is(span, br) { pointer-events: none; user-select: none; cursor: inherit; }
 
 @media (max-width: 640px) {
-  .lightbox.pdfv header.pdfv-head { flex-wrap: wrap; row-gap: 6px; padding: 8px 8px 6px; }
+  :is(.lightbox, .pdfv-inline).pdfv header.pdfv-head { flex-wrap: wrap; row-gap: 6px; padding: 8px 8px 6px; }
   .pdfv-title { order: 1; flex: 1 1 0; }
-  .lightbox.pdfv header.pdfv-head > .icon-btn { order: 2; }
+  :is(.lightbox, .pdfv-inline).pdfv header.pdfv-head > .icon-btn { order: 2; }
+  .pdfv-inline.pdfv { height: 64vh; min-height: 300px; }
   .pdfv-tools { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; }
   .pdfv-group { flex: none; padding: 0 4px; }
   .pdfv-ext span { display: none; }
