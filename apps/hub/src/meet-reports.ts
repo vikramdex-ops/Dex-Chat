@@ -4,7 +4,7 @@
 // as people come and go, so a report survives the hub restarting mid-meeting.
 import type { DatabaseSync } from 'node:sqlite';
 import { isWebGuest } from '@dex/core';
-import type { MeetingKind, MeetingReport, MeetingReportPerson, MeetingUsage, PublicUser, RecordingInfo, RoomInfo } from '@dex/core';
+import type { MeetingKind, MeetingReport, MeetingReportPerson, MeetingUsage, PublicUser, RecordingInfo, RoomInfo, WebinarReport } from '@dex/core';
 import type { Meeting } from './meetings.ts';
 
 const SCHEMA = `
@@ -87,6 +87,8 @@ export class MeetReports implements RoomTracker {
   private readonly db: DatabaseSync;
   /** The recordings of a meeting, as the viewer may see them. */
   recordingsFor: (roomId: string, viewer: PublicUser) => RecordingInfo[] = () => [];
+  /** A webinar's own part (webinars.ts): registrants with attended or no-show, questions, poll answers, handout downloads, the survey. */
+  webinarFor: (meetingId: string | null) => WebinarReport | null = () => null;
   /** Hosts of the meeting a report belongs to (they may see it even if they were not in it). */
   private readonly isAdmin = (u: PublicUser) => u.role === 'owner' || u.role === 'admin';
 
@@ -172,6 +174,7 @@ export class MeetReports implements RoomTracker {
       polls: this.polls(s.conv_id, s.started_at, end),
       recordings: this.recordingsFor(s.room_id, viewer),
       breakouts: s.breakouts,
+      ...(s.kind === 'webinar' ? { webinar: this.webinarFor(s.meeting_id) ?? undefined } : {}),
     };
   }
 

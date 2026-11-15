@@ -24,7 +24,8 @@
     "./bots": "./src/bots.ts",
     "./ics": "./src/ics.ts",
     "./meet": "./src/meet.ts",
-    "./meet-csv": "./src/meet-csv.ts"
+    "./meet-csv": "./src/meet-csv.ts",
+    "./webinar": "./src/webinar.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

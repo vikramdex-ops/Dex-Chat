@@ -45,6 +45,7 @@ import { MiniApps, MiniAppError } from './miniapps.ts';
 import { MeetGuests } from './meet-guests.ts';
 import { MeetReports, ReportError } from './meet-reports.ts';
 import { Recordings, RecordingError } from './recordings.ts';
+import { Webinars, WebinarError } from './webinars.ts';
 import { isWebGuest, isWebGuestDevice } from '@dex/core';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
@@ -126,6 +127,7 @@ export class Hub {
   readonly meetGuests: MeetGuests;
   readonly reports: MeetReports;
   readonly recordings: Recordings;
+  readonly webinars: Webinars;
   readonly desk: Desk;
   readonly org: Org;
   readonly work: Work;
@@ -244,10 +246,7 @@ export class Hub {
         this.deliver(guests.length ? userIds.filter((u) => !isWebGuest(u)) : userIds, name, () => data);
         for (const g of guests) this.meetGuests.toUser(g, name, data);
       },
-      deliverToDevice: (deviceId, name, data) => {
-        if (isWebGuestDevice(deviceId)) { this.meetGuests.toDevice(deviceId, name, data); return; }
-        for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data });
-      },
+      deliverToDevice: (deviceId, name, data) => this.toDevice(deviceId, name, data),
       visitorsOf: (ids) => this.meetGuests.visitors(ids),
       audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
       track: this.reports,
@@ -258,6 +257,7 @@ export class Hub {
       deviceLeft: (_roomId, deviceId) => this.relay.leave(deviceId),
       roomClosed: (roomId) => this.relay.closeRoom(roomId),
       meetings: this.meetings,
+      webinar: { onStage: (m, u) => this.webinars.onStage(m, u), changed: (r) => this.webinars.roomChanged(r), ended: (r) => this.webinars.roomEnded(r) },
     });
     this.recordings = new Recordings({
       db: this.store.db, files: this.files, dir: path.join(opts.dataDir, 'recordings-partial'),
@@ -274,6 +274,33 @@ export class Hub {
       tell: (userIds, name, data) => this.deliver(userIds, name, () => data),
     });
     this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
+    this.webinars = new Webinars({
+      db: this.store.db, meetings: this.meetings, rooms: this.rooms, messaging: this.messaging, files: this.files,
+      userById: (uid) => this.store.userById(uid),
+      deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      deliverToDevice: (deviceId, name, data) => this.toDevice(deviceId, name, data),
+      isRemote: (deviceId) => [...this.conns].some((c) => c.ready && c.deviceId === deviceId && c.remote),
+      relayAvailable: () => this.opts.relay !== false && this.relay.available(),
+      relayLeave: (deviceId) => this.relay.leave(deviceId),
+      relayClose: (roomId) => this.relay.closeRoom(roomId),
+      gateway: () => { const rc = this.remoteConfig(); return rc.enabled ? rc.url : null; },
+      office: () => this.info.name,
+      tell: (userId, text, key) => this.system.tell(userId, text, key),
+      recordingLink: (me, recordingId) => {
+        try {
+          const r = this.recordings.handle('rec.share', me, { id: recordingId, link: true }) as import('@dex/core').RecordingInfo;
+          if (!r.link) throw new WebinarError('That recording cannot be shared by link.');
+          return r.link;
+        } catch (err) { if (err instanceof RecordingError) throw new WebinarError(err.message); throw err; }
+      },
+      iceServers: () => this.ice.servers(),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      ffmpegPath: () => this.store.meta('ffmpeg_path', () => '') || null,
+      setFfmpegPath: (p) => this.setMeta('ffmpeg_path', p ?? ''),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.reports.webinarFor = (meetingId) => this.webinars.reportFor(meetingId);
+    { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -284,7 +311,7 @@ export class Hub {
       : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
     this.meetGuests = new MeetGuests({
-      rooms: this.rooms, meetings: this.meetings,
+      rooms: this.rooms, meetings: this.meetings, webinars: () => this.webinars,
       send: (gid, frame) => this.gateway.sendGuest(gid, frame),
       close: (gid, code, reason) => this.gateway.closeGuest(gid, code, reason),
       allowed: () => this.policies.get().guestLinks !== false,
@@ -302,8 +329,15 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
       onStatus: () => {},
       guests: this.meetGuests,
+      web: (op, meetingId, ip, body) => this.webinars.webRequest(op, meetingId, ip, body),
     });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
+  }
+
+  /** An event to one device: an app's connection, or a browser guest or attendee through the gateway. */
+  private toDevice(deviceId: string, name: string, data: unknown): void {
+    if (isWebGuestDevice(deviceId)) { this.meetGuests.toDevice(deviceId, name, data); return; }
+    for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data });
   }
 
   get port(): number {
@@ -403,6 +437,7 @@ export class Hub {
     this.mirror?.stop();
     this.announcer?.stop();
     this.gateway.stop();
+    this.webinars.stop();
     await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
     // let automations that are running finish before the database closes
@@ -666,7 +701,7 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
-    if (conn.deviceId && conn.ready) this.rooms.leaveAll(conn.deviceId);
+    if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.webinars.leaveDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
     if (conn.ready && conn.userId) this.announcePresence(conn.userId);
@@ -1198,12 +1233,26 @@ export class Hub {
           const me = this.store.userById(conn.userId!)!;
           // media through the relay stays on the office network
           if (conn.remote) throw new OpError('Large Rooms work on the office network. From outside, join Rooms of up to 8 people.');
-          const room = this.rooms.roomOf(conn.deviceId!, d.roomId ?? undefined);
+          // a webinar's stage has a relay room of its own: the broadcaster sends to it, attendees on the office network take from it
+          const stage = d.stage !== undefined;
+          const room = stage ? this.webinars.stageRoom(conn.deviceId!, d.stage) : this.rooms.roomOf(conn.deviceId!, d.roomId ?? undefined);
+          if (stage && !room) throw new OpError('The webinar\'s stage is not on.');
+          if (stage && op === 'relay.produce' && !this.webinars.isBroadcaster(conn.deviceId!, d.stage)) throw new OpError('Only the PC composing the stage sends to it.');
           try {
             const result = await this.relay.handle(op, me.id, conn.deviceId!, d, room);
             if (result !== undefined) return result;
           } catch (err) {
             throw new OpError(err instanceof RelayError ? err.message : `The relay could not do that (${(err as Error).message}).`);
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('web.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.webinars.handle(op, me, conn.deviceId!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof WebinarError) throw new OpError(err.message);
+            throw err;
           }
         }
         if (typeof op === 'string' && (op.startsWith('room.') || op.startsWith('meet.'))) {

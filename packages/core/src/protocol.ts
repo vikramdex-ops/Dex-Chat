@@ -643,8 +643,8 @@ export interface RoomInfo {
 }
 
 // ---------------------------------------------------------------- meetings
-/** instant: started from anywhere, with a Space of its own; personal: someone's standing room; conversation: a Room in a conversation; event: a Calendar meeting held as a call. */
-export type MeetingKind = 'instant' | 'personal' | 'conversation' | 'event';
+/** instant: started from anywhere, with a Space of its own; personal: someone's standing room; conversation: a Room in a conversation; event: a Calendar meeting held as a call; webinar: an organiser and panelists on a stage, attendees watching (webinar.ts). */
+export type MeetingKind = 'instant' | 'personal' | 'conversation' | 'event' | 'webinar';
 /** Who waits in the lobby until a host lets them in: nobody, guests and people from outside the meeting's conversation and invitation, or everyone but the hosts. */
 export type LobbyRule = 'off' | 'outside' | 'everyone';
 export interface MeetingSettings {

@@ -65,6 +65,16 @@ export interface RoomHost {
   audit?(actorId: string | null, action: string, target: string | null, meta?: Record<string, unknown>): void;
   /** Attendance, hands and reactions, for the meeting's report. */
   track?: RoomTracker;
+  /** Webinars (webinars.ts): who may be on the stage, and the stage's Room as it changes and ends. */
+  webinar?: WebinarHooks;
+}
+
+/** What a webinar needs from its Room: attendees never enter it, they watch the stage. */
+export interface WebinarHooks {
+  /** The organiser, a co-host, a panelist, or someone the organiser invited to speak. */
+  onStage(m: Meeting, userId: string): boolean;
+  changed(r: RoomInfo): void;
+  ended(r: RoomInfo): void;
 }
 
 /** A small sliding-window limiter: true when the key may act now. */
@@ -145,6 +155,7 @@ export class Rooms {
   }
 
   publish(r: Room): void {
+    if (r.meeting?.kind === 'webinar' && !r.parentId) this.host.webinar?.changed(this.view(r));
     const all = this.audience(r);
     const hosts = all.filter((u) => this.isHost(r, u));
     if (hosts.length) this.host.deliverToUsers(hosts, 'room.updated', this.view(r, true));
@@ -196,6 +207,7 @@ export class Rooms {
     for (const l of r.lobbyList) this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: 'denied' });
     this.host.deliverToUsers(this.audience(r), 'room.ended', { roomId: r.id, convId: r.convId, missed, startedBy: r.startedBy, durationMs, ...(endedBy ? { endedBy } : {}) });
     const view = this.view(r);
+    if (r.meeting?.kind === 'webinar') this.host.webinar?.ended(view);
     this.host.ended?.(view, missed, durationMs);
     // a missed call is not a meeting; anything else goes into "Recent meetings"
     if (this.host.meetings && (!missed || (r.meeting && r.meeting.kind !== 'conversation'))) {
@@ -211,8 +223,9 @@ export class Rooms {
     const hostId = meeting && meeting.kind !== 'conversation' ? meeting.hostId : me.id;
     const room: Room = {
       id: ulid(), convId, startedBy: me.id, startedAt: Date.now(), video,
-      // a conversation bigger than a mesh can hold goes through the hub's relay
-      mode: expected > MAX_PARTICIPANTS && !fromOutside && this.host.relayAvailable?.() ? 'relay' : 'mesh',
+      // a conversation bigger than a mesh can hold goes through the hub's relay; a webinar's stage
+      // is always PC to PC (its attendees get the composed stage, webinars.ts)
+      mode: meeting?.kind !== 'webinar' && expected > MAX_PARTICIPANTS && !fromOutside && this.host.relayAvailable?.() ? 'relay' : 'mesh',
       participants: [{ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: video, screen: false }],
       ringing: ring ? members.filter((m) => m !== me.id) : [], ringTimer: null, everJoined: new Set([me.id]),
       meeting, hostId, locked: false, spotlight: null,
@@ -265,6 +278,8 @@ export class Rooms {
     if (this.isHost(r, me.id)) return false;
     if (r.removedUsers.has(me.id)) return true;
     if (r.admittedUsers.has(me.id)) return false;
+    // someone the organiser of a webinar invited to speak comes straight onto the stage
+    if (r.meeting?.kind === 'webinar' && this.host.webinar?.onStage(r.meeting, me.id)) return false;
     // guests from a browser are always let in by a host
     if (isWebGuest(me.id)) return true;
     const rule = r.meeting?.settings.lobby ?? 'off';
@@ -328,6 +343,11 @@ export class Rooms {
   /** Join a meeting by its ID. */
   private joinMeeting(m: Meeting, me: PublicUser, deviceId: string, fromOutside: boolean): unknown {
     const store = this.meetings();
+    // a webinar's attendees watch the stage; only its organiser, panelists and invited speakers (and
+    // browser guests a host lets in through the guest link) come into its Room
+    if (m.kind === 'webinar' && !isWebGuest(me.id) && !(this.host.webinar?.onStage(m, me.id) ?? store.insider(m, me.id))) {
+      throw new RoomError('You watch this webinar as an attendee: open it from the Meet lens.');
+    }
     const r = this.runningFor(m);
     if (r) {
       if (r.participants.some((p) => p.deviceId === deviceId)) return { room: this.view(r, this.isHost(r, me.id)) };
@@ -693,6 +713,16 @@ export class Rooms {
   private notGuest(userId: string, r: Room): boolean {
     if (isWebGuest(userId)) return false;
     return this.host.members(r.convId).includes(userId) || r.admittedUsers.has(userId);
+  }
+
+  /** Take someone off a Room (a webinar speaker going back to the audience): their devices leave, and they are no longer let in. */
+  unseat(roomId: string, userId: string): void {
+    const r = this.rooms.get(roomId);
+    if (!r) return;
+    r.admittedUsers.delete(userId);
+    r.coHostSet.delete(userId);
+    r.handList = r.handList.filter((h) => h.userId !== userId);
+    for (const p of r.participants.filter((x) => x.userId === userId)) this.removeDevice(r, p.deviceId);
   }
 
   /** A device can only be in one Room; also called when a device disconnects. */

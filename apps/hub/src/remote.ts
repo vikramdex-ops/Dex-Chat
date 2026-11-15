@@ -34,11 +34,14 @@ interface Options {
   onStatus: (s: RemoteStatus) => void;
   /** Browser guests on the gateway's meeting pages. */
   guests?: GuestSink;
+  /** The webinar pages' requests (registration, the survey): answered as { status, body }. */
+  web?: (op: string, meetingId: string, ip: string, body: Record<string, unknown>) => { status: number; body: unknown };
 }
 
 /** Where guest frames go (meet-guests.ts). */
 export interface GuestSink {
-  open(gid: number, ip: string, meetingId: string): void;
+  /** kind 'w': a webinar attendee's watch page rather than a meeting guest. */
+  open(gid: number, ip: string, meetingId: string, kind?: string): void;
   frame(gid: number, text: string): void;
   closed(gid: number): void;
   /** The gateway connection dropped: every guest is gone. */
@@ -144,7 +147,7 @@ export class RemoteGateway {
   }
 
   private control(ws: WebSocket, raw: string): void {
-    let m: { t?: string; n?: string; s?: number; g?: number; m?: string; d?: string; ip?: string; country?: string | null; fp?: string; pinned?: boolean };
+    let m: { t?: string; n?: string; s?: number; g?: number; m?: string; k?: string; r?: number; op?: string; b?: unknown; d?: string; ip?: string; country?: string | null; fp?: string; pinned?: boolean };
     try { m = JSON.parse(raw); } catch { return; }
     if (m.t === 'challenge' && typeof m.n === 'string') {
       const sig = crypto.sign('sha256', Buffer.from(`dexconnect-gw-hub-v1|${this.opts.hubId}|${m.n}`), this.opts.keyPem);
@@ -163,7 +166,14 @@ export class RemoteGateway {
     } else if (m.t === 'g-open' && typeof m.g === 'number') {
       const g = this.opts.guests;
       if (!g) { this.closeGuest(m.g, 4404, 'Guests cannot join meetings on this hub.'); return; }
-      g.open(m.g, `${m.ip ?? 'unknown'}${m.country ? ` (${m.country})` : ''}`, String(m.m ?? ''));
+      g.open(m.g, `${m.ip ?? 'unknown'}${m.country ? ` (${m.country})` : ''}`, String(m.m ?? ''), m.k === 'w' ? 'w' : undefined);
+    } else if (m.t === 'w' && typeof m.r === 'number' && typeof m.op === 'string') {
+      // a webinar page's request (the gateway waits for the answer with this number)
+      let res: { status: number; body: unknown };
+      try {
+        res = this.opts.web ? this.opts.web(m.op, String(m.m ?? ''), `${m.ip ?? 'unknown'}${m.country ? ` (${m.country})` : ''}`, (m.b && typeof m.b === 'object' ? m.b : {}) as Record<string, unknown>) : { status: 404, body: { error: 'Webinars are not available on this hub.' } };
+      } catch { res = { status: 500, body: { error: 'That did not work. Try again.' } }; }
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'w-res', r: m.r, s: res.status, d: JSON.stringify(res.body) }));
     } else if (m.t === 'g' && typeof m.g === 'number' && typeof m.d === 'string') {
       this.opts.guests?.frame(m.g, m.d);
     } else if (m.t === 'g-closed' && typeof m.g === 'number') {

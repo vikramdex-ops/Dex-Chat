@@ -66,7 +66,7 @@ interface Row { id: string; kind: MeetingKind; title: string; host_id: string; c
 /** Defaults the office sets for new meetings (Control room ▸ Meetings). */
 export interface MeetingDefaults { lobby: LobbyRule; joinBeforeHost: boolean }
 
-const KINDS: MeetingKind[] = ['instant', 'personal', 'conversation', 'event'];
+const KINDS: MeetingKind[] = ['instant', 'personal', 'conversation', 'event', 'webinar'];
 const LOBBY: LobbyRule[] = ['off', 'outside', 'everyone'];
 const MAX_TITLE = 80;
 const MAX_INVITE = 49;
@@ -142,7 +142,7 @@ export class Meetings {
   forConv(convId: string, starterId: string): Meeting {
     const rows = this.db.prepare('SELECT * FROM meetings WHERE conv_id = ? ORDER BY created_at').all(convId) as unknown as Row[];
     const own = rows.map((r) => this.parse(r)).filter((m): m is Meeting => !!m);
-    const found = own.find((m) => m.kind === 'instant' || m.kind === 'personal') ?? own.find((m) => m.kind === 'conversation');
+    const found = own.find((m) => m.kind === 'instant' || m.kind === 'personal' || m.kind === 'webinar') ?? own.find((m) => m.kind === 'conversation');
     if (found) return found;
     return this.insert('conversation', '', starterId, convId, null, this.defaults());
   }
@@ -160,6 +160,23 @@ export class Meetings {
     const conv = this.messaging.handle('conv.create', me, { kind: 'space', name, topic: `Meeting ${formatMeetingId(id)}, started by ${me.displayName}`, private: true, members }) as { id: string };
     this.db.prepare(`INSERT INTO meetings (id, kind, title, host_id, conv_id, event_id, lobby, join_before_host, created_at) VALUES (?, 'instant', ?, ?, ?, NULL, ?, ?, ?)`)
       .run(id, title || `${me.displayName.split(' ')[0]}'s meeting`, me.id, conv.id, settings.lobby, settings.joinBeforeHost ? 1 : 0, Date.now());
+    return this.get(id)!;
+  }
+
+  /**
+   * A webinar (M3): the organiser runs it, the panelists are on the stage, and a private Space of
+   * the organiser and panelists is their backstage (its chat, files, and the practice session).
+   * Attendees are never members: they watch (webinars.ts).
+   */
+  createWebinar(me: PublicUser, titleIn: unknown, panelists: string[]): Meeting {
+    if (me.role === 'guest' || me.role === 'bot') throw new MeetingError('Only members of the office can run webinars.');
+    const title = clean(titleIn, MAX_TITLE);
+    if (!title) throw new MeetingError('Give the webinar a title.');
+    const id = this.newId();
+    const name = this.freeSpaceName(`${title.slice(0, 40)} · backstage`, id);
+    const conv = this.messaging.handle('conv.create', me, { kind: 'space', name, topic: `Webinar ${formatMeetingId(id)}: the organiser and panelists`, private: true, members: panelists }) as { id: string };
+    this.db.prepare(`INSERT INTO meetings (id, kind, title, host_id, conv_id, event_id, lobby, join_before_host, created_at) VALUES (?, 'webinar', ?, ?, ?, NULL, 'off', 1, ?)`)
+      .run(id, title, me.id, conv.id, Date.now());
     return this.get(id)!;
   }
 
