@@ -89,7 +89,7 @@ export function VoiceRecorder({ convId, parentId, onActive }: { convId: string; 
     if (ms < 700) { toast('Hold on a little longer to record a voice note'); return; }
     const blob = new Blob(m.chunks, { type: 'audio/webm' });
     try {
-      const info = await window.dex.uploadFile!(`voice-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `Voice note ${tag(ms)}.webm`, mime: 'audio/webm' });
+      const info = await window.dex.uploadFile!(`voice-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `Voice note ${tag(ms)}.webm`, mime: 'audio/webm', convId });
       await sendMessage(convId, '', parentId, [info]);
     } catch (e) { toast((e as Error).message, true); }
   };

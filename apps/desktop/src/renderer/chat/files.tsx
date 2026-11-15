@@ -157,8 +157,8 @@ function wireProgress(): void {
   window.dex.onUploadProgress((id, sent, total) => progressListeners.get(id)?.(sent, total));
 }
 
-/** Start uploading files; `update` receives every change. */
-export function startUploads(files: File[], update: (key: string, patch: Partial<Attachment> | null) => void): Attachment[] {
+/** Start uploading files; `update` receives every change. For a conversation, `convId` lets the app encrypt Direct files first. */
+export function startUploads(files: File[], update: (key: string, patch: Partial<Attachment> | null) => void, convId?: string): Attachment[] {
   wireProgress();
   const out: Attachment[] = [];
   for (const file of files) {
@@ -170,7 +170,7 @@ export function startUploads(files: File[], update: (key: string, patch: Partial
     void (async () => {
       try {
         const path = window.dex.pathForFile?.(file) || '';
-        const src = path ? { path, name: a.name, mime } : { data: await file.arrayBuffer(), name: a.name, mime };
+        const src = path ? { path, name: a.name, mime, convId } : { data: await file.arrayBuffer(), name: a.name, mime, convId };
         if (!path && file.size > 100 * 1024 * 1024) throw new Error('Large files must be attached from disk, not pasted.');
         const info = await window.dex.uploadFile!(key, src);
         update(key, { info, sent: file.size });

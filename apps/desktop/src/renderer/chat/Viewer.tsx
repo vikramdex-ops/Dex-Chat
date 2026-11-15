@@ -131,7 +131,7 @@ function Markup({ src, name, convId, onDone, onCancel }: { src: string; name: st
       const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
       if (!blob) throw new Error('Could not make the picture.');
       const base = name.replace(/\.[^.]+$/, '');
-      const info = await window.dex.uploadFile!(`markup-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `${base} (marked up).png`, mime: 'image/png' });
+      const info = await window.dex.uploadFile!(`markup-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `${base} (marked up).png`, mime: 'image/png', convId });
       await sendMessage(convId, note.trim(), null, [info]);
       toast('Sent');
       onDone();

@@ -9,7 +9,7 @@ import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
 import { loadConfig, loadEncKeys, loadIdentity, saveConfig } from './persist.ts';
 import { Updater } from './updater.ts';
-import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
+import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile, useEncryption } from './files.ts';
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
@@ -279,6 +279,7 @@ function wireIpc(c: Controller): void {
     data: src?.data instanceof ArrayBuffer ? src.data : undefined,
     name: String(src?.name ?? 'file').slice(0, 200),
     mime: typeof src?.mime === 'string' ? src.mime : undefined,
+    convId: typeof src?.convId === 'string' ? src.convId : undefined,
   }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   // saving reports progress as "save:<id>" on the upload progress channel
@@ -406,6 +407,8 @@ void app.whenReady().then(async () => {
   }, justUpdated ?? null);
 
   controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state }, loadEncKeys());
+  // files in end-to-end encrypted Direct messages: encrypted before upload, decrypted after download
+  useEncryption({ plan: (convId, file) => controller!.e2e.planUpload(convId, file), decrypt: (id) => controller!.e2e.downloadTransform(id) });
   // hub-off fallback: Direct messages straight between PCs on the office network
   const peers = new PeerNet({ e2e: controller.e2e, deviceId: identity.deviceId, sign: (p) => signWith(identity, p), dataDir: app.getPath('userData') });
   void peers.start().then(() => controller!.usePeers(peers)).catch(() => { /* no network: the hub path still works */ });

@@ -201,7 +201,8 @@ export interface DexBridge {
   /** Unread attention count for the taskbar / dock badge. */
   setBadge?(count: number): void;
   /** Files (desktop only; absent on phones for now). */
-  uploadFile?(uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string }): Promise<import('@dex/core').FileInfo>;
+  /** With `convId`, a file for an end-to-end encrypted Direct conversation is encrypted on this device before it leaves. */
+  uploadFile?(uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string; convId?: string }): Promise<import('@dex/core').FileInfo>;
   onUploadProgress?(cb: (uploadId: string, sent: number, total: number) => void): () => void;
   pathForFile?(file: File): string;
   openFile?(id: string, name: string): Promise<void>;
@@ -222,7 +223,7 @@ export interface DexBridge {
   openInSlate?(id: string, name: string): Promise<void>;
   hasSlate?: boolean;
   /** Whether a Direct conversation is end-to-end encrypted, and the code to compare in person. */
-  e2eStatus?(convId: string): Promise<{ encrypted: boolean; code: string | null; missing: string[] }>;
+  e2eStatus?(convId: string): Promise<{ encrypted: boolean; code: string | null; missing: string[]; /** the office requires encryption here */ required?: boolean }>;
   /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
   listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
   chooseScreen?(id: string): Promise<void>;

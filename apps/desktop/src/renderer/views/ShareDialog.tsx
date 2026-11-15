@@ -84,7 +84,7 @@ export function ShareDialog({ req, session, onDone }: { req: ShareRequest; sessi
       }
       if (!convId) return;
       const infos = [];
-      for (const f of usable) infos.push(await window.dex.uploadFile!(`share-${Date.now().toString(36)}`, { path: f.path, name: f.name }));
+      for (const f of usable) infos.push(await window.dex.uploadFile!(`share-${Date.now().toString(36)}`, { path: f.path, name: f.name, convId }));
       await sendMessage(convId, text.trim(), null, infos);
       toast('Shared');
       onDone(convId);
