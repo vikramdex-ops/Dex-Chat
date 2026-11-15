@@ -72,6 +72,27 @@ other messengers. Every decision below is checked against one rule:
 | **Icons** | Drawn in `ui.tsx` on the 24 px grid: send is a transmittal (a sheet with a dimension arrow), messages are a spine with entries, voice is a Room on plan, leaving is a door. No paper planes, speech bubbles or handsets. |
 | **Empty states** | One symbol in a framed cell on the drafting grid, one line, one action. |
 
+### The office drawing (Directory ▸ Org chart)
+
+The org chart is not a tree of cards. It is the office drawn as an engineering drawing, a sheet
+people open to find who does what, who to ask and how they connect. Code: `renderer/orgscape/`.
+
+| Piece | Rule |
+| --- | --- |
+| **Sheet** | One drafting sheet on a canvas, panned and zoomed like a CAD viewer (drag, fling, wheel, pinch, double-click, `+` `-` `0`). A heavy frame inside a hairline one, a faint drafting grid, grid references (A, B… / 1, 2…) in rulers along the top and left. Never a scrolling page of cards. |
+| **Sheets** | *Lines* (general arrangement of reporting lines) and *Floor* (floor plan from seats). Chosen with ruled cells, not tabs. |
+| **Plates** | A person is a hairline plate: tile with its beacon, name, designation, and a ruled strip below (`EXT 214 · B2·D4 · C4`). In the office now: solid plate with a teal tick down its edge (amber in a Room). Not signed in: a paper-coloured plate. The size of their team sits in a small box. Never a rounded card, never a circle. |
+| **Lines** | Reporting lines run as routed pipes: a riser drops from under the manager's tile and a header runs along each row of their team, with rounded bends (elbows) and a drop to each plate. Lines never cross a plate. Picking someone lights their line to the top and their team's drops in teal. |
+| **Areas** | A department is an area: a chain-line (dash-dot) boundary with `AREA 03` in a tag and the name, headcount and how many are in. |
+| **Level of detail** | Zoomed out: areas and blocks (drawn in batched paths). Middle: tile and name. Close: the whole plate. |
+| **Marks** | New this month: a revision cloud round the plate and a revision triangle with `NEW`. Birthday: a pennant. Work anniversary: `5 yrs` in a box. Not joined yet at the date being looked at: a dashed plate ("proposed"). |
+| **Floor plan** | Bays of benched desks along a corridor (centre line), cabins and named places opposite, doors with their swing, a hatched outer wall and a north point. Someone working from home, a site or a client leaves their desk dashed and stands in the off-site key beside the plan. |
+| **Overlays** | A Space is drawn as an instrument loop: a hexagon tag with dashed signal lines to its members. A route ("How we connect") is a heavy teal line flowing along the reporting lines with numbered steps; on the floor plan it is a dotted walk along the corridor. Search spotlights a person for a moment and flies there. |
+| **Viewer furniture** | Title block in the corner (drawing, people, live scale `1:2.4`, grid under the pointer, drawing number), key plan with the view on it, zoom cells, and a callout (a small title block) that follows the person picked, with Write, Room, How we connect, Spaces, Card. On a phone the callout is a sheet along the bottom edge. |
+| **Liveness** | When someone comes in or joins a Room a pulse runs down their line to their plate. The sheet plots itself in (lines drawn like a pen plotter) the first time it opens in a session. "You are here" points at your own plate. |
+| **Access** | The canvas is one focus stop (`role="application"`): arrows walk along the lines (up to the manager, down to the team, left and right to peers) or between desks, Enter opens, Escape steps back; each move is announced. The schedule beside it lists everyone as a tree (`role="tree"`) or by room; it shows itself when asked for or as soon as focus enters it. Reduced motion: no plot-in, flights jump, the route does not flow. |
+| **Ways in** | A Pulse card (new this month, birthdays and anniversaries, someone to meet in another department), "See in the org chart" on every profile; each flies to the person. |
+
 ## 4. Voice
 
 - Plain English with real office words: drawings, revisions, line numbers, site. No marketing tone.
