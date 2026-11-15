@@ -65,7 +65,7 @@ test('a move plan applies today: a revision, the seat field follows and is read-
   const { owner, priya, ravi } = await office();
   const today = ymd(Date.now());
   const plan = await owner.request('seating.draft', { title: 'Piping to the left benches', effective: today, moves: [{ seatId: 'W-A14', to: P(me(priya)) }, { seatId: 'W-A15', to: P(me(ravi)) }] });
-  assert.deepEqual(plan.changes.map((c: { userId: string; to: string }) => c.to).sort(), ['W-A14', 'W-A15']);
+  assert.deepEqual(plan.changes.map((c) => c.to).sort(), ['W-A14', 'W-A15']);
   const applied = await owner.request('seating.apply', { id: plan.id });
   assert.equal(applied.status, 'applied');
   assert.equal(applied.rev, 'B');
@@ -74,7 +74,7 @@ test('a move plan applies today: a revision, the seat field follows and is read-
   assert.equal(v.revisions[0].rev, 'B');
   assert.equal(v.notice?.seatId, 'W-A14');
   assert.equal(v.notice?.label, 'W-A14 · Left benches');
-  const priyaNow = (await owner.request('directory.list')).users.find((u: { id: string }) => u.id === me(priya));
+  const priyaNow = (await owner.request('directory.list')).users.find((u) => u.id === me(priya))!;
   assert.equal(priyaNow.profile.seatId, 'W-A14');
   assert.equal(priyaNow.profile.location, 'W-A14 · Left benches');
   assert.ok(await told(priya, /From today your seat is W-A14 · Left benches.*dexconnect:\/\/floor\/W-A14/), 'Priya is told, with a link that walks her there');
@@ -139,7 +139,7 @@ test('a department into a zone: the preview, then one plan; people who do not fi
   await owner.request('seating.apply', { id: first.id });
   const flow = await owner.request('seating.flow', { departmentId: dep.id, zoneId: 'A' });
   assert.deepEqual(flow.unplaced, []);
-  assert.deepEqual(flow.changes.map((c: { to: string }) => c.to).sort(), ['W-A02', 'W-A03']);
+  assert.deepEqual(flow.changes.map((c) => c.to).sort(), ['W-A02', 'W-A03']);
   const draft = await owner.request('seating.draft', { title: 'Piping to the left benches', moves: flow.moves });
   await owner.request('seating.apply', { id: draft.id });
   const h = (await owner.request('seating.get')).holders;
@@ -158,9 +158,9 @@ test('import: a pasted list is matched to the directory, uncertain names suggest
   assert.equal(rows.length, 5);
   assert.equal(rows[0].userId, me(priya), 'a Windows user name is a sure match');
   assert.equal(rows[1].userId, me(ravi));
-  assert.match(rows[2].problem, /No one in the directory/);
-  assert.match(rows[3].problem, /earlier line/);
-  assert.match(rows[4].problem, /No seat/);
+  assert.match(rows[2].problem ?? '', /No one in the directory/);
+  assert.match(rows[3].problem ?? '', /earlier line/);
+  assert.match(rows[4].problem ?? '', /No seat/);
   await assert.rejects(priya.request('seating.importMatch', { text: 'W-A01, Ravi' }), /office managers/);
   const fromProfiles = await owner.request('seating.importProfiles');
   assert.deepEqual(fromProfiles.moves, [{ seatId: 'W-B07', to: P(me(ravi)) }]);
@@ -211,7 +211,7 @@ test('hot desks: bookable by the day, one person per seat; a leaver frees their 
   assert.deepEqual((await ravi.request('seating.get')).bookings, []);
   hub.seating.personLeft(me(ravi));
   assert.equal((await owner.request('seating.get')).holders['W-C41'], undefined);
-  const raviNow = (await owner.request('directory.list')).users.find((u: { id: string }) => u.id === me(ravi));
+  const raviNow = (await owner.request('directory.list')).users.find((u) => u.id === me(ravi))!;
   assert.equal(raviNow.profile.seatId, undefined);
   assert.equal(raviNow.profile.location, null);
 });

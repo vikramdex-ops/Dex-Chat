@@ -475,7 +475,8 @@ export class Seating {
         if (d.baseVersion !== cur.version) throw new SeatingError('Someone else saved the layout meanwhile. Reload it and make your changes again.');
         const ids = new Set(plan.seats.map((s) => s.id));
         const held = Object.keys(this.holders()).filter((k) => !ids.has(k)).sort(natural);
-        if (held.length) throw new SeatingError(`${held.slice(0, 4).join(', ')} ${held.length === 1 ? 'is' : 'are'} still held. Move people off a seat before removing it.`);
+        if (held.length === 1) throw new SeatingError(`${held[0]} is still held. Move people off a seat before removing it.`);
+        if (held.length) throw new SeatingError(`${held.slice(0, 4).join(', ')} are still held. Move people off a seat before removing it.`);
         const version = cur.version + 1;
         const note = clean(d.note, SEATING_LIMITS.note) || 'Layout changed';
         this.db.prepare('INSERT INTO seat_layouts (version, plan, note, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(version, JSON.stringify(plan), note, me.id, this.now());
