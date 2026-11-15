@@ -2,6 +2,7 @@
 // people directory and an audit trail. Discovery answers LAN probes so apps find it unaided.
 import https from 'node:https';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -56,6 +57,7 @@ import { Links, LinkError } from './links.ts';
 import { ReactionInsights, InsightError } from './reactions.ts';
 import { Decisions, DecisionError } from './decisions.ts';
 import { Refs, RefError } from './refs.ts';
+import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -156,6 +158,7 @@ export class Hub {
   readonly pointers: Pointers;
   readonly decisions: Decisions;
   readonly refs: Refs;
+  readonly backups: Backups;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -341,6 +344,16 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     this.reports.webinarFor = (meetingId) => this.webinars.reportFor(meetingId);
+    // nightly backups (backup.ts)
+    this.backups = new Backups({
+      db: this.store.db, dataDir: opts.dataDir, hubId: id, hubName: () => this.info.name, version: HUB_VERSION,
+      systemId: () => this.system.id,
+      admins: () => this.store.activeUsers().filter((u) => isAdminRole(u.role)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      changed: (status) => this.emit('admin.backup', status, (c) => this.isAdminConn(c)),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -397,6 +410,8 @@ export class Hub {
         resolve();
       });
     });
+    // a restore (--restore) refuses to run while this is here and the program is alive
+    try { fs.writeFileSync(path.join(this.opts.dataDir, LOCK_FILE), JSON.stringify({ pid: process.pid, port: this.port, startedAt: Date.now() })); } catch (err) { this.log('warn', 'could not write the lock file', { error: (err as Error).message }); }
     if (this.opts.discoveryPort !== false) {
       this.announcer = new HubAnnouncer(() => this.beacon(), this.opts.discoveryPort ?? DISCOVERY_PORT);
       try {
@@ -422,6 +437,7 @@ export class Hub {
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
+      try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -483,9 +499,12 @@ export class Hub {
     for (const c of this.conns) c.ws.terminate();
     // let automations that are running finish before the database closes
     await Promise.race([this.flows.idle(), new Promise((r) => setTimeout(r, 3000).unref())]);
+    // a backup copying the database finishes that step; the rest of the run stops
+    await this.backups.halt();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     this.store.close();
+    try { fs.rmSync(path.join(this.opts.dataDir, LOCK_FILE), { force: true }); } catch { /* gone */ }
   }
 
   // --------------------------------------------------------------- http
@@ -1554,6 +1573,23 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof LinkError || err instanceof InsightError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^admin\.backup\.(get|set|run)$/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            if (op.startsWith('admin.backup.')) {
+              this.requireAdmin(conn);
+              if (op === 'admin.backup.set') return await this.backups.configure(me, d);
+              if (op === 'admin.backup.run') {
+                if (!this.backups.config().folder) throw new OpError('Choose a backup folder first.');
+                void this.backups.start(true, me.id).catch(() => { /* recorded in the status */ });
+              }
+              return this.backups.status();
+            }
+          } catch (err) {
+            if (err instanceof BackupFailure) throw new OpError(err.message);
             throw err;
           }
         }

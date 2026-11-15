@@ -17,8 +17,33 @@ Recommended for the hub PC
     the hub automatically if its address changes, but a fixed address is still best.
 
 Files
-  hub-data\   database, certificate and (later) shared files. Back this folder up.
+  hub-data\   database, certificate and shared files. The hub backs it up every night once
+              you choose a backup folder (below).
   logs\       service logs.
+
+Backups
+  In Dexterity Connect: Control room > Backups & leavers > Backups. Choose a folder on a second
+  disk or a network share, for example E:\DexConnectBackup or \\NAS\backups\dexconnect. The hub
+  backs up every night (02:00 unless you change it) while it keeps running, copies only new files,
+  checks every copy, and keeps one a day for 14 days, a week for 8 weeks and a month for 12 months.
+  "Back up now" makes one straight away. If no backup works for two days, administrators are told.
+  For a network share, the service's account (Local System, as the PC's computer account) must be
+  allowed to write there. The backup folder holds the hub's private key: keep it private.
+
+Restore a backup
+  1. Stop the hub: Services > Dexterity Connect Hub > Stop
+     (or, in a Command Prompt as administrator here: DexterityConnectHubService.exe stop).
+     The restore refuses to run while the hub is running.
+  2. In a Command Prompt as administrator in this folder:
+       DexterityConnectHub.exe --restore "E:\DexConnectBackup"
+     puts back the newest copy. For an older one, give its folder:
+       DexterityConnectHub.exe --restore "E:\DexConnectBackup\snapshots\2026-11-14_0200"
+     Or drag the backup folder onto Restore-Hub.cmd.
+     The copy is checked first. The current hub-data is moved aside to
+     hub-data-before-restore-<date>-<time>, never deleted.
+  3. Start the hub: DexterityConnectHubService.exe start
+  On a new PC: run Install-Hub.cmd, then do the three steps above.
+  Anything after the backup was taken (new messages, devices approved since) is not restored.
 
 Remove
   Double-click Uninstall-Hub.cmd. Your data in hub-data is kept.
