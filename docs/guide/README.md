@@ -61,6 +61,15 @@ POL1_ISOLATED=1 TZ=Asia/Kolkata xvfb-run -a -s "-screen 0 2000x1000x24 -noreset"
 - `TZ=Asia/Kolkata` gives the office's own clock in the screenshots.
 - `GUIDE_ONLY=messages,calendar` walks only some parts (the office is always seeded first);
   `GUIDE_OUT=/tmp/figs` writes the pictures somewhere else to compare first.
+- The parts added in revision 1 come last: `nib` (Nib's tray, the start and wrap-up, a lead's card, the
+  register, the leave note, Control room ▸ Nib & day sheets; it moves the in-process hub's Nib clock
+  through one day), `tracked` (a Drawing check and issue request with Afterwards, its card, the bot's
+  header and register), `paths` (a second Priya laptop that maps `\\nas01\Project` as `X:` through the
+  development-only `DEXCONNECT_TEST_DRIVES` hook) and `meetlinks` (the meeting site in the Control room
+  and a meeting's invitation block). `GUIDE_ONLY=nib,tracked,paths,meetlinks` walks just these.
+- The three pictures of the guest's meeting page, `fig-meet-landing-1.png` to `-3.png`, are not made
+  here: they are the 1440 px light screenshots `ml-05`, `ml-08` and `ml-11` of
+  `apps/desktop/e2e/meetlink.mts`, which runs the meeting site in Cloudflare's local runtime.
 - Each part catches its own failure, saves `guide-FAIL-<part>-<who>.png` in `apps/desktop/e2e/out/`,
   and carries on; the run ends with the list of parts that failed and exits with 1.
 - The run takes about 15 minutes. Every run starts from an empty hub, so it can be repeated at any time.
@@ -77,4 +86,4 @@ cut-off dialog. The people, messages and files are invented; never use real acco
   the build fills in the page.
 - Figures are captioned `Fig. <section>-<n>`; renumber the section's figures and their mentions in the text.
 - A new revision: change the Revision and Date on the cover, in the `meta` block and in the revision
-  history (section 19.2), and the revision in the running header in `guide.css`.
+  history (section 20.2), and the revision in the running header in `guide.css`.

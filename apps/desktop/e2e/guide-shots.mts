@@ -54,13 +54,13 @@ const LAN = Object.values(os.networkInterfaces()).flat().find((i) => i && i.fami
 // ------------------------------------------------------------------ helpers
 type App = { app: any; page: any; name: string };
 const apps: App[] = [];
-async function openApp(username: string, displayName: string, opts: { width?: number; height?: number; join?: boolean; video?: string } = {}): Promise<App> {
+async function openApp(username: string, displayName: string, opts: { width?: number; height?: number; join?: boolean; video?: string; env?: Record<string, string> } = {}): Promise<App> {
   const userData = fs.mkdtempSync(path.join(OUT, `ud-guide-${username}-`));
   const app = await pw._electron.launch({
     executablePath: ELECTRON,
     args: [path.join(ROOT, 'apps/desktop'), `--user-data-dir=${userData}`, '--no-sandbox', '--force-device-scale-factor=1',
       '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', ...(opts.video ? [`--use-file-for-fake-video-capture=${opts.video}`] : [])],
-    env: { ...process.env, USERDOMAIN: 'DEX', DEXCONNECT_DEV_ACCOUNT: `${username}|${displayName}`, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+    env: { ...process.env, USERDOMAIN: 'DEX', DEXCONNECT_DEV_ACCOUNT: `${username}|${displayName}`, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', ...opts.env },
   });
   const page = await app.firstWindow();
   await size({ app, page, name: username }, opts.width ?? W, opts.height ?? H);
@@ -807,6 +807,340 @@ await part('admin', async () => {
   await sec('Bots & tools', 'cr-bots');
   await sec('Backups & leavers', 'cr-backups');
   await sec('Audit log', 'cr-audit');
+});
+
+// ================================================================== revision 1: Nib, office bots, share paths, meeting links
+// GUIDE_ONLY=nib,tracked,paths,meetlinks walks only these. They come last, so a full run's earlier
+// figures are taken before Nib is set up. Nib's clock is the in-process hub's (hub.nib.setClock).
+const dayStr = (n: number) => { const d = new Date(Date.now() + n * 86400_000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/** An app for someone, reusing one a part before opened. */
+async function appOf(username: string, displayName: string): Promise<App> {
+  const open = apps.find((a) => a.name === username && a.page !== P);
+  if (open) return open;
+  autoApprove = true;
+  const a = await openApp(username, displayName);
+  await sleep(1500);
+  return a;
+}
+/** Close the toasts, so they do not cover a figure. */
+const noToasts = async (page: any) => { for (let i = 0; i < 20 && await page.locator('.toast').count(); i++) { await page.locator('.toast button').first().click({ timeout: 1000 }).catch(() => {}); await sleep(150); } };
+/** A box around `el`, cut to what `within` shows (a card taller than its pane). */
+const boxIn = async (el: any, within: any, pad = 10) => { const a = await el.boundingBox(); const b = await within.boundingBox(); const y0 = Math.max(a.y, b.y) - pad; const y1 = Math.min(a.y + a.height, b.y + b.height) + pad; return { x: a.x - pad, y: y0, width: a.width + 2 * pad, height: y1 - y0 }; };
+const scrollEnd = async (page: any) => { await page.evaluate(() => document.querySelectorAll('.timeline').forEach((t) => { t.scrollTop = t.scrollHeight; })); await sleep(400); };
+
+await part('nib', async () => {
+  autoApprove = true;
+  const user = (u: string) => (hub as any).store.userById(u === 'priya' ? priyaId : id(u));
+  const nibClock = (h: number, m = 0) => { const at = today(h, m); (hub as any).nib.setClock(at); (hub as any).nib.tick(at); return at; };
+  nibClock(9, 0);
+  // the office's set-up, as an administrator makes it in Control room ▸ Nib & day sheets
+  const cfg = await owner.request('admin.nib.get' as never) as any;
+  const heads: Array<[string, string]> = [['priya', 'Piping'], ['anand', 'Structural'], ['anita', 'Civil'], ['suresh', 'Mechanical'], ['ramesh', 'E&I'], ['lalitha', 'Drafting']];
+  const nibCfg = {
+    ...cfg,
+    givers: [{ userId: id('meera'), kind: 'area', scope: 'Area 3 and 4' }, ...heads.map(([u, scope]) => ({ userId: u === 'priya' ? priyaId : id(u), kind: 'discipline', scope })), { userId: id('rohan'), kind: 'team', scope: 'Projects' }],
+    managers: [id('vikram'), id('meera'), id('arjun')],
+    projects: [{ code: 'P-12', name: 'Hydrotreater revamp, Jamnagar' }, { code: 'P-14', name: 'Pipe rack and platforms' }, { code: 'J-0412', name: 'Pump house upgrade' }],
+    workdays: [1, 2, 3, 4, 5, 6],
+  };
+  await owner.request('admin.nib.set' as never, nibCfg as never);
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await V.locator('.me-btn').click();
+  await V.getByRole('menuitem', { name: /Control room/ }).click();
+  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Nib & day sheets/ }).click();
+  await V.locator('.nib-admin').waitFor();
+  await sleep(1200);
+  await shot(V, 'cr-nib', { x: W - 988, y: 0, width: 988, height: H });
+  await V.keyboard.press('Escape');
+  // the walk runs on whatever day it is: today is a workday for it
+  await owner.request('admin.nib.set' as never, { ...nibCfg, workdays: [...new Set([...nibCfg.workdays, new Date().getDay()])] } as never);
+
+  // Priya starts her day: Nib asks who gave her work
+  await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
+  await lens(P, 'Pulse');
+  nibClock(9, 40);
+  await P.locator('.me-btn').click();
+  await P.getByRole('menuitem', { name: /Start my day/ }).click();
+  await P.locator('.nib-callout').waitFor({ timeout: 10000 });
+  await sleep(600);
+  await shot(P, 'nib-start', { x: W - 520, y: 0, width: 520, height: 420 });
+  await P.locator('.nib-callout .nib-giver', { hasText: 'Meera' }).click();
+  await P.locator('.nib-callout .nib-giver', { hasText: 'Anand' }).click();
+  await P.locator('.nib-callout').getByRole('button', { name: 'Log these' }).click();
+  await sleep(800);
+  // two items already on her sheet, one with numbers and one in words
+  await P.evaluate(async ({ anand, meera }: any) => {
+    await window.dex.request('nib.item.save', { giverId: anand, project: 'P-14', activity: 'Support check, pipe rack PR-03', qty: { done: 6, total: 14, unit: 'supports' }, status: 'going' } as never);
+    await window.dex.request('nib.item.save', { giverId: meera, project: 'P-12', activity: 'Bolt lengths for the 300# flanges', note: 'Waiting for the new gasket thickness from the vendor', status: 'blocked' } as never);
+  }, { anand: id('anand'), meera: id('meera') });
+  nibClock(11, 20);
+  await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
+  await P.locator('.nib-btn').click();
+  await P.locator('.nib-tray').waitFor();
+  await P.locator('.nib-input').fill('got 12 isos from Meera for P-12 area 4 by Friday');
+  await P.locator('.nib-ann.giver').waitFor();
+  await P.locator('.nib-tray .nib-item').nth(1).waitFor();
+  await noToasts(P);
+  await sleep(700);
+  await shot(P, 'nib-tray', P.locator('.nib-tray'), 10);
+  await P.locator('.nib-input').press('Enter');
+  await sleep(1200);
+  await P.keyboard.press('Escape');
+
+  // the rest of the office through the hub, as they would through their apps
+  const kiran = await colleague('kiran', 'Kiran Desai');
+  await kiran.c.request('nib.me' as never);
+  for (const [u, kind, cover, lead] of [['sneha', 'sick', 'vivek', 'anand'], ['gopal', 'half', 'harini', 'ramesh'], ['joseph', 'annual', 'fatima', 'arjun']] as const) {
+    (hub as any).nib.handle('nib.leave', user(u), { kind, from: dayStr(0), to: dayStr(0), half: kind === 'half' ? 'pm' : null, coverId: id(cover), leadIds: [id(lead)], reminders: 'move', handover: 'Spool drawings 4 to 9 left on P-12; vendor data due Friday.' });
+  }
+  const UNITS = ['isos', 'sheets', 'drawings', 'GAs', 'MTOs', 'supports'];
+  const piping: Array<[string, string, string, number, number, string]> = [
+    ['ravi', 'P-12', 'ISO checking, area 3', 14, 18, 'isos'], ['karthik', 'P-12', 'ISO routing, area 4', 9, 12, 'isos'], ['rahul', 'P-12', 'Line list update', 40, 60, 'lines'],
+    ['lakshmi', 'P-14', 'Pipe rack GA mark-ups', 3, 5, 'GAs'], ['imran', 'P-12', 'Site queries answered', 0, 0, ''], ['thomas', 'P-12', 'Hydrotest pack, area 3', 6, 9, 'drawings'],
+  ];
+  // who gives each person work: their department's lead (the leads themselves get theirs from Meera)
+  const DEPT_LEAD: Record<string, string> = { Piping: 'priya', Structural: 'anand', Civil: 'anita', Mechanical: 'suresh', 'Electrical & Instrumentation': 'ramesh', Drafting: 'lalitha', Projects: 'rohan', 'Document Control': 'arjun', 'IT & Admin': 'vikram', 'HR & Accounts': 'vikram' };
+  const giverOf = (u: string) => { const g = DEPT_LEAD[OFFICE.find((p) => p.u === u)?.dept ?? ''] ?? 'meera'; return g === u ? (u === 'rohan' ? 'arjun' : 'meera') : g; };
+  nibClock(17, 5);
+  let n = 0;
+  for (const p of OFFICE) {
+    const u = p.u;
+    if (['vikram', 'meera', 'arjun', 'priya', 'kiran', 'deepa', 'sneha', 'gopal', 'joseph', 'asha'].includes(u)) continue;
+    const pu = user(u);
+    if (!pu) continue;
+    try { (hub as any).work.handle('work.checkIn', pu, { mode: n % 6 === 0 ? 'site' : n % 7 === 0 ? 'home' : 'office' }); } catch { /* already in */ }
+    if (u === 'neha') { (hub as any).nib.handle('nib.day', pu, { nothing: true }); n++; continue; }
+    const pip = piping.find((x) => x[0] === u);
+    const g = pip ? 'priya' : giverOf(u);
+    const gid = g === 'priya' ? priyaId : id(g);
+    (hub as any).nib.handle('nib.start', pu, { givers: [gid] });
+    if (pip) {
+      (hub as any).nib.handle('nib.item.save', pu, { giverId: gid, project: pip[1], activity: pip[2], ...(pip[4] ? { qty: { done: pip[3], total: pip[4], unit: pip[5] } } : { note: 'Three RFIs closed with the client' }) });
+      if (u === 'karthik') (hub as any).nib.handle('nib.item.save', pu, { giverId: gid, project: 'J-0412', activity: 'MTO check', note: 'Waiting for the vendor’s pump nozzle data', status: 'blocked' });
+    } else {
+      const total = 6 + (n * 7) % 24;
+      (hub as any).nib.handle('nib.item.save', pu, { giverId: gid, project: ['P-12', 'P-14', 'J-0412'][n % 3], activity: ['Model review', 'Checking', 'Detailing', 'MTO take-off', 'Mark-ups', 'Routing'][n % 6], qty: { done: Math.round(total * ((n * 37) % 100) / 100), total, unit: UNITS[n % 6] } });
+      if (n % 5 === 1) (hub as any).nib.handle('nib.item.save', pu, { giverId: gid, project: 'P-14', activity: 'Clash review', note: 'Waiting for the civil foundation drawing', status: 'blocked' });
+    }
+    (hub as any).nib.handle('nib.wrap', pu, n % 6 === 3 ? { blockers: 'Waiting for the civil foundation drawing' } : {});
+    n++;
+  }
+  try { (hub as any).work.handle('work.checkIn', user('deepa'), { mode: 'office' }); } catch { /* already in */ }
+  (hub as any).nib.handle('nib.start', user('deepa'), { givers: [priyaId] });
+
+  // Priya wraps up: the sheet pre-filled, sent to the two who gave her work
+  nibClock(17, 40);
+  await P.locator('.nib-btn').click();
+  await P.locator('.nib-tray').waitFor();
+  await P.getByRole('button', { name: 'Wrap up and send' }).click();
+  await P.locator('.nib-wrapup').waitFor();
+  await noToasts(P);
+  await sleep(600);
+  await shot(P, 'nib-wrap', P.locator('.nib-tray'), 10);
+  await P.getByRole('textbox', { name: 'Blockers' }).fill('Gasket thickness from the vendor');
+  console.log('  wrap-up width', await P.locator('.nib-tray-body').evaluate((el: HTMLElement) => `${el.scrollWidth} in ${el.clientWidth}, scrolled ${el.scrollLeft}`));
+  await P.locator('.nib-wrapup .btn.primary', { hasText: /^Send to / }).click();
+  await sleep(1000);
+  await P.keyboard.press('Escape');
+
+  // the wrap-up time passes: Nib asks Kiran three times; the register goes to the management at 19:00
+  for (const [h, m] of [[18, 0], [18, 26], [18, 46], [19, 0], [19, 5]]) { nibClock(h, m); await sleep(300); }
+  // Deepa sends after the register: Priya's card marks her LATE, and one follow-up goes at 21:00
+  nibClock(20, 15);
+  (hub as any).nib.handle('nib.item.save', user('deepa'), { giverId: priyaId, project: 'P-12', activity: 'Stress check, 8"-P-1014', qty: { done: 60, total: 100, unit: '%' } });
+  (hub as any).nib.handle('nib.wrap', user('deepa'), {});
+
+  // Priya's lead card: one card for everyone who sent work from her
+  await lens(P, 'Direct');
+  await P.locator('.sb-nib').click();
+  const lead = P.locator('.nib-card.k-lead').last();
+  await lead.waitFor({ timeout: 15000 });
+  await lead.locator('.nib-row', { hasText: 'Ravi' }).getByRole('button', { name: 'Seen' }).click();
+  await lead.locator('.nib-row', { hasText: 'Ravi' }).locator('.nib-seen').waitFor();
+  await lead.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await noToasts(P);
+  await sleep(700);
+  await shot(P, 'nib-lead', await boxIn(lead, P.locator('.timeline').first()));
+
+  // the leave note, as Priya fills it in for tomorrow (and does not send)
+  await P.locator('.nib-btn').click();
+  await P.locator('.nib-tray').waitFor();
+  await P.locator('.nib-skill', { hasText: 'Going on leave' }).click();
+  await P.locator('.nib-leave').waitFor();
+  await P.locator('.nib-leave .seg[aria-label="When"] button', { hasText: 'Tomorrow' }).click();
+  const cover = P.getByRole('combobox', { name: 'Who covers your work' });
+  await cover.fill('Ravi'); await cover.press('Enter');
+  await P.getByRole('textbox', { name: 'Handover note' }).fill('Area 4 isos: 3 left, waiting for the vendor nozzle loads. Bolt lengths for the 300# flanges once the gasket data comes.');
+  await noToasts(P);
+  await sleep(800);
+  await P.locator('.nib-tray-body').evaluate((el: HTMLElement) => { el.scrollTop = 0; });
+  await shot(P, 'nib-leave', P.locator('.nib-tray'), 10);
+  await P.locator('.nib-leave').getByRole('button', { name: 'Not now' }).click();
+  await P.keyboard.press('Escape');
+
+  // the management's register, as Vikram reads it
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1500);
+  await lens(V, 'Direct');
+  await V.locator('.sb-nib').click();
+  const reg = V.locator('.nib-card.k-register').last();
+  await reg.waitFor({ timeout: 15000 });
+  await reg.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await noToasts(V);
+  await sleep(1000);
+  await shot(V, 'nib-register', reg, 10);
+  await reg.locator('.nib-cell.s-blocked').first().click();
+  await V.locator('.nib-person-panel .nib-lines li').first().waitFor();
+  await reg.locator('.nib-head-cells').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await reg.locator('[role="tab"]', { hasText: 'Leave and missing' }).click();
+  await V.locator('.nib-person-panel').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(700);
+  const pb = await V.locator('.nib-person-panel').boundingBox();
+  const rb = await reg.boundingBox();
+  const top = Math.max(44, pb.y - 120);
+  await shot(V, 'nib-register-person', { x: rb.x - 10, y: top, width: rb.width + 20, height: Math.min(H - top, rb.y + rb.height + 10 - top) });
+  kiran.c.disconnect();
+  (hub as any).nib.setClock(null);
+});
+
+await part('tracked', async () => {
+  // Priya makes "Drawing check and issue" from its template and names document control
+  await lens(P, 'Desk');
+  await P.getByRole('tab', { name: 'Bots' }).click();
+  await sleep(700);
+  await P.getByRole('button', { name: 'Make a bot' }).first().click();
+  await P.locator('.bm-start').waitFor({ timeout: 10000 });
+  await P.getByRole('button', { name: 'Start from Drawing check and issue' }).click();
+  await P.locator('.bm-steps').waitFor();
+  await P.getByRole('tab', { name: /Afterwards/ }).click();
+  await P.locator('.bm-stages').waitFor();
+  await P.getByLabel('Who is Document control').selectOption({ label: 'Fatima Begum' });
+  await P.locator('#bm-stage-check .bm-step-head').click();
+  await P.locator('#bm-stage-check-edit').waitFor();
+  await sleep(800);
+  await shot(P, 'bot-afterwards');
+  await P.getByRole('tab', { name: /Sharing/ }).click();
+  await P.getByRole('radio', { name: /A Space/ }).click();
+  await P.getByLabel('Which Space').selectOption({ label: 'Piping team' });
+  await P.getByRole('button', { name: 'Save bot' }).click();
+  await P.locator('.toast', { hasText: 'shared with Piping team' }).waitFor({ timeout: 10000 });
+  await P.getByRole('button', { name: 'Close' }).first().click();
+  await sleep(600);
+  const flow = (await P.evaluate(() => window.dex.request('botflow.mine'))).find((b: any) => b.title === 'Drawing check and issue').name as string;
+  // two requests: isometrics checked by Ravi, a GA checked by Deepa
+  const send = (answers: Array<[string, string]>) => P.evaluate(async ({ flow, answers }: any) => {
+    const r = await window.dex.request('botflow.start', { flow });
+    for (const [stepId, value] of answers) { await new Promise((ok) => setTimeout(ok, 250)); await window.dex.request('botflow.answer', { sessionId: r.sessionId, stepId, value }); }
+    return r.convId as string;
+  }, { flow, answers });
+  const convId = await send([['job', 'P-12513'], ['drawings', 'ISO-1001-01\nISO-1001-02'], ['rev', 'C'], ['purpose', 'IFC'], ['checker', id('ravi')], ['print', ''], ['due', dayStr(3)], ['ok', 'yes']]);
+  await sleep(800);
+  await send([['job', 'P-12513'], ['drawings', 'P12-GA-0301'], ['rev', 'D'], ['purpose', 'IFA'], ['checker', id('deepa')], ['print', ''], ['due', dayStr(5)], ['ok', 'yes']]);
+  await sleep(800);
+  const rows = async () => (await P.evaluate((f: string) => window.dex.request('botflow.register', { flow: f }), flow)).register.rows as any[];
+  const dc1 = (await rows()).find((r) => / rev C /.test(` ${r.title} `)).itemId as string;
+  const act = (c: Col, action: string, note = '') => c.c.request('botflow.act' as never, { itemId: dc1, action, note } as never);
+  const tickAll = async (c: Col) => { for (let i = 0; i < 4; i++) { await c.c.request('botflow.tick' as never, { itemId: dc1, index: i, on: true } as never); } };
+  // Ravi returns it with comments; Priya corrects it; Ravi back-checks it (round 2)
+  await act(col.ravi, 'comments', 'Tag 101-P-02 is missing on ISO-1001-02, and the BOM still shows rev B.');
+  await sleep(500);
+  await P.evaluate((i: string) => window.dex.request('botflow.act', { itemId: i, action: 'done', note: 'Tag added; BOM at rev C.' }), dc1);
+  await sleep(500);
+  await tickAll(col.ravi);
+  await act(col.ravi, 'pass');
+  await sleep(800);
+  // Priya's card follows it: in her conversation with the bot
+  await lens(P, 'Direct');
+  await P.locator('.sb-row', { hasText: 'Drawing check and issue' }).first().click();
+  const live = P.locator('.flow-card.track:not(.moved)', { hasText: 'rev C' }).last();
+  await live.locator('.trk-cell.here', { hasText: 'Approve' }).waitFor({ timeout: 10000 });
+  await scrollEnd(P);
+  await live.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(600);
+  await shot(P, 'bot-track', live, 10);
+  await shot(P, 'bot-head', P.locator('.pane-head').first(), 0);
+  // Meera approves; Fatima issues it and records the client's receipt
+  await act(col.meera, 'ok');
+  await act(col.fatima, 'issued', 'DDSP-P12-TR-0143');
+  await act(col.fatima, 'ack', 'Client receipt CR-0877');
+  await sleep(800);
+  // the register, on asking
+  const dock = P.locator('.dock textarea').first();
+  await dock.fill('register');
+  await dock.press('Enter');
+  const reg = P.locator('.flow-card.register').last();
+  await reg.locator('.reg-ref').first().waitFor({ timeout: 10000 });
+  await scrollEnd(P);
+  await reg.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(600);
+  await shot(P, 'bot-register', reg, 10);
+  void convId;
+});
+
+await part('paths', async () => {
+  // Priya's laptop maps \\nas01\Project as X: and \\nas01\Standards as S: (the TEST-ONLY drive hook
+  // of development builds: nothing touches a real share or Explorer)
+  autoApprove = true;
+  const lap = await openApp('priya', 'Priya Raman', { env: { DEXCONNECT_TEST_DRIVES: JSON.stringify({ drives: [{ letter: 'X:', root: '\\\\nas01\\Project' }, { letter: 'S:', root: '\\\\nas01\\Standards' }] }) } });
+  const L = lap.page;
+  await sleep(2500);
+  const m = await say(col.ravi, p12.id, 'Revised isometrics for area 3 are in \\\\nas01\\Project\\P12513\\Iso and the stress report is \\\\nas01\\Project\\P12513\\Stress\\SR-P12-007.pdf');
+  void m;
+  await openConv(L, 'Spaces', 'P-12 Piping');
+  await expandSwitchboard(L);
+  const msg = L.locator('.timeline .msg', { hasText: 'Revised isometrics for area 3' }).last();
+  await msg.locator('.lcard.k-path').waitFor({ timeout: 15000 });
+  await msg.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(1500);
+  await shot(L, 'sharepath', msg, 10);
+  await L.keyboard.press('Control+,');
+  const sec = L.locator('section.net-drives');
+  await sec.waitFor({ timeout: 10000 });
+  await sec.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await sleep(800);
+  await shot(L, 'prefs-drives', sec, 12);
+  await L.keyboard.press('Escape');
+  await closeApp(lap);
+});
+
+await part('meetlinks', async () => {
+  // the office's meeting site, as an administrator sets it in Control room ▸ Outside the office
+  // (the gateway's address is a placeholder that never resolves: nothing leaves this PC)
+  await owner.request('admin.remote.set' as never, { url: 'https://dexconnect-gateway.example.invalid', enabled: true, siteUrl: 'https://dexterity-meet.pages.dev', orgName: 'Dexterity Design Services' } as never);
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1500);
+  await V.locator('.me-btn').click();
+  await V.getByRole('menuitem', { name: /Control room/ }).click();
+  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Outside the office/ }).click();
+  const card = V.locator('.meet-site-card');
+  await card.waitFor({ timeout: 10000 });
+  await card.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(800);
+  await shot(V, 'cr-meetsite', card, 10);
+  await V.keyboard.press('Escape');
+  // Priya plans the P-12 design review with the client, with a page of its own
+  await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
+  await lens(P, 'Calendar');
+  await P.getByRole('button', { name: 'New meeting' }).click();
+  await P.getByLabel('Title', { exact: true }).fill('P-12 design review');
+  const start = new Date(); start.setDate(start.getDate() + 3); start.setHours(15, 0, 0, 0);
+  const local = (t: number) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  await P.getByLabel('Starts').fill(local(start.getTime()));
+  await P.getByPlaceholder('Invite people').fill('Rohan');
+  await P.locator('.ev-suggest button', { hasText: 'Rohan Kapoor' }).click();
+  await P.locator('.toggle-row', { hasText: 'Guests from outside can join from a browser' }).click();
+  await P.getByLabel("The meeting's name on the meeting site").fill('P12 Design Review');
+  await P.getByText('Free: …/p12-design-review').waitFor({ timeout: 10000 });
+  await P.getByRole('button', { name: 'Send invitations' }).click();
+  await P.locator('.guest-url').waitFor({ timeout: 15000 });
+  await P.getByLabel('A note guests see when they leave').fill('Thank you. The minutes and the marked-up isometrics follow by Friday.');
+  await P.getByRole('button', { name: 'Save note' }).click();
+  await sleep(800);
+  const block = P.locator('.meet-invite-block');
+  await block.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(600);
+  await shot(P, 'meet-invite', block, 12);
+  await P.keyboard.press('Escape');
+  await owner.request('admin.remote.set' as never, { enabled: false } as never);
 });
 
 console.log(failed.length ? `FAILED PARTS: ${failed.join(', ')}` : 'GUIDE SHOTS DONE');
