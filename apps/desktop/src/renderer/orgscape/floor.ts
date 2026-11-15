@@ -26,7 +26,7 @@ export function parseSeat(loc: string | null | undefined): Seat | null {
 }
 
 export const DESK_W = 120;
-export const DESK_H = 74;
+export const DESK_H = 84;
 const ROOM_PAD = 28;
 const CABIN_W = 168;
 const CABIN_H = 150;
@@ -112,7 +112,7 @@ export function layoutFloor(people: PublicUser[], modeOf: (id: string) => WorkMo
       if (occupant) {
         const m = isAway(occupant);
         if (m) awayIds.get(m)!.push(occupant);
-        else spots.set(occupant, { id: occupant, x: dx + DESK_W / 2, y: dy + DESK_H / 2, where: 'desk', room: key, desk: `D${k}` });
+        else spots.set(occupant, { id: occupant, x: dx + DESK_W / 2, y: dy + (row === 0 ? 30 : 46), where: 'desk', room: key, desk: `D${k}` });
       }
     }
     x += w + WALL_GAP;

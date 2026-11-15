@@ -1,4 +1,4 @@
-// The Directory lens: everyone in the office as people cards, an org chart that walks the
+// The Directory lens: everyone in the office as people cards, the office drawing (orgscape/) with
 // reporting lines, departments and the team's day log. Selecting someone opens their card beside
 // the list, drawn as a drawing title block.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -8,13 +8,15 @@ import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Dialog, Icon, Popover, ROLE_LABEL, Segmented, presenceFor, presenceText, useToast, relativeTime } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
-import { formatBirthday, formatJoined, managersOf, reportsOf, teamSize, useOrg } from '../org/store.ts';
+import { formatBirthday, formatJoined, reportsOf, useOrg } from '../org/store.ts';
 import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
 import { useWork, workLine } from '../work/store.ts';
 import { TeamDayLog } from '../work/WorkUi.tsx';
 import './people.css';
 import { LeftTheOffice } from './LeftOffice.tsx';
+import { Orgscape } from '../orgscape/Orgscape.tsx';
+import { onChartRequest, takeChartRequest } from '../orgscape/request.ts';
 
 /**
  * Sheet tabs: labels sitting on a ruled line, the open one cut into it like the tab of a
@@ -42,7 +44,9 @@ type Filter = 'all' | 'online';
 export function People({ state, session, query, setQuery, focusUser, onMessage }: {
   state: AppState; session: Session; query: string; setQuery: (q: string) => void; focusUser: string | null; onMessage: (userId: string) => void;
 }) {
-  const [view, setView] = useState<View>('people');
+  // asked to open the drawing at someone (Pulse, a link): start on the drawing
+  const [chartAt, setChartAt] = useState<{ id: string; n: number } | null>(() => { const id = takeChartRequest(); return id ? { id, n: 1 } : null; });
+  const [view, setView] = useState<View>(chartAt ? 'chart' : 'people');
   const [filter, setFilter] = useState<Filter>('all');
   const [dept, setDept] = useState<string>('');
   const [selected, setSelected] = useState<string | null>(focusUser);
@@ -58,6 +62,9 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
   const managesSomeone = everyone.some((u) => u.profile.managerId === session.me.id);
 
   useEffect(() => { if (focusUser) { setSelected(focusUser); setView('people'); } }, [focusUser]);
+  useEffect(() => onChartRequest((id) => { takeChartRequest(); setView('chart'); setChartAt((c) => ({ id, n: (c?.n ?? 0) + 1 })); }), []);
+  const showInChart = (id: string) => { setView('chart'); setChartAt((c) => ({ id, n: (c?.n ?? 0) + 1 })); };
+  const chartPeople = useMemo(() => everyone.filter((u) => u.role !== 'guest'), [everyone]);
 
   const people = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,7 +83,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
   const sel = selected ? users.get(selected) : undefined;
 
   return (
-    <div className={`directory${sel ? ' with-profile' : ''}`}>
+    <div className={`directory${sel ? ' with-profile' : ''}${view === 'chart' ? ' charting' : ''}`}>
       <div className="view directory-main">
         <OfflineBanner state={state} />
         <div className="view-head">
@@ -133,7 +140,10 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
           </>
         )}
 
-        {view === 'chart' && <OrgChart people={everyone} users={users} meId={session.me.id} focus={selected} onFocus={setSelected} departments={departments} />}
+        {view === 'chart' && (
+          <Orgscape people={chartPeople} users={users} departments={departments} meId={session.me.id} focus={chartAt} live={live}
+            onOpenCard={setSelected} onMessage={onMessage} />
+        )}
         {view === 'daylog' && <TeamDayLog users={everyone} meId={session.me.id} isAdmin={isAdmin} />}
         {view === 'departments' && <Departments people={everyone} departments={org.departments} users={users} onOpen={(id) => { setDept(id); setView('people'); }} />}
       </div>
@@ -141,7 +151,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
       {sel && (
         <ProfilePanel u={sel} users={users} people={everyone} departments={departments} meId={session.me.id} isAdmin={isAdmin} live={live}
           onClose={() => setSelected(null)} onPick={setSelected} onMessage={onMessage} onEdit={() => setEditing(sel.id)}
-          onChart={() => setView('chart')} />
+          onChart={() => showInChart(sel.id)} />
       )}
       {editing && users.get(editing) && <ProfileEditor u={users.get(editing)!} people={everyone} onClose={() => setEditing(null)} />}
     </div>
@@ -256,7 +266,7 @@ function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onCl
           ))}
         </div>
       )}
-      {(manager || reports.length > 0) && <button className="link pp-chart" onClick={onChart}>See in the org chart</button>}
+      {u.role !== 'bot' && u.role !== 'guest' && <button className="link pp-chart" onClick={onChart}>See in the org chart</button>}
       {u.id !== meId && live && <InCommon userId={u.id} />}
       {isAdmin && u.role !== 'bot' && <button className="btn" onClick={onEdit}><Icon name="edit" size={15} />Edit details</button>}
     </aside>
@@ -288,53 +298,6 @@ function InCommon({ userId }: { userId: string }) {
           <ul className="call-history">{d.calls.slice(0, 6).map((c) => (
             <li key={c.at}><Icon name={c.video ? 'video' : 'phone'} size={13} /><span className={c.missed ? 'missed' : ''}>{c.missed ? 'Missed' : mins(c.durationMs)}</span><span className="faint">{new Date(c.at).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span></li>
           ))}</ul>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------ org chart
-function OrgChart({ people, users, meId, focus, onFocus, departments }: {
-  people: PublicUser[]; users: Map<string, PublicUser>; meId: string; focus: string | null; onFocus: (id: string) => void; departments: Map<string, Department>;
-}) {
-  const hasLines = people.some((u) => u.profile.managerId);
-  // start at the top of the organisation (the person with the largest team)
-  const top = useMemo(() => [...people].filter((u) => !u.profile.managerId || !users.has(u.profile.managerId))
-    .sort((a, b) => teamSize(b.id, people) - teamSize(a.id, people))[0], [people, users]);
-  const centre = (focus && users.get(focus)) || users.get(meId);
-  if (!hasLines) {
-    return <div className="empty"><Icon name="list" size={36} /><span>No line managers set yet. An administrator can set each person's line manager in their details, or import them from a spreadsheet in the Control room.</span></div>;
-  }
-  if (!centre) return null;
-  const ladder = managersOf(centre.id, users).reverse();
-  const reports = reportsOf(centre.id, people);
-  const peers = centre.profile.managerId ? reportsOf(centre.profile.managerId, people).filter((p) => p.id !== centre.id) : [];
-  const node = (u: PublicUser, kind: 'up' | 'centre' | 'down' | 'peer') => (
-    <button key={u.id} className={`org-node ${kind}${u.id === meId ? ' me' : ''}`} onClick={() => onFocus(u.id)}>
-      <Avatar user={u} presence={presenceFor(u.id)} size={kind === 'centre' ? 'lg' : 'sm'} />
-      <span className="org-who">
-        <b>{u.displayName}</b>
-        <span className="faint">{u.title ?? departments.get(u.profile.departmentId ?? '')?.name ?? ''}</span>
-        {kind !== 'up' && teamSize(u.id, people) > 0 && <span className="org-team">{teamSize(u.id, people)} in team</span>}
-      </span>
-    </button>
-  );
-  return (
-    <div className="org-chart">
-      <div className="org-tools">
-        {top && top.id !== centre.id && <button className="btn ghost sm" onClick={() => onFocus(top.id)}><Icon name="back" size={14} />Top of the organisation</button>}
-        {centre.id !== meId && <button className="btn ghost sm" onClick={() => onFocus(meId)}>Back to me</button>}
-      </div>
-      {ladder.length > 0 && <div className="org-ladder">{ladder.map((u) => node(u, 'up'))}</div>}
-      <div className="org-centre">
-        {node(centre, 'centre')}
-        {peers.length > 0 && <div className="org-peers"><span className="label">Same line manager</span>{peers.slice(0, 8).map((p) => node(p, 'peer'))}{peers.length > 8 && <span className="faint">+{peers.length - 8} more</span>}</div>}
-      </div>
-      {reports.length > 0 && (
-        <>
-          <div className="org-rule"><span className="label">Direct reports · {reports.length}</span></div>
-          <div className="org-reports">{reports.map((u) => node(u, 'down'))}</div>
         </>
       )}
     </div>
