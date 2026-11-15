@@ -944,6 +944,12 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps {
   'msg.get': { req: { messageId: string }; res: Message };
   /** Spaces you share with someone, and your calls with them (newest first). */
   'people.common': { req: { userId: string }; res: { spaces: Array<{ id: string; name: string }>; calls: Array<{ at: number; durationMs: number; missed: boolean; video: boolean; convId: string }> } };
+  /**
+   * Who works together, for the org chart's Spaces overlay: the Spaces you can see (yours, and open
+   * ones), each with its members. Private Spaces you are not in, archived Spaces, the Office-wide
+   * Space, guests and integrations are left out; guests get none.
+   */
+  'people.spaces': { req: void; res: { spaces: Array<{ id: string; name: string; memberIds: string[]; mine: boolean }> } };
   /** The first message on or after a moment, for "jump to date". */
   'msg.at': { req: { convId: string; at: number }; res: { messageId: string | null } };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };

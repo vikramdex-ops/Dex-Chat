@@ -963,6 +963,23 @@ export class Messaging {
         return { spaces, calls } satisfies Ops['people.common']['res'];
       }
 
+      case 'people.spaces': {
+        if (me.role === 'guest') return { spaces: [] } satisfies Ops['people.spaces']['res'];
+        const convs = this.db.prepare(`SELECT c.id, c.name, EXISTS (SELECT 1 FROM conv_members x WHERE x.conv_id = c.id AND x.user_id = ?) AS mine
+          FROM conversations c WHERE c.kind = 'space' AND c.everyone = 0 AND c.archived = 0
+          AND (c.private = 0 OR EXISTS (SELECT 1 FROM conv_members x WHERE x.conv_id = c.id AND x.user_id = ?))
+          ORDER BY c.name COLLATE NOCASE LIMIT 400`).all(me.id, me.id) as Array<{ id: string; name: string | null; mine: number }>;
+        if (!convs.length) return { spaces: [] } satisfies Ops['people.spaces']['res'];
+        // members who are colleagues: no guests, no integrations
+        const rows = this.db.prepare(`SELECT m.conv_id, m.user_id FROM conv_members m JOIN users u ON u.id = m.user_id
+          WHERE u.role NOT IN ('guest', 'bot') AND m.conv_id IN (${convs.map(() => '?').join(',')})`).all(...convs.map((c) => c.id)) as Array<{ conv_id: string; user_id: string }>;
+        const members = new Map<string, string[]>();
+        for (const r of rows) (members.get(r.conv_id) ?? members.set(r.conv_id, []).get(r.conv_id)!).push(r.user_id);
+        return {
+          spaces: convs.map((c) => ({ id: c.id, name: c.name ?? '', memberIds: (members.get(c.id) ?? []).slice(0, 1000), mine: !!c.mine })).filter((c) => c.memberIds.length > 1),
+        } satisfies Ops['people.spaces']['res'];
+      }
+
       case 'msg.at': {
         const c = this.requireMember(String(d.convId), me.id);
         const at = typeof d.at === 'number' && Number.isFinite(d.at) ? d.at : Date.now();
