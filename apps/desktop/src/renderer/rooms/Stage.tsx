@@ -408,7 +408,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
             <div className="tb-facts">
               <div><span className="label">Time</span><Clock since={room.startedAt} className="mono tb-big" /></div>
               <div><span className="label">Opened</span><span className="mono">{clock(room.startedAt)}</span></div>
-              <div><span className="label">Link</span><LinkQuality roomId={room.id} alone={others.length === 0} /></div>
+              <div><span className="label">Connection</span><LinkQuality roomId={room.id} alone={others.length === 0} /></div>
             </div>
             <div className="tb-controls">
               <button className={muted ? 'off' : 'on'} aria-pressed={!muted} onClick={toggleMute} title={muted ? 'Turn your mic on' : 'Turn your mic off'}>

@@ -3445,6 +3445,7 @@
  "Board": "rooms/Stage.tsx",
  "Breakout · {0}": "rooms/Stage.tsx",
  "Chat": "rooms/Stage.tsx",
+ "Connection": "rooms/Stage.tsx",
  "Copy the meeting link ({0})": "rooms/Stage.tsx",
  "Deny": "rooms/Stage.tsx",
  "Deny all": "rooms/Stage.tsx",
