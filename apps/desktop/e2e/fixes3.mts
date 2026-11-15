@@ -287,7 +287,7 @@ try {
     await B.evaluate(() => localStorage.setItem('dex.language', 'en'));
   }
 
-  console.log(`FIXES3 (${TAG}) E2E PASSED`);
+  console.log(`FIXES3 E2E PASSED (${TAG})`);
 } catch (e) {
   console.error(e);
   process.exitCode = 1;
