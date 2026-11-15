@@ -82,3 +82,30 @@ export async function portFree() {
     await sleep(2000);
   }
 }
+
+/**
+ * Two 8-second "voices" for fake microphones (48 kHz mono WAV, written to out/ on first use):
+ * a steady tone from 0 to 3.5 s, another from 4 to 7.5 s, so a recording gets one chapter for each
+ * speaker. They are buzzes, not speech: scripts turn strong noise suppression off where it matters.
+ */
+export function voices(): { a: string; b: string } {
+  const make = (file: string, from: number, to: number, pitch: number) => {
+    const p = path.join(OUT, file);
+    if (fs.existsSync(p)) return p;
+    const rate = 48000;
+    const n = rate * 8;
+    const data = Buffer.alloc(44 + n * 2);
+    data.write('RIFF', 0); data.writeUInt32LE(36 + n * 2, 4); data.write('WAVE', 8);
+    data.write('fmt ', 12); data.writeUInt32LE(16, 16); data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22);
+    data.writeUInt32LE(rate, 24); data.writeUInt32LE(rate * 2, 28); data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34);
+    data.write('data', 36); data.writeUInt32LE(n * 2, 40);
+    for (let i = 0; i < n; i++) {
+      const t = i / rate;
+      const v = t >= from && t < to ? 0.31 * Math.sin(2 * Math.PI * pitch * t) : 0;
+      data.writeInt16LE(Math.round(v * 32767), 44 + i * 2);
+    }
+    fs.writeFileSync(p, data);
+    return p;
+  };
+  return { a: make('voice-a.wav', 0, 3.5, 236), b: make('voice-b.wav', 4, 7.5, 700) };
+}
