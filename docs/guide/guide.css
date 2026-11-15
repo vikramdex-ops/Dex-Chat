@@ -8,7 +8,7 @@
 
 @page {
   size: A4; margin: 19mm 15mm 17mm 15mm;
-  @top-left { content: "Dexterity Connect User Guide  ·  DDSP-IT-DXC-UG-001  ·  Rev 1"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
+  @top-left { content: "Dexterity Connect User Guide  ·  DDSP-IT-DXC-UG-001  ·  Rev 2"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
   @top-right { content: "Dexterity Design Services Private Limited"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
   @top-center { content: ""; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
   @bottom-center { content: ""; vertical-align: top; padding-top: 3.2mm; border-top: 0.6pt solid #D5E2E3; }
@@ -67,7 +67,7 @@ li { margin-bottom: 2.5pt; }
 /* contents */
 .toc h2 { margin-top: 0; }
 .toc ol { list-style: none; padding: 0; margin: 0; }
-.toc li { display: flex; align-items: baseline; gap: 6pt; margin: 0; padding: 2.4pt 0; border-bottom: 1px dotted var(--line); font-size: 10pt; break-inside: avoid; }
+.toc li { display: flex; align-items: baseline; gap: 6pt; margin: 0; padding: 1.5pt 0; border-bottom: 1px dotted var(--line); font-size: 10pt; break-inside: avoid; }
 .toc li.sub { padding-left: 16pt; font-size: 8.8pt; color: var(--muted); border-bottom: none; padding-top: 0.6pt; padding-bottom: 0.6pt; }
 .toc .n { width: 18pt; color: var(--accent-ink); font-weight: 600; flex: none; }
 .toc li.sub .n { width: 24pt; font-weight: 500; }
@@ -75,7 +75,7 @@ li { margin-bottom: 2.5pt; }
 .toc .toc-page { flex: none; min-width: 16pt; text-align: right; color: var(--muted); }
 .toc-cols { columns: 2; column-gap: 9mm; }
 .toc-cols li { break-inside: avoid; }
-.conventions { margin-top: 7mm; border: 1px solid var(--line); border-radius: 10pt; padding: 8pt 11pt; font-size: 9.2pt; break-inside: avoid; }
+.conventions { margin-top: 5mm; border: 1px solid var(--line); border-radius: 10pt; padding: 8pt 11pt; font-size: 9.2pt; break-inside: avoid; }
 .conventions h3 { margin: 0 0 4pt; }
 .conventions p:last-child { margin-bottom: 0; }
 

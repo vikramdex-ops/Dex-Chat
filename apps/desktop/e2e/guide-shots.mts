@@ -91,7 +91,9 @@ const theme = async (page: any, t: 'light' | 'dark') => { await page.evaluate((x
 async function shot(page: any, name: string, clip?: any, pad = 12) {
   let box = clip;
   if (clip && typeof clip.boundingBox === 'function') {
-    const b = await clip.boundingBox();
+    let b = await clip.boundingBox();
+    // off screen (a sheet still settling): bring it into view first
+    if (!b || b.y >= page.viewportSize().height - 10 || b.y + b.height <= 10) { await clip.scrollIntoViewIfNeeded().catch(() => {}); await sleep(400); b = await clip.boundingBox(); }
     const vp = page.viewportSize();
     const x = Math.max(0, b.x - pad), y = Math.max(0, b.y - pad);
     box = { x, y, width: Math.min(vp.width - x, b.width + 2 * pad), height: Math.min(vp.height - y, b.height + 2 * pad) };
@@ -249,6 +251,20 @@ const P = priyaApp.page;
 const users0 = (await owner.request('directory.list')).users;
 const priyaId: string = users0.find((u: any) => u.account.endsWith('priya')).id;
 await seeded.profiles({ priya: priyaId });
+// the office's seats on the real floor plan (Directory ▸ Org chart ▸ Floor), by department
+const SEATS: Array<[string, string]> = [
+  ['W-A01', 'lalitha'], ['W-A02', 'manoj'], ['W-A03', 'asha'], ['W-A04', 'prakash'], ['W-A05', 'selvi'], ['W-A06', 'kiran'],
+  ['W-A11', 'priya'], ['W-A12', 'ravi'], ['W-A13', 'karthik'], ['W-A14', 'deepa'], ['W-A15', 'rahul'], ['W-A16', 'lakshmi'], ['W-A17', 'imran'], ['W-A18', 'thomas'],
+  ['W-A21', 'anita'], ['W-A22', 'sanjay'], ['W-A23', 'kavya'],
+  ['POD1-1', 'suresh'], ['POD1-2', 'nikhil'], ['POD1-3', 'divya'], ['POD2-1', 'ramesh'], ['POD2-2', 'harini'], ['POD2-3', 'gopal'],
+  ['W-C07', 'anand'], ['W-C08', 'sneha'], ['W-C09', 'vivek'], ['W-C10', 'pooja'], ['W-C11', 'farhan'],
+  ['W-B01', 'rohan'], ['W-B02', 'neha'], ['W-B03', 'aditya'], ['W-B11', 'fatima'], ['W-B12', 'joseph'], ['W-B13', 'ganesh'],
+  ['HC-03', 'sunil'], ['REC-01', 'bhavna'], ['HC-06', 'revathi'], ['MD-01', 'vikram'], ['MD-02', 'meera'], ['HC-09', 'arjun'],
+];
+const seatPlan = await owner.request('seating.draft' as never, { title: 'The office as it is', moves: SEATS.map(([seatId, u]) => ({ seatId, to: { kind: 'person', userId: u === 'priya' ? priyaId : id(u) } })) } as never) as any;
+await owner.request('seating.apply' as never, { id: seatPlan.id } as never);
+// Priya has read her seat notice already (the seating part shows a new one)
+await P.evaluate((planId: string) => window.dex.request('seating.seen', { planId }), seatPlan.id).catch((e: Error) => console.log('seat seen', e.message));
 const people = ['meera', 'ravi', 'anand', 'deepa', 'karthik', 'lalitha', 'imran', 'sneha', 'rohan', 'fatima', 'rahul', 'thomas', 'manoj', 'sunil', 'bhavna'];
 const col: Record<string, Col> = {};
 for (const u of people) col[u] = await colleague(u, OFFICE.find((p) => p.u === u)!.name);
@@ -682,13 +698,20 @@ await part('directory', async () => {
   await theme(P, 'light');
   await P.getByRole('button', { name: 'Clear the route' }).click().catch(() => {});
   await P.locator('.os-find-input').fill('');
+  // the floor: the office's real plan, framed as it opens; then the walk to Anand's desk
   await P.getByRole('button', { name: 'Floor', exact: true }).click();
-  await sleep(1500);
-  await P.getByRole('button', { name: 'Show the whole sheet' }).click();
-  await sleep(800);
-  await P.getByRole('button', { name: 'Zoom in' }).click();
-  await sleep(1200);
+  await sleep(2600);
+  if (await P.locator('.seat-notice').count()) { await P.locator('.seat-notice').getByRole('button', { name: 'Got it' }).click().catch(() => {}); await sleep(500); }
   await shot(P, 'org-floor');
+  await P.locator('.os-find-input').fill('Anand');
+  await P.keyboard.press('Enter');
+  await P.locator('.os-callout', { hasText: 'Anand Pillai' }).waitFor();
+  await P.locator('.os-callout').getByRole('button', { name: 'Walk there' }).click();
+  await P.locator('.os-route', { hasText: 'round the desks' }).waitFor();
+  await P.locator('.os-callout').getByRole('button', { name: 'Close' }).click().catch(() => {});
+  await sleep(600);
+  await P.getByRole('button', { name: 'Clear the route' }).click().catch(() => {});
+  await P.locator('.os-find-input').fill('');
   await P.getByRole('button', { name: 'Lines', exact: true }).click();
   await P.locator('.os-tools').getByRole('button', { name: 'Spaces', exact: true }).click();
   await P.locator('.os-menu-item', { hasText: 'P-14 Structural steel' }).click();
@@ -1141,6 +1164,534 @@ await part('meetlinks', async () => {
   await shot(P, 'meet-invite', block, 12);
   await P.keyboard.press('Escape');
   await owner.request('admin.remote.set' as never, { enabled: false } as never);
+});
+
+// ================================================================== revision 2: meeting threads, the notice board, the bot network, seating
+// GUIDE_ONLY=recap,notices,botnet,seating walks only these.
+const req = (page: any, op: string, d: unknown = {}) => page.evaluate(([o, x]: [string, unknown]) => window.dex.request(o as never, x as never), [op, d]);
+/** Join a meeting by its ID from the Meet lens. */
+const joinById = async (page: any, meetingId: string) => {
+  await lens(page, 'Meet');
+  await page.getByLabel('Meeting ID or link').fill(meetingId);
+  await page.locator('.meet-join').getByRole('button', { name: 'Join' }).click();
+  await page.getByRole('button', { name: 'Leave Room' }).waitFor({ timeout: 25000 });
+};
+/** A shot of `sel` when it is on screen, else of the whole window. */
+const shotOf = async (page: any, name: string, sel: string, pad = 10) => { const l = page.locator(sel).first(); if (await l.count() && await l.isVisible().catch(() => false)) await shot(page, name, l, pad); else await shot(page, name); };
+const nextDow = (dow: number, h = 12) => { const d = new Date(); d.setHours(h, 0, 0, 0); d.setDate(d.getDate() + (((dow - d.getDay()) + 7) % 7 || 7)); return d; };
+const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+await part('recap', async () => {
+  // Priya plans a weekly review with no conversation: it gets a thread of its own
+  autoApprove = true;
+  const start = Date.now() + 20 * 60_000;
+  const ev = await req(P, 'cal.create', { title: 'P-12 pump skid weekly review', startAt: start, endAt: start + 3600_000, attendees: [id('ravi'), id('anand'), id('deepa')], online: true, recurrence: 'weekly' }) as any;
+  if (!ev.convId) throw new Error('the meeting has no thread');
+  // before the meeting: Ravi shares the agenda and the GA in the thread
+  const ga = await upload(hub.port, col.ravi.token, 'P12-GA-0301 Rev C Area 3.pdf', fs.readFileSync(gaPdf));
+  await say(col.ravi, ev.convId, 'Agenda for Tuesday: 1. the client’s GA comments 2. nozzle loads on the pump skid 3. next steps. The GA is attached.', { files: [ga.id] });
+  await say(col.deepa, ev.convId, 'I will bring the nozzle load table for P-402A/B.');
+  await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
+  await openConv(P, 'Spaces', 'P-12 pump skid weekly review');
+  await expandSwitchboard(P);
+  await scrollEnd(P);
+  await sleep(800);
+  await shot(P, 'meet-thread');
+  // the meeting: Priya starts it early from its ID, Ravi joins
+  const m = await req(P, 'meet.event', { eventId: ev.id }) as any;
+  const ravi = await appOf('ravi', 'Ravi Kumar');
+  await joinById(P, m.id);
+  await joinById(ravi.page, m.id);
+  await P.getByRole('tab', { name: /^Chat/ }).click();
+  await ravi.page.getByRole('tab', { name: /^Chat/ }).click();
+  await ravi.page.getByLabel('Message to the meeting').fill('The client wants the skid moved 300 mm north, clear of the cable tray.');
+  await ravi.page.getByLabel('Message to the meeting').press('Enter');
+  await P.locator('.meet-chat .meet-chat-line', { hasText: 'skid moved 300 mm' }).waitFor({ timeout: 15000 });
+  // 1. an action point from a chat line: the card reads owner and date as it is typed
+  const box = P.getByLabel('Message to the meeting');
+  await box.fill('/action Ravi to send the revised GA by Fri');
+  await P.locator('.meet-chat .ap-preview').waitFor();
+  await sleep(600);
+  await shotOf(P, 'ap-chat', '.meet-chat', 8);
+  await box.press('Enter');
+  await P.locator('.meet-chat .meet-chat-body', { hasText: 'Send the revised GA' }).waitFor({ timeout: 10000 });
+  // 2. the capture strip: A on the stage
+  await P.locator('.room-field').click({ position: { x: 300, y: 200 } });
+  await P.keyboard.press('a');
+  const strip = P.getByLabel('Action point: who, what, by when');
+  await strip.waitFor({ timeout: 5000 });
+  await strip.fill('Deepa to check the nozzle loads by 20 Nov');
+  await P.locator('.ap-capture .ap-preview').waitFor();
+  await sleep(600);
+  await shot(P, 'ap-strip');
+  await strip.press('Enter');
+  await sleep(800);
+  await P.keyboard.press('Escape');
+  // 3. promote Ravi's line
+  const line = P.locator('.meet-chat .meet-chat-line', { hasText: 'skid moved 300 mm' });
+  await line.hover();
+  await line.getByRole('button', { name: 'Make an action point' }).click();
+  const dlg = P.getByRole('dialog', { name: 'Make an action point' });
+  await dlg.getByRole('textbox', { name: 'What needs doing' }).fill('Move the skid 300 mm north on the model');
+  await dlg.getByRole('combobox', { name: 'Owner' }).selectOption(id('anand'));
+  await sleep(500);
+  await shot(P, 'ap-make', dlg, 14);
+  await dlg.getByRole('button', { name: 'Log action point' }).click();
+  await dlg.waitFor({ state: 'detached' });
+  // Ravi takes the notes; the agenda in the Register
+  const roomId = ((await req(P, 'room.list')) as any[]).find((r) => r.meetingId === m.id)?.id;
+  if (roomId) await req(P, 'meet.noteTaker', { roomId, userId: id('ravi') }).catch((e: Error) => console.log('note-taker', e.message));
+  await P.getByRole('tab', { name: /^Register/ }).click();
+  await P.getByRole('button', { name: 'Write the agenda' }).click().catch(() => {});
+  await P.getByLabel('The agenda, one item a line, minutes first').fill('10 The client’s GA comments\n15 Nozzle loads on the pump skid\n5 Next steps').catch(() => {});
+  await P.getByRole('button', { name: 'Save the agenda' }).click().catch(() => {});
+  await P.locator('.meet-register .ap-ref', { hasText: 'AP-03' }).waitFor({ timeout: 10000 });
+  await sleep(800);
+  await shotOf(P, 'meet-register', '.meet-register', 8);
+  // Anand comes in late: the room has been going for twelve minutes
+  for (const r of (hub as any).rooms.rooms.values()) if (r.meeting?.id === m.id || r.meetingId === m.id) r.startedAt -= 12 * 60_000;
+  const anand = await appOf('anand', 'Anand Pillai');
+  await openConv(anand.page, 'Spaces', 'P-12 pump skid weekly review');
+  await sleep(800);
+  await joinById(anand.page, m.id);
+  await anand.page.locator('.catch-up').waitFor({ timeout: 10000 });
+  await sleep(600);
+  await shotOf(anand.page, 'meet-missed-card', '.catch-up', 10);
+  await anand.page.getByRole('button', { name: 'Leave Room' }).click().catch(() => {});
+  await ravi.page.getByRole('button', { name: 'Leave Room' }).click().catch(() => {});
+  // the end: the recap card in the thread, and the recap sheet. The meeting is drawn as forty minutes long
+  // (its start and everyone's joining moved back), so the recap reads like a real one.
+  const mdb = (hub as any).meetThreads.db;
+  mdb.prepare('UPDATE meet_occurrences SET started_at = started_at - ? WHERE conv_id = ?').run(40 * 60_000, ev.convId);
+  if (roomId) for (const [uid, back] of [[priyaId, 40], [id('ravi'), 39], [id('anand'), 28]] as const) mdb.prepare('UPDATE meeting_attendance SET joined_at = joined_at - ? WHERE room_id = ? AND user_id = ?').run(back * 60_000, roomId, uid);
+  await P.getByRole('tab', { name: /^People/ }).click();
+  await P.getByRole('button', { name: 'End for everyone' }).click();
+  await P.locator('.confirm-actions').getByRole('button', { name: 'End for everyone' }).click().catch(() => {});
+  await P.getByRole('button', { name: 'Leave Room' }).waitFor({ state: 'detached', timeout: 15000 }).catch(() => {});
+  await sleep(1500);
+  await openConv(P, 'Spaces', 'P-12 pump skid weekly review');
+  const card = P.locator('.recap-card').last();
+  await card.waitFor({ timeout: 20000 });
+  await scrollEnd(P);
+  await card.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await noToasts(P);
+  await sleep(700);
+  await shot(P, 'recap-card', card, 10);
+  // Ravi's point, as the owner sees it in the thread
+  await openConv(ravi.page, 'Spaces', 'P-12 pump skid weekly review');
+  await scrollEnd(ravi.page);
+  const ap = ravi.page.locator('.msg', { hasText: 'Send the revised GA' }).last();
+  await ap.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+  await sleep(600);
+  await shot(ravi.page, 'ap-card', ap, 10);
+  await card.getByRole('button', { name: 'Open the recap' }).click();
+  const sheet = P.locator('.recap-sheet');
+  await sheet.locator('.recap-table tbody tr').first().waitFor({ timeout: 15000 });
+  await sleep(1000);
+  await shot(P, 'recap-sheet');
+  await sheet.getByRole('button', { name: 'Send by email' }).click();
+  await sheet.getByRole('button', { name: 'For guests' }).click().catch(() => {});
+  await sleep(600);
+  const rb = await sheet.boundingBox();
+  await shot(P, 'recap-email', { x: rb.x, y: rb.y, width: rb.width, height: 320 });
+  await sheet.getByRole('button', { name: 'Cancel' }).click().catch(() => {});
+  await P.keyboard.press('Escape');
+});
+
+await part('notices', async () => {
+  autoApprove = true;
+  const desks = (await owner.request('admin.notices.get' as never) as any).desks as any[];
+  const desk = (code: string) => desks.find((d) => d.code === code)?.id as string;
+  // the administrator makes Revathi an issuer for HR
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1200);
+  await V.locator('.me-btn').click();
+  await V.getByRole('menuitem', { name: /Control room/ }).click();
+  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Notice desks/ }).click();
+  await V.locator('.nb-admin').waitFor();
+  await V.getByRole('combobox', { name: 'Add an issuer for HR' }).selectOption({ label: 'Revathi Iyer' });
+  await V.getByText('Revathi Iyer now issues for HR').waitFor();
+  await noToasts(V);
+  await sleep(500);
+  await shot(V, 'cr-notices', { x: W - 988, y: 0, width: 988, height: H });
+  await V.keyboard.press('Escape');
+  // the office's other notices this week, from the IT and Admin desks
+  const everyone = { everyone: true, departments: [], roles: [], locations: [], people: [] };
+  const issue = async (v: Record<string, unknown>) => { const d = await owner.request('notices.save' as never, { ackRequired: false, audience: everyone, ...v } as never) as any; return owner.request('notices.issue' as never, { id: d.id } as never) as Promise<any>; };
+  const friday = nextDow(5, 0);
+  await issue({ deskId: desk('ADM'), category: 'holiday', title: 'Office closed for Guru Nanak Jayanti', body: 'The office is closed on Friday. Plotter jobs sent after 6 pm on Thursday are printed on Saturday morning. Site teams follow the client’s calendar.', effectiveAt: friday.getTime(), expiresAt: friday.getTime() + 86400_000 }).catch((e: Error) => console.log('holiday', e.message));
+  const evening = new Date(); evening.setHours(18, 30, 0, 0);
+  await issue({ deskId: desk('ADM'), category: 'event', title: 'Office get-together in the canteen', body: 'Tea and snacks in the canteen at 6:30 pm, to welcome the new joiners of November.', effectiveAt: evening.getTime(), expiresAt: evening.getTime() + 86400_000 }).catch((e: Error) => console.log('event', e.message));
+  await issue({ deskId: desk('IT'), category: 'it', title: 'New A0 plotter on the 2nd floor', body: 'The new A0 plotter is installed. Its name on the network is **PLOT-A0-2F**. Ask on the Help desk if it does not show on your PC.' }).catch((e: Error) => console.log('it', e.message));
+  await issue({ deskId: desk('ADM'), category: 'safety', title: 'Fire drill on Thursday at 11:00', body: 'Leave by the nearest stair when the alarm sounds and gather at the main gate. Floor wardens wear the orange vests.', ackRequired: true }).catch((e: Error) => console.log('safety', e.message));
+  await issue({ deskId: desk('MGT'), category: 'circular', title: 'Timesheets for November by the 28th', body: 'Please fill in November’s timesheets in Dexterity Connect by the 28th, so that client invoices go out on time.' }).catch((e: Error) => console.log('circular', e.message));
+  // Revathi drafts the leave policy with its PDF, for Piping and Drafting, and issues it
+  const policyPdf = path.join(OUT, 'HR-POL Leave policy 2026.pdf');
+  const pg = (n: number) => ({ w: 595, h: 842, ops: `0.11 0.46 0.5 RG 1.5 w 40 40 515 762 re S 0.5 w 40 760 m 555 760 l S\n` + text(60, 775, 14, 'DEXTERITY DESIGN SERVICES PVT. LTD.') + text(390, 775, 9, `HR LEAVE POLICY 2026 · ${n} OF 2`) + (n === 1
+    ? text(60, 720, 18, 'Leave policy 2026') + ['1. Earned leave is 18 days a year, credited monthly.', '2. Carry forward is up to 30 days.', '3. Apply in the HR portal at least a week ahead.', '4. Sick leave needs a certificate after two days.', '5. Comp-off is taken within 60 days of the day worked.'].map((l, i) => text(60, 680 - i * 26, 11, l)).join('')
+    : text(60, 720, 16, 'Annexure: holidays 2026') + text(60, 690, 11, 'The office calendar on the notice board lists the holidays.')) });
+  fs.writeFileSync(policyPdf, makePdf([pg(1), pg(2)], { title: 'Leave policy 2026' }));
+  const rv = await appOf('revathi', 'Revathi Iyer');
+  const R = rv.page;
+  await R.reload(); await R.locator('.frame').waitFor(); await sleep(1200);
+  await lens(R, 'Notices');
+  await R.locator('.nb-view').waitFor();
+  await R.getByRole('button', { name: 'Draft a notice' }).first().click();
+  await R.locator('.nb-compose').waitFor();
+  await R.getByLabel('Kind', { exact: true }).selectOption('policy');
+  await R.getByLabel('Title', { exact: true }).fill('Leave policy 2026');
+  await R.getByLabel('The notice', { exact: true }).fill('Earned leave is 18 days a year, credited monthly.\n\nCarry forward is up to 30 days.\n\nApply for leave in the HR portal at least a week ahead.');
+  await R.locator('input[type=file][aria-label="PDF to attach"]').setInputFiles(policyPdf);
+  await R.locator('.nb-attached').waitFor({ timeout: 15000 });
+  await R.locator('.toggle-row', { hasText: 'Everyone in the office' }).click();
+  await R.locator('.nb-aud-set').getByText('Piping', { exact: true }).click();
+  await R.locator('.nb-aud-set').getByText('Drafting', { exact: true }).click();
+  await R.locator('.toggle-row', { hasText: 'Ask readers to acknowledge' }).click();
+  await R.getByRole('button', { name: 'Add a check question' }).click();
+  await R.getByLabel('Check question 1').fill('How many days of earned leave a year?');
+  await R.getByLabel('Answer 1', { exact: true }).fill('12');
+  await R.getByLabel('Answer 2', { exact: true }).fill('18');
+  await R.getByLabel('Answer 2 is right').check();
+  await R.locator('details.nb-tr summary').first().click().catch(() => {});
+  await R.getByLabel('Title in Hindi').fill('अवकाश नीति 2026').catch(() => console.log('no Hindi title field'));
+  await R.getByLabel('The notice in Hindi').fill('हर साल 18 दिन की अर्जित छुट्टी मिलती है, जो हर महीने जुड़ती है।\n\nअधिकतम 30 दिन की छुट्टी अगले साल ले जा सकते हैं।\n\nछुट्टी के लिए HR पोर्टल में कम से कम एक सप्ताह पहले आवेदन करें।').catch(() => {});
+  const top = () => R.evaluate(() => document.querySelectorAll('.nb-compose, .nb-compose *').forEach((el) => { if (el.scrollHeight > el.clientHeight + 4) (el as HTMLElement).scrollTop = 0; }));
+  await top();
+  await sleep(500);
+  await shot(R, 'nb-composer', R.locator('.nb-compose').first(), 0);
+  await R.locator('.nb-num', { hasText: '04' }).evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' })).catch(() => {});
+  await sleep(400);
+  await shot(R, 'nb-composer-2', R.locator('.nb-compose').first(), 0);
+  await R.getByRole('button', { name: 'Preview' }).click();
+  await R.locator('.nb-preview-bar').waitFor({ timeout: 10000 }).catch(() => {});
+  await R.locator('.nb-pdf .pdfv-inline').waitFor({ timeout: 15000 }).catch(() => {});
+  await sleep(600);
+  await R.getByRole('button', { name: 'Back to the draft' }).click().catch(() => {});
+  await R.getByRole('button', { name: 'Issue now' }).first().click();
+  await R.locator('.confirm-actions').getByRole('button', { name: 'Issue now' }).click({ timeout: 5000 }).catch(() => {});
+  let policy: any = null;
+  for (let i = 0; i < 40 && !policy; i++) { policy = ((await owner.request('notices.list' as never) as any).notices as any[]).find((n) => n.title === 'Leave policy 2026' && n.status === 'issued'); if (!policy) await sleep(250); }
+  if (!policy) throw new Error('the leave policy was not issued');
+  await R.keyboard.press('Escape');
+  // Priya: Pulse, the board, the reading sheet, the acknowledgement
+  await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
+  await lens(P, 'Pulse');
+  await P.locator('.nb-pulse-rows .pulse-row', { hasText: 'Leave policy 2026' }).waitFor({ timeout: 10000 });
+  await P.locator('.nb-pulse-rows').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' })).catch(() => {});
+  await P.locator('.view').first().evaluate((el: HTMLElement) => { el.scrollTop -= 60; }).catch(() => {});
+  await noToasts(P);
+  await sleep(600);
+  await shot(P, 'nb-pulse', { x: 140, y: 44, width: W - 280, height: 360 });
+  await P.locator('.nb-week').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+  await sleep(500);
+  await shotOf(P, 'nb-week', '.nb-week', 10);
+  await P.locator('.view').first().evaluate((el: HTMLElement) => { el.scrollTop = 0; }).catch(() => {});
+  await lens(P, 'Notices');
+  await P.locator('.nb-view').waitFor();
+  await P.locator('.nb-shelf .nb-stack').first().waitFor({ timeout: 8000 }).catch(() => {});
+  await sleep(800);
+  await shot(P, 'nb-board');
+  await P.locator('.nb-row', { hasText: 'Leave policy 2026' }).first().click();
+  await P.locator('.nb-sheet .nb-tb').waitFor();
+  await P.locator('.nb-sheet .pdfv-inline .pdfv-page').first().waitFor({ timeout: 20000 }).catch(() => {});
+  await sleep(1500);
+  await shot(P, 'nb-sheet');
+  await P.locator('.nb-ack').scrollIntoViewIfNeeded();
+  await P.locator('.nb-check').getByText('18', { exact: true }).click();
+  await sleep(300);
+  await shotOf(P, 'nb-ack-form', '.nb-ack', 10);
+  await P.locator('.nb-sure input').check();
+  await P.getByRole('button', { name: 'Acknowledge', exact: true }).click();
+  await P.locator('.nb-stamp').first().waitFor();
+  await P.locator('.nb-sheet .nb-tb').scrollIntoViewIfNeeded();
+  await sleep(1200);
+  await shotOf(P, 'nb-stamp', '.nb-sheet .nb-tb', 10);
+  await P.keyboard.press('Escape');
+  // the acknowledgement register fills in as people acknowledge
+  for (const u of ['ravi', 'karthik', 'lalitha', 'manoj']) await col[u].c.request('notices.ack' as never, { id: policy.id, answers: [1] } as never).catch((e: Error) => console.log('ack', u, e.message));
+  await lens(R, 'Notices');
+  await R.locator('.nb-row', { hasText: 'Leave policy 2026' }).first().click();
+  await R.getByRole('tab', { name: /Acknowledgements/ }).click();
+  await R.locator('.nb-acks').waitFor();
+  await sleep(1000);
+  const sb = await R.locator('.nb-sheet').first().boundingBox();
+  await shot(R, 'nb-acks', { x: sb.x, y: sb.y, width: sb.width, height: 330 });
+  // Rev B: a change note, and everyone asked again
+  await R.getByRole('tab', { name: /^Notice/ }).click();
+  await R.getByRole('button', { name: /Revise \(Rev B\)/ }).click();
+  await R.locator('.nb-compose').waitFor();
+  await R.getByLabel('The notice', { exact: true }).fill('Earned leave is 18 days a year, credited monthly.\n\nCarry forward is up to 45 days, and leave beyond that is encashed in April.\n\nApply for leave in the HR portal at least a week ahead.');
+  await R.getByLabel('What changed').fill('Carry forward raised from 30 to 45 days; encashment in April.');
+  await R.locator('.toggle-row', { hasText: 'Ask everyone to acknowledge again' }).click();
+  await R.getByRole('button', { name: 'Add a check question' }).click().catch(() => {});
+  await R.getByLabel('Check question 1').fill('How many days carry forward?').catch(() => {});
+  await R.getByLabel('Answer 1', { exact: true }).fill('30').catch(() => {});
+  await R.getByLabel('Answer 2', { exact: true }).fill('45').catch(() => {});
+  await R.getByLabel('Answer 2 is right').check().catch(() => {});
+  await R.getByRole('button', { name: 'Issue Rev B' }).click();
+  await R.locator('.confirm-actions').getByRole('button', { name: 'Issue now' }).click();
+  await R.locator('.nb-sheet .nb-change').waitFor({ timeout: 10000 });
+  await R.keyboard.press('Escape');
+  await lens(P, 'Pulse');
+  await P.locator('.nb-pulse-rows .pulse-row', { hasText: 'Leave policy 2026' }).click({ timeout: 10000 });
+  await P.locator('.nb-sheet .nb-cloud').first().waitFor({ timeout: 10000 });
+  await P.locator('.nb-sheet .nb-change').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await sleep(800);
+  const cb = await P.locator('.nb-sheet').first().boundingBox();
+  await shot(P, 'nb-cloud', { x: cb.x, y: 0, width: cb.width, height: 250 });
+  await P.keyboard.press('Escape');
+  // an urgent notice from IT: a banner, once
+  await issue({ deskId: desk('IT'), category: 'it', title: 'Mail server down until 3 pm', body: 'Outlook cannot send or receive. Use Dexterity Connect for anything urgent; IT will post here when mail is back.', urgent: true });
+  await P.locator('.nb-banner', { hasText: 'Mail server down' }).waitFor({ timeout: 10000 });
+  await noToasts(P);
+  await sleep(500);
+  await shot(P, 'nb-banner', { x: 0, y: 0, width: W, height: 160 });
+  await P.locator('.nb-banner').getByRole('button', { name: 'Dismiss' }).click();
+});
+
+await part('botnet', async () => {
+  const bf = (hub as any).botflows;
+  const U = (uid: string) => (hub as any).store.userById(uid);
+  const as = (uid: string, op: string, d: Record<string, unknown> = {}) => bf.handle(op, U(uid), d);
+  const waitRow = async (sessionId: string, stepId: string) => { for (let i = 0; i < 200; i++) { if ((hub as any).store.db.prepare("SELECT 1 FROM bot_sessions WHERE id = ? AND step = ? AND status = 'active'").get(sessionId, stepId)) return; await sleep(50); } };
+  const run = async (uid: string, flow: string, answers: Array<[string, string]>) => {
+    const r = await as(uid, 'botflow.start', { flow });
+    for (const [stepId, value] of answers) { await waitRow(r.sessionId, stepId); await as(uid, 'botflow.answer', { sessionId: r.sessionId, stepId, value }); }
+    return r;
+  };
+  const { BOT_TEMPLATES } = await import('../../../packages/core/src/botmaker.ts');
+  const tpl = (tid: string) => JSON.parse(JSON.stringify(BOT_TEMPLATES.find((x: any) => x.id === tid)!.definition));
+  // the office's bots: the plot room (Bhavna), software seats, TQs (Rohan answers for the client)
+  const plot = tpl('plot-request');
+  plot.name = 'plot-room'; plot.title = 'Plot room'; plot.track.roles.plotroom.person = id('bhavna');
+  await owner.request('botflow.make' as never, { definition: plot, scope: 'office' } as never);
+  await owner.request('botflow.make' as never, { definition: tpl('licence-seat'), scope: 'office' } as never);
+  const tq = tpl('rfi-log');
+  tq.track.roles.client.person = id('rohan');
+  await owner.request('botflow.make' as never, { definition: tq, scope: 'office' } as never);
+  // Priya's iso check: once issued, the plot room's bot carries the Plot stage
+  const dc = tpl('drawing-issue');
+  dc.name = 'iso-issue'; dc.title = 'Iso check and plot';
+  dc.track.roles.doccontrol.person = id('fatima');
+  dc.track.stages.find((s: any) => s.id === 'issue').actions[0].to = 'plot';
+  dc.track.stages.splice(4, 0, {
+    id: 'plot', label: 'Plot', who: 'bot:plot-room', prompt: 'With the plot room',
+    handoff: { to: 'plot-room', start: 'queue', carry: { size: 'A1', sets: '2', drawings: '{{drawings}} rev {{rev}}', due: '{{due.value}}' } },
+    actions: [{ id: 'plotted', label: 'Plotted', to: 'receipt', tone: 'go' }, { id: 'none', label: 'Not plotted', to: 'receipt', tone: 'stop' }],
+  });
+  await as(priyaId, 'botflow.make', { definition: dc, scope: 'private', newBot: true });
+  await run(priyaId, 'iso-issue', [['job', 'P-12513'], ['drawings', 'ISO-1001-03\nISO-1001-04'], ['rev', 'B'], ['purpose', 'IFC'], ['checker', id('ravi')], ['print', ''], ['due', dayStr(3)], ['ok', 'yes']]);
+  const itemId = ((hub as any).store.db.prepare("SELECT id FROM bot_items WHERE flow = 'iso-issue'").get() as any).id;
+  for (let i = 0; i < 4; i++) await as(id('ravi'), 'botflow.tick', { itemId, index: i, on: true });
+  await as(id('ravi'), 'botflow.act', { itemId, action: 'pass' });
+  await as(id('meera'), 'botflow.act', { itemId, action: 'ok' });
+  await lens(P, 'Direct');
+  await P.locator('.sb-row', { hasText: 'Iso check and plot' }).first().click({ timeout: 15000 });
+  await as(id('fatima'), 'botflow.act', { itemId, action: 'issued', note: 'DDSP-P12-TR-0144' });
+  const relay = P.locator('.flow-card.relay').last();
+  await relay.waitFor({ timeout: 15000 });
+  const dcCard = P.locator('.flow-card.done.track').last();
+  await dcCard.locator('.trk-cell.here .trk-bot', { hasText: 'PLT-' }).waitFor({ timeout: 10000 }).catch(() => {});
+  await scrollEnd(P);
+  await noToasts(P);
+  await sleep(2500);
+  await shot(P, 'bn-relay');
+  // a question that asks another bot: is a CAESAR II seat free?
+  await as(priyaId, 'botflow.make', { scope: 'private', newBot: true, definition: {
+    name: 'stress-check', title: 'Stress check', persona: { mark: { kind: 'glyph', glyph: 'flange' }, colour: 'petrol', tone: 'plain' },
+    steps: [
+      { id: 'line', label: 'Line', prompt: 'Which line needs a stress check?', input: { kind: 'text' } },
+      { id: 'seat', label: 'CAESAR II seat', prompt: 'Is a CAESAR II seat free?', input: { kind: 'text', validate: { type: 'number', integer: true, min: 0 } }, ask: { skill: 'licence-seat.seats', with: { key: 'CAESAR II' } }, branches: [{ if: { equals: '0' }, goto: 'wait' }] },
+      { id: 'go', label: 'Start', prompt: 'A CAESAR II seat is free ({{seat}}). Start the model now?', input: { kind: 'choice', options: [{ value: 'now', label: 'Start now' }, { value: 'later', label: 'Later today' }] }, next: 'end' },
+      { id: 'wait', label: 'Wait', prompt: 'No seat is free. Wait in line?', input: { kind: 'choice', options: [{ value: 'yes', label: 'Wait in line' }, { value: 'no', label: 'Not now' }] } },
+    ],
+    finish: [{ do: 'remind', text: 'Stress check {{line}}', dueInDays: 1 }],
+  } });
+  await as(priyaId, 'botflow.start', { flow: 'stress-check' });
+  await P.locator('.sb-row', { hasText: 'Stress check' }).first().click({ timeout: 15000 });
+  const step = () => P.locator('.flow-card.step.active');
+  await step().getByLabel('Your answer').fill('8"-P-1014-A1B');
+  await step().getByRole('button', { name: 'Next' }).click();
+  await step().locator('.flow-q', { hasText: 'CAESAR II seat is free' }).waitFor({ timeout: 10000 });
+  await scrollEnd(P);
+  await sleep(1500);
+  await shot(P, 'bn-ask');
+  await step().getByRole('button', { name: 'Start now' }).click().catch(() => {});
+  // the bot maker: a question that asks a bot, and the Other bots part
+  await P.evaluate(() => window.dispatchEvent(new CustomEvent('dex-botmaker', { detail: { name: 'stress-check' } })));
+  await P.getByRole('tab', { name: /Questions/ }).click({ timeout: 10000 });
+  await P.locator('#bm-step-seat .bm-step-head').click();
+  await P.locator('.bm-askbot').first().waitFor();
+  await sleep(700);
+  await shot(P, 'bn-maker-ask');
+  await P.getByRole('tab', { name: /Other bots/ }).click();
+  await sleep(900);
+  await shot(P, 'bn-otherbots');
+  await P.getByRole('button', { name: 'Close' }).first().click();
+  if (await P.getByRole('button', { name: 'Leave' }).isVisible().catch(() => false)) await P.getByRole('button', { name: 'Leave' }).click();
+  // a scheduled job, in plain words: the Weekly TQ chaser from its template
+  const real = Date.now();
+  bf.now = () => real - 21 * 86400_000;
+  const tqAnswers = (job: string): Array<[string, string]> => [['job', job], ['discipline', 'piping'], ['ref', 'P12-GA-0301 rev C'], ['question', 'Nozzle orientation on V-401?'], ['proposal', ''], ['markup', ''], ['due', dayStr(5)], ['ok', 'yes']];
+  await run(priyaId, 'rfi-log', tqAnswers('P-12513'));
+  await run(priyaId, 'rfi-log', tqAnswers('P-12514'));
+  bf.now = () => Date.now();
+  await owner.request('admin.botjob.holidays' as never, { holidays: [{ date: ymdOf(nextDow(5)), name: 'Guru Nanak Jayanti' }, { date: ymdOf(new Date(new Date().getFullYear(), 11, 25)), name: 'Christmas' }] } as never).catch((e: Error) => console.log('holidays', e.message));
+  await lens(P, 'Desk');
+  await P.getByRole('tab', { name: 'Bots' }).click();
+  await P.getByRole('button', { name: 'Make a bot' }).first().click();
+  await P.locator('.bm-start').waitFor({ timeout: 10000 });
+  await P.getByRole('button', { name: 'Start from Weekly TQ chaser' }).click();
+  await P.getByRole('tab', { name: /Schedule/ }).click();
+  const when = P.getByLabel('When it runs, in plain words');
+  await when.waitFor();
+  await when.fill('every Monday at 10:00');
+  await P.locator('.js-understood', { hasText: 'Every Monday at 10:00' }).waitFor();
+  await sleep(600);
+  await shot(P, 'bn-schedule');
+  await P.getByRole('button', { name: 'Save bot' }).click();
+  await P.locator('.toast', { hasText: 'Weekly TQ chaser saved' }).waitFor({ timeout: 8000 }).catch(() => {});
+  await P.getByRole('button', { name: 'Close' }).first().click();
+  await noToasts(P);
+  // the job sheet: Monday's run at 10:00 (the hub's clock moved to Monday), then a dry run
+  const monday10 = nextDow(1, 10).getTime();
+  let clock = monday10 - 3600_000;
+  bf.now = () => clock;
+  await bf.jobs.tick(clock);
+  clock = monday10 + 5000;
+  await bf.jobs.tick(clock);
+  clock = monday10 + 3 * 3600_000;
+  await P.getByRole('button', { name: 'Job sheet' }).click();
+  const lane = P.locator('.js-lane', { hasText: 'Monday chase' });
+  await lane.waitFor({ timeout: 10000 });
+  await lane.getByRole('button', { name: 'Dry run' }).click();
+  await P.locator('.js-detail').waitFor({ timeout: 10000 });
+  await sleep(800);
+  await shot(P, 'bn-jobsheet');
+  await P.getByRole('button', { name: 'Close' }).first().click();
+  bf.now = () => Date.now();
+  // the bot network sheet
+  await P.getByRole('button', { name: 'Bot network' }).click();
+  const net = P.locator('.net-sheet');
+  await net.locator('.nw-svg').waitFor({ timeout: 10000 });
+  await net.locator('.nw-list button', { hasText: 'Iso check and plot' }).first().click().catch(() => {});
+  await sleep(800);
+  await P.evaluate(() => document.querySelectorAll('.net-sheet, .net-sheet *').forEach((el) => { if (el.scrollHeight > el.clientHeight + 4) (el as HTMLElement).scrollTop = 0; }));
+  await sleep(800);
+  await shot(P, 'bn-network');
+  await P.keyboard.press('Escape'); await P.keyboard.press('Escape');
+  // the office's holidays, in the Control room
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1200);
+  await V.locator('.me-btn').click();
+  await V.getByRole('menuitem', { name: /Control room/ }).click();
+  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Bots & tools/ }).click();
+  const hol = V.locator('.bots-holidays');
+  await hol.waitFor({ timeout: 10000 });
+  await hol.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(700);
+  await shot(V, 'cr-holidays', hol, 12);
+  await V.keyboard.press('Escape');
+});
+
+await part('seating', async () => {
+  autoApprove = true;
+  await owner.request('admin.seating.managers' as never, { userIds: [id('bhavna')] } as never);
+  const b = await appOf('bhavna', 'Bhavna Shah');
+  const B = b.page;
+  const at = (page: any, seat: string) => page.evaluate((x: string) => (globalThis as any).__seatScreen(x), seat);
+  const openFloor = async (page: any) => {
+    await page.reload(); await page.locator('.frame').waitFor(); await sleep(1200);
+    await lens(page, 'Directory');
+    await page.getByRole('tab', { name: 'Org chart', exact: true }).click();
+    await page.locator('.os-stage').waitFor();
+    await page.getByRole('button', { name: 'Floor', exact: true }).click();
+    await sleep(2600);
+  };
+  await openFloor(B);
+  if (await B.locator('.nb-banner').count()) { await B.locator('.nb-banner').getByRole('button', { name: 'Dismiss' }).click().catch(() => {}); await sleep(400); }
+  if (await B.locator('.seat-notice').count()) { await B.locator('.seat-notice').getByRole('button', { name: 'Got it' }).click().catch(() => {}); await sleep(400); }
+  // a free seat, found by its ID: the callout an office manager sees
+  await B.locator('.os-find-input').fill('W-A08');
+  await B.locator('.os-results li', { hasText: 'Seat W-A08' }).click();
+  await B.locator('.seat-callout', { hasText: 'W-A08' }).waitFor();
+  await sleep(900);
+  await shot(B, 'seat-callout', B.locator('.seat-callout'), 12);
+  await B.locator('.seat-callout').getByRole('button', { name: 'Close' }).click();
+  await B.locator('.os-find-input').fill('');
+  // Arrange: Priya dragged from the list onto W-A19
+  await B.getByRole('button', { name: 'Arrange' }).click();
+  await B.locator('.seat-panel').waitFor();
+  await B.getByRole('button', { name: 'Show the whole sheet' }).click(); await sleep(800);
+  const grip = B.locator(`.seat-grip[data-person="${priyaId}"]`);
+  await grip.scrollIntoViewIfNeeded();
+  const g = (await grip.boundingBox())!;
+  const t = await at(B, 'W-A19');
+  await B.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await B.mouse.down();
+  for (let i = 1; i <= 12; i++) { await B.mouse.move(g.x + (t.x - g.x) * (i / 12), g.y + (t.y - g.y) * (i / 12)); await sleep(16); }
+  await sleep(120); await B.mouse.up(); await sleep(800);
+  await B.mouse.move(700, 880); await sleep(300);
+  await B.locator('.seat-panel').evaluate((el: HTMLElement) => { el.scrollTop = 0; }).catch(() => {});
+  await noToasts(B);
+  await shot(B, 'seat-arrange');
+  // the Structural team to the north-east benches, with a preview
+  await B.locator('.seat-tabs').getByRole('tab', { name: 'Move a team' }).click();
+  await B.getByLabel('Department').selectOption({ label: 'Structural' });
+  await B.getByLabel('To', { exact: true }).selectOption({ label: 'North-east benches' });
+  await B.getByRole('button', { name: 'Preview' }).click();
+  await B.locator('.seat-preview li', { hasText: 'Anand Pillai' }).waitFor();
+  await sleep(600);
+  await shot(B, 'seat-team', { x: 0, y: 44, width: 560, height: H - 44 });
+  await B.getByRole('button', { name: 'Add to the move plan' }).click();
+  await sleep(800);
+  // the move plan for next Monday
+  await B.locator('.seat-tabs').getByRole('tab', { name: /Move plan/ }).click();
+  const monday = ymdOf(nextDow(1));
+  await B.getByLabel('From').fill(monday);
+  await B.mouse.move(700, 880);
+  await noToasts(B);
+  await sleep(600);
+  await shot(B, 'seat-moveplan');
+  await B.getByRole('button', { name: /^Apply from/ }).click();
+  await B.locator('.seat-plan', { hasText: 'From' }).waitFor({ timeout: 10000 }).catch(() => {});
+  await sleep(600);
+  // Monday comes: the moves take effect; Priya is told and walks to her new seat
+  (hub as any).seating.setClock(Date.parse(`${monday}T09:00:00`));
+  (hub as any).seating.tick();
+  (hub as any).seating.setClock(null);
+  await openFloor(P);
+  await P.locator('.seat-notice', { hasText: 'W-A19' }).waitFor({ timeout: 10000 });
+  await noToasts(P);
+  await P.locator('.seat-notice').getByRole('button', { name: 'Walk there' }).click();
+  await P.locator('.os-route', { hasText: 'round the desks' }).waitFor({ timeout: 10000 });
+  await sleep(1600);
+  await shot(P, 'seat-walk');
+  await P.locator('.seat-notice').getByRole('button', { name: 'Got it' }).click().catch(() => {});
+  await P.getByRole('button', { name: 'Clear the route' }).click().catch(() => {});
+  // revisions B and C compared
+  await B.locator('.seat-panel').getByRole('button', { name: 'Close arranging' }).click();
+  await B.getByRole('button', { name: 'Revisions' }).click();
+  await B.locator('.seat-revs').waitFor();
+  await B.getByLabel('Compare', { exact: true }).selectOption('B');
+  await B.getByLabel('with', { exact: true }).selectOption('C');
+  await B.locator('.seat-compare').getByRole('button', { name: 'Compare' }).click();
+  await B.locator('.seat-comparing', { hasText: /seats changed/ }).waitFor({ timeout: 10000 });
+  await sleep(900);
+  await shot(B, 'seat-compare');
+  await B.locator('.seat-revs').getByRole('button', { name: 'Stop comparing' }).click().catch(() => {});
+  await B.locator('.seat-revs').getByRole('button', { name: 'Close the revisions' }).click().catch(() => {});
+  // the layout editor
+  await B.getByRole('button', { name: 'Arrange' }).click();
+  await B.locator('.seat-tabs').getByRole('tab', { name: 'Layout' }).click();
+  await B.getByRole('button', { name: 'Edit the layout' }).click();
+  await B.getByLabel('Add a bench of').fill('4');
+  await B.getByRole('button', { name: 'Add bench' }).click();
+  await sleep(900);
+  await shot(B, 'seat-layout');
+  await B.getByRole('button', { name: 'Discard changes' }).click().catch(() => {});
+  if (await B.locator('.confirm-actions').count()) await B.locator('.confirm-actions').getByRole('button').last().click().catch(() => {});
+  await B.keyboard.press('Escape');
 });
 
 console.log(failed.length ? `FAILED PARTS: ${failed.join(', ')}` : 'GUIDE SHOTS DONE');

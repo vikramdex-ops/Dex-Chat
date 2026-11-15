@@ -67,6 +67,16 @@ POL1_ISOLATED=1 TZ=Asia/Kolkata xvfb-run -a -s "-screen 0 2000x1000x24 -noreset"
   header and register), `paths` (a second Priya laptop that maps `\\nas01\Project` as `X:` through the
   development-only `DEXCONNECT_TEST_DRIVES` hook) and `meetlinks` (the meeting site in the Control room
   and a meeting's invitation block). `GUIDE_ONLY=nib,tracked,paths,meetlinks` walks just these.
+- The parts added in revision 2 come after those: `recap` (a weekly meeting with no conversation gets its own thread; the
+  agenda shared before it; action points from a chat line, the capture strip and a promoted line; the Register; a late joiner's
+  *What you missed*; the recap card and sheet, and Send by email), `notices` (Control room ▸ Notice desks; Revathi drafts the
+  leave policy with its PDF, a check question and a Hindi version, and issues it; Pulse, the board, the reading sheet and the
+  stamp; the acknowledgement register; Rev B with its revision cloud; an urgent banner), `botnet` (an iso check whose Plot stage
+  the plot room's bot carries; a question that asks the Software seat bot; the bot maker's Other bots and Schedule; the job sheet
+  with the hub's bot clock moved to Monday; the bot network sheet; office holidays in the Control room) and `seating` (Bhavna,
+  named office manager, finds a free seat, drags Priya to a new one, moves the Structural team and sets the move plan for Monday;
+  the hub's seating clock reaches Monday and Priya walks to her new seat; revisions B and C compared; the layout editor).
+  `GUIDE_ONLY=recap,notices,botnet,seating` walks just these. The office is seated on the real floor plan when it is seeded.
 - The three pictures of the guest's meeting page, `fig-meet-landing-1.png` to `-3.png`, are not made
   here: they are the 1440 px light screenshots `ml-05`, `ml-08` and `ml-11` of
   `apps/desktop/e2e/meetlink.mts`, which runs the meeting site in Cloudflare's local runtime.
@@ -86,4 +96,4 @@ cut-off dialog. The people, messages and files are invented; never use real acco
   the build fills in the page.
 - Figures are captioned `Fig. <section>-<n>`; renumber the section's figures and their mentions in the text.
 - A new revision: change the Revision and Date on the cover, in the `meta` block and in the revision
-  history (section 20.2), and the revision in the running header in `guide.css`.
+  history (section 21.2), and the revision in the running header in `guide.css`.
