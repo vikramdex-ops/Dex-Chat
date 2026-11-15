@@ -50,7 +50,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Comfort | Pop a conversation out into its own window, a global shortcut to bring the app forward (Ctrl+Alt+D), Preferences for compact density and text size (also Ctrl+= / Ctrl+-), 12- or 24-hour time, sidebar sorting and a resizable sidebar, a keyboard shortcuts sheet (Ctrl+/), Alt+↑/↓ between conversations, light and dark themes |
 | Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
 
-**Next:** the remaining parity items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) (OCR, call recording, video messages, custom emoji).
+**Next:** a pilot on the office's own PCs and phones, then the remaining items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
 
 ## How it fits together
 

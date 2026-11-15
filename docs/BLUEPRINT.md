@@ -30,7 +30,7 @@ building, why, and in what order.
 | Sign-in | **Automatic from the Windows account.** First launch registers the device; an admin approves it once. No passwords. |
 | Privacy | **Direct messages are end-to-end encrypted** (the hub cannot read them). Channels and groups are encrypted in transit and auditable by admins. |
 | Calls | **In v1**: 1:1 and group voice/video, screen share, meetings, recording. |
-| AI | **Excluded entirely.** |
+| AI | **No cloud AI.** One small model runs on the PC to draft automation rules from plain words (nothing leaves the PC, and nothing runs until a person approves it). |
 | v1 modules | Everything: remote-work check-in/out, org directory & chart, calendar & meetings, polls/forms/notes, bots/slash commands/webhooks, whiteboard, guest users, compliance suite. |
 | Disk rule | Development artefacts never on `C:` (this project is built in the cloud and in CI; nothing is written to the developer's `C:`). The installed app uses normal Windows locations. |
 | Look & feel | **Windows 11 native**: Mica/acrylic surfaces, follows system light/dark, Dexterity teal as the accent, Fluent-style motion. A design language of our own: no layout, iconography, wording or interaction pattern borrowed from Cliq. |
@@ -54,7 +54,7 @@ building, why, and in what order.
  │   │   ├─ scheduler (reminders, scheduled msgs, retention)│
  │   │   ├─ bot runtime (sandboxed JS) · webhooks           │
  │   │   └─ PWA host for phones                             │
- │   └─ LiveKit SFU (single binary, bundled) for group calls│
+ │   └─ mediasoup relay (bundled worker) for large Rooms    │
  └───────────▲──────────────────────────▲───────────────────┘
              │ WSS                      │ WebRTC media
  ┌───────────┴────────┐        ┌────────┴───────────┐
@@ -69,15 +69,15 @@ building, why, and in what order.
 | Component | Technology | Why |
 | --- | --- | --- |
 | Desktop shell | Electron (latest stable), TypeScript | Same Chromium on every PC, so WebRTC, screen capture (`desktopCapturer`) and notifications behave identically. Mica via `backgroundMaterial`. |
-| UI | React 19 + Vite, Zustand state, TanStack Virtual lists, CSS variables design system | Virtualised message lists and optimistic updates give the "zero-lag" feel. No heavy UI kit. |
-| Local store (every PC) | SQLite (`better-sqlite3`) + FTS5 | Instant cold start, offline history, local search of encrypted DMs, outbox for P2P fallback. |
+| UI | React 19 + Vite, small stores on `useSyncExternalStore`, CSS variables design system, a translating JSX runtime (Hindi, Tamil) | Optimistic updates, rendering only what is on screen, and code split by view keep it quick. No heavy UI kit. |
+| Local store (every PC) | The user profile folder: history this PC has seen, the outbox for the PC-to-PC fallback, and (being added) an encrypted index for searching end-to-end encrypted Direct messages | Quick start, history when the hub is down. |
 | Hub | Node 22 TypeScript service, `ws`, SQLite, packaged as a Windows service | Single installer on the hub PC; no admin skills needed. |
-| Group media | LiveKit server (Apache-2.0 Go binary), `livekit-client` | Runs offline on the hub; handles 100-person calls, simulcast, screen share. |
+| Group media | PC to PC (mesh) up to 8; above that the hub's mediasoup relay (ISC licence, bundled worker) with `mediasoup-client`; TURN for people outside | Runs offline on the hub; about 50 in a Room on the office network, webinars up to 500 watching. |
 | 1:1 media | Plain WebRTC P2P (no TURN needed on a LAN) | Lowest latency; works with the hub off. |
-| Crypto | libsodium (X25519 + XChaCha20-Poly1305, Ed25519 signatures); keys held with Windows DPAPI via Electron `safeStorage` | Device-bound identity; E2E DMs. |
+| Crypto | `@noble/curves` and `@noble/hashes` (X25519, Ed25519, HKDF) with AES-256-GCM; keys held with Windows DPAPI via Electron `safeStorage` | Device-bound identity; E2E Direct messages. |
 | Discovery | UDP broadcast beacon + mDNS (`_dexconnect._tcp`) | Finds the hub and peers with zero configuration. |
 | Installer | electron-builder NSIS (client) + NSIS (hub, registers the service and firewall rules) | One click; the installer creates its own firewall rules, so no manual PowerShell. |
-| CI | GitHub Actions: tests → Windows installers → release on tag | Built entirely in the cloud. |
+| Releases | `scripts/release/Build-Release.cmd` on an office PC: tests → Windows installer, hub package, Android APK → release page and update feed ([`RELEASING.md`](RELEASING.md)) | One double-click; the GitHub workflow remains for manual runs. |
 
 ### 3.2 Identity and sign-in
 1. On first launch the app reads the Windows account (`DOMAIN\user`), display name and PC name. It then generates
@@ -159,6 +159,20 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 **Overall fidelity for the requested scope: about 97%** of Cliq's non-AI, non-cloud capability. The only shortfalls are
 Live Events (deferred), Office-document inline preview, and Deluge scripting (replaced by JavaScript).
 
+**Status against this plan (November 2026), from the code rather than the plan:**
+- **Not built:**
+  - Windows Focus Assist sync (row 15) and inline reply from a Windows notification (row 16).
+  - Office documents open in their own app; there is no inline Office preview.
+- **Being added:**
+  - an in-app PDF viewer (row 17);
+  - automatic hub backups;
+  - offboarding;
+  - a calendar feed for Outlook and phones;
+  - end-to-end encrypted attachments in Direct messages;
+  - searching encrypted Direct messages on the device.
+- **Built beyond this plan:** the full meeting and webinar suite, the IT help desk with consented remote control, lounges, automations, bot conversations and tools inside conversations.
+- **Untested outside this development environment:** everything above on real office Windows PCs, Android phones from several makers, and real home and mobile networks. A pilot is the next step.
+
 ## 5. Build plan
 
 **Progress (2026-11-14):**
@@ -168,7 +182,7 @@ Live Events (deferred), Office-document inline preview, and Deluge scripting (re
 | P0 Foundation | ✅ Done |
 | P1 Messaging core | ✅ Done, including end-to-end encrypted Direct messages and the hub-off PC-to-PC mode |
 | P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, Files panel, full-text search with filters, OCR of images, voice notes, video messages and screen recordings, files on phones |
-| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks. Background effects and an SFU for larger calls are not built |
+| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8, the hub's relay above that), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks, background blur and backgrounds, noise suppression; the meeting suite (meetings, guests, recordings, breakouts, webinars) is in [`MEETINGS.md`](MEETINGS.md) |
 | P4 Productivity | ✅ Saved messages, reminders, scheduled messages, polls, forms, notes (with Slate), calendar and conference rooms, remote work, organisation and org chart |
 | P5 Platform & governance | ✅ Bot API, slash commands with signed webhooks, share links for office tools, whiteboards, guests, retention, legal hold, exports, Control room, audit |
 | P6 Mobile & polish | ✅ Android app with updater, files and a phone layout; pop-out windows, global shortcut, quiet hours, 12/24-hour time |
@@ -213,7 +227,7 @@ Each phase ends with installers built by CI, a test pass, and a short demo note.
 - **Android:** downloads the new APK and hands it to Android's installer (one tap to confirm).
   Every build is signed with the same key so Android accepts it as an update.
 
-### Performance budgets (enforced in CI)
+### Performance budgets (targets; measured with the performance script, not enforced automatically)
 | Metric | Budget |
 | --- | --- |
 | Cold start to usable window | < 1.5 s on an office PC |
