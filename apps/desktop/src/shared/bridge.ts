@@ -250,6 +250,13 @@ export interface DexBridge {
   openLink?(url: string): Promise<void>;
   /** Desktop: show a folder on the office share or a drive (Open folder on a link card). */
   openFolder?(path: string): Promise<void>;
+  /** Desktop: open a drawing, sheet or document on the office share in its own program (Open on a path card; never programs). */
+  openSharePath?(path: string): Promise<void>;
+  /** Desktop (Windows): this PC's drive letters (letter → UNC root, subst drives too); `force` reads them again now. */
+  driveMap?(force?: boolean): Promise<import('@dex/core/sharepaths').DriveMap>;
+  onDriveMap?(cb: (map: import('@dex/core/sharepaths').DriveMap) => void): () => void;
+  /** Desktop: can this person reach a share path from here (cached for a minute; 'unknown' off Windows). */
+  checkPath?(path: string): Promise<'ok' | 'denied' | 'missing' | 'offline' | 'unknown'>;
   /** Edit a note in Slate (or the default editor); saves there come back through onSlateChange. */
   editInSlate?(noteId: string, title: string, body: string): Promise<'slate' | 'default'>;
   onSlateChange?(cb: (noteId: string, text: string) => void): () => void;

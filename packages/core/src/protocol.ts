@@ -1328,6 +1328,13 @@ export interface Ops {
   'links.discuss': { req: { url: string; convId: string; messageId?: string }; res: LinkThread };
   /** The author removes (or brings back) the card for one link in their own message. */
   'links.hide': { req: { messageId: string; url: string; hidden: boolean }; res: Message };
+  /**
+   * This device's network drives (letter → UNC root, nothing else), so drive-letter paths in its
+   * person's older messages can be read on other PCs. Members only; an empty list says "none".
+   */
+  'links.drives.set': { req: { drives: Array<{ letter: string; root: string }> }; res: { ok: true; count: number } };
+  /** The network drives of the people who wrote some messages (all their approved devices; a letter they map two ways is left out). Members only. */
+  'links.drives.of': { req: { userIds: string[] }; res: Record<string, { known: boolean; drives: Array<{ letter: string; root: string }> }> };
   'admin.links.get': { req: void; res: LinkSettings };
   'admin.links.set': { req: Partial<LinkSettings>; res: LinkSettings };
   /** Who reacted how, and when; members of the conversation only. */

@@ -11,6 +11,10 @@ import { HASHTAG_RE, STICKER_RE } from '@dex/core';
 import type { Conversation, Message, PublicUser } from '@dex/core';
 import { Icon, Popover } from '../ui.tsx';
 import { addConversation, chatState, useChat } from './store.ts';
+import { mayStartPath, pathAt } from '@dex/core/sharepaths';
+import type { PathSpan } from '@dex/core/sharepaths';
+import { PATH_WORDS, myDrives, toLocalText, usePathView } from './sharepaths.ts';
+import { tr } from '../i18n/index.ts';
 
 /** Piping line numbers such as 6"-P-1001-A1B or 2-CW-2045 (Sleuth integration hooks onto these). */
 export const LINE_REF_RE = /\b\d{1,2}(?:"|''|in)?-[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]{1,6})?\b/g;
@@ -152,8 +156,27 @@ function SpaceRef({ id }: { id: string }) {
   );
 }
 
+/**
+ * A path on the office share, as this reader sees it: stored as UNC (\\nas01\Project\…) and shown
+ * with the reader's own drive letter when they have one, the UNC form in the tooltip. An older
+ * drive-letter path goes through the writer's drive map when the hub knows it; otherwise it stays
+ * as written, with a quiet note that the letter may mean something else here.
+ */
+function SharePath({ span, ctx }: { span: PathSpan; ctx: Ctx }) {
+  const v = usePathView(span.path, ctx.authorId, ctx.meId);
+  if (!v) return <>{span.raw}</>;
+  const text = span.quoted ? span.raw.replace(span.path, v.shown) : v.shown;
+  const title = v.unc && v.unc.toLowerCase() !== v.shown.replace(/\\$/, '').toLowerCase() ? v.unc
+    : v.hint ? tr(PATH_WORDS.maybe) : v.scope === 'local' ? tr(v.owner === 'me' ? PATH_WORDS.mine : PATH_WORDS.theirs) : undefined;
+  return (
+    <span className={`share-path${v.hint ? ' maybe' : ''}${v.scope === 'local' ? ' local' : ''}`} translate="no" title={title} data-unc={v.unc ?? undefined}>
+      {text}{v.hint ? <span className="sr-only"> {tr(PATH_WORDS.maybeShort)}</span> : null}
+    </span>
+  );
+}
+
 type Inline = { re: RegExp; render: (m: RegExpExecArray, key: string, ctx: Ctx) => ReactNode };
-interface Ctx { users: Map<string, PublicUser>; meId: string }
+interface Ctx { users: Map<string, PublicUser>; meId: string; /** who wrote the text, for drive-letter paths in older messages */ authorId?: string }
 
 const INLINE: Inline[] = [
   // \* \_ \` \~ \\ show the character itself
@@ -194,6 +217,16 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   let n = 0;
   while (i < text.length) {
     let matched = false;
+    // a path on the office share (or a drive) comes before the \\ escape, so \\nas01 is not eaten
+    if (mayStartPath(text, i)) {
+      const span = pathAt(text, i);
+      if (span) {
+        if (buf) { out.push(buf); buf = ''; }
+        out.push(<SharePath key={`${keyBase}-${n++}`} span={span} ctx={ctx} />);
+        i = span.end;
+        continue;
+      }
+    }
     if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~' || text[i] === '+' || text[i] === '[')) {
       for (const rule of INLINE) {
         rule.re.lastIndex = i;
@@ -213,8 +246,8 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   return out;
 }
 
-export function renderBody(body: string, users: Map<string, PublicUser>, meId: string): ReactNode {
-  const ctx: Ctx = { users, meId };
+export function renderBody(body: string, users: Map<string, PublicUser>, meId: string, authorId?: string): ReactNode {
+  const ctx: Ctx = { users, meId, authorId };
   const blocks: ReactNode[] = [];
   const parts = body.split(/```/);
   parts.forEach((part, pi) => {
@@ -320,8 +353,9 @@ export function plainPreview(body: string, users: Map<string, PublicUser>): stri
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
     .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message');
+  // share paths with this PC's drive letters, as in the message itself
   // formatting marks go; a lone * in "4 * 5", P12_GA_rev and C++ stay (the same rules as search snippets)
-  return plainSnippet(text);
+  return plainSnippet(myDrives().drives.length ? toLocalText(text) : text);
 }
 
 /** Is the message only emoji (shown larger)? */

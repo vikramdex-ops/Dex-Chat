@@ -79,6 +79,24 @@
 .lcard-x:hover { background: var(--subtle-2); color: var(--text); }
 .lcard.k-meeting .lcard-tile, .lcard.k-event .lcard-tile { color: var(--amber-ink); }
 .link-policy textarea { min-height: 70px; font-size: 12.5px; }
+/* share and drive paths: the reader's own drive letter, the UNC form on hover; a split Copy path */
+.lbtn-split { display: inline-flex; }
+/* narrow (phones, a Pane beside another): path cards keep every action as an icon with its name for screen readers */
+.lcards { container-type: inline-size; }
+@container (max-width: 400px) {
+  .lcard .lbtn.opener .lbtn-label, .lcard:is(.k-path, .k-folder) .lbtn.discuss .lbtn-label { display: none; }
+  .lcard .lcard-actions:has(.opener) .lbtn-split .lbtn-label { display: none; }
+}
+.lbtn-split .lbtn:has(+ .more) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lbtn-split .lbtn.more { padding: 0 4px; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.lcard.local .lcard-tile { color: var(--text-3); }
+.path-note { color: var(--text-3); }
+.menu.path-copy { max-width: min(460px, calc(100vw - 16px)); }
+.menu.path-copy [role=menuitem] > span { min-width: 0; display: grid; gap: 1px; text-align: left; }
+.menu.path-copy .mono { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-path { font-family: var(--font-mono); font-size: .92em; overflow-wrap: anywhere; color: var(--accent-ink); }
+.share-path.maybe { text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; }
+.share-path.local { color: inherit; }
 
 /* the inline mark for a link that has a card below */
 .reaction-count { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px; border: 1px dashed var(--stroke-strong); border-radius: 4px; background: none; color: var(--text-3); cursor: pointer; }

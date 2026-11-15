@@ -31,12 +31,12 @@ export async function startOffice(tag: string) {
   return { hub, owner, dir };
 }
 
-export async function launch(username: string, displayName: string, opts: { width?: number; height?: number; invite?: string; noJoin?: boolean; video?: string; audio?: string; userData?: string; rejoin?: boolean; realCapture?: boolean } = {}) {
+export async function launch(username: string, displayName: string, opts: { width?: number; height?: number; invite?: string; noJoin?: boolean; video?: string; audio?: string; userData?: string; rejoin?: boolean; realCapture?: boolean; /** extra environment for this app (test hooks such as DEXCONNECT_TEST_DRIVES) */ env?: Record<string, string> } = {}) {
   const userData = opts.userData ?? fs.mkdtempSync(path.join(OUT, `ud-${username}-`));
   const app = await electron.launch({
     executablePath: ELECTRON,
     args: [DESKTOP, `--user-data-dir=${userData}`, '--no-sandbox', '--use-fake-ui-for-media-stream', ...(opts.realCapture ? [] : ['--use-fake-device-for-media-stream']), ...(opts.video ? [`--use-file-for-fake-video-capture=${opts.video}`] : []), ...(opts.audio ? [`--use-file-for-fake-audio-capture=${opts.audio}`] : [])],
-    env: { ...process.env, DEXCONNECT_DEV_ACCOUNT: `${username}|${displayName}`, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+    env: { ...process.env, DEXCONNECT_DEV_ACCOUNT: `${username}|${displayName}`, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', ...opts.env },
   });
   const page = await app.firstWindow();
   await page.setViewportSize({ width: opts.width ?? 1280, height: opts.height ?? 800 }).catch(() => {});

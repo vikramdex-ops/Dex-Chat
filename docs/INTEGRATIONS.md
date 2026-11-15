@@ -431,7 +431,7 @@ can read).
 | `dexterity://open/<server>/<book>?at=` | `workbook` | The workbook's name, its server and cell; `open-in-tool` (Dexterity Sheets) |
 | `projectopener://open/<id>` | `project` | The project; `open-in-tool` (Project Opener) |
 | `datum://c/<id>`, `datum://m/<module>/<calculator>` | `component`, `calculator` | `open-in-tool` (Datum) |
-| `\\server\share\…`, `file://…`, `D:\…` | `folder`, `path` | The name, the folder, the file type and server; actions `open-in-tool` (label *Open folder*, `tool: 'folder'`) and `copy-path`. The hub never reads the path. |
+| `\\server\share\…`, `file://…`, `D:\…` | `folder`, `path` | The name, the folder, the file type and server; actions `open-in-tool` (label *Open folder*, `tool: 'folder'`) and `copy-path`. The hub never reads the path. The apps draw these cards themselves (see *Share paths and drive letters* below) and no longer ask the hub; the hub still answers for other clients. |
 | `http://`, `https://` | `web`, `video` (YouTube), `repo`, `issue`, `pull` (GitHub), `pdf`, `image` | Title, site, description, picture and icon from `og:*`, `twitter:*`, `<title>` and `<meta name="description">`; size for PDFs, dimensions for images |
 
 In the apps, the first three links of a message get cards under it (links to messages are drawn as
@@ -439,10 +439,66 @@ a quote card in the text instead, with Reply). A card is asked for only when its
 near the screen and is kept per link for the session; every card, whether loading, ready, failed
 or without access, is drawn in the same reserved box, so the timeline never moves when one
 arrives. Links in end-to-end encrypted messages only get cards when they point into the office
-(`dexconnect://`): other links are never sent to the hub. **Discuss** on a card opens its
+(`dexconnect://`) or are share paths (drawn on the PC): other links are never sent to the hub. **Discuss** on a card opens its
 side-track (`links.discuss`). **Open folder** on a share or drive path goes through the PC's own
 Explorer, and only for a path written as `\\server\share\…` or `D:\…` that exists and is a folder,
 never a file or program; the PC needs access to the share as usual.
+
+### Share paths and drive letters
+
+One person maps `\\nas01\Project` as `X:`, another as `Z:`, a third maps nothing. So that a path
+in a message works for all of them (the way Project Opener's portable paths do):
+
+- **Stored as UNC, shown per reader.** When a message is sent (the Dock, Share, a dropped folder,
+  an edit), a path on a drive letter this PC maps to a network share is rewritten to its UNC path
+  (`X:\P12513\Iso` → `\\nas01\Project\P12513\Iso`). Code (`` `…` `` and fenced blocks) is left
+  alone. Every reader, the writer included, sees UNC paths with their own drive letter where they
+  have one (the mapping with the longest root wins, so `J:` → `\\nas01\Project\Jobs` beats `Z:` →
+  `\\nas01\Project`), with the UNC form in the tooltip; without a mapping they see the UNC path.
+  The writer therefore still sees what they typed, and editing a message shows their letters again.
+  We store UNC and render per reader, rather than rewrite the text per reader, because the stored
+  message is then right for every client, search, notification and export without knowing anyone's
+  drives. Paths are read in quotes (with spaces), as `file://` URLs, with forward slashes, as
+  `\\?\UNC\` long paths, with trailing separators and next to Hindi or Tamil text; a full stop or
+  danda after a path ends the sentence, not the path (`packages/core/src/sharepaths.ts`).
+- **Cards are made on the PC.** Path cards (`kind` `path` or `folder`) are drawn from the path
+  alone, also in end-to-end encrypted messages: the hub never sees or reads them. **Copy path**
+  copies the reader's form; the menu beside it has **Copy UNC path**. **Open** (drawings, sheets,
+  documents, images and archives only, never programs or scripts) and **Open folder** try the path
+  as given, its UNC form and the PC's own letter, in that order, and use the first that exists.
+- **Local drives.** A path on a drive that is not a network share (`C:\Users\…`, or a `subst` drive
+  onto a local folder) is sent as written. The writer's card says *Only on this PC: others cannot
+  open it*; other readers see *Only on Priya Raman's PC* and only Copy path.
+- **No access.** Once a card is on screen the app checks the path in the main process: the file
+  server's SMB port (445) within 0.8 s, then the path within 2 s, cached for a minute per path and
+  never on the window's thread. *You don't have access to this file/folder*, *The file server isn't
+  reachable from here* and *Not found from this PC* replace the card's third line, and Open and
+  Open folder are left out; nothing else changes and nothing moves.
+- **This PC's drives (Windows).** Read from `reg query HKCU\Network /s /v RemotePath` (persistent
+  mappings), `net use` (connected now, including session-only ones; it wins on a conflict) and
+  `subst`, all under `chcp 65001` so share names in any script arrive intact; no PowerShell (slow to
+  start and often restricted) and no native modules. `net use` is read by the shape of its lines (a
+  drive letter, then `\\server\share…`), so translated Windows works. `subst` drives onto a mapped
+  drive or a share lead to the share; onto a local folder they stay local. DFS: a letter mapped to
+  a namespace keeps the namespace path (the same on every PC); it is never resolved to a target
+  server. The map is read at start, when the window gains focus (cached for 60 s) and on
+  **Preferences → Your network drives → Refresh**. macOS and Linux have no drive letters: mounted
+  SMB shares are not read, UNC paths are shown as written and Open folder stays Windows-only.
+- **Older messages.** Messages written before this keep their drive letters. Each Windows device
+  publishes its network roots to the hub (`links.drives.set { drives: [{ letter, root }] }`, only
+  letters and UNC roots; local and subst-onto-local drives are dropped on the PC and again on the
+  hub). Readers ask for the writers' maps (`links.drives.of { userIds }` → per person `{ known,
+  drives }`, all their approved devices together, a letter two devices map differently left out).
+  A drive-letter path whose writer's map is known is translated through it to UNC and shown with
+  the reader's letter; a letter the writer's map does not have is *only on their PC*; with no map
+  known the path is shown as written, dotted, with *May be mapped differently on your PC*. Both
+  operations refuse guests and bots, so share roots reach only signed-in members (over the
+  devices' own encrypted channel when they are outside the office; the gateway passes only opaque
+  frames).
+- **Test hook.** `DEXCONNECT_TEST_DRIVES` (TEST ONLY, honoured only in an unpackaged development
+  build and only when set) gives a fake map, inline JSON or a file read on every refresh, with
+  per-path access results; under it nothing is handed to Explorer and the calls are recorded for
+  the e2e script (`apps/desktop/e2e/sharepaths.mts`).
 
 Hopper has no link scheme of its own (`hopper://` only serves files inside Hopper's window), so
 office-share paths are the way to point at files Hopper manages.

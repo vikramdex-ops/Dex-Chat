@@ -14,7 +14,7 @@ import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
 import { guardFrames, handleMiniAppScheme } from './miniapps.ts';
-import { checkFolder } from './folders.ts';
+import { Drives, readTestHook } from './drives.ts';
 import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 import { appLog } from './applog.ts';
@@ -34,6 +34,16 @@ let controller: Controller | null = null;
 let lastHubId: string | null = null;
 let updater: Updater | null = null;
 let quitting = false;
+/**
+ * This PC's drive letters, for share paths in messages (drives.ts). DEXCONNECT_TEST_DRIVES is a
+ * TEST-ONLY fake map, honoured only in a development (unpackaged) build when it is set.
+ */
+const drives = new Drives({
+  platform: process.platform,
+  testHook: () => readTestHook(process.env.DEXCONNECT_TEST_DRIVES, app.isPackaged),
+  open: (p) => shell.openPath(p),
+});
+if (readTestHook(process.env.DEXCONNECT_TEST_DRIVES, app.isPackaged)) (globalThis as { __dexTestShell?: unknown }).__dexTestShell = drives.testShell;
 let pendingDeepLink: string | null = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`)) ?? null;
 
 if (!app.requestSingleInstanceLock()) {
@@ -121,7 +131,8 @@ function createWindow(startHidden: boolean): void {
   win.setMenuBarVisibility(false);
 
   win.once('ready-to-show', () => { if (!startHidden) win?.show(); });
-  win.on('focus', () => win?.flashFrame(false));
+  // drive letters are read again when the window comes back (at most once a minute: it is cached)
+  win.on('focus', () => { win?.flashFrame(false); void drives.get(); });
   win.on('close', (e) => {
     if (!quitting && controller?.settings.closeToTray) {
       e.preventDefault();
@@ -229,6 +240,8 @@ function buildTray(): void {
 }
 
 function wireIpc(c: Controller): void {
+  drives.onChange((m) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('drives:changed', m); });
+  void drives.get();
   ipcMain.handle('app:getState', () => c.state());
   ipcMain.handle('app:join', (_e, req: JoinRequest) => c.join(req));
   ipcMain.handle('app:clipboard', async () => String(await clipboard.readText()).slice(0, 4000));
@@ -308,12 +321,14 @@ function wireIpc(c: Controller): void {
     if (String(url).startsWith('dexconnect://')) { routeDeepLink(String(url)); return; }
     await openToolLink(String(url));
   }));
-  // Open folder on a link card: a share or drive folder that exists, never a file or program
-  ipcMain.handle('shell:openFolder', (_e, p: unknown) => wrap(async () => {
-    const folder = await checkFolder(p);
-    const err = await shell.openPath(folder);
-    if (err) throw new Error(err);
-  }));
+  // Open folder on a link card: a share or drive folder that exists, never a file or program,
+  // through whichever form of the path works on this PC (as written, UNC, or this PC's letter)
+  ipcMain.handle('shell:openFolder', (_e, p: unknown) => wrap(() => drives.openFolder(p)));
+  // Open on a share path's card: drawings, sheets and documents only, never programs or scripts
+  ipcMain.handle('shell:openSharePath', (_e, p: unknown) => wrap(() => drives.openFile(p)));
+  // this PC's drive letters (Preferences → Your network drives; share paths in messages)
+  ipcMain.handle('drives:get', (_e, force: unknown) => wrap(() => drives.get(force === true)));
+  ipcMain.handle('drives:check', (_e, p: unknown) => wrap(() => drives.check(p)));
   ipcMain.handle('file:stat', (_e, p: string) => wrap(async () => {
     const full = path.resolve(String(p));
     const st = await fs.promises.stat(full);

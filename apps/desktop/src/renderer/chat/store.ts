@@ -4,6 +4,7 @@
 import { alertUser, isPopout } from '../alerts.ts';
 import { readImageText } from '../ocr.ts';
 import { useSyncExternalStore } from 'react';
+import { toShareable } from './sharepaths.ts';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
 import { plainPreview } from './format.tsx';
 import { observeMessages, startLocalSearch } from '../localsearch/service.ts';
@@ -223,8 +224,11 @@ export async function loadOlder(convId: string): Promise<void> {
 // ------------------------------------------------------------------ actions
 const newClientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export async function sendMessage(convId: string, body: string, parentId?: string | null, files: FileInfo[] = [], opts: { alsoToConv?: boolean } = {}): Promise<void> {
+export async function sendMessage(convId: string, rawBody: string, parentId?: string | null, files: FileInfo[] = [], opts: { alsoToConv?: boolean } = {}): Promise<void> {
   held.delete(convId);
+  // share paths are stored as UNC (this PC's mapped letters become \\server\share\…), so the
+  // message is right for everyone; each reader, the writer too, sees their own drive letter
+  const body = toShareable(rawBody);
   const clientId = newClientId();
   const optimistic: PendingMessage = {
     id: `~${clientId}`, convId, authorId: state.meId, body, parentId: parentId ?? null, createdAt: Date.now(),

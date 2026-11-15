@@ -54,6 +54,10 @@ const bridge: DexBridge = {
   installedTools: () => ipcRenderer.invoke('tools:installed'),
   openLink: (url) => unwrap(ipcRenderer.invoke('tools:open', url)),
   openFolder: (p) => unwrap(ipcRenderer.invoke('shell:openFolder', p)),
+  openSharePath: (p) => unwrap(ipcRenderer.invoke('shell:openSharePath', p)),
+  driveMap: (force) => unwrap(ipcRenderer.invoke('drives:get', force === true)),
+  onDriveMap: (cb) => subscribe('drives:changed', cb),
+  checkPath: (p) => unwrap(ipcRenderer.invoke('drives:check', p)),
   listScreens: () => ipcRenderer.invoke('screen:list'),
   chooseScreen: (id) => ipcRenderer.invoke('screen:choose', id),
   assist: {
