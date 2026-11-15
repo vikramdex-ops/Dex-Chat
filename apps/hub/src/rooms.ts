@@ -7,6 +7,7 @@ import type { LobbyEntry, MeetingInfo, PublicUser, RaisedHand, RoomChatLine, Roo
 import { MeetingError, Meetings } from './meetings.ts';
 import type { Meeting } from './meetings.ts';
 import { Breakouts } from './breakouts.ts';
+import { ControlError, MeetControl } from './meet-control.ts';
 import type { RoomTracker } from './meet-reports.ts';
 
 export class RoomError extends Error {}
@@ -79,6 +80,8 @@ export interface RoomHost {
 export interface WebinarHooks {
   /** The organiser, a co-host, a panelist, or someone the organiser invited to speak. */
   onStage(m: Meeting, userId: string): boolean;
+  /** The organiser, a co-host or a panelist (not someone invited from the audience): who may be given control of a screen. */
+  staff?(m: Meeting, userId: string): boolean;
   changed(r: RoomInfo): void;
   ended(r: RoomInfo): void;
 }
@@ -106,10 +109,16 @@ export class Rooms {
   private readonly waiting = new Map<string, LobbyEntry[]>();
   private readonly limits = new Limiter();
   readonly breakouts: Breakouts;
+  /** "Give control": who uses the presenter's mouse and keyboard in each Room (meet-control.ts). */
+  readonly control: MeetControl;
 
   constructor(host: RoomHost) {
     this.host = host;
     this.breakouts = new Breakouts(this);
+    this.control = new MeetControl({
+      host,
+      stageStaff: (r, userId) => (r.meeting?.kind === 'webinar' ? (this.host.webinar?.staff?.(r.meeting, userId) ?? false) : null),
+    });
   }
 
   inRoomUsers(): string[] {
@@ -127,6 +136,7 @@ export class Rooms {
       ...(forHost ? { lobby: r.lobbyList.map((l) => ({ ...l })) } : {}),
       ...this.extras(r),
       ...(r.purpose ? { purpose: { ...r.purpose } } : {}),
+      ...(this.control.view(r.id) ? { control: this.control.view(r.id) } : {}),
     };
   }
 
@@ -163,6 +173,8 @@ export class Rooms {
   }
 
   publish(r: Room): void {
+    // a grant of control that no longer holds (sharing stopped, someone left) ends before anyone sees the Room again
+    this.control.check(r);
     if (r.purpose && this.rooms.has(r.id)) this.host.purposeChanged?.(this.view(r), false, 0);
     if (r.meeting?.kind === 'webinar' && !r.parentId) this.host.webinar?.changed(this.view(r));
     const all = this.audience(r);
@@ -204,6 +216,7 @@ export class Rooms {
   private end(r: Room, endedBy?: string): void {
     // a breakout ends with its meeting
     if (r.parentId) { const main = this.rooms.get(r.parentId); if (main) { this.end(main, endedBy); return; } }
+    for (const x of this.breakouts.family(r)) this.control.closed(x);
     if (r.breakouts) this.breakouts.endedWith(r);
     if (r.ringTimer) clearTimeout(r.ringTimer);
     this.rooms.delete(r.id);
@@ -394,7 +407,7 @@ export class Rooms {
     try {
       return this.handleOp(op, me, deviceId, d);
     } catch (err) {
-      if (err instanceof MeetingError) throw new RoomError(err.message);
+      if (err instanceof MeetingError || err instanceof ControlError) throw new RoomError(err.message);
       throw err;
     }
   }
@@ -491,6 +504,10 @@ export class Rooms {
         if (!p) throw new RoomError('Not in this call.');
         p.muted = d.muted === true; p.camera = d.camera === true; p.screen = d.screen === true;
         if (p.muted) p.speaking = false;
+        // what this device can do about remote control: be controlled (Windows, Linux with xdotool), or control another's screen (the desktop app)
+        p.controllable = d.controllable === true && !isWebGuest(me.id);
+        if (d.controlOff === 'mac' || d.controlOff === 'window' || d.controlOff === 'unavailable') p.controlOff = d.controlOff; else delete p.controlOff;
+        p.desktop = MeetControl.desktopClaim(me.id, d.desktop);
         this.publish(r);
         return { ok: true };
       }
@@ -649,6 +666,12 @@ export class Rooms {
         // small messages to everyone else in the Room (live pointers when there is no data channel)
         const r = this.mine(d.roomId, me, deviceId);
         if (JSON.stringify(d.data ?? null).length > 8 * 1024) throw new RoomError('That message is too large.');
+        // remote control's input: only from the person the presenter granted, and only to the presenter
+        const input = this.control.inputRoute(r, deviceId, d.data);
+        if (input.input) {
+          if (input.to) this.host.deliverToDevice(input.to, 'room.data', { roomId: r.id, fromDevice: deviceId, fromUser: me.id, data: d.data });
+          return input.to ? { ok: true } : { ok: true, dropped: true };
+        }
         if (!this.limits.allow(`${r.id}:data:${deviceId}`, 60, 1000)) return { ok: true, limited: true };
         const evt = { roomId: r.id, fromDevice: deviceId, fromUser: me.id, data: d.data ?? null };
         for (const p of r.participants) if (p.deviceId !== deviceId) this.host.deliverToDevice(p.deviceId, 'room.data', evt);
@@ -676,6 +699,15 @@ export class Rooms {
         for (const p of r.participants) this.host.deliverToDevice(p.deviceId, 'room.reaction', evt);
         this.host.track?.reaction(this.breakouts.main(r).id, me.id, emoji);
         return { ok: true };
+      }
+
+      // ------------------------------------------------------------ give control (meet-control.ts)
+      case 'room.control.ask': case 'room.control.refuse': case 'room.control.grant': case 'room.control.stop': {
+        const r = this.mine(d.roomId, me, deviceId);
+        if (r.purpose) throw new RoomError(r.purpose.kind === 'support' ? 'In a support session, the person being helped allows control from their dock.' : 'A lounge has no screen to control.');
+        const res = this.control.handle(op, me, deviceId, r, d);
+        if (op === 'room.control.grant' || op === 'room.control.stop') this.publish(r);
+        return res;
       }
 
       // ------------------------------------------------------------ the meeting chat

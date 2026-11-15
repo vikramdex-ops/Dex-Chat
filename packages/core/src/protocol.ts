@@ -918,7 +918,7 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps {
   'room.leave': { req: { roomId: string }; res: { ok: true } };
   'room.decline': { req: { roomId: string }; res: { ok: true } };
   'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
-  'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
+  'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean; /** remote control: see meet-control.ts */ controllable?: boolean; controlOff?: 'mac' | 'window' | 'unavailable' | null; desktop?: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
   /** The hub's relay for large Rooms (mediasoup); parameters are mediasoup's, passed through. */
   'relay.caps': { req: { roomId: string }; res: { rtpCapabilities: unknown } };

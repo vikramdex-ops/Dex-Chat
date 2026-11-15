@@ -10,7 +10,7 @@ import type { BackgroundId } from './backgrounds.ts';
 import { stopVoices } from './speech.ts';
 import { isProcessed, processMic, rawMic, releaseNoise, setNoisePref, suppressNoise } from './noise.ts';
 import { useSyncExternalStore } from 'react';
-import type { MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
+import type { ControlOff, MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
 import { timeOpts } from '../time.ts';
 import { policyNow } from '../policy.ts';
 
@@ -154,6 +154,8 @@ const set = (patch: Partial<CallState>) => { state = { ...state, ...patch }; for
 export const tell = (text: string) => set({ notice: { text, at: Date.now() } });
 export const useCall = <T,>(sel: (s: CallState) => T): T => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => sel(state));
 export const callState = () => state;
+/** Follow every change of the call's state outside React (the meeting's "Give control" uses it). */
+export function watchCall(f: (s: CallState) => void): () => void { const l = () => f(state); listeners.add(l); return () => { listeners.delete(l); }; }
 
 // ------------------------------------------------------------------ small messages to everyone in the Room (live pointers, remote control)
 type DataListener = (fromDevice: string, fromUser: string, data: unknown) => void;
@@ -175,6 +177,18 @@ export function sendRoomData(data: unknown): void {
     for (const c of channels) { try { c!.send(text); } catch { /* closing */ } }
     return;
   }
+  void window.dex.request('room.data', { roomId: r.id, data }).catch(() => {});
+}
+/**
+ * Send a small message to one device in the Room (remote control's input to the presenter): over
+ * its data channel when it is open, otherwise through the hub, which passes input on only from
+ * the person the presenter gave control to.
+ */
+export function sendRoomDataTo(deviceId: string, data: unknown): void {
+  const r = state.room;
+  if (!r || !r.participants.some((p) => p.deviceId === deviceId)) return;
+  const c = links.get(deviceId)?.dc ?? null;
+  if (r.mode !== 'relay' && c?.readyState === 'open') { try { c.send(JSON.stringify(data)); return; } catch { /* closing: through the hub */ } }
   void window.dex.request('room.data', { roomId: r.id, data }).catch(() => {});
 }
 /** This PC's device id in Rooms. */
@@ -261,6 +275,13 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
   myDevice = deviceId;
   if (wired) return;
   wired = true;
+  // what this PC can do about remote control, told to the Room with its media
+  if (window.dex.assist) {
+    void window.dex.assist.caps().then((c) => {
+      controlCaps = { controllable: c.control, off: c.control ? null : c.platform === 'darwin' ? 'mac' : 'unavailable', desktop: true };
+      void announceMedia();
+    }).catch(() => {});
+  }
   // breakout rooms, lounges and support sessions are not "the" Room of their conversation
   void window.dex.request('room.list').then((rooms) => set({ active: new Map(rooms.filter((r) => !r.parentId && !r.purpose).map((r) => [r.convId, r])) })).catch(() => {});
   window.dex.onHubEvent((name, data) => {
@@ -675,10 +696,23 @@ export async function callQuality(): Promise<{ rttMs: number | null; loss: numbe
 }
 export function clearError(): void { set({ error: null }); }
 
+/**
+ * Remote control: whether this PC can be given control of its shared screen (Windows; Linux with
+ * xdotool; a Mac is view only), and whether it is the desktop app (which may control another's).
+ * Phones have no window.dex.assist, so they are neither.
+ */
+let controlCaps: { controllable: boolean; off: ControlOff | null; desktop: boolean } = { controllable: false, off: null, desktop: false };
+export const controlCapsNow = () => controlCaps;
+const wholeScreen = () => (screenSource ?? '').startsWith('screen:');
+
 async function announceMedia(): Promise<void> {
   const r = state.room;
   if (!r) return;
-  await window.dex.request('room.media', { roomId: r.id, muted: state.muted, camera: state.camera, screen: !!state.screen }).catch(() => {});
+  await window.dex.request('room.media', {
+    roomId: r.id, muted: state.muted, camera: state.camera, screen: !!state.screen,
+    // a single window cannot be controlled: only a whole screen
+    controllable: controlCaps.controllable && !!state.screen && wholeScreen(), controlOff: controlCaps.off ?? (state.screen && !wholeScreen() ? 'window' : null), desktop: controlCaps.desktop,
+  }).catch(() => {});
 }
 
 // ------------------------------------------------------------------ peer connections
