@@ -48,7 +48,8 @@ export async function refreshDesk(): Promise<void> {
       window.dex.request('sched.list'),
     ]);
     // anything that fired while this device was off and is still open
-    const ringing = reminders.filter((r) => r.userId === meId && !r.done && r.firedAt !== null && r.firedAt >= r.dueAt - 1000 && r.repeat === 'none').map((r) => r.id);
+    const closed = new Set(dismissedKeys());
+    const ringing = reminders.filter((r) => r.userId === meId && !r.done && r.firedAt !== null && r.firedAt >= r.dueAt - 1000 && r.repeat === 'none' && !closed.has(ringKey(r))).map((r) => r.id);
     set({
       saved: new Map(saved.map((s) => [s.message.id, s])),
       reminders: new Map(reminders.map((r) => [r.id, r])),
@@ -149,7 +150,19 @@ export async function toggleSaved(m: Message): Promise<boolean> {
   return on;
 }
 
+/**
+ * Reminder cards you closed stay closed on this device (reloading or reconnecting brings back only
+ * the ones that went off since): kept as "id@when it went off", the last 200.
+ */
+const DISMISSED = 'dex.dismissed-reminders';
+function dismissedKeys(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(DISMISSED) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; } catch { return []; }
+}
+const ringKey = (r: Pick<Reminder, 'id' | 'firedAt'>) => `${r.id}@${r.firedAt ?? 0}`;
+
 export function dismissRinging(id: string): void {
+  const r = state.reminders.get(id);
+  if (r) { try { localStorage.setItem(DISMISSED, JSON.stringify([...dismissedKeys().filter((k) => k !== ringKey(r)), ringKey(r)].slice(-200))); } catch { /* storage off */ } }
   set({ ringing: state.ringing.filter((x) => x !== id) });
 }
 
