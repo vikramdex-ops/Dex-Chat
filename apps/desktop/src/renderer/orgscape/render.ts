@@ -497,11 +497,11 @@ function youAreHere(ctx: CanvasRenderingContext2D, s: Scene, x: number, y: numbe
   const k = Math.max(1, 0.8 / z);
   if (up) {
     // straight up from the tile, the tag above the desk row
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 30 * k);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 16 * k);
     ctx.strokeStyle = ink.accent; ctx.lineWidth = 1.2 * k; ctx.stroke();
     ctx.font = `600 ${10 * k}px ${ink.latinCaps ? ink.mono : ink.body}`;
     const w = ctx.measureText(caps(ink, s.labels.you)).width + 9 * k;
-    tag(ctx, ink, caps(ink, s.labels.you), x - w / 2, y - 30 * k - 15.5 * k, 10 * k, ink.accentInk);
+    tag(ctx, ink, caps(ink, s.labels.you), x - w / 2, y - 16 * k - 15.5 * k, 10 * k, ink.accentInk);
     return;
   }
   ctx.beginPath(); ctx.moveTo(x + 4, y); ctx.lineTo(x + 26 * k, y - 18 * k); ctx.lineTo(x + 34 * k, y - 18 * k);
