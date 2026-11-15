@@ -70,8 +70,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
         { id: 'lead', label: 'Lead', prompt: 'Who should know? Usually your lead.', input: { kind: 'person' } },
         { id: 'note', label: 'Note', prompt: 'Anything they should know? (optional)', input: { kind: 'text', multiline: true, optional: true } },
       ],
-      finish: [{ do: 'task', assignee: 'lead', text: '{{user}}: {{kind}} from {{from}}, back {{to}}. Cover: {{cover}}', due: 'from' }],
-      done: 'Noted. {{lead}} has it on their Desk.',
+      finish: [{ do: 'task', assignee: 'lead', text: '{{user}}: {{kind}} from {{from}}, back {{to}}. Cover: {{cover}}', due: 'from' }, { do: 'away', from: 'from', to: 'to', cover: 'cover', lead: 'lead', kind: 'kind', note: 'note' }],
+      done: 'Noted. {{lead}} has it on their Desk, and Nib has marked you away.',
     },
   },
   {
@@ -157,6 +157,7 @@ export function describeAction(a: BotFlowAction, def: BotFlowDefinition): string
   if (a.do === 'task') return `A task on the Desk of the person chosen at “${label(a.assignee)}”${a.due ? `, due on “${label(a.due)}”` : a.dueInDays !== undefined ? `, due in ${a.dueInDays} days` : ''}`;
   if (a.do === 'remind') return `A reminder on your Desk${a.due ? ` on “${label(a.due)}”` : a.dueInDays !== undefined ? ` in ${a.dueInDays} days` : ''}`;
   if (a.do === 'post') return a.to === 'origin' ? 'A post in the Space it was started from' : a.to.startsWith('space:') ? `A post in ${a.to.slice(6)}` : `A message to the person chosen at “${label(a.to.slice(7))}”`;
+  if (a.do === 'away') return `Nib marks you away from “${label(a.from)}”${a.to ? ` until “${label(a.to)}”` : ''}: out of office, calendar, leads${a.cover ? ' and the cover' : ''} told`;
   return 'The integration’s webhook is called with every answer';
 }
 
@@ -202,6 +203,7 @@ function wouldDo(def: BotFlowDefinition, vars: BotFlowVars, summary: string): st
     if (a.do === 'task') return `Would put a task on ${vars[a.assignee]?.label || 'no one'}'s Desk: ${fill(a.text)}`;
     if (a.do === 'remind') return `Would put a reminder on your Desk: ${fill(a.text)}`;
     if (a.do === 'post') return `Would post ${a.to === 'origin' ? 'in the Space it was started from' : a.to.startsWith('space:') ? `in ${a.to.slice(6)}` : `to ${vars[a.to.slice(7)]?.label || 'no one'}`}`;
+    if (a.do === 'away') return `Would mark you away from ${vars[a.from]?.label || 'that day'}${a.to ? ` until ${vars[a.to]?.label || 'you are back'}` : ''}${a.cover ? `, with ${vars[a.cover]?.label || 'no one'} covering` : ''}`;
     return 'Would call the webhook with the answers';
   });
 }

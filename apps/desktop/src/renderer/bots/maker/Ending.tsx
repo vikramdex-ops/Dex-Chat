@@ -13,7 +13,37 @@ const WORDS: Record<BotFlowAction['do'], { tag: string; name: string }> = {
   post: { tag: 'POST', name: 'A post in a Space' },
   remind: { tag: 'REMIND', name: 'A reminder for the person who answered' },
   webhook: { tag: 'WEBHOOK', name: 'Call the integration’s webhook' },
+  away: { tag: 'AWAY', name: 'Nib marks the person away' },
 };
+
+/** "Mark me away": which answers are the first day, the day back, the cover and the lead (Nib does the rest). */
+function AwayEditor({ def, a, onChange }: { def: BotFlowDefinition; a: Extract<BotFlowAction, { do: 'away' }>; onChange: (a: BotFlowAction) => void }) {
+  const id = useId();
+  const dates = dateSteps(def);
+  const people = personSteps(def);
+  const pick = (key: 'from' | 'to' | 'cover' | 'lead', label: string, list: typeof dates, optional: boolean) => (
+    <div className="field">
+      <label htmlFor={`${id}-${key}`}>{label}</label>
+      <select id={`${id}-${key}`} className="input" value={a[key] ?? ''} onChange={(e) => {
+        const v = e.target.value;
+        const { [key]: _old, ...rest } = a;
+        onChange((v ? { ...rest, [key]: v } : rest) as BotFlowAction);
+      }}>
+        {optional ? <option value="">None</option> : !list.some((s) => saveKeyOf(s) === a[key]) && <option value={a[key] ?? ''}>Choose a question…</option>}
+        {list.map((s) => <option key={s.id} value={saveKeyOf(s)}>“{s.label || s.id}”</option>)}
+      </select>
+    </div>
+  );
+  return (
+    <>
+      {pick('from', 'First day away', dates, false)}
+      {pick('to', 'The day they are back', dates, true)}
+      {pick('cover', 'Who covers', people, true)}
+      {pick('lead', 'Who to tell', people, true)}
+      <p className="faint bm-wide" style={{ margin: 0 }}>Nib sets their out of office, blocks their calendar, tells the lead and the cover, and moves their Desk reminders.</p>
+    </>
+  );
+}
 
 function Due({ def, a, onChange }: { def: BotFlowDefinition; a: Extract<BotFlowAction, { do: 'task' | 'remind' }>; onChange: (a: BotFlowAction) => void }) {
   const id = useId();
@@ -39,6 +69,7 @@ function ActionEditor({ def, a, onChange, spaces }: { def: BotFlowDefinition; a:
   const text = useRef<HTMLTextAreaElement>(null);
   const people = personSteps(def);
   if (a.do === 'webhook') return <p className="faint bm-wide" style={{ margin: 0 }}>Every answer is sent, signed, to the integration’s webhook (Control room → Integrations).</p>;
+  if (a.do === 'away') return <AwayEditor def={def} a={a} onChange={onChange} />;
   const textField = (
     <div className="field bm-wide">
       <label htmlFor={`${id}-text`}>{a.do === 'post' ? 'What it posts' : a.do === 'task' ? 'What the task says' : 'What the reminder says'}</label>
@@ -87,7 +118,8 @@ export function EndingSection({ def, setDef, problems, admin, spaces }: { def: B
   const add = (kind: BotFlowAction['do']) => {
     const a: BotFlowAction = kind === 'task' ? { do: 'task', assignee: people[0] ? saveKeyOf(people[0]) : '', text: `${def.title} from {{user}}`, dueInDays: 1 }
       : kind === 'post' ? { do: 'post', to: 'origin', text: `**${def.title}** from {{user}}\n\n{{summary}}` }
-        : kind === 'remind' ? { do: 'remind', text: `Follow up: ${def.title}`, dueInDays: 1 } : { do: 'webhook' };
+        : kind === 'remind' ? { do: 'remind', text: `Follow up: ${def.title}`, dueInDays: 1 }
+          : kind === 'away' ? { do: 'away', from: dateSteps(def)[0] ? saveKeyOf(dateSteps(def)[0]) : '' } : { do: 'webhook' };
     setDef({ ...def, finish: [...def.finish, a] });
   };
   return (
@@ -112,6 +144,7 @@ export function EndingSection({ def, setDef, problems, admin, spaces }: { def: B
         <button type="button" className="bm-add-btn" onClick={() => add('task')}><Icon name="plus" size={13} />Desk task</button>
         <button type="button" className="bm-add-btn" onClick={() => add('post')}><Icon name="plus" size={13} />Post</button>
         <button type="button" className="bm-add-btn" onClick={() => add('remind')}><Icon name="plus" size={13} />Reminder</button>
+        <button type="button" className="bm-add-btn" onClick={() => add('away')}><Icon name="plus" size={13} />Mark away</button>
         {admin && <button type="button" className="bm-add-btn" onClick={() => add('webhook')}><Icon name="plus" size={13} />Webhook</button>}
       </div>
       <div className="field bm-closing">

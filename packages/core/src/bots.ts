@@ -90,7 +90,12 @@ export type BotFlowAction =
   /** A task on someone's Desk: the person in `assignee` (a person variable). `due` names a date variable, or `dueInDays` counts from today. */
   | { do: 'task'; assignee: string; text: string; due?: string; dueInDays?: number }
   /** A reminder on the Desk of the person who answered. `due` names a date variable, or `dueInDays` counts from today. */
-  | { do: 'remind'; text: string; due?: string; dueInDays?: number };
+  | { do: 'remind'; text: string; due?: string; dueInDays?: number }
+  /**
+   * Mark the person who answered away (Nib's leave note, docs/NIB.md §6): `from` and `to` name date variables (`to` is the
+   * day they are back), `cover` and `lead` person variables, `kind` and `note` any answers.
+   */
+  | { do: 'away'; from: string; to?: string; cover?: string; lead?: string; kind?: string; note?: string };
 
 // ---------------------------------------------------------------- a bot's own identity
 /** How a bot words the phrases it says itself (the steps' own questions are the author's). */

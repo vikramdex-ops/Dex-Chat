@@ -164,7 +164,26 @@ function action(a: unknown, i: number, saves: Map<string, BotFlowStep>): BotFlow
     if (typeof r.dueInDays === 'number' && Number.isFinite(r.dueInDays)) out.dueInDays = Math.max(0, Math.min(365, Math.round(r.dueInDays)));
     return out;
   }
-  throw new BotFlowError(`${where}: "do" is post, task, remind or webhook.`);
+  if (r.do === 'away') {
+    const dateVar = (v: unknown, what: string): string => {
+      const name = str(v, 40);
+      const step = saves.get(name);
+      if (!step || step.input.kind !== 'text' || step.input.validate?.type !== 'date') throw new BotFlowError(`${where}: "${what}" should name a step that asks for a date.`);
+      return name;
+    };
+    const out: BotFlowAction = { do: 'away', from: dateVar(r.from, 'from') };
+    if (r.to !== undefined) out.to = dateVar(r.to, 'to');
+    if (r.cover !== undefined) out.cover = personVar(r.cover, 'cover');
+    if (r.lead !== undefined) out.lead = personVar(r.lead, 'lead');
+    for (const k of ['kind', 'note'] as const) {
+      if (r[k] === undefined) continue;
+      const name = str(r[k], 40);
+      if (!saves.has(name)) throw new BotFlowError(`${where}: "${k}" should name a step.`);
+      out[k] = name;
+    }
+    return out;
+  }
+  throw new BotFlowError(`${where}: "do" is post, task, remind, away or webhook.`);
 }
 
 /** Check and tidy a flow definition (from the Bot API or the Control room). */
