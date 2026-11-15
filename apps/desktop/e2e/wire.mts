@@ -389,3 +389,5 @@ try {
   await theme('light');
   console.log(`WIRE E2E PASSED (${passed.length}/12)`);
 } catch (e) { await shot(page, 'wire-FAIL'); throw e; } finally { await app.close(); owner.disconnect(); await hub.stop(); hookServer.close(); }
+// the second app and open sockets of the walk can keep Node alive after it has finished: end the run
+process.exit(0);
