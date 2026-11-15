@@ -2,7 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
@@ -372,7 +372,18 @@ void app.whenReady().then(async () => {
   appLog.toFile(path.join(app.getPath('userData'), 'logs', 'connect.log'));
   process.on('uncaughtExceptionMonitor', (err) => appLog.error('main', err.message, { name: err.name }));
   const config = loadConfig();
-  const identity = loadIdentity();
+  let identity: ReturnType<typeof loadIdentity>;
+  let encKeys: ReturnType<typeof loadEncKeys>;
+  try {
+    identity = loadIdentity();
+    encKeys = loadEncKeys();
+  } catch (err) {
+    // the keys exist but the system cannot unseal them right now: never replace them with new ones
+    dialog.showErrorBox('Dexterity Connect cannot start yet', (err as Error).message);
+    quitting = true;
+    app.quit();
+    return;
+  }
   const account = await detectAccount();
   // Development only: simulate several colleagues on one machine ("username|Display Name").
   const devAccount = !app.isPackaged ? process.env.DEXCONNECT_DEV_ACCOUNT : undefined;
@@ -406,7 +417,7 @@ void app.whenReady().then(async () => {
     quit: () => { quitting = true; app.quit(); },
   }, justUpdated ?? null);
 
-  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state }, loadEncKeys());
+  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state }, encKeys);
   // files in end-to-end encrypted Direct messages: encrypted before upload, decrypted after download
   useEncryption({ plan: (convId, file) => controller!.e2e.planUpload(convId, file), decrypt: (id) => controller!.e2e.downloadTransform(id) });
   // hub-off fallback: Direct messages straight between PCs on the office network
