@@ -154,7 +154,7 @@ function Welcome({ state }: { state: AppState }) {
     }}>
       <div>
         <img className="mark" src={logo} alt="" />
-        <h1>Welcome to Dexterity&nbsp;Connect</h1>
+        <h1 className="balance">Welcome to Dexterity Connect</h1>
         <p className="lede">{isPhone
           ? 'Join on the office Wi-Fi. An administrator approves this phone once.'
           : "Messages, calls and files from the office's own hub. You're signed in through Windows, with no password."}</p>
@@ -165,7 +165,7 @@ function Welcome({ state }: { state: AppState }) {
           <Icon name="user" />
           <div style={{ minWidth: 0 }}>
             <div className="mono">{state.account.domain}\{state.account.username}</div>
-            <div className="faint" style={{ fontSize: 12 }}>on {state.account.hostname}</div>
+            <div className="faint" style={{ fontSize: 12 }}>{`on ${state.account.hostname}`}</div>
           </div>
         </div>
       )}

@@ -530,7 +530,9 @@ select.input { padding-right: 6px; }
   display: grid;
   grid-template-rows: var(--titlebar) 1fr;
 }
-.onboard-stage { display: grid; place-items: center; padding: 24px; overflow: auto; }
+.onboard-stage { display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 24px; overflow: auto; }
+.onboard-card { max-width: 100%; }
+.onboard-card h1.balance { text-wrap: balance; }
 .onboard-card {
   width: min(520px, 100%);
   padding: 34px 36px 30px;
