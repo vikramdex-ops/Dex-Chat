@@ -251,6 +251,8 @@ input[type='range'] { accent-color: var(--accent); width: 100%; }
 .nib-totals { display: grid; gap: 4px; padding: 8px 10px; background: var(--subtle); border-radius: 2px; }
 .nib-total { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: baseline; gap: 8px; font-size: 11.5px; }
 .nib-total .nib-job { justify-self: start; }
+.nib-totals { grid-template-columns: minmax(0, 1fr); }
+.nib-total > .mono:last-child { white-space: normal; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
 .nib-waiting { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12.5px; }
 .nib-waiting-who { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
 .nib-waiting-who .avatar { --size: 22px; font-size: 9px; }

@@ -54,9 +54,9 @@ when it needs you (amber only means "you"). It is not a robot, a face or a speec
   there as to anyone. Nib reads only its own conversation with you; Direct messages between people
   are end-to-end encrypted and the hub never sees them.
 
-Nib is one permanent identity on the hub (`system\nib`, role `bot`, no token). The older system
-bot ("Dexterity Connect") keeps sending account notices (devices, roles), so security notices
-stay in their own plain channel.
+Nib is one permanent identity on the hub (`system\nib`, role `bot`, no token), made the first
+time anyone in the office opens the app. The older system bot ("Dexterity Connect") keeps sending
+account notices (devices, roles), so security notices stay in their own plain channel.
 
 ## 3. Day sheets
 
@@ -117,7 +117,7 @@ Each item on the day sheet shows its giver's tile, the job and the activity, and
 - **numbers**: `18 / 40 sheets` with a dimension-line bar and a stepper (− +, or type), or a
   0–100 % slider for percentages;
 - **words**: "Area 4 routing nearly done, waiting for vendor data";
-- or **both**. Each item is *going*, *done* or *blocked* (blocked asks for the reason).
+- or **both**. Each item is *ongoing*, *done* or *blocked* (blocked asks for the reason).
 
 ### 3.4 The wrap-up
 
@@ -299,5 +299,14 @@ refresh. The message body is a short English line for notifications and search.
 `nib.leave.cancel`, `nib.welcome.seen`, `admin.nib.get`, `admin.nib.set`, `admin.nib.preview`.
 Events: `nib.me` (your own state), `nib.changed`.
 
-**Performance**: the register for 200 people is built in a few milliseconds on the hub (measured
-in `packages/core/test/nib.test.ts`) and drawn as one grid (measured in `nib.mts`).
+**Performance**: the register for 200 people and 800 items is built in about 2 ms on the hub
+(measured in `packages/core/test/nib.test.ts`); in the end-to-end walk a 197-person register is on
+screen about 130 ms after the hub is asked for it (posting, fetching and drawing). The grid is
+drawn once and kept when the panels below it change.
+
+**Tests**: `packages/core/test/nib.test.ts` (the parser in English and Hinglish, reminders in
+words, the nudge policy, permissions, lead cards, the register for 40 and 200 people, the week),
+`apps/hub/test/nib.test.ts` (a whole day with the clock moved: start, capture in the conversation,
+wrap-up, one lead card filled in place, one register, a late sheet and exactly one follow-up;
+nudges counted and paused on Do not disturb; who sees whose sheet; the leave note end to end; the
+bot maker's Mark me away) and `apps/desktop/e2e/nib.mts` (the same day in three real apps).

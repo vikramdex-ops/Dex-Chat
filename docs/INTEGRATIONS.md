@@ -167,7 +167,9 @@ Flows are not only for integrations. Any member (not guests) makes a bot of thei
   Text questions can carry **quick replies**.
 - **At the end:** a task on the Desk of a person chosen in the bot, a post (the Space it was
   started from, a Space its maker is in, or a message to a chosen person), a reminder for the
-  person who answered. The integration's webhook is for administrators only.
+  person who answered, or **Mark me away**, which hands the answers to Nib's leave note (out of
+  office, calendar, the lead and the cover told, Desk reminders moved; see [`NIB.md`](NIB.md)). The
+  Leave note template ends with it. The integration's webhook is for administrators only.
 - **Sharing:** *Only me*, *A Space* (its members can start it; a card with a Start button is
   posted there), or *The whole office*, which an administrator approves in **Control room → Bots
   & tools** (with a note the maker can read; in the audit log as `botflow.requested`,
@@ -198,8 +200,11 @@ tag; it is not listed under Integrations and has no token anyone can use.
 
 A definition takes these optional parts besides those below: `persona` (`mark`
 `{ kind: "glyph", glyph }` or `{ kind: "monogram", letters }`, `colour`, `about`, `greeting`,
-`tone`, `hours { days, from, to }`, `remember`), `suggestions` on a text input, and a
-`{ "do": "remind", "text", "due" | "dueInDays" }` finish action.
+`tone`, `hours { days, from, to }`, `remember`), `suggestions` on a text input, a
+`{ "do": "remind", "text", "due" | "dueInDays" }` finish action, and
+`{ "do": "away", "from", "to"?, "cover"?, "lead"?, "kind"?, "note"? }`, which names the date steps
+(the first day away and the day back), the person steps (who covers, who to tell) and the answers
+for the kind of leave and a note.
 
 ### Flows run by the hub
 
@@ -258,6 +263,27 @@ drawings and revisions, the plot set, sheet size, media, sets, date needed, appr
 gets a task on their Desk) and **Leave request** (`/leave`: kind, from, working days, who covers,
 handover, approver; the approver gets a task and the person covering is told). Revoking Front Office
 in Control room → Integrations switches them off.
+
+### Nib, the office's companion
+
+Nib is not an integration: it is part of the hub, one permanent bot identity with no token, and
+nothing outside the hub can post as it. Its design, the day sheets, the register and the leave
+note are in [`NIB.md`](NIB.md). The operations the app uses:
+
+| Operation | Who | What |
+| --- | --- | --- |
+| `nib.me` | members | your day: the sheet, the ask Nib is making, your givers, leave, welcome back |
+| `nib.start { givers, items?, yesterday? }` | members | who gave you work today (and send the last unsent sheet) |
+| `nib.item.save`, `nib.item.delete` | members | an item on your sheet: giver, job, activity, quantity, words, state, due |
+| `nib.wrap { note?, blockers?, items? }` | members | send the sheet to your leads (again after a change) |
+| `nib.day { nothing?, snoozeMinutes?, snoozeUntilFree?, wrapAt? }` | members | nothing today, a snooze, your own wrap-up time |
+| `nib.card { kind, ref }` | the card's reader | a card's data, checked against the viewer each time |
+| `nib.ack { date, userId? }` | leads | mark a sheet (or all) seen |
+| `nib.sheet { userId, date }` | the person, their givers (their items), the management | one day sheet |
+| `nib.leave.plan`, `nib.leave`, `nib.leave.cancel`, `nib.cover.take`, `nib.welcome.seen` | members | the leave note |
+| `admin.nib.get`, `admin.nib.set`, `admin.nib.preview` | administrators | the configuration (audited as `nib.config`), and a register now |
+
+Events: `nib.me` (your day changed) and `nib.changed { date, kinds }` (cards to draw again).
 
 ### Integrations with their own logic (sessions)
 
