@@ -7,6 +7,7 @@ import { DLP_DETECTORS, validCidr } from '@dex/core/dlp';
 import type { DlpDetector, DlpRule } from '@dex/core/dlp';
 import { useChat } from '../chat/store.ts';
 import { Avatar, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { MeetingPolicies, MeetingTotals } from '../meet/MeetAdmin.tsx';
 import './policies.css';
@@ -18,9 +19,11 @@ const UPLOAD: Array<[number, string]> = [[25, '25 MB'], [100, '100 MB'], [250, '
 export function PoliciesAdmin() {
   const toast = useToast();
   const [p, setP] = useState<OfficePolicy | null>(null);
-  useEffect(() => { void window.dex.request('policy.get').then(setP).catch(() => {}); }, []);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [attempt, setTry] = useState(0);
+  useEffect(() => { setProblem(null); void window.dex.request('policy.get').then(setP).catch((e: Error) => setProblem(e.message)); }, [attempt]);
   const save = (patch: Partial<OfficePolicy>) => void window.dex.request('admin.policy.set', patch).then((n) => { setP(n); toast('Policy saved'); }).catch((e: Error) => toast(e.message, true));
-  if (!p) return <div className="tl-more"><span className="spinner" /></div>;
+  if (!p) return problem ? <p className="load-problem" role="alert"><Icon name="warning" size={15} /><span><b>The policies could not be loaded</b> · {problem}</span><button className="btn ghost sm" onClick={() => setTry((n) => n + 1)}>Try again</button></p> : <div className="tl-more"><span className="spinner" /></div>;
   const uploadOptions = UPLOAD.some(([v]) => v === p.maxUploadMb) ? UPLOAD : [...UPLOAD, [p.maxUploadMb, `${p.maxUploadMb} MB`] as [number, string]].sort((a, b) => a[0] - b[0]);
   return (
     <div className="org-admin">
@@ -141,7 +144,9 @@ export function UsageAdmin({ users }: { users: PublicUser[] }) {
   const [days, setDays] = useState<7 | 30 | 90>(30);
   const [r, setR] = useState<UsageReport | null>(null);
   const [table, setTable] = useState(false);
-  useEffect(() => { setR(null); void window.dex.request('admin.usage', { days }).then(setR).catch(() => {}); }, [days]);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [attempt, setTry] = useState(0);
+  useEffect(() => { setR(null); setProblem(null); void window.dex.request('admin.usage', { days }).then(setR).catch((e: Error) => setProblem(e.message)); }, [days, attempt]);
   const byId = useMemo(() => new Map(users.map((u) => [u.id, u] as const)), [users]);
   return (
     <div className="org-admin">
@@ -151,7 +156,7 @@ export function UsageAdmin({ users }: { users: PublicUser[] }) {
         ]} />
         <button className="btn ghost sm" onClick={() => setTable(!table)}><Icon name="list" size={14} />{table ? 'Show chart' : 'Show as table'}</button>
       </div>
-      {!r ? <div className="tl-more"><span className="spinner" /></div> : (
+      {!r ? (problem ? <p className="load-problem" role="alert"><Icon name="warning" size={15} /><span><b>Usage could not be loaded</b> · {problem}</span><button className="btn ghost sm" onClick={() => setTry((n) => n + 1)}>Try again</button></p> : <div className="tl-more"><span className="spinner" /></div>) : (
         <>
           <div className="usage-tiles">
             <div className="card tile"><span className="eyebrow">People active</span><b>{r.totals.activePeople}</b><span className="faint">of {r.totals.people} · {r.totals.activeDevices} devices seen</span></div>
@@ -221,7 +226,7 @@ function EmojiAdmin() {
             <div key={e.name} className="emoji-admin-item">
               <EmojiImg name={e.name} size={28} />
               <span className="mono">:{e.name}:</span>
-              <button className="icon-btn" title={`Remove :${e.name}:`} onClick={() => { if (confirm(`Remove :${e.name}:? Messages that use it show the name instead.`)) void window.dex.request('admin.emoji.remove', { name: e.name }).catch((err: Error) => toast(err.message, true)); }}><Icon name="x" size={14} /></button>
+              <button className="icon-btn" title={`Remove :${e.name}:`} onClick={() => void confirmAction({ title: `Remove :${e.name}:?`, body: 'Messages that use it show the name instead.', confirm: 'Remove emoji', danger: true }).then((ok) => { if (ok) void window.dex.request('admin.emoji.remove', { name: e.name }).catch((err: Error) => toast(err.message, true)); })}><Icon name="x" size={14} /></button>
             </div>
           ))}
         </div>

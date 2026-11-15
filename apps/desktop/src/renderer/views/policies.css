@@ -13,3 +13,13 @@
 .sticker-admin-item { display: grid; justify-items: center; gap: 4px; padding: 8px; border: 1px solid var(--stroke); border-radius: 8px; font-size: 12px; position: relative; }
 .sticker-admin-item .icon-btn { position: absolute; top: 2px; right: 2px; }
 img.sticker { object-fit: contain; }
+
+/* a section that could not be loaded: what failed, and Try again */
+.load-problem { display: flex; align-items: center; gap: 8px; margin: 10px 14px; padding: 8px 10px; border-left: 3px solid var(--danger); background: var(--danger-soft); color: var(--text); font-size: 13px; }
+.load-problem svg { flex: none; color: var(--danger); }
+.load-problem b { font-weight: 600; }
+.load-problem span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* the Control room's sections never grow wider than the sheet (long words in Hindi and Tamil) */
+.org-admin { grid-template-columns: minmax(0, 1fr); }
+.org-admin > *, .org-admin .card { min-width: 0; }
+.org-admin .card p, .org-admin .card .faint, .org-admin label { overflow-wrap: anywhere; }

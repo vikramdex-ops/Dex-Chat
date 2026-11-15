@@ -44,7 +44,9 @@ export function MeetingTotals() {
   const toast = useToast();
   const [days, setDays] = useState<28 | 91 | 182>(91);
   const [u, setU] = useState<MeetingUsage | null>(null);
-  useEffect(() => { setU(null); void window.dex.request('admin.meetings.usage', { days }).then(setU).catch(() => {}); }, [days]);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [attempt, setTry] = useState(0);
+  useEffect(() => { setU(null); setProblem(null); void window.dex.request('admin.meetings.usage', { days }).then(setU).catch((e: Error) => setProblem(e.message)); }, [days, attempt]);
   const max = Math.max(1, ...(u?.weeks ?? []).map((w) => w.meetings));
   return (
     <section className="card meet-totals">
@@ -55,7 +57,7 @@ export function MeetingTotals() {
         ]} />
         <button className="btn ghost sm" disabled={!u} onClick={() => { if (!u) return; saveText(`Meetings by week ${new Date().toISOString().slice(0, 10)}.csv`, usageCsv(u), 'text/csv;charset=utf-8'); toast('Saved as CSV'); }}><Icon name="download" size={14} />Export CSV</button>
       </div>
-      {!u ? <div className="tl-more"><span className="spinner" /></div> : (
+      {!u ? (problem ? <p className="load-problem" role="alert"><Icon name="warning" size={15} /><span><b>Meeting totals could not be loaded</b> · {problem}</span><button className="btn ghost sm" onClick={() => setTry((n) => n + 1)}>Try again</button></p> : <div className="tl-more"><span className="spinner" /></div>) : (
         <>
           <div className="usage-tiles">
             <div className="card tile"><span className="eyebrow">Meetings</span><b>{u.totals.meetings}</b><span className="faint">{(u.totals.meetings / Math.max(1, u.weeks.length)).toFixed(1)} a week</span></div>
