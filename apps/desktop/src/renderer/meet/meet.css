@@ -161,13 +161,14 @@
 .ap-capture-open { position: absolute; left: 16px; bottom: 14px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--stroke-strong); border-radius: 2px; background: var(--layer-solid); color: var(--text-2); font-size: 12.5px; cursor: pointer; }
 .ap-capture-open:hover, .ap-capture-open:focus-visible { color: var(--accent-ink); border-color: var(--accent); }
 .ap-capture-open .kbd { font: 600 10px/1 var(--font-mono); padding: 2px 4px; border: 1px solid var(--stroke-strong); border-radius: 2px; }
-.ap-capture { position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 7; display: grid; grid-template-columns: auto 1fr auto auto; align-items: start; gap: 8px 10px; padding: 8px 10px; background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong); border-top: 2px solid var(--accent); box-shadow: var(--shadow-2); }
+.ap-capture { position: absolute; left: 16px; right: 16px; top: 12px; z-index: 7; display: grid; grid-template-columns: auto 1fr auto auto; align-items: start; gap: 8px 10px; padding: 8px 10px; background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong); border-bottom: 2px solid var(--accent); box-shadow: var(--shadow-2); }
 .ap-capture > .cap { padding-top: 9px; color: var(--accent-ink); }
 .ap-capture-hint { padding-top: 9px; font-size: 10px; letter-spacing: .08em; }
 .ap-capture-form { display: grid; gap: 6px; min-width: 0; }
 .ap-capture-row { display: flex; align-items: center; gap: 8px; }
 .ap-capture-row .input { flex: 1; min-width: 0; }
 .ap-capture-row .ap-ref { min-width: 42px; }
+.ap-capture-row .btn { flex: none; }
 .ap-capture-form .ap-preview { margin: 0; }
 /* the agenda item running, and what you missed */
 .agenda-now { position: absolute; top: 12px; left: 16px; z-index: 5; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); padding: 4px 10px; background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); font-size: 12.5px; }
@@ -177,7 +178,7 @@
 .catch-up .cap { color: var(--amber-ink); }
 .catch-up .icon-btn { margin-left: auto; }
 /* the Register tab */
-.meet-register { display: grid; gap: 4px; padding: 4px 12px 16px; overflow: auto; height: 100%; }
+.meet-register { display: grid; align-content: start; gap: 4px; padding: 4px 12px 16px; overflow: auto; overflow-x: hidden; height: 100%; }
 .reg-sec { padding: 10px 0; border-bottom: 1px solid var(--stroke); display: grid; gap: 6px; }
 .reg-sec:last-child { border-bottom: 0; }
 .reg-sec .recap-label { display: flex; align-items: baseline; gap: 8px; margin: 0; font: 600 11px/1.4 var(--font-body); letter-spacing: .12em; color: var(--text-2); }
@@ -201,13 +202,17 @@
 .meet-register .ap-preview { margin: 0; }
 /* the chat tabs: a line's file, and making a line an action point */
 .meet-chat-line { position: relative; }
+/* "run" is also the timeline's sender run (a grid): a run of meeting chat lines stays a plain block */
+.meet-chat-line.run { display: block; }
 .meet-line-ap { position: absolute; top: 2px; right: 4px; display: none; padding: 3px; border: 1px solid var(--stroke-strong); border-radius: 2px; background: var(--layer-solid); color: var(--text-2); cursor: pointer; }
 .meet-chat-line:hover .meet-line-ap, .meet-line-ap:focus-visible { display: inline-flex; }
-.meet-chat-file { display: flex; align-items: center; gap: 6px; margin-top: 2px; padding: 4px 6px; border: 1px solid var(--stroke); font-size: 12.5px; overflow-wrap: anywhere; }
+.meet-chat-file { display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100% - 27px); margin: 2px 0 0 27px; padding: 4px 8px; border: 1px solid var(--stroke-strong); border-radius: 2px; font-size: 12.5px; }
+.meet-chat-file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meet-chat-ap { margin-left: 27px; }
 .meet-chat-ap { display: inline-block; margin-top: 2px; font: 700 10px/1.3 var(--font-mono); letter-spacing: .06em; color: var(--accent-ink); }
 .meet-chat-switch .ap-preview, .meet-chat .ap-preview { margin: 0 10px 6px; }
 @media (max-width: 720px) {
-  .ap-capture { grid-template-columns: 1fr auto; left: 8px; right: 8px; }
+  .ap-capture { grid-template-columns: 1fr auto; left: 8px; right: 8px; top: 8px; }
   .ap-capture > .cap, .ap-capture-hint { display: none; }
   .ap-capture-open { left: 8px; bottom: 8px; }
   .ap-capture-open span:not(.kbd) { display: none; }

@@ -3,7 +3,8 @@
 .recap-sheet { width: min(980px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong); outline: 1px solid var(--stroke); outline-offset: 3px; box-shadow: var(--shadow-2); overflow: hidden; }
 .recap-sheet:focus { outline-color: var(--accent); }
 .recap-empty { padding: 32px; display: grid; gap: 12px; justify-items: start; }
-.recap-tb { display: grid; grid-template-columns: 2.4fr 1.4fr .9fr .9fr 1.2fr 1.2fr 1.3fr; border-bottom: 2px solid var(--accent); }
+.recap-tb { display: grid; grid-template-columns: 2.2fr 1.5fr .9fr .8fr 1fr 1fr 1.6fr; border-bottom: 2px solid var(--accent); }
+.recap-tb .tb-no > span:last-child { white-space: nowrap; font-size: 12px; }
 .recap-tb .tb-cell { display: flex; flex-direction: column; gap: 3px; padding: 8px 12px; border-right: 1px solid var(--stroke); min-width: 0; font-size: 13px; }
 .recap-tb .tb-cell > span:not(.cap) { overflow: hidden; text-overflow: ellipsis; }
 .recap-tb .tb-title { grid-row: span 2; justify-content: center; }

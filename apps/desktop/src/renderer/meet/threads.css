@@ -73,3 +73,10 @@
   .ap-dialog-row { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .recap-card, .ap-strip { transition: none; } }
+/* in a narrow column (the Register, the recap): ref, status and edit on the first line, owner and due below */
+.ap-strip.compact > .ap-box, .ap-strip.compact > .ap-ref, .ap-strip.compact > .tag { order: 0; }
+.ap-strip.compact > .ap-status { order: 1; margin-left: auto; border-left: 1px solid var(--stroke); }
+.ap-strip.compact > .ap-edit { order: 2; margin-left: 0; }
+.ap-strip.compact > .ap-cell { order: 3; flex: 1 1 40%; border-top: 1px solid var(--stroke); }
+.ap-strip.compact > .ap-cell + .ap-cell { border-right: 0; }
+.ap-strip.compact > .tag { margin: auto 0; border-right: 1px solid var(--stroke-strong); }

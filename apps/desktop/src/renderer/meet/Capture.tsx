@@ -66,8 +66,9 @@ export function MeetingAids({ room, meId, meDevice, users, onTab }: { room: Room
   }, []);
   return (
     <>
-      <NowOnAgenda room={room} />
-      <CatchUp room={room} meId={meId} meDevice={meDevice} actions={reg.actions?.filter((a) => !a.carried).length ?? 0} onTab={onTab} />
+      {/* the strip takes the top of the stage while it is open */}
+      {!strip && <NowOnAgenda room={room} />}
+      <CatchUp room={room} meId={meId} meDevice={meDevice} actions={reg.actions?.filter((a) => !a.carried).length ?? 0} onTab={onTab} hidden={strip} />
       {strip ? (
         <div className="ap-capture" role="dialog" aria-label="Log an action point">
           <span className="cap mono">ACTION POINT</span>
@@ -100,14 +101,14 @@ function NowOnAgenda({ room }: { room: RoomInfo }) {
 }
 
 /** Joined more than three minutes after it started: what you missed, once. */
-function CatchUp({ room, meId, meDevice, actions, onTab }: { room: RoomInfo; meId: string; meDevice: string; actions: number; onTab: (t: 'chat' | 'register') => void }) {
+function CatchUp({ room, meId, meDevice, actions, onTab, hidden }: { room: RoomInfo; meId: string; meDevice: string; actions: number; onTab: (t: 'chat' | 'register') => void; hidden: boolean }) {
   const [gone, setGone] = useState(false);
   const mine = room.participants.find((p) => p.deviceId === meDevice);
   const joined = useRef(mine?.joinedAt ?? Date.now()).current;
   const lines = useRoomChat(room.id);
   const msgs = useChat((s) => s.timelines.get(room.convId)?.messages);
   const late = joined - room.startedAt > 3 * 60_000 && room.startedBy !== meId;
-  if (!late || gone) return null;
+  if (!late || gone || hidden) return null;
   const said = new Set([...lines.filter((l) => l.at < joined).map((l) => l.messageId ?? l.id), ...(msgs ?? []).filter((m) => m.createdAt >= room.startedAt && m.createdAt < joined && !m.meetCard && !m.parentId).map((m) => m.id)]).size;
   if (!said && !actions) return null;
   const since = new Date(room.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
