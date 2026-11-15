@@ -322,7 +322,7 @@ export function payloadFor(m: Message, users: Map<string, PublicUser>): RefPaylo
 export function RefDropRow({ convId, className, children }: { convId: string; className: string; children: React.ReactNode }) {
   const t = useRefTarget({ kind: 'conv', convId });
   return (
-    <div className={`${className}${t.valid ? ' ref-valid' : ''}${t.over ? ' ref-over' : ''}`} {...t.props}>
+    <div className={`${className}${t.valid ? ' ref-valid' : ''}${t.over ? ' ref-over' : ''}`} role="listitem" {...t.props}>
       {children}
       {t.over && <span className="ref-drop-label row-label">Drop to reference here</span>}
     </div>

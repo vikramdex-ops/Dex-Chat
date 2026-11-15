@@ -194,7 +194,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     const state = c.id === focusId ? ' active' : at >= 0 ? ' open' : '';
     return (
       <RefDropRow key={c.id} convId={c.id} className="sb-row-wrap">
-        <button role="listitem" className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
+        <button className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
           draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
           onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
           aria-current={c.id === focusId ? 'true' : undefined}

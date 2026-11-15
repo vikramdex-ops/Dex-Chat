@@ -520,7 +520,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
         <div className="titlebar-right">
           <UpdatePill state={state} />
-          <span className={`conn${conn.warn ? ' warn' : ''}${state.via === 'remote' && !conn.warn ? ' remote' : ''}`} aria-label={conn.text}
+          <span className={`conn${conn.warn ? ' warn' : ''}${state.via === 'remote' && !conn.warn ? ' remote' : ''}`} role="status" aria-label={conn.text}
             title={state.via === 'remote' ? 'Outside the office: connected through the internet gateway, encrypted to the hub' : state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
             {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
           </span>
