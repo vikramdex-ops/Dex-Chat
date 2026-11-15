@@ -22,9 +22,13 @@ const TOOL_NAME: Record<string, string> = { projectopener: 'Project Opener', dex
 /** Messages fetched for link previews, shared across the conversation (null = not visible). */
 const linked = new Map<string, Promise<Message | null>>();
 
-/** A link to a message shows who wrote it and how it starts, like a quote. */
+/**
+ * A link to a message is that message's card, in the text: who wrote it and how it starts, with
+ * Reply (its side-track). It keeps one height while it loads, so the timeline does not move; a
+ * message the reader cannot see becomes a quiet note with the plain link.
+ */
 function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
-  const id = url.split('/')[4] ?? '';
+  const [, , , convId = '', id = ''] = url.split('/');
   const [m, setM] = useState<Message | null | undefined>(undefined);
   useEffect(() => {
     let p = linked.get(id);
@@ -33,14 +37,18 @@ function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
     void p.then((v) => { if (live) setM(v); });
     return () => { live = false; };
   }, [id]);
-  if (m === null) return <ToolLink url={url} />;
+  if (m === null) return <span className="msg-link-none"><span className="mlc-quiet">You don't have access to this message</span><ToolLink url={url} /></span>;
   const who = m ? ctx.users.get(m.authorId)?.displayName ?? 'Someone' : '…';
   const text = m ? (m.body || (m.files.length ? `📎 ${m.files[0].name}` : '')).replace(/<@([0-9A-Z]{26}|all)>/g, (_x, u: string) => `@${u === 'all' ? 'everyone' : ctx.users.get(u)?.displayName ?? 'someone'}`) : '';
+  const reply = () => window.dispatchEvent(new CustomEvent('dex-open-message', { detail: { convId: m?.convId ?? convId, messageId: m?.parentId ?? id, parentId: m?.parentId ?? id } }));
   return (
-    <button className="msg-link-card" title="Open the message" aria-label={`Open the message from ${who}: ${text.slice(0, 120)}`} onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
-      <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span> : null}</span>
-      <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
-    </button>
+    <span className={`msg-link-card${m ? '' : ' loading'}`}>
+      <button className="mlc-open" title="Open the message" aria-label={`Open the message from ${who}: ${text.slice(0, 120)}`} onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
+        <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}{m.replyCount ? ` · ${m.replyCount} ${m.replyCount === 1 ? 'reply' : 'replies'}` : ''}</span> : null}</span>
+        <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
+      </button>
+      {m && <button className="mlc-reply" title="Reply in its side-track" aria-label="Reply in a side-track" onClick={reply}>↳ Reply</button>}
+    </span>
   );
 }
 
@@ -50,6 +58,7 @@ function ToolLink({ url }: { url: string }) {
   try { label = decodeURIComponent(label); } catch { /* keep as is */ }
   if (/^dexconnect:\/\/message\//.test(url)) label = 'Open the message';
   else if (/^dexconnect:\/\/conversation\//.test(url)) label = 'Open the conversation';
+  else if (/^dexconnect:\/\/meet\//.test(url)) label = `Meeting ${label.replace(/^meet\//, '')}`;
   return (
     <button className="tool-link" title={url} onClick={() => void window.dex.openLink?.(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })))}>
       <span className="tool-name">{TOOL_NAME[scheme] ?? scheme}</span>{label.length > 60 ? `${label.slice(0, 57)}…` : label}

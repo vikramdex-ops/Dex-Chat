@@ -14,6 +14,7 @@ import { NoteEditor, NotesList } from '../chat/notes.tsx';
 import { KEEP_LABEL, REPEAT_LABEL, describeWhen, dismissRinging, setKeepKind, snoozePresets, toggleSaved, useDesk } from '../desk/store.ts';
 import type { WhenPreset } from '../desk/store.ts';
 import { SheetTabs } from './People.tsx';
+import { onOpenRequest } from '../chat/deeplinks.ts';
 
 type Tab = 'callouts' | 'tracks' | 'reminders' | 'kept' | 'scheduled' | 'notes' | 'timesheet';
 const TABS: Tab[] = ['callouts', 'tracks', 'reminders', 'kept', 'scheduled', 'notes', 'timesheet'];
@@ -28,6 +29,18 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
     return 'reminders';
   });
   useEffect(() => { try { sessionStorage.setItem('dex-desk-tab', tab); } catch { /* storage off */ } }, [tab]);
+  // dexconnect://desk/task/<id>: the Reminders sheet, with the task picked out
+  useEffect(() => onOpenRequest('task', ({ id }) => {
+    setTab('reminders');
+    let tries = 0;
+    const find = () => {
+      const el = document.querySelector<HTMLElement>(`.desk-row[data-rid="${CSS.escape(id)}"]`);
+      if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); }
+      else if (++tries < 20) setTimeout(find, 100);
+      else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'That task is not on your Desk.' }));
+    };
+    setTimeout(find, 50);
+  }), []);
   const [creating, setCreating] = useState(false);
   const [note, setNote] = useState<string | null | 'new'>(null);
   const users = new Map(session.users.map((u) => [u.id, u] as const));
@@ -128,7 +141,7 @@ function ReminderRow({ r, users, meId, jump }: { r: Reminder; users: Map<string,
   const forOther = r.userId !== meId;
   const by = r.createdBy !== meId ? users.get(r.createdBy)?.displayName : null;
   return (
-    <div className={`desk-row${r.done ? ' done' : ''}${overdue ? ' overdue' : ''}`}>
+    <div className={`desk-row${r.done ? ' done' : ''}${overdue ? ' overdue' : ''}`} data-rid={r.id}>
       <button className={`check-ring${r.done ? ' on' : ''}`} aria-label={r.done ? 'Mark as not done' : 'Mark as done'} disabled={forOther}
         onClick={() => act(window.dex.request('remind.update', { id: r.id, done: !r.done }), r.done ? undefined : 'Done')}>
         {r.done && <Icon name="check" size={13} />}

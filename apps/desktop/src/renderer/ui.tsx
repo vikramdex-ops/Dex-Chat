@@ -97,6 +97,16 @@ const PATHS = {
   'pane-close': 'M4.5 4.5h15v15h-15zM9.5 9.5l5 5M14.5 9.5l-5 5',
   /** Lay a Pane beside the others. */
   beside: 'M3.5 5h7.5v14H3.5zM13 5h7.5v14H13zM16.75 9.5v5M14.5 12h4.5',
+  /** Restyle: a line of text with a revision delta over it. */
+  restyle: 'M4 17.5h9M4 13.5h6M15.5 4.5 20 12h-9zM15.5 15v5',
+  /** A Decision: a question that branches into outcomes. */
+  decision: 'M12 4l6 6-6 6-6-6zM6 10H3.5v9M18 10h2.5v9M12 16v3.5',
+  /** A drag grip on the tool column. */
+  grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  /** Reaction insights: bars on an axis. */
+  insight: 'M4 4v16h16M8 16V11M12 16V7M16 16v-3',
+  /** A reference: a sheet with a leader pointing elsewhere. */
+  reference: 'M4.5 4.5h9v11h-9zM13.5 10H20M16.5 6.5 20 10l-3.5 3.5M7 8h4M7 11h4',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -309,7 +319,8 @@ export function ToastHost({ children }: { children: ReactNode }) {
   }, []);
   // parts of the app without access to the toast context (message formatting) raise errors this way
   useEffect(() => {
-    const on = (e: Event) => push(String((e as CustomEvent).detail), true);
+    // a plain string is a problem; { text, ok: true } is good news (a reference posted from a drag)
+    const on = (e: Event) => { const d = (e as CustomEvent).detail as unknown; if (d && typeof d === 'object' && 'text' in d) push(String((d as { text: unknown }).text), (d as { ok?: boolean }).ok !== true); else push(String(d), true); };
     window.addEventListener('dex-toast', on);
     return () => window.removeEventListener('dex-toast', on);
   }, [push]);

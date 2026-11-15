@@ -9,6 +9,7 @@ import { useChat } from '../chat/store.ts';
 import { Avatar, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 import { formatSize } from '../chat/files.tsx';
 import './policies.css';
+import { LinkPreviewSettings } from '../chat/linkcards.tsx';
 
 const EDIT: Array<[number | null, string]> = [[null, 'Any time'], [5, '5 minutes'], [15, '15 minutes'], [60, '1 hour'], [1440, '1 day'], [10080, '7 days'], [43200, '30 days'], [525600, '1 year'], [1051200, '2 years']];
 const UPLOAD: Array<[number, string]> = [[25, '25 MB'], [100, '100 MB'], [250, '250 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']];
@@ -36,6 +37,7 @@ export function PoliciesAdmin() {
         </div>
         <p className="faint" style={{ fontSize: 12.5, margin: '10px 0 0' }}>Space moderators can always remove messages in their Spaces. Earlier versions of messages on legal hold are kept either way.</p>
       </section>
+      <LinkPreviewSettings />
       <section className="card">
         <div className="eyebrow">When the hub is off</div>
         <div className="setting" style={{ marginTop: 6 }}>
