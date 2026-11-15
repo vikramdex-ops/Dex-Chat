@@ -196,7 +196,8 @@ function routeTag(def: BotFlowDefinition, s: BotFlowStep, i: number): string {
   const n = (sid: string) => (sid === 'end' ? 'END' : pad(def.steps.findIndex((x) => x.id === sid) + 1));
   const b = s.branches?.length ?? 0;
   const next = s.next ? n(s.next) : def.steps[i + 1] ? null : 'END';
-  if (b) return `${b} ${b === 1 ? 'ROUTE' : 'ROUTES'}${next ? ` · → ${next}` : ''}`;
+  if (b === 1) return next ? `1 ROUTE · → ${next}` : '1 ROUTE';
+  if (b) return next ? `${b} ROUTES · → ${next}` : `${b} ROUTES`;
   return next ? `→ ${next}` : '';
 }
 

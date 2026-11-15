@@ -44,7 +44,7 @@ function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
   return (
     <span className={`msg-link-card${m ? '' : ' loading'}`}>
       <button className="mlc-open" title="Open the message" aria-label={`Open the message from ${who}: ${text.slice(0, 120)}`} onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
-        <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}{m.replyCount ? ` · ${m.replyCount} ${m.replyCount === 1 ? 'reply' : 'replies'}` : ''}</span> : null}</span>
+        <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}{m.replyCount === 1 ? ' · 1 reply' : m.replyCount ? ` · ${m.replyCount} replies` : ''}</span> : null}</span>
         <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
       </button>
       {m && <button className="mlc-reply" title="Reply in its side-track" aria-label="Reply in a side-track" onClick={reply}>↳ Reply</button>}
@@ -142,7 +142,7 @@ function SpaceRef({ id }: { id: string }) {
           <div className="space-join-body">
             <b translate="no">{c.name}</b>
             {c.topic && <span className="faint" translate="no">{c.topic}</span>}
-            <span className="mono faint">{c.members.length} {c.members.length === 1 ? 'person' : 'people'}</span>
+            <span className="mono faint">{c.members.length === 1 ? '1 person' : `${c.members.length} people`}</span>
           </div>
           <button role="menuitem" disabled={busy} onClick={() => void join()}><Icon name="plus" size={16} />Join the Space</button>
         </Popover>

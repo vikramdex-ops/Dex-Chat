@@ -97,7 +97,7 @@ const Tile = memo(function Tile({ deviceId, userId, name, me, muted, camera, zon
       <span className="room-cap"><b>{zone}</b><span>{me ? 'YOU' : capName(name)}</span>{muted && <Icon name="mic-off" size={12} />}</span>
       {(hand > 0 || spotlit || pinned) && (
         <span className="room-tags">
-          {hand > 0 && <span className="room-hand" title={`Hand raised, ${hand === 1 ? 'first' : `number ${hand}`} in line`}><Glyph name="hand" size={13} />{hand}</span>}
+          {hand > 0 && <span className="room-hand" title={hand === 1 ? 'Hand raised, first in line' : `Hand raised, number ${hand} in line`}><Glyph name="hand" size={13} />{hand}</span>}
           {spotlit && <span className="room-flag" title="Spotlit by the host for everyone"><Glyph name="spotlight" size={12} />SPOTLIGHT</span>}
           {pinned && <span className="room-flag" title="Pinned for you"><Icon name="pin" size={11} />PINNED</span>}
         </span>
@@ -659,7 +659,7 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
                 <tr key={s.deviceId} className={hand ? 'hand-up' : undefined}>
                   <td className="mono ref">{zones.get(s.deviceId) ?? '··'}</td>
                   <td className="who">{nameOf(s.userId)}{s.me && <span className="faint"> (you)</span>}{role && <span className="role-tag">{role}</span>}{p?.recording && <span className="rec-tag">REC</span>}</td>
-                  <td className="hand-cell" title={hand ? `Hand raised · ${hand === 1 ? 'first' : `number ${hand}`} in line` : undefined}>{hand ? <span className="room-hand"><Glyph name="hand" size={12} />{hand}</span> : null}</td>
+                  <td className="hand-cell" title={hand === 1 ? 'Hand raised · first in line' : hand ? `Hand raised · number ${hand} in line` : undefined}>{hand ? <span className="room-hand"><Glyph name="hand" size={12} />{hand}</span> : null}</td>
                   <td className={isMuted ? 'off' : ''} title={isMuted ? 'Mic off' : 'Mic on'}><Icon name={isMuted ? 'mic-off' : 'mic'} size={14} /></td>
                   <td className={cam ? '' : 'off'} title={cam ? 'Camera on' : 'Camera off'}><Icon name={cam ? 'video' : 'video-off'} size={14} /></td>
                   <td className="act"><button className="row-menu" aria-label={`Options for ${s.me ? 'you' : nameOf(s.userId)}`} onClick={(e) => onMenu(s.deviceId, e.currentTarget)}><Glyph name="more" size={15} /></button></td>

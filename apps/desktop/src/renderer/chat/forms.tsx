@@ -68,7 +68,7 @@ export function FormCard({ m, meId, users }: { m: Message; meId: string; users: 
   const mineForm = m.authorId === meId;
   return (
     <div className={`poll form-card${form.closed ? ' closed' : ''}`}>
-      <div className="poll-head"><Icon name="list" size={16} /><span className="label">Form{form.closed ? ' · closed' : ''} · {form.fields.length} {form.fields.length === 1 ? 'question' : 'questions'}</span></div>
+      <div className="poll-head"><Icon name="list" size={16} /><span className="label">Form{form.closed ? ' · closed' : ''} · {form.fields.length === 1 ? '1 question' : `${form.fields.length} questions`}</span></div>
       <div className="poll-q" translate="no">{form.title}</div>
       {form.description && <p className="muted" style={{ margin: '0 0 10px', fontSize: 13 }} translate="no">{form.description}</p>}
       <div className="row-actions">

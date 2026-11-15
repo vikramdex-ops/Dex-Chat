@@ -78,7 +78,11 @@ export function actionSummary(a: ActionNode, n: Names): string {
     case 'extract': return 'gives {{file.title}}, {{file.revision}}, {{file.number}}';
     case 'notify': return `to ${peopleText(a.to, n)}`;
     case 'post': return `in ${a.convId ? n.conv(a.convId) : 'the conversation where it happened'}`;
-    case 'task': return `${a.mode === 'todo' ? 'To do on the Desk of' : 'reminder for'} ${peopleText(a.to, n)}${a.mode === 'reminder' ? (a.dueInMinutes ? `, due in ${dueText(a.dueInMinutes)}` : ', due at once') : ''}`;
+    case 'task': {
+      const who = peopleText(a.to, n);
+      if (a.mode === 'todo') return `To do on the Desk of ${who}`;
+      return a.dueInMinutes ? `reminder for ${who}, due in ${dueText(a.dueInMinutes)}` : `reminder for ${who}, due at once`;
+    }
     case 'tag': return a.tag ? `#${a.tag}` : 'tag not chosen yet';
     case 'webhook': return a.url ? (() => { try { const u = new URL(a.url); return `${u.host}${u.pathname === '/' ? '' : u.pathname}`; } catch { return a.url; } })() : 'address not set';
   }

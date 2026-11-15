@@ -42,7 +42,7 @@ export function MeetingReportSheet({ roomId, onClose, onWatch }: { roomId: strin
         {r && (
           <>
             <section className="rep-body">
-              <div className="tb-head"><span className="label">Attendance · rejoins summed</span><span className="mono">{r.people.length} {r.people.length === 1 ? 'PERSON' : 'PEOPLE'} · PEAK {r.peak}</span></div>
+              <div className="tb-head"><span className="label">Attendance · rejoins summed</span><span className="mono">{r.people.length === 1 ? '1 PERSON' : `${r.people.length} PEOPLE`} · PEAK {r.peak}</span></div>
               <table className="rep-table">
                 <thead><tr><th>Name</th><th>First in</th><th>Last out</th><th className="num">Time</th><th className="num">Visits</th><th className="num">Hands</th><th className="num">Reactions</th><th className="rep-axis"><span>{hm(r.startedAt)}</span><span>{hm(end)}</span></th></tr></thead>
                 <tbody>
@@ -85,7 +85,7 @@ export function MeetingReportSheet({ roomId, onClose, onWatch }: { roomId: strin
                   <div className="tb-head"><span className="label">Recordings</span><span className="mono">{r.recordings.length}</span></div>
                   {!r.recordings.length && <p className="faint">No recordings you can watch.</p>}
                   {r.recordings.map((x) => <p key={x.id} className="rep-line"><button className="tb-link" onClick={() => onWatch(x)}><Icon name="play" size={13} />{x.title}</button><span className="faint"> <span className="mono">{hms(x.durationMs)}</span> · <span translate="no">{x.recordedByName}</span></span></p>)}
-                  {r.breakouts > 0 && <p className="rep-line faint">{r.breakouts} breakout {r.breakouts === 1 ? 'room' : 'rooms'} were used.</p>}
+                  {r.breakouts > 0 && <p className="rep-line faint">{r.breakouts === 1 ? '1 breakout room was used.' : `${r.breakouts} breakout rooms were used.`}</p>}
                 </section>
               </div>
               {r.webinar && <WebinarPart w={r.webinar} />}

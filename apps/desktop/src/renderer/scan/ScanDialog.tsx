@@ -98,7 +98,7 @@ export function ScanDialog({ onDone, onClose }: { onDone: (file: File) => void; 
             <button className="btn ghost" onClick={() => setShot(null)}>Retake</button>
             <button className="btn primary" onClick={keep}><Icon name="check" size={15} />Keep page {pages.length + 1}</button>
           </div>
-        ) : <span className="faint">{pages.length ? `${pages.length} ${pages.length === 1 ? 'page' : 'pages'}. Take the next, or finish.` : 'Lay the page on a darker surface and take it.'}</span>}
+        ) : <span className="faint">{pages.length === 1 ? '1 page. Take the next, or finish.' : pages.length ? `${pages.length} pages. Take the next, or finish.` : 'Lay the page on a darker surface and take it.'}</span>}
       </div>
       {pages.length > 0 && (
         <div className="scan-pages">

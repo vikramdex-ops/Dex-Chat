@@ -141,7 +141,7 @@ export function NoteEditor({ id, convId, users, meId, onClose }: { id: string | 
             void (async () => {
               if (!noteId.current) await save();
               if (!noteId.current) return;
-              try { const where = await window.dex.editInSlate!(noteId.current, latest.current.title || 'Note', latest.current.body); toast(`Opened in ${where === 'slate' ? 'Slate' : 'your editor'}. Save there to update the note.`); } catch (e) { toast((e as Error).message, true); }
+              try { const where = await window.dex.editInSlate!(noteId.current, latest.current.title || 'Note', latest.current.body); toast(where === 'slate' ? 'Opened in Slate. Save there to update the note.' : 'Opened in your editor. Save there to update the note.'); } catch (e) { toast((e as Error).message, true); }
             })();
           }}><Icon name="open" size={14} />{window.dex.hasSlate ? 'Edit in Slate' : 'Edit in your editor'}</button>
         )}

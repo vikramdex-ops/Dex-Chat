@@ -58,7 +58,7 @@ export function PollCard({ m, meId, users }: { m: Message; meId: string; users: 
         })}
       </div>
       <div className="poll-foot faint">
-        {poll.voterCount} {poll.voterCount === 1 ? 'vote' : 'votes'}
+        {poll.voterCount === 1 ? '1 vote' : `${poll.voterCount} votes`}
         {poll.closesAt && !poll.closed && <> · closes {describeWhen(poll.closesAt)}</>}
         {!showResults && <> · vote to see results</>}
         {!poll.closed && m.authorId === meId && (
@@ -195,7 +195,7 @@ export function ForwardDialog({ message, more = [], users, meId, online, onClose
   return (
     <Dialog title="Forward" onClose={onClose}>
       {more.length ? <div className="quote">{1 + more.length} messages</div>
-        : <div className="quote">{message.body ? renderBody(message.body, users, meId) : <span className="faint">{message.files.length} {message.files.length === 1 ? 'file' : 'files'}</span>}</div>}
+        : <div className="quote">{message.body ? renderBody(message.body, users, meId) : <span className="faint">{message.files.length === 1 ? '1 file' : `${message.files.length} files`}</span>}</div>}
       <input className="input" autoFocus placeholder="Search conversations" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search conversations" />
       <div className="picker-list">
         {list.length === 0 && <div className="faint" style={{ padding: 12 }}>No conversations match.</div>}

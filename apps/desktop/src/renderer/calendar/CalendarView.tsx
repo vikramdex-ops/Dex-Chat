@@ -372,7 +372,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
     try {
       if (ev) await window.dex.request('cal.update', { eventId: ev.id, ...body });
       else await window.dex.request('cal.create', body);
-      toast(ev ? 'Meeting updated' : people.length ? `Invitations sent to ${people.length} ${people.length === 1 ? 'person' : 'people'}` : 'Added to your calendar');
+      toast(ev ? 'Meeting updated' : people.length === 1 ? 'Invitations sent to 1 person' : people.length ? `Invitations sent to ${people.length} people` : 'Added to your calendar');
       onClose();
     } catch (e) { toast((e as Error).message, true); setSaving(false); }
   };
@@ -393,9 +393,9 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
         <div className="field">
           <label htmlFor="ev-len">{allDay ? 'Days' : 'Length'}</label>
           {allDay
-            ? <select id="ev-len" className="input" value={Math.max(1, Math.round(minutes / 1440))} onChange={(e) => setMinutes(Number(e.target.value) * 1440)}>{[1, 2, 3, 4, 5, 7, 10, 14].map((n) => <option key={n} value={n}>{n} {n === 1 ? 'day' : 'days'}</option>)}</select>
+            ? <select id="ev-len" className="input" value={Math.max(1, Math.round(minutes / 1440))} onChange={(e) => setMinutes(Number(e.target.value) * 1440)}>{[1, 2, 3, 4, 5, 7, 10, 14].map((n) => <option key={n} value={n}>{n === 1 ? '1 day' : `${n} days`}</option>)}</select>
             : <select id="ev-len" className="input" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-                {[...new Set([...DURATIONS, minutes])].sort((a, b) => a - b).map((m) => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? 'hour' : 'hours'}`} · until {zone ? timeIn(start + m * 60_000, zone, timeOpts()) : hm(start + m * 60_000)}</option>)}
+                {[...new Set([...DURATIONS, minutes])].sort((a, b) => a - b).map((m) => <option key={m} value={m}>{m < 60 ? `${m} min` : m === 60 ? '1 hour' : `${m / 60} hours`} · until {zone ? timeIn(start + m * 60_000, zone, timeOpts()) : hm(start + m * 60_000)}</option>)}
               </select>}
         </div>
       </div>

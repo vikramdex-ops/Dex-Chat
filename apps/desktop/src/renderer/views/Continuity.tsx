@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { BackupRun, BackupStatus, Departure, MeetingHandover, OffboardPreview, PublicUser, Session } from '@dex/core';
 import { Avatar, Icon, Segmented, relativeTime, useToast } from '../ui.tsx';
+import { tr } from '../i18n/index.ts';
 import './continuity.css';
 
 /** Audit log wording for these actions (Control room ▸ Audit log). */
@@ -67,12 +68,18 @@ function nextText(at: number | null, now = Date.now()): string {
 
 const KEPT_LABEL: Record<string, string> = { latest: 'Latest', daily: 'Day', weekly: 'Week', monthly: 'Month' };
 
-function checkLine(r: BackupRun): string {
+/** Each part is a whole phrase, so it translates as one; the screen draws them with " · " between. */
+function checkLine(r: BackupRun): string[] {
   const c = r.check;
-  if (!c) return '';
+  if (!c) return [];
   const msgs = c.rows.messages;
-  const files = c.files ? `${c.hashed} of ${c.files.toLocaleString()} files compared with their fingerprints` : 'no shared files yet';
-  return `Checked: database ${c.integrity === 'ok' ? 'sound' : c.integrity}${msgs !== undefined ? ` · ${msgs.toLocaleString()} messages` : ''} · ${files}${c.missing ? ` · ${c.missing} removed while it ran` : ''}`;
+  const parts = [
+    c.integrity === 'ok' ? 'Checked: database sound' : `Checked: database ${c.integrity}`,
+    ...(msgs !== undefined ? [msgs === 1 ? '1 message' : `${msgs.toLocaleString()} messages`] : []),
+    c.files ? `${c.hashed} of ${c.files.toLocaleString()} files compared with their fingerprints` : 'no shared files yet',
+    ...(c.missing ? [`${c.missing} removed while it ran`] : []),
+  ];
+  return parts.flatMap((x, i) => (i ? [' · ', x] : [x]));
 }
 
 function BackupsAdmin({ live }: { live: boolean }) {
@@ -128,7 +135,7 @@ function BackupsAdmin({ live }: { live: boolean }) {
           <div className="bk-cell" role="listitem"><span className="label">Size</span><span className="v">{s.lastSuccess ? bytes(s.lastSuccess.dbBytes + s.lastSuccess.filesBytes) : '–'}</span>
             {s.lastSuccess && <span className="sub mono">{s.lastSuccess.filesAdded ? `+${bytes(s.lastSuccess.bytesAdded)} in new files` : 'no new files'}</span>}</div>
           <div className="bk-cell" role="listitem"><span className="label">Next backup</span><span className="v">{s.running ? 'Running now' : nextText(s.nextRunAt)}</span></div>
-          <div className="bk-cell" role="listitem"><span className="label">Backup folder holds</span><span className="v">{bytes(s.folderBytes)}</span>{s.config.folder && <span className="sub mono">{s.copies.length} {s.copies.length === 1 ? 'copy' : 'copies'}</span>}</div>
+          <div className="bk-cell" role="listitem"><span className="label">Backup folder holds</span><span className="v">{bytes(s.folderBytes)}</span>{s.config.folder && <span className="sub mono">{s.copies.length === 1 ? '1 copy' : `${s.copies.length} copies`}</span>}</div>
         </div>
         {s.lastSuccess?.check && <div className="bk-check mono">{checkLine(s.lastSuccess)}</div>}
       </section>
@@ -150,14 +157,18 @@ function BackupsAdmin({ live }: { live: boolean }) {
         </div>
         <div className="bk-keep">
           <span className="label">Keep</span>
-          {([['keepDaily', 'daily copies', 'days'], ['keepWeekly', 'weekly copies', 'weeks'], ['keepMonthly', 'monthly copies', 'months']] as const).map(([k, label, unit]) => (
+          {/* one phrase per row, with the number box where the translation puts {0} */}
+          {([['keepDaily', 'daily copies', 'one a day for {0} days'], ['keepWeekly', 'weekly copies', 'one a week for {0} weeks'], ['keepMonthly', 'monthly copies', 'one a month for {0} months']] as const).map(([k, label, phrase]) => {
+            const [before, after = ''] = tr(phrase).split('{0}').map((x) => x.trim());
+            return (
             <label key={k} className="bk-keep-field">
-              <span>one a {unit.slice(0, -1)} for</span>
+              {before && <span>{before}</span>}
               <input type="number" className="input" min={k === 'keepDaily' ? 1 : 0} max={k === 'keepDaily' ? 366 : k === 'keepWeekly' ? 260 : 240} value={keep[k]} aria-label={`How many ${label} to keep`}
                 onChange={(e) => setKeep({ ...keep, [k]: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} disabled={!live} />
-              <span>{unit}</span>
+              {after && <span>{after}</span>}
             </label>
-          ))}
+            );
+          })}
           <button className="btn sm" disabled={!live || saving || !dirtyKeep} onClick={() => void save(keep, 'Saved what is kept')}>Save</button>
         </div>
       </section>
@@ -188,7 +199,10 @@ function BackupsAdmin({ live }: { live: boolean }) {
                 <div className="txt">
                   <div>{new Date(r.startedAt).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     <span className="faint"> · {r.manual ? 'Back up now' : 'nightly'} · {Math.max(1, Math.round((r.finishedAt - r.startedAt) / 1000))} s</span></div>
-                  <div className="faint">{r.ok ? `${r.filesAdded.toLocaleString()} new ${r.filesAdded === 1 ? 'file' : 'files'} (${bytes(r.bytesAdded)})${r.removed ? ` · ${r.removed} older ${r.removed === 1 ? 'copy' : 'copies'} removed` : ''}` : r.error}</div>
+                  <div className="faint">{r.ok ? <>
+                    {r.filesAdded === 1 ? `1 new file (${bytes(r.bytesAdded)})` : `${r.filesAdded.toLocaleString()} new files (${bytes(r.bytesAdded)})`}
+                    {r.removed ? (r.removed === 1 ? ' · 1 older copy removed' : ` · ${r.removed} older copies removed`) : ''}
+                  </> : r.error}</div>
                   {r.ok && r.check && <div className="faint mono">{checkLine(r)}</div>}
                 </div>
                 <span className={`chip ${r.ok ? 'ok' : 'warn'}`}>{r.ok ? 'Worked' : 'Did not work'}</span>
@@ -258,14 +272,14 @@ function LeaversAdmin({ session, live }: { session: Session; live: boolean }) {
     if (!confirm(`Give ${d.user.displayName} access again? Their devices can sign in again. What was handed to ${name(d.toId)} stays with them.`)) return;
     try {
       const r = await window.dex.request('admin.offboard.reactivate', { userId: d.user.id });
-      toast(r.devices ? `${r.user.displayName} can sign in again on ${r.devices} ${r.devices === 1 ? 'device' : 'devices'}` : `${r.user.displayName} can join again from their PC; approve it in Approvals`);
+      toast(r.devices === 1 ? `${r.user.displayName} can sign in again on 1 device` : r.devices ? `${r.user.displayName} can sign in again on ${r.devices} devices` : `${r.user.displayName} can join again from their PC; approve it in Approvals`);
       loadLeft();
     } catch (e) { toast((e as Error).message, true); }
   };
 
   const p = preview;
   const groups: Array<{ label: string; items: string[]; note?: string }> = p ? [
-    { label: 'Signed out', items: [...p.devices.map((d) => `${d.hostname}${d.lastSeen ? ` · seen ${relativeTime(d.lastSeen)}` : ''}`), ...(p.pairingCodes ? [`${p.pairingCodes} unused pairing ${p.pairingCodes === 1 ? 'code' : 'codes'}`] : [])], note: 'Every device is removed at once, with their calendar feed.' },
+    { label: 'Signed out', items: [...p.devices.map((d) => `${d.hostname}${d.lastSeen ? ` · seen ${relativeTime(d.lastSeen)}` : ''}`), ...(p.pairingCodes ? [p.pairingCodes === 1 ? '1 unused pairing code' : `${p.pairingCodes} unused pairing codes`] : [])], note: 'Every device is removed at once, with their calendar feed.' },
     { label: 'Spaces', items: [...p.spacesOwned.map((x) => `${x.name} · created by them`), ...p.spacesModerated.map((x) => `${x.name} · moderator`)] },
     { label: 'Automations', items: p.automations.map((f) => `${f.name} · ${f.where === 'direct' ? 'personal, turned off' : f.where === 'office' ? 'office-wide' : 'in a Space'}`) },
     { label: 'Integrations and tools', items: [...p.bots.map((b) => `${b.name} · integration`), ...p.tools.map((t) => `${t.name} · tool`)] },
@@ -273,9 +287,9 @@ function LeaversAdmin({ session, live }: { session: Session; live: boolean }) {
     { label: 'Help tickets', items: p.tickets.map((t) => `#${t.number} ${t.summary} · ${t.role === 'technician' ? 'working on it' : 'asked for it, closed'}`) },
     { label: 'Webinars', items: p.webinars.map((w) => `${w.title} · ${w.role}`) },
     { label: 'Desk', items: [
-      ...(p.remindersForOthers ? [`${p.remindersForOthers} ${p.remindersForOthers === 1 ? 'reminder' : 'reminders'} set for others`] : []),
-      ...(p.remindersFromOthers ? [`${p.remindersFromOthers} ${p.remindersFromOthers === 1 ? 'reminder' : 'reminders'} others set for them`] : []),
-      ...(p.scheduled ? [`${p.scheduled} scheduled ${p.scheduled === 1 ? 'message' : 'messages'}, cancelled`] : []),
+      ...(p.remindersForOthers ? [p.remindersForOthers === 1 ? '1 reminder set for others' : `${p.remindersForOthers} reminders set for others`] : []),
+      ...(p.remindersFromOthers ? [p.remindersFromOthers === 1 ? '1 reminder others set for them' : `${p.remindersFromOthers} reminders others set for them`] : []),
+      ...(p.scheduled ? [p.scheduled === 1 ? '1 scheduled message, cancelled' : `${p.scheduled} scheduled messages, cancelled`] : []),
     ] },
   ] : [];
 
@@ -298,7 +312,7 @@ function LeaversAdmin({ session, live }: { session: Session; live: boolean }) {
             <div className="ob-step">
               <span className="ob-num mono">2</span>
               <div className="ob-body">
-                <div className="field-label">What {p.user.displayName} looks after</div>
+                <div className="field-label">{`What ${p.user.displayName} looks after`}</div>
                 <div className="ob-groups">
                   {groups.filter((g) => g.items.length).map((g) => (
                     <div key={g.label} className="ob-group">
@@ -309,7 +323,9 @@ function LeaversAdmin({ session, live }: { session: Session; live: boolean }) {
                   ))}
                   {groups.slice(1).every((g) => !g.items.length) && <p className="faint" style={{ margin: 0 }}>Nothing to hand over: no Spaces, automations, meetings or tickets of theirs.</p>}
                 </div>
-                <p className="ob-kept"><Icon name="lock" size={14} /><span>{p.messages.toLocaleString()} {p.messages === 1 ? 'message' : 'messages'} they wrote stay where they are, under the office's retention rules{p.onHold ? ' and the legal hold on them' : ''}.</span></p>
+                <p className="ob-kept"><Icon name="lock" size={14} /><span>{p.messages === 1
+                  ? p.onHold ? "1 message they wrote stays where it is, under the office's retention rules and the legal hold on it." : "1 message they wrote stays where it is, under the office's retention rules."
+                  : p.onHold ? `${p.messages.toLocaleString()} messages they wrote stay where they are, under the office's retention rules and the legal hold on them.` : `${p.messages.toLocaleString()} messages they wrote stay where they are, under the office's retention rules.`}</span></p>
               </div>
             </div>
           )}
@@ -376,19 +392,25 @@ function LeaversAdmin({ session, live }: { session: Session; live: boolean }) {
   );
 }
 
-/** "Handed to Ravi: 2 Spaces, 1 meeting; 1 meeting cancelled." */
+/**
+ * "Handed to Ravi: 2 Spaces, 1 meeting; 1 meeting cancelled." Each count is a whole phrase ("1 meeting",
+ * "{0} meetings"), translated on its own before the list is put in the sentence.
+ */
 function handed(d: Departure, to: string): string {
   const s = d.summary;
+  const count = (n: number, one: string, many: string) => (n === 1 ? one : n ? many.replace('{0}', String(n)) : '');
   const parts = [
-    s.spaces + s.moderated ? `${s.spaces + s.moderated} ${s.spaces + s.moderated === 1 ? 'Space' : 'Spaces'}` : '',
-    s.automations ? `${s.automations} ${s.automations === 1 ? 'automation' : 'automations'}` : '',
-    s.bots + s.tools ? `${s.bots + s.tools} ${s.bots + s.tools === 1 ? 'integration' : 'integrations'}` : '',
-    s.meetingsReassigned ? `${s.meetingsReassigned} ${s.meetingsReassigned === 1 ? 'meeting' : 'meetings'}` : '',
-    s.tickets ? `${s.tickets} ${s.tickets === 1 ? 'ticket' : 'tickets'}` : '',
-    s.webinars ? `${s.webinars} ${s.webinars === 1 ? 'webinar' : 'webinars'}` : '',
-    s.reminders ? `${s.reminders} ${s.reminders === 1 ? 'reminder' : 'reminders'}` : '',
-  ].filter(Boolean);
-  const cancelled = s.meetingsCancelled ? `${s.meetingsCancelled} ${s.meetingsCancelled === 1 ? 'meeting' : 'meetings'} cancelled` : '';
-  if (!parts.length) return cancelled ? `${cancelled[0].toUpperCase()}${cancelled.slice(1)}.` : 'Nothing to hand over.';
-  return `Handed to ${to}: ${parts.join(', ')}${cancelled ? `; ${cancelled}` : ''}.`;
+    count(s.spaces + s.moderated, '1 Space', '{0} Spaces'),
+    count(s.automations, '1 automation', '{0} automations'),
+    count(s.bots + s.tools, '1 integration', '{0} integrations'),
+    count(s.meetingsReassigned, '1 meeting', '{0} meetings'),
+    count(s.tickets, '1 ticket', '{0} tickets'),
+    count(s.webinars, '1 webinar', '{0} webinars'),
+    count(s.reminders, '1 reminder', '{0} reminders'),
+  ].filter(Boolean).map((x) => tr(x));
+  const n = s.meetingsCancelled;
+  if (!parts.length) return n === 1 ? '1 meeting cancelled.' : n ? `${n} meetings cancelled.` : 'Nothing to hand over.';
+  const cancelled = n === 1 ? '1 meeting cancelled' : n ? `${n} meetings cancelled` : '';
+  const list = cancelled ? `${parts.join(', ')}; ${tr(cancelled)}` : parts.join(', ');
+  return `Handed to ${to}: ${list}.`;
 }

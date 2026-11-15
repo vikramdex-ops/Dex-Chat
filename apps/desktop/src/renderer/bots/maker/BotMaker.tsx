@@ -186,7 +186,7 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
   const save = async () => {
     if (!def || busy) return;
     setError(null);
-    if (problems?.count) { setError(`Fix the ${problems.count === 1 ? 'problem' : `${problems.count} problems`} marked first.`); return; }
+    if (problems?.count) { setError(problems.count === 1 ? 'Fix the problem marked first.' : `Fix the ${problems.count} problems marked first.`); return; }
     if (!adminMode && scope === 'space' && !spaceId) { setSection('share'); setError('Choose the Space to share it with.'); return; }
     setBusy(true);
     try {

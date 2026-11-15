@@ -256,7 +256,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
         <LoungeSection folded={!!folded} />
         {archived.length > 0 && !folded && (
           <div className="sb-group">
-            <button className="sb-group-title label link" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Hide' : 'Show'} archived · {archived.length}</button>
+            <button className="sb-group-title label link" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Hide archived' : 'Show archived'} · {archived.length}</button>
             {showArchived && archived.map(row)}
           </div>
         )}

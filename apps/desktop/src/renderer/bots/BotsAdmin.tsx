@@ -116,7 +116,7 @@ function Tools({ users }: { users: PublicUser[] }) {
       if (patch.error) { setUploading(null); toast(patch.error, true); }
       if (patch.info) {
         void window.dex.request('admin.miniapps.upload', { fileId: patch.info.id })
-          .then((t) => { toast(`${t.name} ${t.version} is waiting for your review`); setReview({ id: t.id, hosts: new Set(t.requestedHosts), note: '', source: null }); load(); })
+          .then((t) => { const tool = `${t.name} ${t.version}`; toast(`${tool} is waiting for your review`); setReview({ id: t.id, hosts: new Set(t.requestedHosts), note: '', source: null }); load(); })
           .catch((e: Error) => toast(e.message, true)).finally(() => setUploading(null));
       }
     });
@@ -173,7 +173,7 @@ function Tools({ users }: { users: PublicUser[] }) {
               <div><b>{t.name}</b> <span className="mono faint">{t.id} · v{t.version}</span> <span className={`chip ${STATUS[t.status].cls}`}>{STATUS[t.status].label}</span></div>
               <div className="faint" style={{ fontSize: 12 }}>
                 {t.permissions.map(permissionWords).join(' · ') || 'Runs on its own'}{t.hosts.length ? ` · ${t.hosts.join(', ')}` : ''}
-                {' · '}{t.builtin ? 'comes with Dexterity Connect' : `uploaded by ${who(t.uploadedBy)} ${relativeTime(t.uploadedAt)}`}{!t.builtin && t.reviewedAt ? ` · reviewed by ${who(t.reviewedBy)}` : ''}{t.note ? ` · “${t.note}”` : ''}
+                {' · '}{t.builtin ? 'comes with Dexterity Connect' : `uploaded ${relativeTime(t.uploadedAt)} by ${who(t.uploadedBy)}`}{!t.builtin && t.reviewedAt ? ` · reviewed by ${who(t.reviewedBy)}` : ''}{t.note ? ` · “${t.note}”` : ''}
               </div>
             </div>
             <Toggle checked={t.enabled} label={`${t.name} on`} onChange={(on) => void window.dex.request('admin.miniapps.enable', { id: t.id, enabled: on }).then(load).catch((e: Error) => toast(e.message, true))} />

@@ -319,7 +319,7 @@ function Recent({ users, meId, onJoin, openConv, busy, onReport }: { users: Map<
               return (
                 <tr key={r.roomId}>
                   <td className="mono meet-when">{dayWord(r.startedAt).toUpperCase()}<br /><span>{hm(r.startedAt)}</span></td>
-                  <td className="meet-what"><b title={title}>{title}</b><span className="faint">{lengthOf(r.durationMs)} · {r.people.length} {r.people.length === 1 ? 'person' : 'people'}</span></td>
+                  <td className="meet-what"><b title={title}>{title}</b><span className="faint">{lengthOf(r.durationMs)} · {r.people.length === 1 ? '1 person' : `${r.people.length} people`}</span></td>
                   <td className="meet-who"><span className="stack">{r.people.filter((u) => !isWebGuest(u)).slice(0, 4).map((u) => <Avatar key={u} user={users.get(u) ?? { id: u, displayName: '?' }} size="sm" />)}</span></td>
                   <td className="meet-act">
                     <button className="btn sm ghost" onClick={() => onReport(r.roomId)} title="Who came, for how long, hands, reactions and polls">Report</button>

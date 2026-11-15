@@ -131,7 +131,7 @@ export function ShareDialog({ req, session, onDone }: { req: ShareRequest; sessi
         </>
       )}
       <div className="dialog-actions">
-        <span className="faint">{usable.length ? `${usable.length} ${usable.length === 1 ? 'file' : 'files'}` : ''}</span>
+        <span className="faint">{usable.length === 1 ? '1 file' : usable.length ? `${usable.length} files` : ''}</span>
         <button className="btn ghost" onClick={() => onDone(null)}>Cancel</button>
         <button className="btn primary" disabled={busy || (!target && !person) || (!text.trim() && !usable.length)} onClick={() => void share()}><Icon name="send" size={15} />Share</button>
       </div>

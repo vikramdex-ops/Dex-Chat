@@ -93,6 +93,9 @@ export function BatteryPrompt({ state }: { state: AppState }) {
   return open ? <BatterySheet onClose={() => setOpen(false)} /> : null;
 }
 
+/** The phone as one name ("Samsung SM-A515F"), so a sentence has one place for it. */
+const phoneName = (h: { manufacturer: string; model: string }) => `${h.manufacturer} ${h.model}`;
+
 function Row({ ok, unknown, title, detail, action }: { ok: boolean; unknown?: boolean; title: string; detail: string; action?: ReactNode }) {
   return (
     <div className={`check-row ${unknown ? 'unknown' : ok ? 'ok' : 'todo'}`}>
@@ -135,7 +138,7 @@ export function NotificationsCheck({ state, onClose }: { state: AppState; onClos
               <label className="confirm-line"><input type="checkbox" checked={confirmed} onChange={(e) => { setConfirmed(e.target.checked); store.set(DONE_KEY, e.target.checked ? '1' : '0'); }} /> I have done these steps</label>
             </>
           ) : (
-            <Row ok title="No extra switches on this phone" detail={`${h.manufacturer} ${h.model} uses Android’s own settings, checked above.`} />
+            <Row ok title="No extra switches on this phone" detail={`${phoneName(h)} uses Android’s own settings, checked above.`} />
           )}
           <div className="faint mono check-foot">
             {h.manufacturer} {h.model} · Android {h.androidVersion}

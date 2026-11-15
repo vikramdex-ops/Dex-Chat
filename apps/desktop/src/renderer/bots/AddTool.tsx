@@ -31,7 +31,7 @@ export function AddToolHost() {
     } catch (e) { toast((e as Error).message, true); } finally { setBusy(null); }
   };
   return (
-    <Dialog title={`Add a tool to ${conv?.kind === 'space' ? conv.name ?? 'this Space' : 'this conversation'}`} onClose={() => setConvId(null)}>
+    <Dialog title={conv?.kind === 'space' ? `Add a tool to ${conv.name ?? 'this Space'}` : 'Add a tool to this conversation'} onClose={() => setConvId(null)}>
       <p className="muted" style={{ margin: 0 }}>Tools run inside the conversation for everyone in it. Each one added keeps its own sheet: what one person changes, the others see.</p>
       <div className="mapp-pick">
         {tools === null && <div className="tl-more"><span className="spinner" /></div>}

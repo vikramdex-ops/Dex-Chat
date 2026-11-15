@@ -268,7 +268,7 @@ function AudienceTab({ id, organizer, room, meId, users }: { id: string; organiz
         </section>
       )}
       <div className="wb-audience-head">
-        <span className="label">{list?.length ?? 0} watching · {hands} {hands === 1 ? 'hand' : 'hands'}</span>
+        <span className="label">{list?.length ?? 0} watching · {hands === 1 ? '1 hand' : `${hands} hands`}</span>
         {organizer && hands > 0 && <button className="btn sm ghost" onClick={() => act(window.dex.request('web.hand', { id, up: false, all: true } as never), 'Hands lowered')}>Lower all hands</button>}
       </div>
       {(list?.length ?? 0) > 8 && <input className="input wb-find" placeholder="Find someone watching" aria-label="Find someone watching" value={q} onChange={(e) => setQ(e.target.value)} />}

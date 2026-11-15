@@ -48,7 +48,7 @@ export function RoomChip() {
   const waiting = room.lobby?.length ?? 0;
   return (
     <div className={`room-chip${muted ? ' muted' : ''}`} role="group" aria-label="Room in progress">
-      <button className="room-chip-main" onClick={() => setMinimized(false)} title={`Back to the Room · ${n} ${n === 1 ? 'person' : 'people'} in it`}>
+      <button className="room-chip-main" onClick={() => setMinimized(false)} title={n === 1 ? 'Back to the Room · 1 person in it' : `Back to the Room · ${n} people in it`}>
         <span className="room-chip-pip" aria-hidden="true" />
         <span className="room-chip-text">ROOM · {duration}</span>
         {waiting > 0 && <span className="room-chip-wait" title={`${waiting} waiting in the lobby`}>{waiting} WAITING</span>}

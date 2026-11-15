@@ -343,7 +343,7 @@ function Departments({ people, departments, users, onOpen }: { people: PublicUse
           <button key={d.id} className="card interactive dept-card" onClick={() => onOpen(d.id)}>
             <div className="eyebrow">{parent ? `${parent.name} ›` : 'Department'}</div>
             <h3>{d.name}</h3>
-            <p className="muted">{members.length} {members.length === 1 ? 'person' : 'people'}{head ? ` · led by ${head.displayName}` : ''}</p>
+            <p className="muted">{members.length === 1 ? '1 person' : `${members.length} people`}{head ? ` · led by ${head.displayName}` : ''}</p>
             <div className="dept-faces">
               {members.slice(0, 8).map((u) => <Avatar key={u.id} user={u} presence={presenceFor(u.id)} size="sm" />)}
               {members.length > 8 && <span className="faint">+{members.length - 8}</span>}

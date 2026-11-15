@@ -397,10 +397,12 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
         <WritingLine k={tlKey(convId)} users={users} />
         {/* before sending: say plainly when a Direct conversation is not end-to-end encrypted, and why */}
         {e2e && conv.kind === 'direct' && !e2e.encrypted && e2e.missing.length > 0 && !e2e.required && (
-          <div className="e2e-notice" role="status"><Icon name="unlock" size={13} /><span>Not end-to-end encrypted: {missingNames(e2e.missing)} {e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect.</span><button className="link" onClick={() => setVerify(true)}>Why</button></div>
+          <div className="e2e-notice" role="status"><Icon name="unlock" size={13} /><span>{e2e.missing.length === 1 ? `Not end-to-end encrypted: ${missingNames(e2e.missing)} is on an older version of Dexterity Connect.` : `Not end-to-end encrypted: ${missingNames(e2e.missing)} are on an older version of Dexterity Connect.`}</span><button className="link" onClick={() => setVerify(true)}>Why</button></div>
         )}
         {conv.archived ? null : e2e && conv.kind === 'direct' && e2e.required && !e2e.encrypted && e2e.missing.length > 0 ? (
-          <div className="dock-locked faint e2e-required" role="status"><Icon name="lock" size={14} />Your office requires Direct messages to be end-to-end encrypted. You can write here once {missingNames(e2e.missing)} {e2e.missing.length === 1 ? 'updates' : 'update'} Dexterity Connect.</div>
+          <div className="dock-locked faint e2e-required" role="status"><Icon name="lock" size={14} />{e2e.missing.length === 1
+            ? `Your office requires Direct messages to be end-to-end encrypted. You can write here once ${missingNames(e2e.missing)} updates Dexterity Connect.`
+            : `Your office requires Direct messages to be end-to-end encrypted. You can write here once ${missingNames(e2e.missing)} update Dexterity Connect.`}</div>
         ) : conv.postPolicy === 'moderators' && !(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) ? (
           <div className="dock-locked faint"><Icon name="lock" size={14} />Only moderators post here. You can answer a message in its side-track.</div>
         ) : <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={placeholder} />}
@@ -450,8 +452,12 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           ) : (
             <p className="muted" style={{ margin: 0 }}>{e2e.missing.length
               ? e2e.required
-                ? `${missingNames(e2e.missing)} ${e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect, which cannot encrypt messages. Your office requires Direct messages to be end-to-end encrypted, so nothing can be sent here until ${e2e.missing.length === 1 ? 'they update' : 'everyone updates'}. Opening the updated app once is enough.`
-                : `${missingNames(e2e.missing)} ${e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect. Messages here stay readable to them and are protected on the office network, but the office hub can read them. Each one shows an open lock. They will be end-to-end encrypted once ${e2e.missing.length === 1 ? 'they update' : 'everyone updates'}.`
+                ? e2e.missing.length === 1
+                  ? `${missingNames(e2e.missing)} is on an older version of Dexterity Connect, which cannot encrypt messages. Your office requires Direct messages to be end-to-end encrypted, so nothing can be sent here until they update. Opening the updated app once is enough.`
+                  : `${missingNames(e2e.missing)} are on an older version of Dexterity Connect, which cannot encrypt messages. Your office requires Direct messages to be end-to-end encrypted, so nothing can be sent here until everyone updates. Opening the updated app once is enough.`
+                : e2e.missing.length === 1
+                  ? `${missingNames(e2e.missing)} is on an older version of Dexterity Connect. Messages here stay readable to them and are protected on the office network, but the office hub can read them. Each one shows an open lock. They will be end-to-end encrypted once they update.`
+                  : `${missingNames(e2e.missing)} are on an older version of Dexterity Connect. Messages here stay readable to them and are protected on the office network, but the office hub can read them. Each one shows an open lock. They will be end-to-end encrypted once everyone updates.`
               : 'Conversations that include an integration are not end-to-end encrypted.'}</p>
           )}
         </Dialog>
@@ -1082,7 +1088,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       )}
 
       {!inTrack && m.replyCount > 0 && onTrack && (
-        <button className="branch-tag" onClick={() => onTrack(m.id)} aria-label={`Open the side-track: ${m.replyCount} ${m.replyCount === 1 ? 'reply' : 'replies'}`}>
+        <button className="branch-tag" onClick={() => onTrack(m.id)} aria-label={m.replyCount === 1 ? 'Open the side-track: 1 reply' : `Open the side-track: ${m.replyCount} replies`}>
           <span className="mono">↳ Side-track · {m.replyCount}{m.lastReplyAt ? ` · ${clock(m.lastReplyAt)}` : ''}</span>
         </button>
       )}
@@ -1331,7 +1337,10 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     if (!all.length || !canAttach) return;
     const limit = policyNow().maxUploadMb;
     const files = all.filter((f) => f.size <= limit * 1024 * 1024);
-    if (files.length < all.length) toast(`${all.length - files.length === 1 ? 'A file is' : `${all.length - files.length} files are`} larger than the office limit of ${limit >= 1024 ? `${limit / 1024} GB` : `${limit} MB`}.`, true);
+    if (files.length < all.length) {
+      const max = limit >= 1024 ? `${limit / 1024} GB` : `${limit} MB`;
+      toast(all.length - files.length === 1 ? `A file is larger than the office limit of ${max}.` : `${all.length - files.length} files are larger than the office limit of ${max}.`, true);
+    }
     if (!files.length) return;
     const room = 20 - attachments.length;
     const fresh = startUploads(files.slice(0, room), (k, patch) =>
@@ -1604,7 +1613,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
               {c.kind === 'tag' ? <>
                 <span className="hash-mark mono" aria-hidden="true">#</span>
                 <span className="hash-name" translate="no">{c.tag}</span>
-                <span className="faint mono hash-meta">{c.count} {c.count === 1 ? 'message' : 'messages'}</span>
+                <span className="faint mono hash-meta">{c.count === 1 ? '1 message' : `${c.count} messages`}</span>
               </> : <>
                 <ConvTile c={c.conv} users={ctx.users} meId={ctx.meId} />
                 <span className="hash-name" translate="no">{c.conv.name}</span>
@@ -1719,7 +1728,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       {parentId && (
         <label className="also-conv">
           <input type="checkbox" checked={alsoToConv} onChange={(e) => setAlsoToConv(e.target.checked)} />
-          Echo in {ctx.conv.kind === 'space' ? 'the Space' : 'the conversation'}
+          {ctx.conv.kind === 'space' ? 'Echo in the Space' : 'Echo in the conversation'}
         </label>
       )}
       <div className="dock-hint faint">
@@ -1946,7 +1955,7 @@ function ReadersDialog({ m, ctx, onClose }: { m: Message; ctx: Ctx; onClose: () 
       <div className="readers">
         <div className="label">Seen · {read.length}</div>{read.map(row)}
         {unread.length > 0 && <><div className="label">Not yet · {unread.length}</div>{unread.map(row)}</>}
-        {hidden.length > 0 && <p className="faint" style={{ fontSize: 12 }}>{hidden.length === 1 ? 'One person does' : `${hidden.length} people do`} not show when they have seen messages.</p>}
+        {hidden.length > 0 && <p className="faint" style={{ fontSize: 12 }}>{hidden.length === 1 ? 'One person does not show when they have seen messages.' : `${hidden.length} people do not show when they have seen messages.`}</p>}
       </div>
     </Dialog>
   );

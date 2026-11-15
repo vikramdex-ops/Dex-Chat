@@ -28,7 +28,7 @@ const looksLikeText = (s) => {
   if (/^(https?|dexconnect|data|blob):/.test(t)) return false;
   if (/^[a-z]+(-[a-z]+)+$/.test(t)) return false; // css-ish
   if (/[{}<>=]|=>/.test(t)) return false;
-  if (/;/.test(t) && !/^[^;]*[A-Za-z]; [a-z]/.test(t)) return false; // code; but prose may have a semicolon ("Focused; notifications still on")
+  if (/;/.test(t) && !/^[^;]*[A-Za-z]; ([a-z]|\d+ [a-z]|X [a-z])/.test(t)) return false; // code; but prose may have a semicolon ("Focused; notifications still on", "in the app; 2 emails to send")
   if (/^[a-z][a-zA-Z]+$/.test(t)) return false; // camelCase
   if (/^[A-Z_]+$/.test(t) && t.length > 1 && !/\s/.test(t) && t.length < 3) return false;
   return /^[A-Z0-9"“'‘(@#•·…↑↓✓]/.test(t) || /\s/.test(t);
@@ -44,8 +44,10 @@ const hubFiles = [];
     if (e.isDirectory()) walkHub(p); else if (e.name.endsWith('.ts')) hubFiles.push(p);
   }
 })(hubRoot);
-const add = (text, file, caption = false) => {
-  const t = text.replace(/\s+/g, ' ').trim();
+// JSX text is collapsed onto one line as it is drawn; a string in code is shown as written, so its
+// line breaks (a placeholder's "Small\nMedium\nLarge") and spaces stay in the key, or tr() never finds it
+const add = (text, file, caption = false, literal = false) => {
+  const t = literal ? text.trim() : text.replace(/\s+/g, ' ').trim();
   // a capitalised caption in a component prop (refText="NOW") is words, though it looks like a constant
   if (caption && /^[A-Z]{3,}$/.test(t)) { if (!out.has(t)) out.set(t, path.relative(root, file)); return; }
   if (!looksLikeText(t.replace(/\{\d\}/g, 'X'))) return;
@@ -64,14 +66,14 @@ for (const file of files) {
   const visit = (n) => {
     if (ts.isJsxText(n)) add(decode(n.text), file);
     else if (ts.isJsxAttribute(n) && (ATTRS.has(n.name.getText()) || TEXT_PROP.test(n.name.getText())) && n.initializer) {
-      if (ts.isStringLiteral(n.initializer)) add(n.initializer.text, file, TEXT_PROP.test(n.name.getText()));
+      if (ts.isStringLiteral(n.initializer)) add(n.initializer.text, file, TEXT_PROP.test(n.name.getText()), true);
     } else if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) {
       const p = n.parent;
       const skip = p && (ts.isImportDeclaration(p) || ts.isExportDeclaration(p) || (ts.isCallExpression(p) && /request|querySelector|getItem|setItem|addEventListener|getContext|createElement|matchMedia|startsWith|endsWith|includes|split|replace|test/.test(p.expression.getText())) || ts.isElementAccessExpression(p) || (ts.isBinaryExpression(p) && /===|!==|==|!=/.test(p.operatorToken.getText())) || ts.isCaseClause(p) || ts.isLiteralTypeNode(p) || ts.isPropertyAccessExpression(p));
-      if (!skip && !ts.isJsxAttribute(p)) add(n.text, file);
+      if (!skip && !ts.isJsxAttribute(p)) add(n.text, file, false, true);
     } else if (ts.isTemplateExpression(n)) {
       const s = tpl(n);
-      if (s && /[A-Za-z]{3}/.test(s.replace(/\{\d\}/g, ''))) add(s, file);
+      if (s && /[A-Za-z]{3}/.test(s.replace(/\{\d\}/g, ''))) add(s, file, false, true);
     }
     ts.forEachChild(n, visit);
   };
@@ -83,8 +85,8 @@ for (const file of hubFiles) {
   const visit = (n) => {
     if (ts.isNewExpression(n) && /Error$/.test(n.expression.getText()) && n.arguments?.length) {
       const a = n.arguments[0];
-      if (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) add(a.text, `hub/${path.relative(hubRoot, file)}`);
-      else if (ts.isTemplateExpression(a)) { const t = tpl(a); if (t) add(t, `hub/${path.relative(hubRoot, file)}`); }
+      if (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) add(a.text, `hub/${path.relative(hubRoot, file)}`, false, true);
+      else if (ts.isTemplateExpression(a)) { const t = tpl(a); if (t) add(t, `hub/${path.relative(hubRoot, file)}`, false, true); }
     }
     ts.forEachChild(n, visit);
   };

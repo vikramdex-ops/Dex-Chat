@@ -139,7 +139,7 @@ function DailyChart({ daily }: { daily: UsageReport['daily'] }) {
             <b>{shortDay(h.day)}</b>
             <span><i className="sw s1" />Spaces <b>{h.space}</b></span>
             <span><i className="sw s2" />Direct <b>{h.direct}</b></span>
-            <span className="faint">{h.activePeople} {h.activePeople === 1 ? "person" : "people"} · {h.calls} {h.calls === 1 ? "Room" : "Rooms"}{h.callMinutes ? ` · ${h.callMinutes} min` : ''}</span>
+            <span className="faint">{h.activePeople === 1 ? '1 person' : `${h.activePeople} people`} · {h.calls === 1 ? '1 Room' : `${h.calls} Rooms`}{h.callMinutes ? ` · ${h.callMinutes} min` : ''}</span>
           </div>
         )}
       </div>
@@ -417,7 +417,7 @@ function DataProtection({ p, save }: { p: OfficePolicy; save: (patch: Partial<Of
         {rules.map((r) => (
           <div key={r.id} className="dlp-rule">
             <span className={`dlp-act ${r.action}`}>{r.action === 'block' ? 'STOP' : 'MASK'}</span>
-            <span className="txt"><b>{r.name}</b><span className="faint">{describe(r)}{r.detector === 'words' && r.words ? (() => { const n = r.words.split(/[,\n]/).filter((w) => w.trim()).length; return ` · ${n} ${n === 1 ? 'word or phrase' : 'words and phrases'}`; })() : ''}</span></span>
+            <span className="txt"><b>{r.name}</b><span className="faint">{describe(r)}{r.detector === 'words' && r.words ? (() => { const n = r.words.split(/[,\n]/).filter((w) => w.trim()).length; return n === 1 ? ' · 1 word or phrase' : ` · ${n} words and phrases`; })() : ''}</span></span>
             <button className="icon-btn" title={`Remove ${r.name}`} aria-label={`Remove ${r.name}`} onClick={() => save({ dlp: rules.filter((x) => x.id !== r.id) })}><Icon name="trash" size={15} /></button>
           </div>
         ))}

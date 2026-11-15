@@ -32,7 +32,7 @@ export function RequiredUpdate({ state }: { state: AppState }) {
     <div className="scrim" role="alertdialog" aria-modal="true" aria-labelledby="req-title">
       <div className="dialog">
         <Icon name="shield" size={32} />
-        <h2 id="req-title">A required update is {u.phase === 'downloading' ? 'downloading' : 'ready'}</h2>
+        <h2 id="req-title">{u.phase === 'downloading' ? 'A required update is downloading' : 'A required update is ready'}</h2>
         <p className="muted">Version {u.available.version} includes changes everyone in the office needs. It installs in a few seconds and reopens where you left off.</p>
         {u.phase === 'downloading' && <div className="bar"><span style={{ width: `${pct(u.progress)}%` }} /></div>}
         {u.phase === 'error' && <div className="error-box">{u.error} It will retry automatically.</div>}
@@ -72,7 +72,9 @@ export function UpdateSettings({ state }: { state: AppState }) {
     case 'disabled': line = 'Updates are managed outside the app for development builds.'; break;
     case 'checking': line = 'Checking for updates…'; break;
     case 'up-to-date': line = `You're up to date${u.lastCheck ? ` · checked ${new Date(u.lastCheck).toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' })}` : ''}.`; break;
-    case 'available': line = `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from ${u.available?.source === 'hub' ? 'the office hub' : 'the internet'}).`; break;
+    case 'available': line = u.available?.source === 'hub'
+      ? `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from the office hub).`
+      : `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from the internet).`; break;
     case 'downloading': line = `Downloading ${u.available?.version}… ${pct(u.progress)}% of ${formatBytes(u.progress?.total ?? 0)}`; break;
     case 'ready': line = `Version ${u.available?.version} is ready. It installs when you restart or quit.`; break;
     case 'installing': line = 'Installing…'; break;

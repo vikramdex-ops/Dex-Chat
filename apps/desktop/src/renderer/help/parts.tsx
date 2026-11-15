@@ -44,7 +44,7 @@ export function entryText(e: HelpEntry, name: (id: string | null) => string): st
     case 'session.ended': return `The session ended${typeof d.durationMs === 'number' ? ` after ${durationText(d.durationMs)}` : ''}`;
     case 'consent.granted': return `${who} allowed ${kind}`;
     case 'consent.revoked': return `${e.actor ? `${who} stopped` : 'Stopped'} ${kind}${typeof d.durationMs === 'number' ? ` (${durationText(d.durationMs)})` : ''}`;
-    case 'asked': return `${who} asked for ${d.kind === 'control' ? 'the mouse and keyboard' : d.kind === 'diagnostics' ? 'diagnostics' : 'a look at the screen'}`;
+    case 'asked': return d.kind === 'control' ? `${who} asked for the mouse and keyboard` : d.kind === 'diagnostics' ? `${who} asked for diagnostics` : `${who} asked for a look at the screen`;
     case 'closed': return `${who} closed it`;
     case 'reopened': return `${who} reopened it`;
     case 'rated': return `${who} rated the help ${typeof d.rating === 'number' ? `${d.rating} of 5` : ''}`;

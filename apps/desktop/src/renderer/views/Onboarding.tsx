@@ -269,7 +269,7 @@ function Pending({ state }: { state: AppState }) {
       <h2>Waiting for an administrator</h2>
       <p className="muted">
         Ask an admin to approve <b>{state.account.displayName}</b> on <b>{state.account.hostname}</b>.
-        {state.pendingPosition > 1 ? ` ${state.pendingPosition - 1} other ${state.pendingPosition === 2 ? 'device is' : 'devices are'} ahead of you.` : ''}
+        {state.pendingPosition === 2 ? ' 1 other device is ahead of you.' : state.pendingPosition > 2 ? ` ${state.pendingPosition - 1} other devices are ahead of you.` : ''}
         {' '}This screen continues by itself once you're approved.
       </p>
       <div className="field" style={{ justifyItems: 'center' }}>

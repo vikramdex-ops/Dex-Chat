@@ -78,7 +78,7 @@ export function MyBots({ session }: { session: Session }) {
                   {b.persona ? <BotMarkTile mark={b.persona.mark} colour={b.persona.colour} size={36} /> : <span className="bot-tile bm-blank-tile" style={{ width: 36, height: 36 }} />}
                   <span className="bm-reg-text">
                     <b translate="no">{b.title}</b>
-                    <span className="mono faint">REV {pad(b.pendingVersion ?? b.version)} · {b.steps} Q · {b.runs} {b.runs === 1 ? 'RUN' : 'RUNS'}</span>
+                    <span className="mono faint">REV {pad(b.pendingVersion ?? b.version)} · {b.steps} Q · {b.runs === 1 ? '1 RUN' : `${b.runs} RUNS`}</span>
                   </span>
                 </button>
                 <span className="bm-reg-scope mono" translate={b.scope === 'space' ? 'no' : undefined}>{scopeTag(b)}</span>

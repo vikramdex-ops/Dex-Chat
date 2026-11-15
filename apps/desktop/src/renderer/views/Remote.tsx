@@ -67,7 +67,7 @@ export function RemoteAdmin() {
         <div className={`gw-status ${v.config.enabled ? (s.connected ? 'ok' : 'warn') : 'off'}`} role="status">
           <span className="dot" />
           {!v.config.enabled ? 'Off' : s.connected
-            ? <>Connected{s.since ? ` ${relativeTime(s.since)}` : ''} · {s.devices} {s.devices === 1 ? 'device' : 'devices'} outside now{s.pinned ? ' · gateway pinned to this hub' : ''}</>
+            ? <>Connected{s.since ? ` ${relativeTime(s.since)}` : ''} · {s.devices === 1 ? '1 device outside now' : `${s.devices} devices outside now`}{s.pinned ? ' · gateway pinned to this hub' : ''}</>
             : <>Not connected{s.error ? `: ${s.error}` : ''}. Retrying.</>}
         </div>
         {v.config.enabled && s.connected && !s.pinned && (

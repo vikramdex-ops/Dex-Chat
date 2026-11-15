@@ -171,7 +171,7 @@ export function DecisionCard({ m, meId, users }: { m: Message; meId: string; use
   const act = (op: 'decision.reset' | 'decision.close', ok?: string) => void window.dex.request(op, { messageId: m.id }).then(() => ok && toast(ok)).catch((e: Error) => toast(e.message, true));
   return (
     <div className={`poll decision-card${d.closed ? ' closed' : ''}${d.done ? ' done' : ''}`}>
-      <div className="poll-head"><Icon name="decision" size={16} /><span className="label">Decision{d.closed ? ' · closed' : ''} · {d.depth} {d.depth === 1 ? 'step' : 'steps deep'} · {d.finished} reached an end</span></div>
+      <div className="poll-head"><Icon name="decision" size={16} /><span className="label">Decision{d.closed ? ' · closed' : ''} · {d.depth === 1 ? '1 step' : `${d.depth} steps deep`} · {d.finished} reached an end</span></div>
       <div className="poll-q" translate="no">{d.question}</div>
       {d.trail.length > 0 && (
         <ol className="dc-trail" aria-label="Your path">

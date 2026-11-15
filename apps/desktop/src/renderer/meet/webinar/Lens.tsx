@@ -79,20 +79,33 @@ export function WebinarsBlock({ session, busy, onOpen, onReport }: { session: Se
 }
 
 // ------------------------------------------------------------------ the organiser's questions
-export function FieldsEditor({ value, onChange, what }: { value: WebinarFieldInput[]; onChange: (v: WebinarFieldInput[]) => void; what: string }) {
+// each label a whole phrase per kind of question, so "survey question" is translated with its sentence
+const FIELD_LABELS = {
+  question: {
+    name: (n: number) => `Question ${n}`, kind: (n: number) => `Kind of answer to question ${n}`,
+    remove: (n: number) => `Remove question ${n}`, answers: (n: number) => `Answers to choose from for question ${n}, one a line`,
+  },
+  survey: {
+    name: (n: number) => `Survey question ${n}`, kind: (n: number) => `Kind of answer to survey question ${n}`,
+    remove: (n: number) => `Remove survey question ${n}`, answers: (n: number) => `Answers to choose from for survey question ${n}, one a line`,
+  },
+};
+
+export function FieldsEditor({ value, onChange, survey = false }: { value: WebinarFieldInput[]; onChange: (v: WebinarFieldInput[]) => void; survey?: boolean }) {
   const set = (i: number, p: Partial<WebinarFieldInput>) => onChange(value.map((f, j) => (j === i ? { ...f, ...p } : f)));
+  const L = survey ? FIELD_LABELS.survey : FIELD_LABELS.question;
   return (
     <div className="wb-fields">
       {value.map((f, i) => (
         <div key={i} className="wb-field-row">
           <span className="mono wb-field-no">Q{i + 1}</span>
-          <input className="input" aria-label={`${what} ${i + 1}`} placeholder="For example, Company" maxLength={120} value={f.label} onChange={(e) => set(i, { label: e.target.value })} />
-          <select className="input" aria-label={`Kind of answer to ${what.toLowerCase()} ${i + 1}`} value={f.kind} onChange={(e) => set(i, { kind: e.target.value as 'text' | 'choice' })}>
+          <input className="input" aria-label={L.name(i + 1)} placeholder="For example, Company" maxLength={120} value={f.label} onChange={(e) => set(i, { label: e.target.value })} />
+          <select className="input" aria-label={L.kind(i + 1)} value={f.kind} onChange={(e) => set(i, { kind: e.target.value as 'text' | 'choice' })}>
             <option value="text">A line of text</option><option value="choice">One of a list</option>
           </select>
           <label className="check-line"><input type="checkbox" checked={!!f.required} onChange={(e) => set(i, { required: e.target.checked })} />Required</label>
-          <button type="button" className="icon-btn" aria-label={`Remove ${what.toLowerCase()} ${i + 1}`} onClick={() => onChange(value.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button>
-          {f.kind === 'choice' && <textarea className="input wb-field-opts" rows={3} aria-label={`Answers to choose from for ${what.toLowerCase()} ${i + 1}, one a line`} placeholder={'Answers to choose from, one a line'} value={(f.options ?? []).join('\n')} onChange={(e) => set(i, { options: e.target.value.split('\n') })} />}
+          <button type="button" className="icon-btn" aria-label={L.remove(i + 1)} onClick={() => onChange(value.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button>
+          {f.kind === 'choice' && <textarea className="input wb-field-opts" rows={3} aria-label={L.answers(i + 1)} placeholder={'Answers to choose from, one a line'} value={(f.options ?? []).join('\n')} onChange={(e) => set(i, { options: e.target.value.split('\n') })} />}
         </div>
       ))}
       {value.length < 12 && <button type="button" className="btn sm ghost" onClick={() => onChange([...value, { label: '', kind: 'text', required: false }])}><Icon name="plus" size={14} />Add a question</button>}
@@ -161,7 +174,7 @@ function PlanWebinar({ session, onClose, onDone }: { session: Session; onClose: 
           <label className="check-line"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} />Everyone in the office can watch it from the Meet lens</label>
         </div>
         <span className="field-label">Questions on the registration page <span className="faint">(besides name and email)</span></span>
-        <FieldsEditor value={fields} onChange={setFields} what="Question" />
+        <FieldsEditor value={fields} onChange={setFields} />
         <div className="dialog-actions"><span /><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={saving || !title.trim()}>{saving ? <span className="spinner" /> : <Icon name="calendar" size={15} />}Plan webinar</button></div>
       </form>
     </Dialog>
@@ -250,7 +263,7 @@ function SetupTab({ info, session, onChange }: { info: WebinarInfo; session: Ses
       <section className="wb-sec">
         <div className="tb-head"><span className="label">Questions on the form</span><span className="mono">{locked ? 'FIXED: PEOPLE HAVE REGISTERED' : `${fields.length}`}</span></div>
         {organizer && !locked
-          ? <><FieldsEditor value={fields} onChange={setFields} what="Question" /><div className="wb-row-actions"><button className="btn sm primary" onClick={() => save({ fields: cleanFields(fields) }, 'The form is saved')}>Save the form</button></div></>
+          ? <><FieldsEditor value={fields} onChange={setFields} /><div className="wb-row-actions"><button className="btn sm primary" onClick={() => save({ fields: cleanFields(fields) }, 'The form is saved')}>Save the form</button></div></>
           : <ul className="wb-fieldlist">{info.fields.map((f) => <li key={f.id}><span className="mono">{f.id.toUpperCase()}</span>{f.label}{f.required ? ' *' : ''}<span className="faint"> · {f.kind === 'choice' ? f.options.join(' / ') : 'text'}</span></li>)}{!info.fields.length && <li className="faint">Name and email only.</li>}</ul>}
       </section>
       <section className="wb-sec">
@@ -277,13 +290,13 @@ function RegistrantsTab({ info, onDecided }: { info: WebinarInfo; onDecided: () 
   const ids = [...picked].filter((id) => shown.some((r) => r.id === id));
   const decide = (registrantIds: string[], approve: boolean) => void window.dex.request('web.decide', { id: info.meetingId, registrantIds, approve }).then((l) => { setList(l); setPicked(new Set()); onDecided(); toast(approve ? `${registrantIds.length} approved` : `${registrantIds.length} turned away`); }).catch((e: Error) => toast(e.message, true));
   const mails = (kind: 'invite' | 'reminder', registrantIds?: string[]) => window.dex.request('web.mail', { id: info.meetingId, kind, registrantIds, when: when(info) });
-  const copyOne = (r: Registrant, kind: 'invite' | 'reminder') => void mails(kind, [r.id]).then((m) => { if (!m[0]) throw new Error('Approve them first.'); return navigator.clipboard.writeText(`To: ${m[0].email}\nSubject: ${m[0].subject}\n\n${m[0].text}`); }).then(() => toast(`${kind === 'invite' ? 'Invitation' : 'Reminder'} for ${r.name} copied`)).catch((e: Error) => toast(e.message, true));
+  const copyOne = (r: Registrant, kind: 'invite' | 'reminder') => void mails(kind, [r.id]).then((m) => { if (!m[0]) throw new Error('Approve them first.'); return navigator.clipboard.writeText(`To: ${m[0].email}\nSubject: ${m[0].subject}\n\n${m[0].text}`); }).then(() => toast(kind === 'invite' ? `Invitation for ${r.name} copied` : `Reminder for ${r.name} copied`)).catch((e: Error) => toast(e.message, true));
   const icsOne = (r: Registrant) => void mails('invite', [r.id]).then((m) => { if (!m[0]?.ics) throw new Error('Approve them first.'); saveText(`${safeFile(info.title)} - ${safeFile(r.name)}.ics`, m[0].ics, 'text/calendar;charset=utf-8'); }).catch((e: Error) => toast(e.message, true));
   const bulk = (kind: 'invite' | 'reminder', how: 'copy' | 'csv') => void mails(kind, ids.length ? ids : undefined).then((m: WebinarMail[]) => {
     if (!m.length) throw new Error('No approved registrants to write to.');
     const links = new Map((list ?? []).map((r) => [r.id, r.joinUrl ?? ''] as const));
-    if (how === 'csv') { saveText(`${safeFile(info.title)} ${kind === 'invite' ? 'invitations' : 'reminders'}.csv`, mailMergeCsv(m, links), 'text/csv;charset=utf-8'); toast(`${m.length} ${kind === 'invite' ? 'invitations' : 'reminders'} saved for a mail merge`); return; }
-    return navigator.clipboard.writeText(m.map((x) => `To: ${x.email}\nSubject: ${x.subject}\n\n${x.text}`).join('\n\n———\n\n')).then(() => toast(`${m.length} ${kind === 'invite' ? 'invitations' : 'reminders'} copied`));
+    if (how === 'csv') { saveText(`${safeFile(info.title)} ${kind === 'invite' ? 'invitations' : 'reminders'}.csv`, mailMergeCsv(m, links), 'text/csv;charset=utf-8'); toast(kind === 'invite' ? `${m.length} invitations saved for a mail merge` : `${m.length} reminders saved for a mail merge`); return; }
+    return navigator.clipboard.writeText(m.map((x) => `To: ${x.email}\nSubject: ${x.subject}\n\n${x.text}`).join('\n\n———\n\n')).then(() => toast(kind === 'invite' ? `${m.length} invitations copied` : `${m.length} reminders copied`));
   }).catch((e: Error) => toast(e.message, true));
   const exportCsv = () => { if (list) saveText(`${safeFile(info.title)} registrants.csv`, registrantsCsv(info.fields, list), 'text/csv;charset=utf-8'); };
   const toggle = (id: string) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n); };
@@ -433,7 +446,10 @@ function FollowUpTab({ info, onChange }: { info: WebinarInfo; onChange: (w: Webi
       const r = await window.dex.request('web.followup', { id: info.meetingId, note, recordingId: rec || null, outsideLink: outside.trim() || null, survey: withSurvey ? cleanFields(survey) : [], when: when(info) });
       setResult(r);
       onChange({ ...info, followUpAt: Date.now() });
-      toast(`Sent to ${r.sentInApp} ${r.sentInApp === 1 ? 'colleague' : 'colleagues'} in the app; ${r.mails.length} ${r.mails.length === 1 ? 'email' : 'emails'} to send`);
+      const mails = r.mails.length;
+      toast(r.sentInApp === 1
+        ? mails === 1 ? 'Sent to 1 colleague in the app; 1 email to send' : `Sent to 1 colleague in the app; ${mails} emails to send`
+        : mails === 1 ? `Sent to ${r.sentInApp} colleagues in the app; 1 email to send` : `Sent to ${r.sentInApp} colleagues in the app; ${mails} emails to send`);
       setTimeout(() => document.querySelector('.wb-followup .wb-sent')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
     } catch (e) { toast((e as Error).message, true); }
     setSending(false);
@@ -456,7 +472,7 @@ function FollowUpTab({ info, onChange }: { info: WebinarInfo; onChange: (w: Webi
       </section>
       <section className="wb-sec">
         <div className="tb-head"><span className="label">Survey</span><label className="check-line"><input type="checkbox" checked={withSurvey} onChange={(e) => setWithSurvey(e.target.checked)} />Ask for answers</label></div>
-        {withSurvey && <FieldsEditor value={survey} onChange={setSurvey} what="Survey question" />}
+        {withSurvey && <FieldsEditor value={survey} onChange={setSurvey} survey />}
       </section>
       <div className="wb-row-actions">
         <span className="faint">Colleagues who watched get it in the app; people who registered get email text to send from your mailbox, marked by who attended.</span>

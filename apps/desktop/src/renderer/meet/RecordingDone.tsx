@@ -82,7 +82,7 @@ function Done({ rec }: { rec: Recording }) {
       <dl className="rec-facts">
         <div><dt className="label">Length</dt><dd className="mono">{lengthOf(rec.ms)}</dd></div>
         <div><dt className="label">Size</dt><dd className="mono">{formatSize(rec.blob.size)}</dd></div>
-        <div><dt className="label">Chapters</dt><dd className="mono">{rec.chapters.length ? `${rec.chapters.length} · ${speakers} ${speakers === 1 ? 'speaker' : 'speakers'}` : 'None'}</dd></div>
+        <div><dt className="label">Chapters</dt><dd className="mono">{!rec.chapters.length ? 'None' : speakers === 1 ? `${rec.chapters.length} · 1 speaker` : `${rec.chapters.length} · ${speakers} speakers`}</dd></div>
       </dl>
       <div className="rec-keep" role="status">
         {!policy.allowRecording && <p>Keeping recordings on the hub is turned off for this office. Save it on this PC.</p>}

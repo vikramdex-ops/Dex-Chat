@@ -64,7 +64,11 @@ export function HelpMe({ users, onClose, onOpenTicket }: { users: Map<string, Pu
       {sent ? (
         <div className="hm-sent">
           <div className="hm-ref"><span className="label">Your request</span><b className="mono">{ticketRef(sent.number)}</b><StatusStamp t={sent} /></div>
-          <p>It is in the IT desk's queue{staff.length ? ` (${staff.length} ${staff.length === 1 ? 'person' : 'people'})` : ''}. You hear here when someone takes it, and they may ask to open a support session with you.</p>
+          <p>{staff.length === 1
+            ? "It is in the IT desk's queue (1 person). You hear here when someone takes it, and they may ask to open a support session with you."
+            : staff.length
+              ? `It is in the IT desk's queue (${staff.length} people). You hear here when someone takes it, and they may ask to open a support session with you.`
+              : "It is in the IT desk's queue. You hear here when someone takes it, and they may ask to open a support session with you."}</p>
           <div className="dialog-actions">
             <button className="btn ghost" onClick={() => onOpenTicket(sent.id)}>Open the request</button>
             <button className="btn primary" onClick={onClose}>Done</button>

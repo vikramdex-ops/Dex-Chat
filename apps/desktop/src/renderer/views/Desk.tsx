@@ -135,7 +135,7 @@ function Reminders({ list, users, meId, jump, onNew }: { list: Reminder[]; users
       ))}
       {done.length > 0 && (
         <section className="desk-group">
-          <button className="link label" onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide' : 'Show'} done · {done.length}</button>
+          <button className="link label" onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide done' : 'Show done'} · {done.length}</button>
           {showDone && done.slice(0, 100).map((r) => <ReminderRow key={r.id} r={r} users={users} meId={meId} jump={jump} />)}
         </section>
       )}
@@ -272,10 +272,10 @@ function ScheduledRow({ s, users, meId, jump }: { s: ScheduledMessage; users: Ma
               }} />
             <div className="edit-hint faint">Enter to save · Esc to cancel</div>
           </div>
-        ) : <div className="desk-text" translate={s.body ? 'no' : undefined}>{plainPreview(s.body, users) || <span className="faint">{s.files.length} {s.files.length === 1 ? 'file' : 'files'}</span>}</div>}
+        ) : <div className="desk-text" translate={s.body ? 'no' : undefined}>{plainPreview(s.body, users) || <span className="faint">{s.files.length === 1 ? '1 file' : `${s.files.length} files`}</span>}</div>}
         <div className="desk-meta">
           <span className={`chip${s.status === 'failed' ? ' bad' : ' accent'}`}><Icon name="schedule" size={12} />{s.status === 'failed' ? 'Not sent' : describeWhen(s.sendAt)}</span>
-          {s.files.length > 0 && s.body && <span className="faint">+ {s.files.length} {s.files.length === 1 ? 'file' : 'files'}</span>}
+          {s.files.length > 0 && s.body && <span className="faint">{s.files.length === 1 ? '+ 1 file' : `+ ${s.files.length} files`}</span>}
           {s.error && <span className="faint">{s.error}</span>}
         </div>
       </div>
@@ -381,7 +381,7 @@ function Tracks({ users, meId, jump }: { users: Map<string, PublicUser>; meId: s
             <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} presence={presenceFor(m.authorId)} size="sm" />
             <button className="desk-main desk-open" onClick={() => jump(m.convId, m.id, m.id)}>
               <QuoteLine m={m} users={users} meId={meId} />
-              <div className="desk-meta"><span className="faint">{replyCount} {replyCount === 1 ? 'reply' : 'replies'} · last {describeWhen(lastReplyAt)}</span></div>
+              <div className="desk-meta"><span className="faint">{replyCount === 1 ? '1 reply' : `${replyCount} replies`} · last {describeWhen(lastReplyAt)}</span></div>
             </button>
           </div>
         );

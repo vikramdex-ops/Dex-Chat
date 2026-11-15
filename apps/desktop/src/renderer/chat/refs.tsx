@@ -224,7 +224,7 @@ export function ReferenceDialog({ payload, users, meId, onClose }: { payload: Re
   };
   return (
     <Dialog title="Reference in…" onClose={onClose}>
-      <p className="muted" style={{ margin: 0 }}>Points to the {payload.kind === 'file' ? 'file' : 'message'} where it is. Nothing is copied, and nobody gets access they did not have.</p>
+      <p className="muted" style={{ margin: 0 }}>{payload.kind === 'file' ? 'Points to the file where it is. Nothing is copied, and nobody gets access they did not have.' : 'Points to the message where it is. Nothing is copied, and nobody gets access they did not have.'}</p>
       <input className="input" autoFocus placeholder="Search conversations" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search conversations" />
       <div className="picker-list" role="listbox" aria-label="Conversations">
         {list.length === 0 && <div className="faint" style={{ padding: 12 }}>No conversations match.</div>}
@@ -281,7 +281,7 @@ export function RefCard({ m, users, meId, onView }: { m: Message; users: Map<str
           <>
             <span className="ref-by"><b translate="no">{users.get(src.authorId)?.displayName ?? 'Someone'}</b><span className="mono faint"> · {new Date(src.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}{src.editedAt ? ' · edited' : ''}</span></span>
             <span className="ref-excerpt" translate="no">{locked ? 'Encrypted message: open it to read' : plainPreview(src.body, users) || (src.files.length ? `📎 ${src.files.map((f) => f.name).join(', ')}` : '')}</span>
-            {src.files.length > 0 && !locked && <span className="mono faint ref-files">{src.files.length} {src.files.length === 1 ? 'file' : 'files'}</span>}
+            {src.files.length > 0 && !locked && <span className="mono faint ref-files">{src.files.length === 1 ? '1 file' : `${src.files.length} files`}</span>}
             <span className="ref-actions"><button className="lbtn" onClick={open}><Icon name="open" size={13} />Open the source</button></span>
           </>
         ) : null}
