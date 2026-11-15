@@ -5,8 +5,6 @@
 // across the top while control is on.
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { InputBatcher, KEYS, STOP_HOTKEY, domButton, fromPicture, wheelNotches } from '@dex/core/assist';
-import type { InputEvent } from '@dex/core/assist';
 import { ticketRef } from '@dex/core';
 import type { HelpEntry, HelpTicket, PublicUser, SupportSession } from '@dex/core';
 import { Avatar, Icon, useToast } from '../ui.tsx';
@@ -15,6 +13,7 @@ import { AudioOut, Clock, Video } from '../rooms/parts.tsx';
 import { RoomPointers } from '../pointers/surfaces.tsx';
 import { Files, StatusStamp, Timeline, categoryLabel, platformLabel } from './parts.tsx';
 import { ControlConsent, DiagnosticsSheet, ScreenConsent } from './Consent.tsx';
+import { ControlBanner, ControlSurface } from './control.tsx';
 import { clearAsk, endSession, screenEnded, sendFile, stopControl, stopScreen, useHelp } from './store.ts';
 import './help.css';
 
@@ -117,7 +116,7 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
           <figure className="sup-screen">
             <Video stream={screen} muted fit="contain" />
             {controlling && requester
-              ? <ControlSurface onLetGo={() => setControlling(false)} name={first} />
+              ? <ControlSurface label={`Using ${first}'s mouse and keyboard`} tag={`YOU ARE USING ${first.toUpperCase()}'S MOUSE AND KEYBOARD`} action="Let go" onAction={() => setControlling(false)} send={sendRoomData} />
               : requester && <RoomPointers presenterDevice={requester.deviceId} users={users} meId={meId} />}
             <figcaption className="room-cap"><b>SHEET</b><span>{name.toUpperCase()} · {session.consent.scope === 'window' ? 'ONE WINDOW' : 'WHOLE SCREEN'}</span></figcaption>
           </figure>
@@ -175,62 +174,6 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
   );
 }
 
-/**
- * The technician's hands on the requester's PC: pointer and keys over the shared picture, sent as
- * input events (positions relative to the picture). Keys and buttons held here are let go when
- * the surface loses focus, so nothing stays pressed on the other side.
- */
-function ControlSurface({ onLetGo, name }: { onLetGo: () => void; name: string }) {
-  const surface = useRef<HTMLDivElement>(null);
-  const batch = useRef(new InputBatcher());
-  const held = useRef({ keys: new Set<string>(), buttons: new Set<'left' | 'right' | 'middle'>() });
-  useEffect(() => {
-    surface.current?.focus();
-    const t = setInterval(() => { const m = batch.current.take(); if (m) sendRoomData(m); }, 16);
-    return () => { clearInterval(t); letGo(); const m = batch.current.take(); if (m) sendRoomData(m); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const at = (e: { clientX: number; clientY: number }) => {
-    const v = surface.current?.parentElement?.querySelector('video');
-    if (!v) return null;
-    const r = v.getBoundingClientRect();
-    return fromPicture(e.clientX, e.clientY, { x: r.left, y: r.top, width: r.width, height: r.height }, v.videoWidth, v.videoHeight);
-  };
-  const push = (ev: InputEvent) => batch.current.push(ev);
-  const letGo = () => {
-    for (const code of held.current.keys) push({ t: 'key', code, down: false });
-    for (const b of held.current.buttons) push({ t: 'button', b, down: false, x: -1, y: -1 });
-    held.current.keys.clear();
-    held.current.buttons.clear();
-  };
-  return (
-    <div ref={surface} className="sup-control" tabIndex={0} aria-label={`Using ${name}'s mouse and keyboard`}
-      onPointerMove={(e) => { const p = at(e); if (p) push({ t: 'move', ...p }); }}
-      onPointerDown={(e) => {
-        surface.current?.focus();
-        const b = domButton(e.button); const p = at(e);
-        if (!b || !p) return;
-        e.preventDefault();
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        held.current.buttons.add(b);
-        push({ t: 'button', b, down: true, ...p });
-      }}
-      onPointerUp={(e) => {
-        const b = domButton(e.button);
-        if (!b || !held.current.buttons.has(b)) return;
-        held.current.buttons.delete(b);
-        const p = at(e) ?? { x: -1, y: -1 };
-        push({ t: 'button', b, down: false, ...p });
-      }}
-      onWheel={(e) => { const p = at(e); if (!p) return; const dy = wheelNotches(e.deltaY, e.deltaMode); const dx = wheelNotches(e.deltaX, e.deltaMode); if (dx || dy) push({ t: 'wheel', dx, dy, ...p }); }}
-      onContextMenu={(e) => e.preventDefault()}
-      onKeyDown={(e) => { if (!(e.code in KEYS)) return; e.preventDefault(); held.current.keys.add(e.code); push({ t: 'key', code: e.code, down: true }); }}
-      onKeyUp={(e) => { if (!(e.code in KEYS)) return; e.preventDefault(); if (!held.current.keys.delete(e.code)) return; push({ t: 'key', code: e.code, down: false }); }}
-      onBlur={letGo}>
-      <span className="sup-control-tag mono">YOU ARE USING {name.toUpperCase()}'S MOUSE AND KEYBOARD<button className="btn sm" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onLetGo(); }}>Let go</button></span>
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ the requester
 function RequesterDock({ users, meId, meDevice, session }: Props & { session: SupportSession }) {
   const toast = useToast();
@@ -261,14 +204,7 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
       <SessionAudio />
       {/* the technician's pointers on this screen (the click-through window), while it is shared */}
       {screen && <div className="pt-hidden"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
-      {c.control && (
-        <div className="sup-banner" role="alert">
-          <span className="sup-banner-pip" aria-hidden="true" />
-          <span><b>{tech}</b> is using your mouse and keyboard</span>
-          <button className="sup-stop" onClick={() => run(stopControl())}>Stop control</button>
-          <span className="mono sup-banner-keys">{STOP_HOTKEY}</span>
-        </div>
-      )}
+      {c.control && <ControlBanner who={tech} onStop={() => run(stopControl())} />}
       {minimized ? (
         <button className={`sup-chip for-requester${c.screen ? ' sharing' : ''}`} onClick={() => setMinimized(false)} title="Open the support session">
           <span className="room-chip-pip" aria-hidden="true" /><span className="mono">IT · {techFirst.toUpperCase()}{c.screen ? ' · SHARING' : ''} · </span><Clock since={session.startedAt} className="mono" />

@@ -131,29 +131,37 @@ export interface DiagnosticsReport {
   rendererErrors: Array<{ at: number; message: string; source?: string }>;
 }
 
-/** What this PC can do in a support session. */
+/** What this PC can do in a support session or a meeting. */
 export interface AssistCaps {
-  /** The technician may be given the mouse and keyboard (Windows; Linux with xdotool). */
+  /** Someone may be given the mouse and keyboard (Windows; Linux with xdotool). */
   control: boolean;
   /** Why not, in words for the requester (macOS, Wayland, no xdotool). */
   reason: string | null;
   platform: NodeJS.Platform;
 }
 
-/** The share bar on the requester's screen (an always-on-top window of its own). */
-export interface ShareBarState { tech: string; scope: 'screen' | 'window'; control: boolean; hotkey: string }
+/** Where remote control happens: a support session (IT), or a meeting ("Give control"). */
+export type AssistContext = 'support' | 'meeting';
+
+/**
+ * The share bar on the requester's or presenter's screen (an always-on-top window of its own):
+ * in a support session while the screen is shared, in a meeting while someone has control.
+ */
+export interface ShareBarState { peer: string; scope: 'screen' | 'window'; control: boolean; hotkey: string; context: AssistContext }
 
 export interface AssistBridge {
   caps(): Promise<AssistCaps>;
   /**
-   * What the requester allows now, as this PC enforces it. Sharing a whole screen ('screen:' source)
-   * draws an amber frame around it and a share bar on top; control injects the technician's input.
+   * What this PC's person allows now, as this PC enforces it. In a support session, sharing a
+   * whole screen ('screen:' source) draws an amber frame around it and a share bar on top; in a
+   * meeting they show while someone has control. Control injects the input of `peer`: in a
+   * meeting only from the device `from`.
    */
-  consent(c: { screen: boolean; sourceId?: string | null; scope?: 'screen' | 'window'; control: boolean; tech: string }): Promise<{ screen: boolean; control: boolean; error: string | null }>;
-  /** A message of input events from the technician (checked and limited in the main process). */
-  input(msg: unknown): void;
-  /** The requester stopped something from the share bar or with the stop hotkey. */
-  onStop(cb: (what: 'control' | 'screen' | 'session') => void): () => void;
+  consent(c: { screen: boolean; sourceId?: string | null; scope?: 'screen' | 'window'; control: boolean; peer: string; context?: AssistContext; from?: string | null }): Promise<{ screen: boolean; control: boolean; error: string | null }>;
+  /** A message of input events from the person in control, sent by device `from` (checked and limited in the main process). */
+  input(msg: unknown, from?: string): void;
+  /** Something was stopped from the share bar, with the stop hotkey, or because the window or hub went away (context null). */
+  onStop(cb: (what: 'control' | 'screen' | 'session', context: AssistContext | null) => void): () => void;
   diagnostics(rendererErrors: Array<{ at: number; message: string; source?: string }>): Promise<DiagnosticsReport>;
   /** A picture of this screen (the app steps aside while it is taken), for a Help Me request. */
   screenshot(): Promise<{ data: ArrayBuffer; name: string } | null>;

@@ -1,6 +1,7 @@
 // Windows that sit above everything on the requester's or presenter's screen:
-// - while a screen is shared with IT, an amber frame around that screen (four thin strips that the
-//   pointer passes through) and a share bar ("Sharing your screen with Ravi · Stop sharing");
+// - while a screen is shared with IT, or someone has control of a presenter's screen in a meeting,
+//   an amber frame around that screen (four thin strips that the pointer passes through) and a
+//   share bar ("Sharing your screen with Ravi · Stop sharing", or who uses the mouse and keyboard);
 // - while you present in a Room, a transparent, click-through window that shows where everyone
 //   points on your real screen.
 import { BrowserWindow, screen } from 'electron';

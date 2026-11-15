@@ -61,12 +61,14 @@ export async function startHelp(me: string): Promise<void> {
       else if (name === 'help.ask') set({ ask: { ...(data as { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string }), at: Date.now() } });
     });
     // the technician's input reaches this PC over the session's data channel: only the main process injects it
-    onRoomData((_dev, user, data) => {
+    onRoomData((dev, user, data) => {
       const s = state.session;
-      if (!s || !s.consent.control || user !== s.techId || meId !== s.requesterId) return;
-      if ((data as { k?: unknown } | null)?.k === 'in') window.dex.assist?.input(data);
+      if (!s || !s.consent.control || user !== s.techId || meId !== s.requesterId || callState().room?.purpose?.kind !== 'support') return;
+      if ((data as { k?: unknown } | null)?.k === 'in') window.dex.assist?.input(data, dev);
     });
-    window.dex.assist?.onStop((what) => {
+    window.dex.assist?.onStop((what, context) => {
+      // a meeting's "Give control" has its own (meet/control-store.ts)
+      if (context === 'meeting' || !state.session) return;
       if (what === 'control') void stopControl();
       else if (what === 'screen') void stopScreen();
       else void endSession();
@@ -148,7 +150,7 @@ async function applyLocal(screen: boolean, control: boolean): Promise<{ screen: 
   const s = state.session;
   const techName = s ? techNameOf(s.techId) : 'IT';
   if (!window.dex.assist) return { screen, control: false, error: control ? 'Remote control works from the desktop app.' : null };
-  return window.dex.assist.consent({ screen, sourceId: state.shared?.sourceId ?? null, scope: state.shared?.scope ?? 'screen', control, tech: techName });
+  return window.dex.assist.consent({ screen, sourceId: state.shared?.sourceId ?? null, scope: state.shared?.scope ?? 'screen', control, peer: techName, context: 'support' });
 }
 let techNameOf: (id: string) => string = () => 'IT';
 export function setNames(f: (id: string) => string): void { techNameOf = f; }

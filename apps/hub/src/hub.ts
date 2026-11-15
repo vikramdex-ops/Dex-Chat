@@ -280,7 +280,7 @@ export class Hub {
         this.lounges.roomChanged(room, ended);
         if (ended) this.helpdesk.roomEnded(room); else this.helpdesk.roomChanged(room);
       },
-      webinar: { onStage: (m, u) => this.webinars.onStage(m, u), changed: (r) => this.webinars.roomChanged(r), ended: (r) => this.webinars.roomEnded(r) },
+      webinar: { onStage: (m, u) => this.webinars.onStage(m, u), staff: (m, u) => this.webinars.isHost(m, u) || this.webinars.isPanelist(m, u), changed: (r) => this.webinars.roomChanged(r), ended: (r) => this.webinars.roomEnded(r) },
     });
     this.recordings = new Recordings({
       db: this.store.db, files: this.files, dir: path.join(opts.dataDir, 'recordings-partial'),

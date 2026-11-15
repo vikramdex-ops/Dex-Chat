@@ -121,6 +121,14 @@ How it works:
 - **Phones:** requests and sessions (with sound) work; screen sharing, diagnostics and control are
   desktop-only.
 
+**The same pieces in meetings.** "Give control" in a meeting or on a webinar's stage
+(docs/MEETINGS.md) uses this remote control as it is: the consent sheet, the amber banner, the share
+bar, the stop keys, the controller's surface over the picture, the input events, gate, rate limit,
+chords and mapping, and the injectors. The main process's `assist:consent` takes a *context*
+(`support` or `meeting`) and, in a meeting, the one device whose input it accepts; in a support
+session the window checks that input comes from the technician. In a meeting the frame and bar show
+only while someone has control, since the meeting's own sheet shows the share.
+
 ## What is recorded
 
 - **The ticket's timeline:** opened, taken (and from whom), notes, files, diagnostics, session
@@ -146,6 +154,7 @@ and **Solved: close it** or **It still needs work** (which keeps or reopens the 
 | Input events, gate, chords, mapping | `packages/core/src/assist.ts` |
 | Requester's PC | `apps/desktop/src/main/assist/` (`index.ts` wiring, `control.ts`, `windows.ts`, `linux.ts`, `diagnostics.ts`, `overlay.ts`), `apps/desktop/src/main/applog.ts` |
 | Screens | `apps/desktop/src/renderer/help/` (Help me, Help desk, the session, consent sheets, the share bar) |
+| Shared with meetings ("Give control") | the main-process side above (with its *context*), `help/control.tsx` (the control consent sheet, the banner with Stop, the controller's surface), `help/ShareBar.tsx`, `packages/core/src/assist.ts`; the meeting's own parts are `packages/core/src/meet-control.ts`, `apps/hub/src/meet-control.ts` and `apps/desktop/src/renderer/meet/Control.tsx` and `control-store.ts` |
 
 ## Tests
 
@@ -153,7 +162,8 @@ and **Solved: close it** or **It still needs work** (which keeps or reopens the 
   session, consent as the protocol carries it, the audit trail, a restart).
 - Units: `packages/core/test/assist.test.ts` (the event decoder, the rate limit, the chord list,
   coordinates), `apps/desktop/test/assist.test.ts` (the generated C# and PowerShell, the JSON lines
-  both sides speak, xdotool's commands, the control gate, diagnostics without secrets).
+  both sides speak, xdotool's commands, the control gate, input only from the device allowed in a
+  meeting, diagnostics without secrets).
 - End to end on Linux under Xvfb with xdotool: a technician's pointer and keys move the real
   pointer, click a button and type into a field in the requester's own window.
 - **Windows:** the helper cannot run in the Linux test environment. CI's `input helper (windows)`

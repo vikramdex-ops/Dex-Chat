@@ -1,0 +1,34 @@
+/* "Give control" on the Room sheet: the person menu's item and note, Ask for control on the shared
+   screen, who controls it, and the presenter's request sheet. The banner, the consent sheet and the
+   controller's surface are the support session's (help/help.css). */
+.room-person-menu .ctl-item .kbd { margin-left: auto; font-size: 9.5px; letter-spacing: .08em; }
+.room-person-menu .ctl-item.on { color: var(--amber-ink); font-weight: 600; }
+.room-person-menu .ctl-note {
+  display: flex; gap: 8px; align-items: flex-start; margin: 4px 6px; padding: 7px 9px; max-width: 260px; border-radius: var(--radius-s);
+  background: var(--subtle); color: var(--text-2); font-size: 12px; line-height: 1.35;
+}
+.room-person-menu .ctl-note svg { flex: none; margin-top: 1px; color: var(--text-3); }
+.room-person-menu .ctl-note b { display: block; color: var(--text); font-weight: 600; }
+
+.ctl-ask {
+  position: absolute; right: 10px; top: 10px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
+  border: 1px solid var(--amber); border-radius: 5px; background: var(--layer-solid); color: var(--text); font: 600 12.5px var(--font-body); cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+}
+.ctl-ask:hover:not(:disabled) { background: var(--amber); color: #2b1a00; }
+.ctl-ask:disabled { opacity: .8; cursor: default; border-style: dashed; }
+.ctl-ask svg { color: var(--amber-ink); }
+.ctl-ask:hover:not(:disabled) svg { color: #2b1a00; }
+.ctl-flag {
+  position: absolute; right: 10px; top: 10px; z-index: 6; padding: 4px 9px; border-radius: 4px; font-size: 10px; letter-spacing: .1em;
+  background: var(--amber); color: #2b1a00; box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+}
+.ctl-flag.quiet { background: var(--layer-solid); color: var(--text-2); border: 1px solid var(--stroke-strong); }
+/* the controller's tag sits at the foot of the picture, clear of its caption (no live pointer tools while controlling) */
+.room-share .sup-control-tag { top: auto; bottom: 12px; white-space: nowrap; font-family: var(--font-body); font-size: 12.5px; letter-spacing: 0; }
+.room-share .sup-control-tag b { font-weight: 700; }
+
+.ctl-request-who { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--stroke-strong); border-left: 3px solid var(--amber); border-radius: var(--radius-m); background: var(--layer); }
+.ctl-request-who > div { display: grid; gap: 2px; min-width: 0; }
+.ctl-request-who strong { font-size: 15px; }
+.ctl-request-who .mono { font-size: 10.5px; letter-spacing: .08em; }

@@ -27,6 +27,7 @@ import { HostExtras, SoundMenu, useRoomUsers } from '../meet/RoomExtras.tsx';
 import { BreakoutBanner } from '../meet/Breakouts.tsx';
 import { useNoise } from './noise.ts';
 import { RoomPointers } from '../pointers/surfaces.tsx';
+import { ControlLayer, ControlMenuItems, ShareControl } from '../meet/Control.tsx';
 import { WEBINAR_TAB_LIST, isWebinarTab } from '../meet/webinar/tabs.ts';
 import type { WebinarTab } from '../meet/webinar/tabs.ts';
 import '../meet/meet.css';
@@ -349,7 +350,9 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
           {layout === 'presentation' && shareStream && (
             <figure className="room-share">
               <Video stream={shareStream} muted fit="contain" />
-              <RoomPointers presenterDevice={sharedStream && shared ? shared.deviceId : meDevice} users={users} meId={meId} />
+              {/* the person given control uses the picture with their own pointer and keys instead of live pointers */}
+              {!(sharedStream && shared && room.control?.controllerDevice === meDevice) && <RoomPointers presenterDevice={sharedStream && shared ? shared.deviceId : meDevice} users={users} meId={meId} />}
+              {sharedStream && shared && <ShareControl room={room} presenter={shared} meDevice={meDevice} nameOf={nameOf} />}
               <figcaption className="room-cap"><b>SHEET</b><span>{screen && !sharedStream ? 'YOUR SCREEN · SHARED' : `${capName(nameOf(shared!.userId))} · SCREEN`}</span></figcaption>
             </figure>
           )}
@@ -463,6 +466,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
         </aside>
       </div>
       <RoomAudio meDevice={meDevice} />
+      <ControlLayer room={room} users={users} meDevice={meDevice} nameOf={nameOf} />
       {picker && <ScreenPicker onPick={(id, sound) => { setPicker(false); void toggleScreen(id, sound).then(() => setLayout('presentation')); }} onClose={() => setPicker(false)} />}
       {adding && (
         <Popover anchor={addBtn.current} onClose={() => setAdding(false)} className="menu add-people" align="start">
@@ -533,6 +537,8 @@ function PersonMenu({ anchor, onClose, room, deviceId, meDevice, meId, isHost, i
     <Popover anchor={anchor} onClose={onClose} className="menu room-person-menu">
       <div className="menu-label label">{me ? 'You' : nameOf(p.userId)}{p.userId === room.hostId ? ' · host' : isCo ? ' · co-host' : ''}</div>
       <button role="menuitem" onClick={() => act(() => setPinned(pinned === deviceId ? null : deviceId))}><Icon name="pin" size={16} />{pinned === deviceId ? 'Unpin' : `Pin ${first} for me`}</button>
+      {/* only the person sharing their screen gives control of it */}
+      <ControlMenuItems room={room} deviceId={deviceId} meDevice={meDevice} nameOf={nameOf} onDone={onClose} />
       {isHost && (
         <>
           <button role="menuitem" onClick={() => act(() => host('room.spotlight', { deviceId: room.spotlight === deviceId ? null : deviceId }))}>

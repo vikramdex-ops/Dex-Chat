@@ -55,7 +55,7 @@ const bridge: DexBridge = {
   assist: {
     caps: () => ipcRenderer.invoke('assist:caps'),
     consent: (c) => ipcRenderer.invoke('assist:consent', c),
-    input: (msg) => ipcRenderer.send('assist:input', msg),
+    input: (msg, from) => ipcRenderer.send('assist:input', msg, from),
     onStop: (cb) => subscribe('assist:stop', cb),
     diagnostics: (errors) => ipcRenderer.invoke('assist:diagnostics', errors),
     screenshot: () => ipcRenderer.invoke('assist:screenshot'),

@@ -3,12 +3,12 @@
 // letting the technician use the mouse and keyboard, sending diagnostics (shown in full first),
 // and saying how it went when the session ends.
 import { useEffect, useState } from 'react';
-import { STOP_HOTKEY } from '@dex/core/assist';
 import { ticketRef } from '@dex/core';
 import type { HelpTicket } from '@dex/core';
 import type { DiagnosticsReport } from '../../shared/bridge.ts';
 import { Dialog, Icon, useToast } from '../ui.tsx';
 import { allowControl, recentErrors, sendDiagnostics, shareScreen, useHelp } from './store.ts';
+import { ControlConsentSheet } from './control.tsx';
 
 /** "Share your screen with Ravi Kumar?": a whole screen or one window, chosen from pictures of them. */
 export function ScreenConsent({ tech, onClose }: { tech: string; onClose: () => void }) {
@@ -51,32 +51,14 @@ export function ScreenConsent({ tech, onClose }: { tech: string; onClose: () => 
 
 /** "Let Ravi Kumar use your mouse and keyboard": the second, separate consent. */
 export function ControlConsent({ tech, onClose }: { tech: string; onClose: () => void }) {
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
   const session = useHelp((s) => s.session);
   const control = useHelp((s) => s.control);
   const whole = !!session?.consent.screen && session.consent.scope === 'screen';
-  const allow = async () => {
-    setBusy(true);
-    try { await allowControl(); toast(`${tech} can use your mouse and keyboard. Stop it any time with ${STOP_HOTKEY}.`); onClose(); } catch (e) { toast((e as Error).message, true); setBusy(false); }
-  };
   return (
-    <Dialog title={`Let ${tech} use your mouse and keyboard?`} onClose={onClose} narrow>
-      <div className="cs-sheet">
-        <p className="cs-lead">{tech} can click, type and open things on your shared screen as if they sat at your PC. You see everything they do.</p>
-        <ul className="cs-points">
-          <li><b>Stop at any moment:</b> the big <b>Stop control</b> button on the bar at the top of your screen, or press <kbd className="mono">{STOP_HOTKEY}</kbd>, even while they are typing.</li>
-          <li>System keys such as Ctrl+Alt+Del and Win+L are never passed on.</li>
-          <li>Control ends when the screen stops being shared or the session ends.</li>
-        </ul>
-        {!control.available && <p className="hm-warn"><Icon name="info" size={15} />{control.reason ?? 'This PC cannot be controlled remotely.'}</p>}
-        {control.available && !whole && <p className="hm-warn"><Icon name="info" size={15} />Share your whole screen first: control works on a whole screen.</p>}
-        <div className="dialog-actions">
-          <button className="btn ghost" onClick={onClose}>No</button>
-          <button className="btn primary amber" disabled={busy || !control.available || !whole} onClick={() => void allow()}>{busy ? <span className="spinner" /> : <Icon name="check" size={15} />}Allow control</button>
-        </div>
-      </div>
-    </Dialog>
+    <ControlConsentSheet who={tech} onClose={onClose} onAllow={allowControl} available={control.available} reason={control.reason} whole={whole}
+      lead={`${tech} can click, type and open things on your shared screen as if they sat at your PC. You see everything they do.`}
+      ends="Control ends when the screen stops being shared or the session ends."
+      wholeNote="Share your whole screen first: control works on a whole screen." />
   );
 }
 
