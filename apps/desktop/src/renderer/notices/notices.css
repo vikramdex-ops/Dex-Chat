@@ -33,10 +33,12 @@
 .nb-stack.need .nb-stack-top { box-shadow: inset 3px 0 0 var(--amber), 0 6px 18px rgba(8, 22, 24, .08); }
 /* the drawing pin: a teal head with its shadow, holding the sheet */
 .nb-pin { position: absolute; top: -6px; left: 50%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #63c0b5, var(--accent) 60%, #13474d); box-shadow: 0 2px 3px rgba(8, 22, 24, .35); }
-.nb-stack-no { font-size: 11px; letter-spacing: .06em; color: var(--accent-ink); }
+/* the number, and the ACKNOWLEDGE tag on its right: never wrapped (a long number ends in an ellipsis) */
+.nb-stack-head { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 18px; }
+.nb-stack-no { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; letter-spacing: .06em; color: var(--accent-ink); }
+.nb-stack-head .chip { flex: none; margin-left: auto; height: 18px; padding: 0 6px; font-size: 9.5px; white-space: nowrap; }
 .nb-stack-title { font: 600 15px/1.25 var(--font-display); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.nb-stack-foot { display: flex; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid var(--stroke); font-size: 10.5px; color: var(--text-3); }
-.nb-stack-foot .chip { margin-left: auto; }
+.nb-stack-foot { display: flex; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid var(--stroke); font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
 .nb-tick { margin-left: auto; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 2px; color: var(--accent-ink); }
 
 /* filters: one strip of ruled cells */
@@ -228,7 +230,9 @@ html:is([lang='hi'], [lang='ta']) .nb-revs th { font: 600 11px/1.2 var(--font-bo
 .nb-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 44px 14px 0; padding: 8px 12px; border: 1px dashed var(--accent); border-radius: 3px; }
 
 /* ------------------------------------------------------------------ the urgent banner */
-.nb-banner { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--amber); background: color-mix(in srgb, var(--amber-soft) 70%, var(--layer-solid)); box-shadow: inset 4px 0 0 var(--amber); }
+/* its own row of the frame's grid, between the title bar and the stage (App.tsx): the lens starts below it */
+.frame:has(> .nb-banner) { grid-template-rows: var(--titlebar) auto 1fr; }
+.nb-banner { min-width: 0; margin: 0 8px 6px; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 1px solid var(--amber); border-radius: var(--radius-l); background: color-mix(in srgb, var(--amber-soft) 70%, var(--layer-solid)); box-shadow: inset 4px 0 0 var(--amber); }
 .nb-banner-tag { padding: 2px 6px; border: 1px solid var(--amber); border-radius: 2px; color: var(--amber-ink); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
 .nb-banner-text { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb-banner-from { font-weight: 400; color: var(--text-2); }
@@ -290,13 +294,12 @@ html:is([lang='hi'], [lang='ta']) .nb-day-cat { font: 600 10.5px/1.2 var(--font-
   .nb-table .nb-row-meta { grid-area: desk; }
   .nb-filters .seg { width: 100%; }
   .nb-filters .nb-select { flex: 1 1 40%; }
-  .nb-stack { width: 180px; height: 140px; }
+  .nb-stack { width: 196px; height: 140px; }
   .nb-tb-title { font-size: 21px; }
   .nb-tb-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nb-cell.wide { grid-column: span 2; }
   .nb-cell.st { order: 1; }
   .nb-cell.for { order: 2; }
-  .nb-stack-foot { flex-wrap: wrap; row-gap: 4px; }
   .nb-stamp { position: relative; right: auto; top: auto; margin: 8px auto 12px; justify-self: center; display: grid; width: max-content; }
   .nb-tb { display: grid; }
   .nb-ack { position: sticky; bottom: 0; z-index: 3; box-shadow: 0 -8px 20px rgba(8, 22, 24, .12); }
@@ -309,8 +312,9 @@ html:is([lang='hi'], [lang='ta']) .nb-day-cat { font: 600 10.5px/1.2 var(--font-
   .nb-day-item { font-size: 11px; padding: 3px 4px; }
   .nb-week-line { grid-template-columns: minmax(0, 1fr) auto; }
   .nb-week-line .mono, .nb-week-line .faint { display: none; }
-  .nb-banner { flex-wrap: wrap; }
-  .nb-banner-text { flex: 1 1 60%; white-space: normal; }
+  .frame:has(> .nb-banner) { grid-template-rows: var(--titlebar) auto 1fr auto; }
+  .nb-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; padding: 10px 12px; margin: 0; border-width: 1px 0 0; border-radius: 0; }
+  .nb-banner-text { white-space: normal; }
   .nb-compose-foot { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
   .nb-compose-foot .nb-flex { display: none; }
   .nb-when { width: 100%; }

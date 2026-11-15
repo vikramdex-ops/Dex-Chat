@@ -703,10 +703,11 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       </header>
 
+      {/* an urgent notice takes its own row between the title bar and the lens: it pushes the lens down, never covers it */}
+      <NoticeBanner />
       <main className={`stage${isTalk(lens) ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
         <BatteryPrompt state={state} />
-        <NoticeBanner />
         {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} onPerson={(id) => { setLens('directory'); setFocusUser(id); }} />}
         {isTalk(lens) && <ChatView chip={chip} setChip={setChip} state={state} session={session} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}

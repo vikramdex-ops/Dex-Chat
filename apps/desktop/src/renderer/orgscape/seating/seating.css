@@ -159,3 +159,4 @@ html:is([lang='hi'], [lang='ta']) .seat-import th { letter-spacing: 0; text-tran
 .seat-bookings li { display: flex; gap: 8px; min-width: 0; }
 .seat-bookings li .mono { flex: none; min-width: 8ch; color: var(--text-2); }
 .seat-bookings li span[translate] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-callout .os-co-cells > div:nth-child(even):has(+ .seat-book) { grid-column: span 2; }

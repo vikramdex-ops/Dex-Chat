@@ -24,7 +24,8 @@ composer, Pulse, the banner and the Control room section). Tests: `apps/hub/test
   - A strip, **This week at the office**, shows holidays and events on their day, and the policies
     issued this week. It is the board's front page, and the way in on a phone, where the lens strip
     has room for five.
-- **A banner** under the title bar for urgent notices only: one at a time, dismissible, shown once.
+- **A banner** under the title bar for urgent notices only: one at a time, shown once, until it is
+  dismissed with its **×** ("Dismiss"). It takes its own row and pushes the lens down.
 - **Search** (Ctrl+Shift+F and the GO TO field) finds notices by their title, their text, their
   number and the text inside their PDFs.
 - **Deep links**: `dexconnect://notices/<id>` opens a notice. The desktop notification and Nib's
@@ -39,15 +40,15 @@ composer, Pulse, the banner and the Control room section). Tests: `apps/hub/test
 | **Issuing desk** | HR, IT, Admin and Management come set up. Administrators add more (two to four letters for the code) and choose each desk's **issuers** in the Control room. A desk that has issued notices keeps its code. |
 | **Category** | Policy (POL), Notice (NTC), Circular (CIR), Holiday (HOL), IT advisory (ITA), Safety (SAF), Event (EVT). |
 | **Dates** | Issue date, effective date (defaults to the issue date) and an optional expiry. A holiday or an event uses the effective date for its day. |
-| **Audience** | Everyone, or any of: departments (and the departments under them), roles (administrators, members), work locations (as written on profiles), named people. **Guests never.** The audience is worked out from the organisation **every time**, so a new joiner in Piping sees the policies in force for Piping and is asked to acknowledge them. |
+| **Addressed to** (the audience) | Everyone, or any of: departments (and the departments under them), roles (administrators, members), work locations (as written on profiles), named people. **Guests never.** The audience is worked out from the organisation **every time**, so a new joiner in Piping sees the policies in force for Piping and is asked to acknowledge them. |
 | **Status** | Draft, Scheduled, Issued, Withdrawn, Expired (in the archive). Earlier revisions are Superseded. |
 
 ### The board on screen
 
 - **Title block** at the top: `NOTICE BOARD`, the register's counts (`14 IN FORCE · 2 NEED YOU`),
   search and **Draft a notice** for issuers.
-- **In force** shelf: policies (and anything the author marks as standing) drawn as **pinned sheet
-  stacks**. Each stack has a drawing pin, and one sheet behind it for every earlier revision. The
+- **In force** shelf: policies (and anything the author puts **On the In force shelf while it is
+  in force**) drawn as **pinned sheet stacks**. Each stack has a drawing pin, and one sheet behind it for every earlier revision. The
   top sheet shows the number, revision, title and either a teal tick (acknowledged) or an amber
   ACKNOWLEDGE tag.
 - **Filters**, in one strip of ruled cells:
@@ -70,9 +71,9 @@ A notice opens as a **reading sheet**: a full-height sheet from the right on a P
 the whole screen on a phone.
 
 1. **The title block** is drawn as a drawing's title block in ruled cells:
-   - ISSUED BY (the desk and the person);
-   - NO., REV, DATE, EFFECTIVE, EXPIRES;
-   - FOR (the audience in words);
+   - **Issued by** (the desk and the person);
+   - **Number**, **Rev**, **Date**, **Effective**, **Expires**;
+   - **Addressed to** (the audience in words) and **Status**;
    - the category tag.
    - A withdrawn notice carries a **WITHDRAWN** stamp across it, with the reason and date. An
      earlier revision, when opened from the history, carries **SUPERSEDED**.
@@ -149,13 +150,13 @@ width.
 
 The **composer** is a sheet with numbered sections, like a settings schedule:
 
-1. **Desk and kind.** The desk (only those I issue for), the category, and **Standing** (on the
-   In force shelf; on by default for policies).
+1. **Desk and kind.** The **Issuing desk** (only those I issue for), the **Kind**, and **On the In
+   force shelf while it is in force** (a standing notice; on by default for policies).
 2. **Text.** The title and the body.
 3. **Attachment.** A PDF, uploaded to the hub. Its text is read on the hub (`pdf.ts`, the first 12
    pages) and indexed for search.
 4. **For.** Everyone, or departments, roles, locations and people. A live count says how many
-   people that is now.
+   people that is now (`04 · For · 12 people now`); readers see it as **Addressed to**.
 5. **Acknowledgement.** Ask for it, and add check questions.
 6. **Dates.** Effective and expiry.
 7. **Translations.** Optional Hindi and Tamil title and body.
@@ -178,7 +179,7 @@ Other parts of issuing:
 - **Urgent notices** (an IT outage, a safety alert) are for **administrators only**:
   - They go out at once and cannot be scheduled.
   - They show a single **banner** under the title bar for everyone in the audience: an amber rule,
-    the number and title, **Read** and **Dismiss**.
+    the number and title, **Read**, and an **×** button labelled "Dismiss".
   - Dismissing is remembered on the hub, so the banner shows **once** across a person's devices.
   - It lasts a day unless an expiry is given (a week at most).
   - The office can issue **three urgent notices a day**. A fourth is refused, and the author is

@@ -1040,6 +1040,8 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                   <div><dt className="tb-k">Held by</dt><dd>{h?.kind === 'person' ? <span translate="no">{users.get(h.userId)?.displayName ?? ''}</span> : h?.kind === 'reserved' ? <span translate="no">{h.label}</span> : h?.kind === 'hot' ? tr('Hot desk') : tr('Nobody: free')}</dd></div>
                   {h?.kind === 'person' && q.away && <div><dt className="tb-k">Today</dt><dd>{modeOf(h.userId) === 'home' ? 'Working from home' : modeOf(h.userId) === 'site' ? 'On site' : 'At a client'}</dd></div>}
                   {h?.kind === 'hot' && <div><dt className="tb-k">Today</dt><dd>{q.booked ? <span translate="no">{users.get(q.booked)?.displayName ?? ''}</span> : tr('Not booked')}</dd></div>}
+                  {(h?.kind === 'reserved' || h?.kind === 'hot') && h.departmentId && <div><dt className="tb-k">Dept</dt><dd translate="no">{deptName(h.departmentId)}</dd></div>}
+                  <div><dt className="tb-k">Type</dt><dd>{({ bench: 'Bench desk', pod: 'Pod seat', halfCabin: 'Half-cabin', cabin: 'Cabin', clientCabin: 'Client cabin', reception: 'Reception' } as const)[q.seat.type]}</dd></div>
                   {h?.kind === 'hot' && (
                     <div className="seat-book">
                       <dt className="tb-k"><label htmlFor="seat-book-day">Book for</label></dt>
@@ -1056,8 +1058,6 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                       <dd><ul>{seatBookings.slice(0, 10).map((b) => <li key={b.day}><span className="mono">{dayText(b.day)}</span> <span translate="no">{b.userId === meId ? tr('You') : users.get(b.userId)?.displayName ?? ''}</span></li>)}</ul></dd>
                     </div>
                   )}
-                  {(h?.kind === 'reserved' || h?.kind === 'hot') && h.departmentId && <div><dt className="tb-k">Dept</dt><dd translate="no">{deptName(h.departmentId)}</dd></div>}
-                  <div><dt className="tb-k">Type</dt><dd>{({ bench: 'Bench desk', pod: 'Pod seat', halfCabin: 'Half-cabin', cabin: 'Cabin', clientCabin: 'Client cabin', reception: 'Reception' } as const)[q.seat.type]}</dd></div>
                 </dl>
                 <div className="os-co-actions">
                   <button type="button" className="btn sm" onClick={() => startRoute(meId, seatSel)}><Icon name="branch" size={14} />Walk there</button>

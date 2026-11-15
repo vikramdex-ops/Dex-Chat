@@ -56,7 +56,7 @@
 .nib-giver svg { grid-row: span 2; color: var(--text-3); }
 /* a chosen person with a remove ×: the × stays beside the name, a long name ends in an ellipsis */
 .nib-giver.rm { grid-template-columns: auto minmax(0, 1fr) auto; max-width: min(100%, 260px); }
-.nib-giver.rm .nib-giver-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nib-giver.rm .nib-giver-name { grid-row: 1 / span 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nib-giver.rm svg { grid-column: 3; grid-row: 1 / span 2; }
 
 /* ------------------------------------------------------------------ the tray */

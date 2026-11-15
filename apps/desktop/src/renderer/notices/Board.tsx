@@ -177,12 +177,16 @@ function ShelfStack({ n }: { n: NoticeSummary }) {
         {Array.from({ length: behind }, (_, i) => <span key={i} className="nb-stack-sheet" style={{ '--i': i + 1 } as React.CSSProperties} aria-hidden="true" />)}
         <span className="nb-stack-top">
           <span className="nb-pin" aria-hidden="true" />
-          <span className="nb-stack-no mono" translate="no">{n.number}</span>
+          {/* the number with the tag beside it; REV and the date below, each on one line */}
+          <span className="nb-stack-head">
+            <span className="nb-stack-no mono" translate="no">{n.number}</span>
+            {n.needsAck && <span className="chip warn">Acknowledge</span>}
+          </span>
           <span className="nb-stack-title" translate="no">{titleOf(n)}</span>
           <span className="nb-stack-foot">
             <span className="mono" translate="no">{`REV ${n.rev}`}</span>
             <span className="mono">{dateText(n.effectiveAt)}</span>
-            {n.needsAck ? <span className="chip warn">Acknowledge</span> : n.acked ? <span className="nb-tick" aria-hidden="true"><Icon name="check" size={14} /></span> : null}
+            {!n.needsAck && n.acked ? <span className="nb-tick" aria-hidden="true"><Icon name="check" size={14} /></span> : null}
           </span>
         </span>
       </button>

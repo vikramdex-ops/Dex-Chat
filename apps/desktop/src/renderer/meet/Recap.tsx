@@ -184,7 +184,7 @@ export default function RecapSheet({ occurrenceId, users, meId, onClose, jump }:
                 </Section>
               )}
 
-              <Section no="09" title="Chat" meta={`${r.chat.total} messages`}>
+              <Section no="09" title="Chat" meta={r.chat.total === 1 ? '1 message' : `${r.chat.total} messages`}>
                 <RecapChat r={r} users={users} meId={meId} jump={jump} />
               </Section>
             </div>
