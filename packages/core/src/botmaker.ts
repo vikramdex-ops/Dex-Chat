@@ -7,7 +7,7 @@ import { BotFlowError, checkAnswer, checkInput, doneLine, validateFlow, effectiv
 import type { AnswerContext, BotFlowVars, RunLike } from './botflow-engine.ts';
 import { mainWay, personAnswer, stageOf, trackAct, trackOpen, trackTick, trackView, trackWithdraw } from './botflow-track.ts';
 import type { TrackPeople } from './botflow-track.ts';
-import { DRAWING_CHECK, LATE_WORK, PLOT_REQUEST, SITE_VISIT, SOFTWARE_SEAT, TECHNICAL_QUERY } from './bot-templates.ts';
+import { DRAWING_CHECK, FRIDAY_TIMESHEET, LATE_WORK, PLOT_REQUEST, SITE_VISIT, SOFTWARE_SEAT, TECHNICAL_QUERY, TQ_CHASER } from './bot-templates.ts';
 
 // ---------------------------------------------------------------- names
 /** A short name from a title: "Plot request" → "plot-request" (2 to 40 characters, a letter first). */
@@ -65,6 +65,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   SOFTWARE_SEAT,
   LATE_WORK,
   DRAWING_CHECK,
+  TQ_CHASER,
+  FRIDAY_TIMESHEET,
 ];
 
 /** A blank bot to build up from nothing: one question and a reminder at the end. */

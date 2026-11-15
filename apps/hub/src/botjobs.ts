@@ -109,7 +109,7 @@ export class BotJobs {
 
   private saveState(flow: string, job: string, st: JobState & { alerted?: string | null }): void {
     this.db.prepare(`INSERT INTO bot_job_state (flow, job, checked_at, paused, skip_at, moved, alerted) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(flow, job) DO UPDATE SET checked_at = excluded.checked_at, paused = excluded.paused, skip_at = excluded.skip_at, moved = excluded.moved, alerted = excluded.alerted`)
+      ON CONFLICT(flow, job) DO UPDATE SET checked_at = excluded.checked_at, paused = excluded.paused, skip_at = excluded.skip_at, moved = excluded.moved, alerted = COALESCE(excluded.alerted, bot_job_state.alerted)`)
       .run(flow, job, st.checkedAt, st.paused ? 1 : 0, st.skipAt, JSON.stringify(st.moved.slice(-20)), st.alerted ?? null);
   }
 
@@ -174,7 +174,8 @@ export class BotJobs {
         }
         if (skipped > 5) this.record(b.def.name, job.id, now, 'SKIPPED', `And ${skipped - 5} more runs missed while the hub was off.`, [], null);
         if (stopAt !== null) checked = Math.max(st.checkedAt, stopAt);
-        this.saveState(b.def.name, job.id, { ...st, checkedAt: checked, moved: st.moved.filter((m) => m.to > checked) });
+        // (the failure alert's day is kept as it was saved during the run)
+        this.saveState(b.def.name, job.id, { checkedAt: checked, paused: st.paused, skipAt: st.skipAt, moved: st.moved.filter((m) => m.to > checked) });
       }
     }
   }

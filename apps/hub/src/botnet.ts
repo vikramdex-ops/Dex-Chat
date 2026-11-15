@@ -450,7 +450,9 @@ export class BotNet {
     const words = (ctx.dry && skill.effect === 'act' ? 'would ' : '') + answerWords(skill, values);
     const row = this.record({ ...base, ask: askText, answer: words, status: 'ok', reason: null, ms, data: { values, main: skill.main, step: ctx.step ?? null } });
     if (ctx.card && from) this.relayCard(ctx.group, from.bot, ctx.person.id, from.def);
-    return { ok: true, status: 'ok', values, answer: values[skill.main] ?? null, words, reason: null, hopId: row.id };
+    // the answer reads as the words ("1 free"); its value is the main output itself (for branches)
+    const main = values[skill.main];
+    return { ok: true, status: 'ok', values, answer: main ? { value: main.value, label: skill.outputs.find((o) => o.id === skill.main)?.kind === 'person' ? main.label : words } : null, words, reason: null, hopId: row.id };
   }
 
   /** One hop, as a relay card shows it. */
