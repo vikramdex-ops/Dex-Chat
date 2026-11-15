@@ -403,6 +403,7 @@ export class Hub {
       departments: () => this.org.info().departments,
       audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
       userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
+      userAdded: (u) => this.emit('user.added', u),
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     { const prev = this.messaging.onPosted; this.messaging.onPosted = (author, convId, msg) => { prev?.(author, convId, msg); try { this.nib.onPosted(author, convId, msg); } catch (err) { this.log('warn', 'nib reply failed', { error: (err as Error).message }); } }; }

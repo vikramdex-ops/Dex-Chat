@@ -112,11 +112,12 @@ export interface NibDeps {
   departments: () => Department[];
   audit: (actor: string | null, action: string, target: string | null, detail?: unknown) => void;
   userChanged: (userId: string) => void;
+  userAdded: (u: PublicUser) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
 }
 
 export class Nib {
-  readonly id: string;
+  private nibId: string | null;
   private readonly d: NibDeps;
   private readonly db: DatabaseSync;
   /** Milliseconds added to real time (tests and the end-to-end script move the clock this way). */
@@ -132,11 +133,21 @@ export class Nib {
     this.d = d;
     this.db = d.db;
     this.db.exec(SCHEMA);
-    const existing = d.store.userByAccount(NIB_ACCOUNT);
-    this.id = existing?.id ?? d.store.createUser(NIB_ACCOUNT, NIB_NAME, 'bot').id;
-    if (existing && existing.displayName !== NIB_NAME) d.store.updateUser(this.id, { displayName: NIB_NAME });
+    // Nib's identity is made the first time anyone uses Nib (an office that never opens the app has none)
+    this.nibId = d.store.userByAccount(NIB_ACCOUNT)?.id ?? null;
     d.messaging.viewExtras.push((r) => this.view(r));
     d.messaging.purgeExtras.push((id) => { this.db.prepare('DELETE FROM nib_posts WHERE message_id = ?').run(id); });
+  }
+
+  /** Nib's user id (made on first use). */
+  get id(): string {
+    if (!this.nibId) {
+      const had = this.d.store.userByAccount(NIB_ACCOUNT);
+      const u = had ?? this.d.store.createUser(NIB_ACCOUNT, NIB_NAME, 'bot');
+      this.nibId = u.id;
+      if (!had) this.d.userAdded(u);
+    }
+    return this.nibId;
   }
 
   // ------------------------------------------------------------ the clock
@@ -258,8 +269,9 @@ export class Nib {
     }
   }
   isNibConv(convId: string): boolean {
+    if (!this.nibId) return false;
     const m = this.d.messaging.members(convId);
-    return m.length === 2 && m.includes(this.id);
+    return m.length === 2 && m.includes(this.nibId);
   }
 
   /** A card in someone's conversation with Nib, once per kind, reference and person. */
@@ -291,7 +303,7 @@ export class Nib {
 
   /** The card a message carries (most messages are not Nib's). */
   private view(r: MsgRow): Partial<Message> {
-    if (r.author_id !== this.id || !r.client_id?.startsWith('nib|') || r.deleted) return {};
+    if (!this.nibId || r.author_id !== this.nibId || !r.client_id?.startsWith('nib|') || r.deleted) return {};
     const [, kind, ref] = r.client_id.split('|');
     return kind && ref ? { nib: { kind: kind as NibCardKind, ref } } : {};
   }
@@ -767,7 +779,7 @@ export class Nib {
   // ------------------------------------------------------------ the conversation with Nib
   /** Someone wrote to Nib: read it with the same rules as the app, act, and answer with a card. */
   onPosted(author: PublicUser, convId: string, msg: Message): void {
-    if (author.id === this.id || author.role === 'bot' || author.role === 'guest' || msg.parentId) return;
+    if (!this.nibId || author.id === this.nibId || author.role === 'bot' || author.role === 'guest' || msg.parentId) return;
     if (!msg.body || isSealed(msg.body) || !this.isNibConv(convId)) return;
     const cfg = this.config();
     const users = this.d.store.activeUsers().filter((u) => u.role !== 'bot' && u.role !== 'guest');
@@ -809,6 +821,8 @@ export class Nib {
     const now = at ?? this.now();
     if (at === undefined && now - this.lastTick < 55_000) return;
     this.lastTick = now;
+    // nobody has used Nib yet: nothing to ask or send
+    if (!this.nibId) return;
     const cfg = this.config();
     const date = localDate(now);
     this.leaveTick(date);
