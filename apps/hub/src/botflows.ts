@@ -627,6 +627,31 @@ export class BotFlows {
     for (let i = 0; i < 60; i++) {
       const step = stepById(def, s.step);
       if (!step) throw new BotFlowsError('This flow changed while you were in it. Start it again.');
+      // an answer another bot carried in for this step: given once, as if the person had written it
+      const carry = (s.vars as BotFlowVars).__carry?.value;
+      if (carry && !step.ask && step.input.kind !== 'confirm') {
+        const map = (() => { try { return JSON.parse(carry) as Record<string, string>; } catch { return {}; } })();
+        const key = saveKey(step);
+        if (key in map) {
+          const raw = map[key];
+          delete map[key];
+          (s.vars as BotFlowVars).__carry = { value: JSON.stringify(map), label: '' };
+          const who = this.d.store.userById(s.userId);
+          let given: BotFlowAnswer | null = null;
+          try { if (who) given = checkAnswer(step, raw, this.answerContext(who, def)); } catch { given = null; }
+          if (given) {
+            s.answers[key] = given;
+            s.history.push(step.id);
+            const next = nextAfter(def, step, this.effective(s));
+            for (const [k, v] of Object.entries(next.set)) (s.vars as BotFlowVars)[k] = { value: v, label: v };
+            this.touch(s, this.days(s));
+            if (next.goto === 'end') { if (!who) return { done: false }; await this.finish(who, s, def, bot); return { done: true }; }
+            s.step = next.goto;
+            this.save(s);
+            continue;
+          }
+        }
+      }
       if (!step.ask || !s.flow) { this.postStep(s, def, bot, fresh); return { done: false }; }
       const me = this.d.store.userById(s.userId);
       if (!me) throw new BotFlowsError('That person is not in the office any more.');
@@ -691,26 +716,10 @@ export class BotFlows {
       id: ulid(), botId: bot.id, userId: person.id, flow: name, convId: dm, originConvId: null, step: def.steps[0].id, history: [], answers: {}, vars, prompts: {}, status: 'active',
       startedAt: now, updatedAt: now, expiresAt: now + (def.expiresInDays ?? BOTFLOW_DEFAULT_DAYS) * DAY, offeredAt: null, card: null, flowVersion: u.row.version ?? 1,
     };
-    let carriedIn = 0;
-    for (let i = 0; i < def.steps.length + 5; i++) {
-      const step = stepById(def, s.step);
-      if (!step || step.ask || step.input.kind === 'confirm') break;
-      const key = saveKey(step);
-      if (!(key in carried)) break;
-      let answer: BotFlowAnswer;
-      try { answer = checkAnswer(step, carried[key], this.answerContext(person, def)); } catch { break; }
-      s.answers[key] = answer;
-      s.history.push(step.id);
-      carriedIn++;
-      const next = nextAfter(def, step, this.effective(s));
-      for (const [k, v] of Object.entries(next.set)) (s.vars as BotFlowVars)[k] = { value: v, label: v };
-      if (next.goto === 'end') {
-        this.save(s);
-        const itemId = await this.finish(person, s, def, bot);
-        return { sessionId: s.id, convId: dm, itemId, done: true };
-      }
-      s.step = next.goto;
-    }
+    // answers carried in are given as the run reaches their steps (in any order); each once
+    const usable = Object.fromEntries(Object.entries(carried).filter(([k]) => def.steps.some((st) => saveKey(st) === k && !st.ask && st.input.kind !== 'confirm')));
+    (s.vars as BotFlowVars).__carry = { value: JSON.stringify(usable), label: '' };
+    const carriedIn = Object.keys(usable).length;
     this.save(s);
     const fromTitle = this.usable(o.from)?.def.title ?? (o.from === 'nib' ? 'Nib' : o.from);
     this.say(bot, dm, carriedIn === 1 ? `From ${fromTitle}: 1 answer carried across.` : carriedIn ? `From ${fromTitle}: ${carriedIn} answers carried across.` : `From ${fromTitle}.`);

@@ -266,3 +266,35 @@ test('a bot asking too often in a minute is slowed down, in plain words', async 
   assert.ok(limited, 'the limit was reached');
   assert.match(limited.reason ?? '', /asked too often in the last minute/);
 });
+
+test('a button hands on: a visit running late starts the late work bot for the person, with the day and job carried', async () => {
+  const { hub, owner, priya } = await office();
+  await owner.request('admin.org.setProfile', { userId: me(priya), managerId: me(owner) });
+  const late = await owner.request('botflow.make', { definition: template('late-work'), scope: 'office' });
+  const day = new Date(Date.now() + 86400_000);
+  const d = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  await priya.request('botflow.make', { scope: 'private', definition: {
+    name: 'visit', title: 'Visit',
+    steps: [{ id: 'day', label: 'Day', prompt: 'Which day?', input: { kind: 'text', validate: { type: 'date' } } }, { id: 'job', label: 'Job', prompt: 'Job?', input: { kind: 'text' } }],
+    finish: [],
+    track: { ref: 'VI', stages: [{ id: 'go', label: 'On site', who: 'requester', prompt: 'On site', actions: [
+      { id: 'late', label: 'Running late', to: 'go', handoff: { to: 'late-work', carry: { day: '{{day.value}}', why: 'Site visit for {{job}} running late' } } },
+      { id: 'done', label: 'Back', to: 'end', stamp: 'BACK', tone: 'go' },
+    ] }] },
+  } });
+  const r = await priya.request('botflow.start', { flow: 'visit' });
+  await step(priya, r.convId, 'day');
+  await priya.request('botflow.answer', { sessionId: r.sessionId, stepId: 'day', value: d });
+  await step(priya, r.convId, 'job');
+  await priya.request('botflow.answer', { sessionId: r.sessionId, stepId: 'job', value: 'P-12513' });
+  const itemId = await waitFor(() => (hub.store.db.prepare("SELECT id FROM bot_items WHERE flow = 'visit'").get() as { id: string } | undefined)?.id);
+  await priya.request('botflow.act', { itemId, action: 'late' });
+  const link = await waitFor(() => hub.store.db.prepare("SELECT * FROM bot_links WHERE kind = 'handoff' AND from_bot = 'visit' AND status = 'ok'").get() as { ask: string; answer: string } | undefined);
+  assert.equal(link.ask, 'RUNNING LATE · VI-0001');
+  assert.equal(link.answer, 'asking');
+  // in the late work bot's conversation: day, job and reason carried; "until what time" is hers to answer
+  const dm = await dmWith(priya, late.botId);
+  const said = await waitFor(async () => (await texts(priya, dm)).find((t) => t.startsWith('From Visit')));
+  assert.equal(said, 'From Visit: 3 answers carried across.');
+  await step(priya, dm, 'until');
+});
