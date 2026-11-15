@@ -16,6 +16,7 @@ import { BotMarkTile } from '../BotMark.tsx';
 import { DEFAULT_PERSONA, IdentitySection } from './Identity.tsx';
 import { StepsSection } from './Steps.tsx';
 import { EndingSection } from './Ending.tsx';
+import { LifecycleSection } from './Lifecycle.tsx';
 import { Preview } from './Preview.tsx';
 import { StartPanel } from './Start.tsx';
 import '../bots.css';
@@ -24,7 +25,7 @@ import './maker.css';
 import type { MakerRequest, MakerSection as Section } from './open.ts';
 const SECTIONS: Array<{ value: Section; label: string }> = [
   { value: 'identity', label: 'Identity' }, { value: 'steps', label: 'Questions' }, { value: 'end', label: 'At the end' },
-  { value: 'share', label: 'Sharing' }, { value: 'json', label: 'Advanced' },
+  { value: 'track', label: 'Afterwards' }, { value: 'share', label: 'Sharing' }, { value: 'json', label: 'Advanced' },
 ];
 
 
@@ -246,10 +247,10 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
                 <nav className="bm-nav">
                   <div className="seg seg-register bm-register" role="tablist" aria-label="Parts of the bot">
                     {SECTIONS.map((s) => {
-                      const n = s.value === 'steps' ? stepProblems : s.value === 'end' ? endProblems : s.value === 'identity' ? problems?.general.length ?? 0 : 0;
+                      const n = s.value === 'steps' ? stepProblems : s.value === 'end' ? endProblems : s.value === 'track' ? problems?.track.length ?? 0 : s.value === 'identity' ? problems?.general.length ?? 0 : 0;
                       return (
                         <button key={s.value} type="button" role="tab" aria-selected={section === s.value} aria-pressed={section === s.value} aria-controls="bm-panel" onClick={() => setSection(s.value)}>
-                          {s.label}{s.value === 'steps' && <span className="bm-count mono">{def.steps.length}</span>}
+                          {s.label}{s.value === 'steps' && <span className="bm-count mono">{def.steps.length}</span>}{s.value === 'track' && def.track && <span className="bm-count mono">{def.track.stages.length}</span>}
                           {n > 0 && <span className="bm-bad mono" aria-label={`${n} to fix`}>{n}</span>}
                         </button>
                       );
@@ -267,6 +268,7 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
                   {section === 'identity' && <IdentitySection def={def} setDef={setDef} nameLocked={nameLocked} me={session.me.displayName} />}
                   {section === 'steps' && <StepsSection def={def} setDef={setDef} problems={problems?.steps ?? {}} open={open} setOpen={setOpen} />}
                   {section === 'end' && <EndingSection def={def} setDef={setDef} problems={problems?.finish ?? {}} admin={adminMode && isAdmin} spaces={spaces.map((s) => s.name)} />}
+                  {section === 'track' && <LifecycleSection def={def} setDef={setDef} problems={problems?.track ?? []} users={session.users} me={session.me} />}
                   {section === 'share' && <Sharing def={def} setDef={setDef} scope={scope} setScope={setScope} spaceId={spaceId} setSpaceId={setSpaceId} spaces={spaces} saved={saved} admin={adminMode} bots={bots} botId={botId} setBotId={setBotId} />}
                   {section === 'json' && <Advanced def={def} setDef={setDef} />}
                 </div>

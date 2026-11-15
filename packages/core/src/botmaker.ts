@@ -237,6 +237,8 @@ export interface BotProblems {
   steps: Record<string, string[]>;
   /** By position in `finish`. */
   finish: Record<number, string[]>;
+  /** What happens after it is sent (the stages, roles, reminders and register). */
+  track: string[];
   /** Anything else (the name, the title, no steps…). */
   general: string[];
   count: number;
@@ -268,7 +270,7 @@ function plainWords(msg: string): string {
  * next problem can be found too.
  */
 export function problemsOf(def: BotFlowDefinition): BotProblems {
-  const out: BotProblems = { steps: {}, finish: {}, general: [], count: 0 };
+  const out: BotProblems = { steps: {}, finish: {}, track: [], general: [], count: 0 };
   let d: BotFlowDefinition = JSON.parse(JSON.stringify(def ?? {})) as BotFlowDefinition;
   if (!Array.isArray(d.steps)) d.steps = [];
   if (!Array.isArray(d.finish)) d.finish = [];
@@ -280,6 +282,13 @@ export function problemsOf(def: BotFlowDefinition): BotProblems {
   for (let guard = 0; guard < 60; guard++) {
     try { validateFlowSafe(d); return out; } catch (err) {
       const msg = (err as Error).message;
+      // the track is checked last: one problem in it is shown there, and it is set aside
+      if (/^(Stage |Track:|Role ")/.test(msg)) {
+        out.track.push(msg.replace(/^Track:\s*/, ''));
+        out.count++;
+        delete d.track;
+        continue;
+      }
       const byId = /^Step "([^"]+)"/.exec(msg);
       const byNo = /^Step (\d+)/.exec(msg);
       const act = /^Finish action (\d+)/.exec(msg);

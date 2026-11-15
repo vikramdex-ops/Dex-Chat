@@ -9,6 +9,7 @@ import { Icon, useToast } from '../../ui.tsx';
 import { loadModel, modelRanker, modelState, onModelState } from '../../flows/model.ts';
 import type { ModelState } from '../../flows/model.ts';
 import { BotMarkTile } from '../BotMark.tsx';
+import { localizeBot } from './localize.ts';
 
 type Way = 'template' | 'words' | 'copy';
 
@@ -72,8 +73,14 @@ export function StartPanel({ spaces, onPick, onPreview }: {
                 <b>{t.title}</b>
                 <span className="faint">{t.about}</span>
                 <span className="mono bm-template-steps">{t.definition.steps.filter((s) => s.input.kind !== 'confirm').map((s) => s.label ?? s.id).join(' · ')}</span>
+                {t.definition.track && (
+                  <span className="bm-template-track" aria-label="After it is sent">
+                    <span className="bm-template-ref mono" translate="no">{`${t.definition.track.ref}-0001`}</span>
+                    {t.definition.track.stages.map((s) => <span key={s.id} className="bm-template-stage">{s.label}</span>)}
+                  </span>
+                )}
               </span>
-              <button type="button" className="btn sm" aria-label={`Start from ${t.title}`} onClick={() => onPick(JSON.parse(JSON.stringify(t.definition)) as BotFlowDefinition)}>Use this</button>
+              <button type="button" className="btn sm" aria-label={`Start from ${t.title}`} onClick={() => onPick(localizeBot(JSON.parse(JSON.stringify(t.definition)) as BotFlowDefinition))}>Use this</button>
             </li>
           ))}
           <li className="bm-template blank">
