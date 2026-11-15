@@ -187,18 +187,18 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
         if (!narrow) {
           const w = co.offsetWidth, h = co.offsetHeight;
           const left = sx + 14 + w > cam.vw - 8 ? Math.max(24, cam.toScreen(p.x, p.y)[0] - w - 14) : sx + 14;
-          co.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.min(cam.vh - h - 8, Math.max(26, sy)))}px)`;
+          co.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(26, Math.min(cam.vh - h - 118, sy)))}px)`;
         } else co.style.transform = '';
       }
     }
     if (scaleOut.current) scaleOut.current.textContent = `1:${(1 / cam.z).toFixed(cam.z >= 1 ? 2 : 1)}`;
     const draw = performance.now() - t0;
-    if (lastFrame.current) { perf.frames.push({ dt: now - lastFrame.current, draw }); if (perf.frames.length > 2000) perf.frames.splice(0, 1000); }
+    // frames close together belong to one movement (a drag, a wheel, a flight)
+    if (lastFrame.current && now - lastFrame.current < 250) { perf.frames.push({ dt: now - lastFrame.current, draw }); if (perf.frames.length > 2000) perf.frames.splice(0, 1000); }
     lastFrame.current = now;
     const animating = moving || pigs.current.length > 0 || !!spot.current || (s.intro !== null && !s.reduced && now - s.intro < 2600)
       || (!!s.route && !s.reduced && now - s.route.t0 < 9000);
     if (animating) raf.current = requestAnimationFrame(frame);
-    else lastFrame.current = 0;
   }, [cam, posOf]);
 
   const invalidate = useCallback(() => { if (!raf.current) raf.current = requestAnimationFrame(frame); }, [frame]);
@@ -256,7 +256,10 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     const p = posOf(id);
     if (!p) return;
     touched.current = true;
-    cam.flyTo(p.x + p.w / 2, p.y + p.h / 2, opts.zoom ?? Math.max(cam.z, 0.9), performance.now(), reduced ? 0 : 750);
+    const z = opts.zoom ?? Math.max(cam.z, 0.9);
+    // on a phone the callout covers the lower half: keep the person in the upper part
+    const lift = cam.vw < 560 ? (cam.vh * 0.22) / z : 0;
+    cam.flyTo(p.x + p.w / 2, p.y + p.h / 2 + lift, z, performance.now(), reduced ? 0 : 750);
     if (opts.spotlight) spot.current = { id, t0: performance.now() + (reduced ? 0 : 500) };
     invalidate();
   }, [cam, posOf, reduced, invalidate]);
@@ -660,7 +663,8 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
             <ol className="os-steps">
               {routeIds.map((id, i) => (
                 <li key={id}><span className="mono os-step-n">{String(i + 1).padStart(2, '0')}</span><button type="button" className="tb-link" translate="no" onClick={() => pick(id)}>{users.get(id)?.displayName}</button>
-                  {i > 0 && i < routeIds.length && <span className="faint os-step-why">{ga.plates.get(routeIds[i])?.managerId === routeIds[i - 1] ? tr('their team') : tr('line manager')}</span>}</li>
+                  {i > 0 && <span className="faint os-step-why">{ga.plates.get(routeIds[i])?.managerId === routeIds[i - 1]
+                    ? tr(`In ${users.get(routeIds[i - 1])?.displayName.split(/\s+/)[0] ?? ''}'s team`) : tr(`Line manager of ${users.get(routeIds[i - 1])?.displayName.split(/\s+/)[0] ?? ''}`)}</span>}</li>
               ))}
             </ol>
           ) : <p className="faint">No reporting line joins you.</p>) : (walk ? <p className="faint">{tr(`Grid ${refOf(route.from)} to grid ${refOf(route.to)}, along the corridor.`)}</p> : <p className="faint">One of you has no desk in the office today.</p>)}

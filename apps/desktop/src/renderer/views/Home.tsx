@@ -13,6 +13,7 @@ import { DayLogCard } from '../work/WorkUi.tsx';
 import { NextMeeting } from '../calendar/CalendarView.tsx';
 import { DayLine } from '../pulse/DayLine.tsx';
 import { MeetPulseCard } from '../meet/MeetPulse.tsx';
+import { OfficeDrawingCard } from '../orgscape/PulseCard.tsx';
 import { timeOpts } from '../time.ts';
 
 function greeting(d = new Date()): string {
@@ -115,6 +116,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
         <MeetPulseCard onOpen={() => go('meet')} />
         <DayLogCard users={session.users} meId={session.me.id} onPerson={onPerson} />
         <NextMeeting meId={session.me.id} onOpen={() => go('calendar')} />
+        <OfficeDrawingCard users={session.users} me={session.me} onOpen={() => go('directory')} />
         <div className="card interactive" onClick={() => go('directory')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go('directory')}>
           <div className="eyebrow">Online now</div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

@@ -118,7 +118,7 @@ function along(pts: Pt[], k: number): Pt {
 }
 
 /** A revision cloud: scallops round a rectangle, the drafter's mark for "this changed". */
-function cloud(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number): void {
+function cloud(ctx: CanvasPath, x: number, y: number, w: number, h: number, s: number): void {
   const nx = Math.max(2, Math.round(w / s)), ny = Math.max(2, Math.round(h / s));
   const sx = w / nx, sy = h / ny;
   ctx.moveTo(x, y);
@@ -295,7 +295,8 @@ export function drawGA(ctx: CanvasRenderingContext2D, ga: GA, s: Scene, cam: Cam
   }
 
   // plates
-  for (const id of ga.order) {
+  if (lod === 'far' && !introOn) farPlates(ctx, ga, s, v, px, dimmed);
+  else for (const id of ga.order) {
     const p = ga.plates.get(id)!;
     if (!intersects(p.x - 16, p.y - 20, PLATE_W + 32, PLATE_H + 36, v)) continue;
     const u = s.users.get(id);
@@ -355,6 +356,52 @@ export function drawGA(ctx: CanvasRenderingContext2D, ga: GA, s: Scene, cam: Cam
   if (s.spotlight) {
     const p = ga.plates.get(s.spotlight.id);
     if (p) spotlight(ctx, s, p.x + PLATE_W / 2, p.y + PLATE_H / 2, Math.max(PLATE_W, 120 * px) * 0.75, cam);
+  }
+}
+
+/**
+ * Zoomed right out every plate is a block and a tile: drawn in a handful of batched paths (one per
+ * fill) rather than a few calls per person, so 500 people cost little more than 50.
+ */
+function farPlates(ctx: CanvasRenderingContext2D, ga: GA, s: Scene, v: { x: number; y: number; w: number; h: number }, px: number, dimmed: (id: string) => boolean): void {
+  const ink = s.ink;
+  for (const pass of [true, false]) {
+    const on = new Path2D(), off = new Path2D(), ghost = new Path2D(), ticks = new Path2D(), room = new Path2D(), clouds = new Path2D();
+    const tiles = new Map<string, Path2D>();
+    let any = false;
+    for (const id of ga.order) {
+      if (dimmed(id) !== pass) continue;
+      const p = ga.plates.get(id)!;
+      if (!intersects(p.x - 10, p.y - 10, PLATE_W + 20, PLATE_H + 20, v)) continue;
+      any = true;
+      const isGhost = there(s, id) === 0;
+      const pr = s.presence(id);
+      if (isGhost) { ghost.rect(p.x, p.y, PLATE_W, PLATE_H); continue; }
+      (pr === 'off' ? off : on).rect(p.x, p.y, PLATE_W, PLATE_H);
+      if (pr !== 'off') (pr === 'room' ? room : ticks).rect(p.x, p.y + 3, Math.max(3, 2 * px), PLATE_H - 6);
+      const c = pr === 'off' ? ink.strokeStrong : colorFor(id);
+      (tiles.get(c) ?? tiles.set(c, new Path2D()).get(c)!).rect(p.x + 9, p.y + 9, 30, PLATE_H - 18);
+      if (s.marks.get(id)?.isNew) cloud(clouds, p.x - 8, p.y - 8, PLATE_W + 16, PLATE_H + 16, 22);
+    }
+    if (!any) continue;
+    ctx.globalAlpha = pass ? 0.28 : 1;
+    ctx.fillStyle = ink.paper; ctx.fill(on);
+    ctx.fillStyle = ink.window; ctx.fill(off);
+    ctx.strokeStyle = ink.strokeStrong; ctx.lineWidth = Math.max(1, px); ctx.stroke(on); ctx.stroke(off);
+    ctx.fillStyle = ink.accent; ctx.fill(ticks);
+    ctx.fillStyle = ink.amber; ctx.fill(room);
+    for (const [c, path] of tiles) { ctx.fillStyle = c; ctx.fill(path); }
+    ctx.setLineDash([6, 4]); ctx.strokeStyle = ink.text3; ctx.stroke(ghost); ctx.setLineDash([]);
+    ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.5, 1.5 * px); ctx.stroke(clouds);
+  }
+  ctx.globalAlpha = 1;
+  // the few that need a mark of their own: you, the one picked, the one in focus
+  for (const id of [s.me, s.selected, s.focus, s.hover]) {
+    const p = id ? ga.plates.get(id) : undefined;
+    if (!p) continue;
+    ctx.beginPath(); rrect(ctx, p.x - 5, p.y - 5, PLATE_W + 10, PLATE_H + 10, 6);
+    if (id === s.me) ctx.setLineDash([5 * px, 3 * px]);
+    ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(2, 2 * px); ctx.stroke(); ctx.setLineDash([]);
   }
 }
 
@@ -555,13 +602,13 @@ export function drawFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam
     ctx.strokeStyle = ink.text3; ctx.lineWidth = Math.max(0.7, 0.7 * px); ctx.stroke();
     // name: BAY 2 · Piping (the department most of its people are in)
     const label = r.kind === 'bay' ? s.labels.bay(r.name) : r.kind === 'cabin' ? s.labels.cabin(r.name) : r.name;
-    const ty = side === 'bottom' ? r.y + 22 : r.y + r.h - 12;
-    const tw = tag(ctx, ink, caps(ink, label), r.x + 10, ty - 14, 10, ink.accentInk);
+    const ts = Math.min(Math.max(10, 10 * px * 0.75), r.w / 9);
+    const tw = tag(ctx, ink, caps(ink, label), r.x + 10, side === 'bottom' ? r.y + 8 : r.y + r.h - 8 - ts * 1.55, ts, ink.accentInk);
     if (r.kind === 'bay') {
       const counts = new Map<string, number>();
       for (const d of f.desks) if (d.room === r.key && d.occupant) { const k = s.users.get(d.occupant)?.profile.departmentId ?? ''; if (k) counts.set(k, (counts.get(k) ?? 0) + 1); }
       const top = [...counts.entries()].sort((a, b2) => b2[1] - a[1])[0];
-      if (top) { ctx.font = `600 13px ${ink.display}`; ctx.fillStyle = ink.text; ctx.fillText(fit(ctx, s.deptName(top[0]), r.w - tw - 30), r.x + 18 + tw, ty); }
+      if (top) { ctx.font = `600 ${ts * 1.3}px ${ink.display}`; ctx.fillStyle = ink.text; ctx.fillText(fit(ctx, s.deptName(top[0]), r.w - tw - 30), r.x + 16 + tw, r.y + 8 + ts * 1.2); }
     }
   }
   // desks: a top with a chair at its edge; the person on it, or the desk left dashed for the day
