@@ -3,7 +3,7 @@
 // through a bot exactly as a colleague would (the same cards, checks and wording as the hub), with
 // nothing sent at the end.
 import type { BotFlowAction, BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotFlowStep, BotGlyph, BotPersona } from './bots.ts';
-import { BotFlowError, checkAnswer, doneLine, effectiveVars, nextAfter, renderTemplate, saveKey, startVars, stepById, stepCard, summaryLines, summaryText, voiceOf } from './botflow-engine.ts';
+import { BotFlowError, checkAnswer, checkInput, doneLine, validateFlow, effectiveVars, nextAfter, renderTemplate, saveKey, startVars, stepById, stepCard, summaryLines, summaryText, voiceOf } from './botflow-engine.ts';
 import type { AnswerContext, BotFlowVars, RunLike } from './botflow-engine.ts';
 
 // ---------------------------------------------------------------- names
@@ -241,3 +241,84 @@ export function testCancel(t: TestRun): TestRun {
   const seq = t.seq + 1;
   return { ...t, status: 'cancelled', step: null, seq, cards: [...cards, { id: `t${seq}`, body: voiceOf(t.def.persona?.tone).cancelled, card: null }] };
 }
+
+// ---------------------------------------------------------------- problems, beside what causes them
+export interface BotProblems {
+  /** By step id: what is wrong with that step, in plain words. */
+  steps: Record<string, string[]>;
+  /** By position in `finish`. */
+  finish: Record<number, string[]>;
+  /** Anything else (the name, the title, no steps…). */
+  general: string[];
+  count: number;
+}
+
+/** Words for the editor, not for JSON: "give it a "prompt"" reads "Write the question". */
+function plainWords(msg: string): string {
+  return msg
+    .replace(/^Step "[^"]+":\s*/, '').replace(/^Step \d+:\s*/, '').replace(/^Finish action \d+:\s*/, '')
+    .replace(/give it a "prompt"\./, 'Write the question.')
+    .replace(/give it an "id" \(letters, digits, _ and -\)\./, 'It needs a short id (letters, digits, _ and -).')
+    .replace(/"assignee" should name a step that picks a person\./, 'Choose which answer names the person who gets the task.')
+    .replace(/"to" should name a step that picks a person\./, 'Choose which answer names the person to message.')
+    .replace(/"due" should name a step that asks for a date\./, 'Choose a date question for the due date, or a number of days.')
+    .replace(/give the "text" to post\./, 'Write what it posts.')
+    .replace(/give the task's "text"\./, 'Write what the task says.')
+    .replace(/give the reminder's "text"\./, 'Write what the reminder says.')
+    .replace(/"to" is "origin", "space:<name>" or "person:<variable>"\./, 'Choose where it posts.')
+    .replace(/Give the flow a "title"\./, 'Give the bot a name.')
+    .replace(/The flow name uses lower-case letters, digits and dashes \(2 to 40\), starting with a letter\./, 'The short name uses lower-case letters, digits and dashes (2 to 40), starting with a letter.')
+    .replace(/Give the flow at least one step\./, 'Add at least one question.')
+    .replace(/Say what happens at the end in "finish" \(post, webhook or task\)\./, 'Say what happens at the end.')
+    .replace(/, which is not a step\./, ', which is not a step any more.');
+}
+
+/**
+ * Every problem in a draft, each placed beside the step or end action that causes it: the
+ * definition is checked as the hub checks it, and each part found wrong is set aside so the
+ * next problem can be found too.
+ */
+export function problemsOf(def: BotFlowDefinition): BotProblems {
+  const out: BotProblems = { steps: {}, finish: {}, general: [], count: 0 };
+  let d: BotFlowDefinition = JSON.parse(JSON.stringify(def ?? {})) as BotFlowDefinition;
+  if (!Array.isArray(d.steps)) d.steps = [];
+  if (!Array.isArray(d.finish)) d.finish = [];
+  const add = (where: 'steps' | 'finish', key: string | number, msg: string) => {
+    const box = out[where] as Record<string | number, string[]>;
+    (box[key] ??= []).push(plainWords(msg));
+    out.count++;
+  };
+  for (let guard = 0; guard < 60; guard++) {
+    try { validateFlowSafe(d); return out; } catch (err) {
+      const msg = (err as Error).message;
+      const byId = /^Step "([^"]+)"/.exec(msg);
+      const byNo = /^Step (\d+)/.exec(msg);
+      const act = /^Finish action (\d+)/.exec(msg);
+      if (byId || byNo) {
+        const i = byId ? d.steps.findIndex((s) => s.id === byId[1]) : Number(byNo![1]) - 1;
+        const s = d.steps[i];
+        if (!s) { out.general.push(plainWords(msg)); out.count++; return out; }
+        add('steps', s.id || `#${i + 1}`, msg);
+        // set it aside: a plain question with the same id keeps the routes to it valid
+        const keepId = /^[A-Za-z][\w-]{0,39}$/.test(String(s.id)) && d.steps.findIndex((y) => y.id === s.id) === i && s.id !== 'end';
+        let input: BotFlowStep['input'] = { kind: 'text' };
+        try { input = checkInput(s.input, 'x'); } catch { /* the input was the problem */ }
+        d = { ...d, steps: d.steps.map((x, j) => (j === i ? { id: keepId ? x.id : `x${j}`, prompt: 'x', input } : x)) };
+      } else if (act) {
+        const i = Number(act[1]) - 1;
+        add('finish', i, msg);
+        d = { ...d, finish: d.finish.map((a, j) => (j === i ? { do: 'webhook' } as BotFlowAction : a)) };
+      } else {
+        out.general.push(plainWords(msg));
+        out.count++;
+        if (/title/.test(msg)) d = { ...d, title: 'x' };
+        else if (/name/.test(msg)) d = { ...d, name: 'x-x' };
+        else if (/finish/.test(msg)) d = { ...d, finish: [] };
+        else return out;
+      }
+    }
+  }
+  return out;
+}
+
+const validateFlowSafe = (d: BotFlowDefinition): BotFlowDefinition => validateFlow(d);

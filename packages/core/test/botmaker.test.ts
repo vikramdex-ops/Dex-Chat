@@ -154,3 +154,29 @@ test('describe it in words: the sentence model is blended in when it answers, an
   const k = await draftBot(words, { spaces: [] }, broken);
   assert.equal(k.definition.steps.find((s) => /chair/i.test(s.prompt))?.input.kind, 'person');
 });
+
+test('problems are placed beside the step or end action that causes them, all at once, in plain words', async () => {
+  const { problemsOf } = await import('../src/botmaker.ts');
+  const good = BOT_TEMPLATES[0].definition;
+  assert.equal(problemsOf(good).count, 0);
+  const bad: BotFlowDefinition = {
+    ...good,
+    steps: [
+      { ...good.steps[0], prompt: '' },
+      { ...good.steps[1] },
+      { ...good.steps[2], input: { kind: 'choice', options: [{ value: 'A1', label: 'A1' }] } },
+      { ...good.steps[3], branches: [{ if: { equals: '2' }, goto: 'gone' }] },
+      ...good.steps.slice(4),
+    ],
+    finish: [{ do: 'task', assignee: 'size', text: 'x' }, { do: 'post', to: 'origin', text: '' }],
+  };
+  const p = problemsOf(bad);
+  assert.deepEqual(p.steps.job, ['Write the question.']);
+  assert.match(p.steps.size[0], /at least two options/);
+  assert.match(p.steps.sets[0], /goes to "gone", which is not a step any more/);
+  assert.equal(p.steps.drawings, undefined);
+  assert.deepEqual(p.finish[0], ['Choose which answer names the person who gets the task.']);
+  assert.deepEqual(p.finish[1], ['Write what it posts.']);
+  assert.equal(p.count, 5);
+  assert.deepEqual(problemsOf({ ...good, title: '' }).general, ['Give the bot a name.']);
+});
