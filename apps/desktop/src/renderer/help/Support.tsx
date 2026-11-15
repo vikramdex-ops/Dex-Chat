@@ -270,7 +270,7 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
         </div>
       )}
       {minimized ? (
-        <button className={`sup-chip req${c.screen ? ' sharing' : ''}`} onClick={() => setMinimized(false)} title="Open the support session">
+        <button className={`sup-chip for-requester${c.screen ? ' sharing' : ''}`} onClick={() => setMinimized(false)} title="Open the support session">
           <span className="room-chip-pip" aria-hidden="true" /><span className="mono">IT · {techFirst.toUpperCase()}{c.screen ? ' · SHARING' : ''} · </span><Clock since={session.startedAt} className="mono" />
         </button>
       ) : (

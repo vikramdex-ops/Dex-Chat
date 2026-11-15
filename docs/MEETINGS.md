@@ -38,8 +38,8 @@ the rest of the app.
 | | Gallery, speaker view, pin, spotlight | ✅ **M1**: gallery (numbered sheets past 25 tiles), speaker with a strip, presentation; pin for yourself, spotlight for everyone (host) | |
 | | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation | |
 | | Breakout rooms | — | **M2**: the host splits people into rooms (by hand or at random) with a timer, broadcasts a note, and calls everyone back |
-| | Annotation on a shared screen | — | **M2**: viewers draw on the presenter's screen (strokes go over the data channel, fade, can be cleared) |
-| | Remote control | — | **M3**: the presenter grants control; keyboard and mouse events through a native helper on Windows |
+| | Annotation on a shared screen | ✅ **M2**: live pointers on a shared screen: everyone's labelled pointer, highlights that fade after 4 s unless kept, numbered markers with a note, ink that fades; the presenter clears all or turns pointers off, and sees them on their own screen in a click-through window. Also on pictures looked at together and on whiteboards | |
+| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time | **M3**: the presenter of a meeting grants control the same way |
 | | Virtual backgrounds | ✅ Blur; ✅ **M1**: drafting sheet, blueprint and plain studio drawn in code, and your own picture (kept on the PC) | |
 | | Noise suppression | Browser filters | **M2**: a stronger suppressor (RNNoise, BSD) as an audio worklet, on by default |
 | | Consent before video | ✅ **M1**: Control room → Policies → Calls: join with the camera off, and ask before turning it on | |
@@ -65,6 +65,10 @@ the rest of the app.
 - **Blur:** MediaPipe segmenter, bundled.
 - **Polls, forms, whiteboards and notes:** in conversations.
 - **The gateway** (Cloudflare Worker) and its encrypted channel to the hub.
+- **Lounges:** standing audio Rooms inside a Space ("Piping desk") that people drop into and out of,
+  with no ringing; shown on the Switchboard and the Space header with who is in them.
+- **A data channel per PC-to-PC link** in every Room, for small messages (pointers, remote control);
+  through the hub (`room.data`) on the relay.
 
 ## Phases
 
@@ -87,6 +91,15 @@ rendering): about 0.53 s from clicking Join to the first frame of a colleague's 
 **M2: meetings that include the outside.** Guests join from a browser through the gateway. Also:
 recordings stored on the hub with playback and sharing, breakout rooms, annotation, stronger noise
 suppression, and per-meeting reports.
+
+*Annotation, delivered (November 2026):* live pointers (`apps/desktop/src/renderer/pointers/`,
+`packages/core/src/pointers.ts`). In a Room the messages travel over each link's data channel (or
+the hub's `room.data` on the relay), at most 30 a second, positions relative to the shared picture;
+for a picture or a whiteboard several people look at together, the hub keeps who is looking and who
+presents (`apps/hub/src/pointers.ts`, `point.*`). Ink strokes are capped at 400 points. The
+presenter's own screen shows the pointers in a transparent, click-through, always-on-top window
+(on Linux only where the desktop composites windows). Tested in `packages/core/test/pointers.test.ts`,
+`apps/hub/test/lounges.test.ts` and end to end with two app instances.
 
 **M3: webinars.** Registration, roles, Q&A, handouts, practice sessions, live streaming, follow-up
 and remote control.

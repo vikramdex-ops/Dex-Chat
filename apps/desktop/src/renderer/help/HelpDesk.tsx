@@ -150,7 +150,7 @@ export function HelpDesk({ users, meId, focus }: { users: Map<string, PublicUser
           <table className="hd-table" aria-label="Help requests">
             <tbody>
               {list.map((t) => (
-                <tr key={t.id} className={`${open === t.id ? 'on' : ''}${t.status === 'open' ? ' waiting' : ''}`} onClick={() => setOpen(t.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(t.id); }}>
+                <tr key={t.id} className={`${open === t.id ? 'on' : ''}${t.status === 'open' ? ' hd-waiting' : ''}`} onClick={() => setOpen(t.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(t.id); }}>
                   <td className="ref mono">{ticketRef(t.number)}</td>
                   <td className="who"><Avatar user={{ id: t.requesterId, displayName: nameOf(t.requesterId) }} size="sm" /></td>
                   <td className="what">

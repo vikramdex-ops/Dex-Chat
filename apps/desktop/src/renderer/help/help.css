@@ -68,7 +68,7 @@
 .hd-table tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hd-table td { padding: 8px 8px; vertical-align: middle; }
 .hd-table td.ref { width: 62px; font-size: 11px; color: var(--accent-ink); border-right: 1px solid var(--stroke); }
-.hd-table tr.waiting td.ref { color: var(--amber-ink); font-weight: 700; }
+.hd-table tr.hd-waiting td.ref { color: var(--amber-ink); font-weight: 700; }
 .hd-table td.who { width: 38px; padding-right: 0; }
 .hd-table { table-layout: fixed; }
 .hd-table td.what { width: auto; }
@@ -216,7 +216,7 @@
   border: 1.5px solid var(--amber); border-radius: 17px; background: var(--layer-solid); color: var(--amber-ink); font-size: 11px; letter-spacing: .08em;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
 }
-.sup-chip.req.sharing { background: var(--amber); color: #2b1a00; }
+.sup-chip.for-requester.sharing { background: var(--amber); color: #2b1a00; }
 
 /* ------------------------------------------------------------------ the requester's dock and banner */
 .sup-dock {
