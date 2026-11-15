@@ -429,9 +429,11 @@ loses nothing: the chat a guest or colleague sees when they come back is read fr
 - **End-to-end encryption.** Members' own Direct messages stay sealed. The meeting chat is never
   end-to-end encrypted (a browser guest holds no keys and the hub relays every line), so when a
   meeting's thread is an encrypted Direct conversation, its meeting-chat lines are stored in that
-  Direct as plain lines marked with the open lock and the reason "meeting chat with guests: not end
-  to end encrypted". Nothing that was sealed is opened, and the office's "require encryption" rule,
-  which governs what members' apps send, is not bypassed for members. For such a thread the hub
+  Direct as plain lines (a colleague's line to everyone there too) marked with the open lock and
+  the reason "said in the meeting chat, which guests from outside read". Nothing that was sealed is
+  opened: what members write in the Direct itself (the *Members only* sheet) is sealed as before,
+  and the office's "require encryption" rule still refuses plain Direct messages from members' apps.
+  The meeting chat is the one exception, because it never was end-to-end encrypted. For such a thread the hub
   cannot read the members' messages, so **the recap is assembled on the PC**: the hub gives the
   occurrence, attendance, recordings, action points (owner, due and status; their text is the
   sealed message) and the time range; the app reads and decrypts that range of the thread itself.

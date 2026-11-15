@@ -373,3 +373,26 @@ test('retention: purged messages take their action points and saved chat with th
   assert.equal((await priya.request('ap.list', { mine: true })).actions.length, 0);
   assert.equal((await ravi.request('ap.list', { mine: true })).actions.length, 0);
 });
+
+test('a meeting in a Direct conversation: the meeting chat with a guest is kept in it, plain and marked; the recap leaves the members\' sealed messages to the PC', async () => {
+  const { hub, owner, priya, ravi } = await office();
+  await remoteOn(owner);
+  const gw = fakeGateway(hub);
+  const dm = await priya.request('conv.create', { kind: 'direct', members: [me(ravi)] }) as Conversation;
+  const m = await priya.request('meet.create', { convId: dm.id }) as MeetingInfo;
+  const room = (await priya.request('meet.join', { id: m.id }) as { room: RoomInfo }).room;
+  await ravi.request('meet.join', { id: m.id });
+  const g = await guestIn(hub, gw, priya, m, room.id, 'Dana Wright');
+  // even when the office requires end-to-end encryption for Direct messages (members' own plain messages are refused)
+  await owner.request('admin.policy.set', { requireE2E: true });
+  await assert.rejects(send(priya, dm.id, 'plain text from an old app'), /encrypt/i);
+  g.send({ t: 'chat', text: 'Hello from the client side' });
+  await nextEvent<RoomChatLine>(priya, 'room.chat', (l) => l.guest);
+  const saved = (await thread(ravi, dm.id)).messages.find((x) => x.body === 'Hello from the client side')!;
+  assert.equal(saved.plain?.reason, 'meeting', 'marked as meeting chat, not end-to-end encrypted');
+  assert.equal(saved.meetLine?.name, 'Dana Wright');
+  await priya.request('room.end', { roomId: room.id });
+  const recap = await ravi.request('meet.recap', { occurrenceId: room.occurrenceId! }) as MeetRecap;
+  assert.equal(recap.chat.sealed, true, 'the PC reads the members\' messages itself');
+  assert.ok(recap.chat.lines.some((l) => l.guest && l.text === 'Hello from the client side'));
+});
