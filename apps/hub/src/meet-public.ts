@@ -330,7 +330,8 @@ export class MeetPublic {
       ok: true, id: m.id, ref: refSegment(slug ?? m.id),
       kind: m.kind === 'event' ? 'scheduled' : m.kind === 'personal' ? 'personal' : 'instant',
       org: this.h.org() || MEET_ORG_DEFAULT,
-      title: m.title || (m.kind === 'personal' ? `${this.firstName(m.hostId)}'s room` : 'Meeting'),
+      // a personal room by the host's first name only (its stored title has their full name)
+      title: m.kind === 'personal' ? `${this.firstName(m.hostId)}'s room` : m.title || 'Meeting',
       host: this.firstName(m.hostId),
       startAt: t.startAt, endAt: t.endAt, zone: t.zone, repeats: t.repeats, recurrence: t.recurrence,
       state: t.state, liveSince: t.state === 'live' ? t.liveSince : null, opensAt: t.opensAt, next: t.next,

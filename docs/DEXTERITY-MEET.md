@@ -125,8 +125,9 @@ The parts:
   every meeting. The HTML holds no meeting data. The page asks `/api/m/<ref>` for what it may
   show, and POSTs the passcode to `/api/m/<ref>/check`.
 - **The meeting itself** (`apps/gateway/meet/room.ts`, the old guest page) loads only when the
-  guest presses Join. Before Join the page downloads about 40 KB of script and 20 KB of styles
-  (about 12 KB and 5 KB compressed) plus one 32 KB font.
+  guest presses Join. Before Join the page downloads about 41 KB of script and 21 KB of styles
+  (about 15 KB and 6 KB compressed) plus one 32 KB font; the meeting adds 19 KB (8 KB compressed)
+  on Join. No framework.
 - **The hub answers** in `apps/hub/src/meet-public.ts`. It resolves the name or ID, works out the
   state (upcoming, open, live, ended, cancelled) from the Calendar and the live Room, and builds
   the answers.
