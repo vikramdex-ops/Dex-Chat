@@ -286,16 +286,18 @@ function Workbench({ convId, session }: { convId: string | null; session: Sessio
 
       {canCreate && <Describe convId={convId} session={session} groups={groups} onDraft={startNew} />}
 
-      <div className="fl-tabs" role="tablist" aria-label="Rules">
+      <div className="fl-tabs">
+        <div role="tablist" aria-label="Rules" style={{ display: 'contents' }}>
         {(flows ?? []).map((f, i) => (
           <button key={f.id} type="button" role="tab" aria-selected={current === f.id} className="fl-tab" onClick={() => void leaveEdits().then((ok) => { if (ok) open(f); })}>
             <span className="fl-tab-no">{sheetNo(i)}</span>
             <span className="fl-tab-name" translate="no">{f.name}</span>
             {office && <span className="fl-tab-scope" translate="no">{f.convId ? f.convName ?? 'Conversation' : 'Every Space'}</span>}
-            <span className={`fl-dot${f.enabled ? ' on' : ''}${f.lastRun?.outcome === 'failed' ? ' bad' : ''}`} aria-label={f.enabled ? 'On' : 'Off'} />
+            <span className={`fl-dot${f.enabled ? ' on' : ''}${f.lastRun?.outcome === 'failed' ? ' bad' : ''}`} role="img" aria-label={f.enabled ? 'On' : 'Off'} />
           </button>
         ))}
         {current === 'new' && <button type="button" role="tab" aria-selected className="fl-tab"><span className="fl-tab-no">{editing?.draft ? 'Draft' : 'New'}</span><span className="fl-tab-name" translate="no">{editing?.name}</span></button>}
+        </div>
         {canCreate && current !== 'new' && <button type="button" className="fl-tab fl-tab-add" onClick={() => void leaveEdits().then((ok) => { if (ok) startNew(); })}><Icon name="plus" size={14} />New rule</button>}
       </div>
 

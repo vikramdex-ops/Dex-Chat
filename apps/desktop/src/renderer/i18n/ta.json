@@ -4201,5 +4201,7 @@
   "LOCKED": "பூட்டப்பட்டது",
   "· 1 hand": "· 1 கை",
   "· {0} hands": "· {0} கைகள்",
-  "changed who is on the IT desk": "ஐடி மேசையில் யார் என்பதை மாற்றினார்"
+  "The figures as a table": "எண்கள் அட்டவணையாக",
+  "put someone on the IT desk": "ஒருவரை ஐடி மேசையில் சேர்த்தார்",
+  "took someone off the IT desk": "ஒருவரை ஐடி மேசையிலிருந்து நீக்கினார்"
 }

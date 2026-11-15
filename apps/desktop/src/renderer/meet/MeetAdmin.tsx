@@ -65,7 +65,7 @@ export function MeetingTotals() {
             <div className="card tile"><span className="eyebrow">Average size</span><b>{u.totals.averageSize}</b><span className="faint">people a meeting</span></div>
             <div className="card tile"><span className="eyebrow">Recordings</span><b>{u.totals.recordings}</b><span className="faint">{formatSize(u.totals.recordingBytes)} on the hub · {u.totals.guests} browser guests</span></div>
           </div>
-          <div className="usage-table"><table>
+          <div className="usage-table" tabIndex={0} role="region" aria-label="The figures as a table"><table>
             <thead><tr><th>Week of</th><th>Meetings</th><th>Hours</th><th>Average size</th><th>Guests</th><th aria-hidden="true" /></tr></thead>
             <tbody>{[...u.weeks].reverse().map((w) => (
               <tr key={w.week}><td className="mono">{w.week}</td><td>{w.meetings}</td><td>{w.hours}</td><td>{w.averageSize || '·'}</td><td>{w.guests || '·'}</td>

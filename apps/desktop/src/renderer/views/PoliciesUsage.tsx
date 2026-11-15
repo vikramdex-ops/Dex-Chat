@@ -167,7 +167,7 @@ export function UsageAdmin({ users }: { users: PublicUser[] }) {
           <section className="card">
             <div className="eyebrow">Messages per day</div>
             {table ? (
-              <div className="usage-table"><table>
+              <div className="usage-table" tabIndex={0} role="region" aria-label="The figures as a table"><table>
                 <thead><tr><th>Day</th><th>Spaces</th><th>Direct</th><th>People</th><th>Calls</th><th>Call minutes</th></tr></thead>
                 <tbody>{[...r.daily].reverse().map((d) => <tr key={d.day}><td>{shortDay(d.day)}</td><td>{d.space}</td><td>{d.direct}</td><td>{d.activePeople}</td><td>{d.calls}</td><td>{d.callMinutes}</td></tr>)}</tbody>
               </table></div>
