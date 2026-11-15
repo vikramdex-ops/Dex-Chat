@@ -13,6 +13,7 @@ import { DayLogCard } from '../work/WorkUi.tsx';
 import { NextMeeting } from '../calendar/CalendarView.tsx';
 import { DayLine } from '../pulse/DayLine.tsx';
 import { MeetPulseCard } from '../meet/MeetPulse.tsx';
+import { timeOpts } from '../time.ts';
 
 function greeting(d = new Date()): string {
   const h = d.getHours();
@@ -58,7 +59,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
       <div className="view-head">
         <div>
           <h1>{greeting()}, {firstName}</h1>
-          <p className="label">Pulse · {onlineUsers.length} of {people.length} online · {session.hub.name}</p>
+          <p className="label">{`Pulse · ${onlineUsers.length} of ${people.length} online`}<span translate="no"> · {session.hub.name}</span></p>
         </div>
       </div>
 
@@ -72,8 +73,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
               <button key={r.id} className="list-row pulse-row" onClick={() => go('desk')}>
                 <span className="pal-icon pulse-alarm"><Icon name="alarm" size={16} /></span>
                 <span className="sb-main">
-                  <span className="sb-title"><span className="sb-name">{r.text}</span></span>
-                  <span className="sb-preview">{r.message ? plainPreview(r.message.body, users) : r.createdBy !== session.me.id ? `From ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : 'Reminder'}</span>
+                  <span className="sb-title"><span className="sb-name" translate="no" title={r.text}>{r.text}</span></span>
+                  <span className="sb-preview" translate={r.message ? 'no' : undefined}>{r.message ? plainPreview(r.message.body, users) : r.createdBy !== session.me.id ? `From ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : 'Reminder'}</span>
                 </span>
                 <span className="sb-meta"><span className={`chip${r.dueAt <= Date.now() ? ' warn' : ''}`}>{describeWhen(r.dueAt)}</span></span>
               </button>
@@ -91,12 +92,12 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
                 <button key={c.id} className="list-row pulse-row" onClick={() => open(c.id, c.kind)}>
                   <ConvTile c={c} users={users} meId={session.me.id} online={online} />
                   <span className="sb-main">
-                    <span className="sb-title"><span className="sb-name">{convTitle(c, users, session.me.id)}</span></span>
-                    <span className="sb-preview">{last ? `${who}: ${plainPreview(last.body, users)}` : ''}</span>
+                    <span className="sb-title"><span className="sb-name" translate="no" title={convTitle(c, users, session.me.id)}>{convTitle(c, users, session.me.id)}</span></span>
+                    <span className="sb-preview" translate="no">{last ? `${who}: ${plainPreview(last.body, users)}` : ''}</span>
                   </span>
                   <span className="sb-meta">
                     <span className="sb-time">{last ? shortTime(last.createdAt) : ''}</span>
-                    {c.mentions > 0 ? <span className="badge">@ {c.mentions}</span> : <span className="chip accent">{c.unread} new</span>}
+                    {c.mentions > 0 ? <span className="badge">@ {c.mentions}</span> : <span className="chip accent">{`${c.unread} new`}</span>}
                   </span>
                 </button>
               );
@@ -171,10 +172,10 @@ function Widgets({ live }: { live: boolean }) {
     <>
       {list.map((w) => (
         <div key={`${w.botId}-${w.key}`} className="card widget-card">
-          <div className="eyebrow"><span>{w.title}</span><span className="widget-from mono">{w.botName.toUpperCase()}</span></div>
-          <ul className="widget-lines">{w.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+          <div className="eyebrow"><span translate="no">{w.title}</span><span className="widget-from mono" translate="no">{w.botName.toUpperCase()}</span></div>
+          <ul className="widget-lines">{w.lines.map((l, i) => <li key={i} translate="no">{l}</li>)}</ul>
           <div className="widget-foot">
-            <span className="faint mono">UPDATED {new Date(w.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+            <span className="faint mono">UPDATED {new Date(w.updatedAt).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}</span>
             {w.url && <a href={w.url} target="_blank" rel="noreferrer noopener">Open</a>}
           </div>
         </div>

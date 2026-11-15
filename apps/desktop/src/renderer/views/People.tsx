@@ -81,7 +81,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
         <div className="view-head">
           <div>
             <h1>Directory</h1>
-            <p className="label">{everyone.length} people · {online.size} online{org.departments.length ? ` · ${org.departments.length} departments` : ''}</p>
+            <p className="label">{`${everyone.length} people · ${online.size} online`}{org.departments.length ? ` · ${org.departments.length} departments` : ''}</p>
           </div>
         </div>
         <SheetTabs<View> label="Directory view" value={view} onChange={setView} tabs={[
