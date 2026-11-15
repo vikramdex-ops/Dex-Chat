@@ -272,9 +272,10 @@ A bot with a `track` carries each request on after the last question. The reques
 | `botflow.withdraw { itemId, note? }` | the person who asked | close it as withdrawn |
 | `botflow.takeover { itemId }` | the lead of the person acting, the person it was passed up to, the maker, admins | take the stage over |
 | `botflow.item { itemId }` | anyone who may see it | the request as one card shows it |
+| `botflow.about { botId }` | anyone | what a bot's conversation header shows: who made it, its about line, hours, flows, and (tracked bots) open requests and those waiting for you |
 | `botflow.register { flow, post? }` | anyone who can start the bot | the register as they may see it; `post` also puts it in their conversation with the bot |
 
-Every action is in the audit log as `botflow.item.acted`. The rules are in
+Every action is in the audit log as `botflow.item.acted`. Each conversation shows one live card per request: when a newer card for it is posted there, older ones fold to "DC-0001 · See the latest card below". A conversation with a bot has a bot's header (BOT, who made it, what it is for, OPEN and YOURS or its hours); its Details say once that bot conversations are not end-to-end encrypted. The rules are in
 `packages/core/src/botflow-track.ts`, shared by the hub and the bot maker's test run, where the
 maker plays every part ("Trying it as: Checker") without sending anything.
 
