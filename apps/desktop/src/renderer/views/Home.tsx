@@ -33,6 +33,9 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
   const [status, setStatus] = useState(session.me.statusText ?? '');
   const live = state.phase === 'ready';
   const conversations = useChat((s) => s.conversations);
+  // until the conversations arrive, Pulse cannot say you are caught up
+  const chatReady = useChat((s) => s.ready);
+  const deskLoaded = useDesk((s) => s.loaded);
 
   const needsYou = useMemo(() => [...conversations.values()]
     .filter((c) => c.joined && (c.mentions > 0 || (c.unread > 0 && !c.muted)))
@@ -81,7 +84,9 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
             ))}
           </div>
         )}
-        {needsYou.length === 0 && dueToday.length === 0 ? (
+        {(!chatReady || !deskLoaded) && needsYou.length === 0 && dueToday.length === 0 ? (
+          <div className="empty pulse-empty pulse-wait" aria-busy="true"><span className="spinner" /><span className="faint">Looking for what needs you…</span></div>
+        ) : needsYou.length === 0 && dueToday.length === 0 ? (
           <div className="empty pulse-empty"><Icon name="check" size={28} /><span>You're all caught up.</span></div>
         ) : needsYou.length === 0 ? null : (
           <div className="list">
@@ -126,7 +131,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
           <form style={{ display: 'flex', gap: 8 }} onSubmit={(e) => { e.preventDefault(); void saveStatus(status.trim() || null); }}>
             <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder="What are you working on?" maxLength={120}
               value={status} onChange={(e) => setStatus(e.target.value)} disabled={!live} aria-label="Status message" />
-            <button className="btn primary" disabled={!live || status.trim() === (session.me.statusText ?? '')}>Set</button>
+            <button className="btn primary" disabled={!live || status.trim() === (session.me.statusText ?? '')} title={!live ? 'Waiting for the office hub…' : status.trim() === (session.me.statusText ?? '') ? 'Type a new status first' : undefined}>Set</button>
           </form>
           <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>Colleagues see this next to your name.</p>
         </div>

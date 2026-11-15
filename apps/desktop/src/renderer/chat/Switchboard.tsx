@@ -76,7 +76,7 @@ export function hushChoices(now = new Date()): Array<{ label: string; until: num
   if (now.getTime() < lunch - 10 * 60_000) out.push({ label: 'Till lunch', until: lunch, note: hm(lunch) });
   out.push(now.getTime() < close - 10 * 60_000 ? { label: 'Till end of day', until: close, note: hm(close) } : { label: 'Till end of day', until: endOfToday(now), note: 'midnight' });
   out.push({ label: 'Until Monday', until: nextMonday(now), note: new Date(nextMonday(now)).toLocaleDateString([], { day: 'numeric', month: 'short' }) });
-  out.push({ label: 'Until I unmute', until: null, note: '' });
+  out.push({ label: 'Until I turn it back on', until: null, note: '' });
   return out;
 }
 
@@ -261,7 +261,9 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
         {ready && live.length === 0 && !folded && (
           <div className="sb-empty">
             <span>{filter ? 'Nothing matches.' : only === 'unread' ? 'Nothing unread.' : chip === 'spaces' ? 'No Spaces yet.' : chip === 'projects' ? 'No project Spaces yet. Name a Space after its job number, such as P-12513.' : chip === 'people' ? 'No Direct conversations yet.' : 'Nothing here yet.'}</span>
-            {!filter && onNew && chip !== 'projects' && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{chip === 'spaces' ? 'Create a Space' : 'Write to someone'}</button>}
+            {filter && <button className="btn" onClick={() => setFilter('')}>Clear the filter</button>}
+            {!filter && only === 'unread' && <button className="btn" onClick={() => setOnly('all')}>Show all</button>}
+            {!filter && only !== 'unread' && onNew && chip !== 'projects' && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{chip === 'spaces' ? 'Create a Space' : 'Write to someone'}</button>}
           </div>
         )}
         {groups.map((g) => (

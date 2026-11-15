@@ -132,7 +132,7 @@ function Welcome({ state }: { state: AppState }) {
         )}
         {error && <div className="error-box">{error}</div>}
         <BackToOffices state={state} />
-        <button className="btn primary lg" type="submit" disabled={busy || !(pair || (legacy && name.trim()))}>
+        <button className="btn primary lg" type="submit" disabled={busy || !(pair || (legacy && name.trim()))} title={busy || pair ? undefined : legacy ? 'Enter your name first' : 'Paste the whole code first'}>
           {busy ? <span className="spinner" /> : null}{legacy ? 'Request access' : `Pair this ${deviceWord}`}
         </button>
         {!isPhone && <div className="faint" style={{ fontSize: 13 }}><button type="button" className="link" onClick={() => setScanning(true)}>Scan the QR code with this laptop's camera</button></div>}
@@ -238,7 +238,8 @@ function Welcome({ state }: { state: AppState }) {
       {error && <div className="error-box">{error}</div>}
       <BackToOffices state={state} />
 
-      <button className="btn primary lg" type="submit" disabled={!canOffice || (guest && !/^DEX-?[A-Z2-9]{5}-?[A-Z2-9]{5}$/.test(invite.trim()))}>
+      <button className="btn primary lg" type="submit" disabled={!canOffice || (guest && !/^DEX-?[A-Z2-9]{5}-?[A-Z2-9]{5}$/.test(invite.trim()))}
+        title={busy ? undefined : !name.trim() ? 'Enter your name first' : manual && !address.trim() ? 'Enter the hub address first' : !manual && !selected ? 'Choose the office hub first' : guest && !/^DEX-?[A-Z2-9]{5}-?[A-Z2-9]{5}$/.test(invite.trim()) ? 'Enter the whole invite code first' : undefined}>
         {busy ? <span className="spinner" /> : null}
         {guest ? 'Join as a guest' : 'Request access'}
       </button>
@@ -276,7 +277,7 @@ function Pending({ state }: { state: AppState }) {
         <span className="code">{deviceCode(state.deviceId)}</span>
       </div>
       <p className="faint" style={{ fontSize: 13 }}>Connected to {state.hub?.name ?? state.hub?.host}</p>
-      <div><button className="btn ghost" onClick={() => void window.dex.forgetHub()}>Use a different hub</button></div>
+      <div><button className="btn ghost" onClick={() => void window.dex.forgetHub()}>Choose a different hub</button></div>
     </div>
   );
 }
@@ -287,7 +288,7 @@ function Problem({ title, text }: { title: string; text: string }) {
       <div style={{ color: 'var(--danger)' }}><Icon name="warning" size={40} /></div>
       <h2>{title}</h2>
       <p className="muted">{text}</p>
-      <div><button className="btn primary" onClick={() => void window.dex.forgetHub()}>Choose another hub</button></div>
+      <div><button className="btn primary" onClick={() => void window.dex.forgetHub()}>Choose a different hub</button></div>
     </div>
   );
 }

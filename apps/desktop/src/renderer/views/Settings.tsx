@@ -74,7 +74,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               )}
             </div>
             <div className="full row-actions" style={{ justifyContent: 'flex-end' }}>
-              <button className="btn primary" disabled={!dirty || !live || !name.trim()}>Save profile</button>
+              <button className="btn primary" disabled={!dirty || !live || !name.trim()} title={!live ? 'Waiting for the office hub…' : !name.trim() ? 'Your name cannot be empty' : !dirty ? 'Nothing has changed yet' : undefined}>Save profile</button>
             </div>
           </form>
         </section>
@@ -92,7 +92,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               <input id="s-bday" className="input" value={contact.birthday} maxLength={5} placeholder="06-30" onChange={(e) => setContact({ ...contact, birthday: e.target.value })} disabled={!live} /></div>
             <div className="full row-actions" style={{ justifyContent: 'space-between' }}>
               <span className="faint" style={{ fontSize: 12.5 }}>Your department, designation and manager are set by an administrator.</span>
-              <button className="btn primary" disabled={!contactDirty || !live}>Save contact details</button>
+              <button className="btn primary" disabled={!contactDirty || !live} title={!live ? 'Waiting for the office hub…' : !contactDirty ? 'Nothing has changed yet' : undefined}>Save contact details</button>
             </div>
           </form>
         </section>

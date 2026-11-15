@@ -104,7 +104,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
               <Segmented<Filter> label="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'Everyone' }, { value: 'online', label: 'Online' }]} />
             </div>
             {people.length === 0 ? (
-              <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span></div>
+              <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span>{(query.trim() || dept || filter !== 'all') && <button className="btn" onClick={() => { setQuery(''); setDept(''); setFilter('all'); }}>Show everyone</button>}</div>
             ) : (
               <div className="grid cols-people">
                 {people.map((u) => (
