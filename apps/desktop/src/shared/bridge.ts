@@ -206,6 +206,9 @@ export interface DexBridge {
   pathForFile?(file: File): string;
   openFile?(id: string, name: string): Promise<void>;
   saveFile?(id: string, name: string): Promise<string>;
+  /** Desktop, the file viewer: open a temporary copy in the program the system uses for its type, or save into Downloads, from bytes the window has or a hub file. */
+  openCopy?(name: string, src: { id?: string; data?: ArrayBuffer }): Promise<void>;
+  saveCopy?(name: string, src: { id?: string; data?: ArrayBuffer }): Promise<string>;
   /** Phones: a URL the page can show an image or play audio from (desktop uses the dexfile: scheme). */
   fileUrl?(id: string, name: string): Promise<string>;
   /** Desktop: name and size of a local file another tool asked to share. */

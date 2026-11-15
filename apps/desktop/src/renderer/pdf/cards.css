@@ -1,0 +1,25 @@
+/* PDFs and Office files in messages (loaded with the conversation, not with the viewer). */
+/* a PDF in a message: the file card with its first page */
+.file-card.pdf-chip { align-items: stretch; padding: 8px 10px 8px 8px; }
+.pdf-chip-thumb { flex: none; width: 56px; height: 72px; display: grid; place-items: center; padding: 0; overflow: hidden; border: 0; border-radius: 4px; background: #fff; box-shadow: 0 0 0 1px var(--stroke-strong); cursor: pointer; }
+.pdf-chip-tile { display: grid; place-items: center; width: 100%; height: 100%; }
+.pdf-chip-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
+.pdf-chip-thumb .file-ico { width: 100%; height: 100%; border-radius: 0; }
+.pdf-chip-open { display: grid; align-content: center; gap: 3px; min-width: 0; flex: 1; padding: 0 2px; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.pdf-chip-open .sb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-chip-open .mono { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.pdf-chip-open:hover .sb-name { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.pdf-chip .file-actions { align-self: center; }
+
+/* Office files: a card that says what the file is and opens it in its own program */
+.file-card.office-card { align-items: center; }
+.office-ico { position: relative; flex: none; width: 44px; height: 54px; display: grid; place-items: end center; padding-bottom: 7px; border-radius: 3px 12px 3px 3px; background: var(--layer-solid); box-shadow: 0 0 0 1px var(--stroke-strong); color: var(--accent-ink); font: 700 9.5px/1 var(--font-mono); letter-spacing: .06em; }
+.office-ico::before { content: ''; position: absolute; left: 8px; right: 8px; top: 12px; height: 18px; background: repeating-linear-gradient(to bottom, var(--stroke-strong) 0 1px, transparent 1px 5px); }
+.office-ico[data-kind='sheet']::before { background: repeating-linear-gradient(to bottom, var(--stroke-strong) 0 1px, transparent 1px 5px), repeating-linear-gradient(to right, var(--stroke-strong) 0 1px, transparent 1px 8px); }
+.office-ico[data-kind='slides']::before { top: 13px; height: 16px; background: var(--accent-soft); border: 1px solid var(--stroke-strong); }
+.office-card .sb-main { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.office-card .mono { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.office-card-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.lightbox.office-view { display: grid; place-items: center; grid-template-rows: auto 1fr; }
+.office-view-card { width: min(460px, calc(100vw - 32px)); margin: auto; display: grid; gap: 12px; padding: 22px; border-radius: var(--radius-l); background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke); }
+.office-view-card p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-2); }

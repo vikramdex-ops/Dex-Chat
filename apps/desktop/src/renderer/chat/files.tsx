@@ -7,6 +7,7 @@ import { Icon, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { VoicePlayer } from './voice.tsx';
 import { VideoClip } from './clips.tsx';
+import { OfficeCard, PdfChip, isOffice, isPdf } from '../pdf/cards.tsx';
 
 export const filesSupported = () => typeof window.dex.uploadFile === 'function';
 export const fileSrc = (id: string) => `dexfile://f/${id}`;
@@ -96,6 +97,9 @@ export function MessageFiles({ files, onView, draggableAs }: {
       {audio.map((f) => <VoicePlayer key={f.id} f={f} />)}
       {videos.map((f) => <VideoClip key={f.id} f={f} />)}
       {[...(showImages ? [] : images), ...others].map((f) => {
+        // PDFs open in the viewer; Office files say what they are (pdf/cards.tsx)
+        if (showImages && isPdf(f)) return <PdfChip key={f.id} f={f} onOpen={() => onView(f, [f])} dragProps={draggableAs?.(f)} />;
+        if (isOffice(f)) return <OfficeCard key={f.id} f={f} dragProps={draggableAs?.(f)} />;
         const k = kind(f);
         return (
           <div key={f.id} className="file-card" {...draggableAs?.(f)}>
@@ -223,6 +227,7 @@ export function FilesPanel({ convId, onView, onClose }: { convId: string; onView
           <div key={`${f.messageId}-${f.id}`} className="file-card compact">
             <span className="file-ico"><Icon name={kind(f).icon} size={16} /></span>
             <span className="sb-main"><span className="sb-name" title={f.name} translate="no">{f.name}</span><span className="sb-preview">{formatSize(f.size)} · {new Date(f.createdAt).toLocaleDateString()}</span></span>
+            {filesSupported() && (isPdf(f) || isOffice(f)) && <button className="btn ghost" onClick={() => onView(f, [f])}>{isPdf(f) ? 'View' : 'Details'}</button>}
             <FileActions f={f} />
           </div>
         ))}

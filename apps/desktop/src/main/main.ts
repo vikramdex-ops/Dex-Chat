@@ -19,6 +19,7 @@ import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 import { appLog } from './applog.ts';
 import { wireAssist } from './assist/index.ts';
+import { openTempCopy, pruneTempCopies, saveBytes } from './viewer.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -284,6 +285,14 @@ function wireIpc(c: Controller): void {
   // saving reports progress as "save:<id>" on the upload progress channel
   ipcMain.handle('file:save', (e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name), (got, total) => e.sender.send('file:progress', `save:${String(id)}`, got, total))));
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
+  // the file viewer: open a temporary copy in the default app, or save, from bytes or a hub file
+  const viewerSource = async (name: string, src: { id?: unknown; data?: unknown }) => {
+    if (src?.data instanceof ArrayBuffer || ArrayBuffer.isView(src?.data)) return { data: src.data as ArrayBuffer };
+    if (typeof src?.id === 'string' && /^[0-9A-Z]{26}$/.test(src.id)) return { path: await cachedFile(access(), src.id, name) };
+    throw new Error('There is nothing to open.');
+  };
+  ipcMain.handle('file:openCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => openTempCopy(String(name), await viewerSource(String(name), src))));
+  ipcMain.handle('file:saveCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => saveBytes(String(name), await viewerSource(String(name), src))));
   ipcMain.handle('tools:installed', () => installedTools());
   ipcMain.handle('window:popout', (_e, convId: string, title: string) => { popOut(String(convId), String(title ?? '')); });
   ipcMain.handle('window:main', (_e, convId: string) => { showWindow(); if (typeof convId === 'string') win?.webContents.send('app:deeplink', `${PROTOCOL}://conversation/${convId}`); });
@@ -470,6 +479,7 @@ void app.whenReady().then(async () => {
   });
   handleMiniAppScheme((op, data) => controller!.request(op, data));
   void pruneCache();
+  void pruneTempCopies();
   applyLogin(config.settings);
   nativeTheme.themeSource = config.settings.theme;
   nativeTheme.on('updated', () => applyTheme(controller!.settings));
