@@ -32,7 +32,8 @@
     "./pointers": "./src/pointers.ts",
     "./helpdesk": "./src/helpdesk.ts",
     "./webinar": "./src/webinar.ts",
-    "./meet-control": "./src/meet-control.ts"
+    "./meet-control": "./src/meet-control.ts",
+    "./nib": "./src/nib.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",
