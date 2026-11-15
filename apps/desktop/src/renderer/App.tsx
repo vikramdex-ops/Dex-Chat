@@ -43,6 +43,7 @@ import { startMeetLive } from './meet/live.ts';
 import { openRecording } from './meet/shelf.ts';
 import { parseMeetingId } from '@dex/core';
 import { AddToolHost } from './bots/AddTool.tsx';
+import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
 import { timeOpts } from './time.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 
@@ -437,6 +438,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else if (target === 'desk') { setLens('desk'); setSheet(null); }
     else if (target === 'calendar') { setLens('calendar'); setSheet(null); }
     else if (target === 'recording' && m[2]) { setLens('meet'); setSheet(null); openRecording({ token: m[2] }); }
+    else if (target === 'help') { setSheet(null); openHelp(m[2] === 'desk' ? { view: 'desk' } : { view: 'me' }); }
     else if (target === 'meet') {
       setLens('meet'); setSheet(null);
       const id = parseMeetingId(m[2] ?? '');
@@ -471,6 +473,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'card' as IconName, run: () => setLens('directory') },
     { id: 'go-meet', label: 'Go to Meet: start or join a meeting', icon: 'video' as IconName, run: () => setLens('meet') },
+    ...helpCommands(),
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
     { id: 'updates', label: 'Check for updates', icon: 'refresh' as IconName, run: () => void window.dex.checkForUpdates() },
@@ -523,6 +526,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 )}
                 <button role="menuitem" disabled={!live} onClick={() => { setMenu(false); setOoo(true); }}><Icon name="calendar" size={16} />{session.me.ooo ? `Away from the office until ${new Date(session.me.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Away from the office…'}</button>
                 <div className="menu-sep" />
+                {session.me.role !== 'guest' && session.me.role !== 'bot' && <HelpMenuItems onDone={() => { setMenu(false); setSheet(null); }} />}
                 <button role="menuitem" onClick={() => { setSheet('preferences'); setMenu(false); }}><Icon name="settings" size={16} />Preferences{keyFor('prefs') && <span className="kbd">{keyHint(keyFor('prefs'))}</span>}</button>
                 <button role="menuitem" onClick={() => { setShortcuts(true); setMenu(false); }}><Icon name="info" size={16} />Keyboard shortcuts<span className="kbd">Ctrl /</span></button>
                 {isAdmin && (
@@ -600,6 +604,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
+      <AssistHost session={session} users={users} live={live} />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}
       <ReminderCards users={users} meId={session.me.id} jump={jump} />

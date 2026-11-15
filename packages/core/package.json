@@ -24,7 +24,10 @@
     "./bots": "./src/bots.ts",
     "./ics": "./src/ics.ts",
     "./meet": "./src/meet.ts",
-    "./meet-csv": "./src/meet-csv.ts"
+    "./meet-csv": "./src/meet-csv.ts",
+    "./assist": "./src/assist.ts",
+    "./pointers": "./src/pointers.ts",
+    "./helpdesk": "./src/helpdesk.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

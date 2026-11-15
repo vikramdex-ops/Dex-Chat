@@ -6,6 +6,7 @@ import type { FileInfo } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import { FileActions, formatSize, useFileSrc } from './files.tsx';
 import { sendMessage } from './store.ts';
+import { LookTogetherButton } from '../pointers/surfaces.tsx';
 
 type Tool = 'pen' | 'box' | 'arrow';
 type Stroke = { tool: Tool; color: string; points: Array<[number, number]> };
@@ -52,6 +53,7 @@ export function Viewer({ file, all, convId, onClose }: { file: FileInfo; all: Fi
             <button className="icon-btn" title="Zoom in (+)" onClick={() => setZoom((z) => Math.min(8, z * 1.25))}><Icon name="plus" size={17} /></button>
             <button className="icon-btn" title="Rotate (R)" onClick={() => setRot((r) => (r + 90) % 360)}><Icon name="rotate" size={17} /></button>
             {convId && window.dex.uploadFile && <button className="btn sm" onClick={() => setMarkup(true)}><Icon name="drawing" size={15} />Mark up</button>}
+            {convId && <LookTogetherButton file={f} convId={convId} />}
           </span>
         )}
         <FileActions f={f} />

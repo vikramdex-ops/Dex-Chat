@@ -4,6 +4,8 @@ import type { FlowEvents, FlowOps } from './flows.ts';
 
 import type { BotEvents, BotOps, BotFlowCard, MiniAppView } from './bots.ts';
 
+import type { HelpCategory, HelpEntry, HelpFileKind, HelpTicket, SupportSession } from './helpdesk.ts';
+
 export const PROTOCOL_VERSION = 1;
 export const APP_ID = 'dexconnect';
 export const DEFAULT_HUB_PORT = 47900;
@@ -608,6 +610,8 @@ export interface RoomParticipant {
   screen: boolean;
   /** This person is recording the call (everyone is shown that). */
   recording?: boolean;
+  /** Speaking now (lounges only: shown to the Space on the lounge's row). */
+  speaking?: boolean;
 }
 
 export interface RoomInfo {
@@ -640,6 +644,25 @@ export interface RoomInfo {
   /** The device everyone sees large (set by a host), or null. */
   spotlight?: string | null;
   settings?: MeetingSettings;
+  /** A Room with a job of its own: a lounge people drop into, or an IT support session. */
+  purpose?: RoomPurpose;
+}
+
+/** lounge: a standing audio space in a Space; support: a help-desk session between two people. */
+export type RoomPurpose = { kind: 'lounge'; loungeId: string; name: string } | { kind: 'support'; ticketId: string };
+
+/** A drop-in audio space inside a Space ("Piping desk"): it stays when empty; people come and go. */
+export interface Lounge {
+  id: string;
+  convId: string;
+  name: string;
+  createdBy: string;
+  createdAt: number;
+  archived: boolean;
+  /** Its Room while anyone is in it. */
+  roomId: string | null;
+  /** Who is in it now, and who of them is muted. */
+  people: Array<{ userId: string; deviceId: string; muted: boolean; speaking: boolean }>;
 }
 
 // ---------------------------------------------------------------- meetings
@@ -685,6 +708,9 @@ export function parseMeetingId(text: string): string | null {
   const digits = m[1].replace(/[\s-]/g, '');
   return MEETING_ID_RE.test(digits) ? digits : null;
 }
+
+/** People looking at the same file or whiteboard together, and whether pointers are on. */
+export interface PointSession { surface: string; presenter: string; enabled: boolean; viewers: Array<{ userId: string; deviceId: string }> }
 
 /** A track someone sends to the hub's relay. */
 export interface RelayProducer { producerId: string; userId: string; deviceId: string; kind: 'audio' | 'video'; source: 'mic' | 'camera' | 'screen' | 'screen-audio' }
@@ -983,6 +1009,52 @@ export interface Ops extends FlowOps, BotOps {
   'sched.sendNow': { req: { id: string }; res: Message };
   /** Hashtags people use, most used first (in conversations you are part of). */
   'tags.top': { req: { prefix?: string; convId?: string } | void; res: Array<{ tag: string; count: number }> };
+  // ------------------------------------------------------------ help desk (docs/HELP-DESK.md)
+  'help.create': { req: { summary: string; detail?: string; category: HelpCategory; screenshot?: string | null; platform?: string | null }; res: HelpTicket };
+  /** Tickets you asked for, newest first. */
+  'help.mine': { req: void; res: HelpTicket[] };
+  /** IT: the queue (open and taken first, then recently closed). */
+  'help.queue': { req: { status?: 'active' | 'closed' | 'all' } | void; res: HelpTicket[] };
+  'help.get': { req: { id: string }; res: { ticket: HelpTicket; timeline: HelpEntry[] } };
+  'help.take': { req: { id: string }; res: HelpTicket };
+  'help.release': { req: { id: string }; res: HelpTicket };
+  'help.note': { req: { id: string; text: string }; res: HelpEntry };
+  'help.attach': { req: { id: string; fileId: string; kind: HelpFileKind }; res: HelpTicket };
+  'help.close': { req: { id: string; note?: string }; res: HelpTicket };
+  'help.reopen': { req: { id: string; note?: string }; res: HelpTicket };
+  'help.rate': { req: { id: string; rating: number; note?: string }; res: HelpTicket };
+  /** The assigned technician opens a support session (and is first in its Room). */
+  'help.session.start': { req: { id: string }; res: { session: SupportSession; room: RoomInfo } };
+  /** The requester (or the assigned technician, again) comes into the session's Room. */
+  'help.session.join': { req: { id: string; controlAvailable?: boolean }; res: { session: SupportSession; room: RoomInfo } };
+  'help.session.end': { req: { id: string }; res: { ok: true } };
+  /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
+  'help.consent': { req: { id: string; kind: 'screen' | 'control'; on: boolean; scope?: 'screen' | 'window' }; res: SupportSession };
+  /** The technician asks the requester for something (each needs the requester's own yes). */
+  'help.ask': { req: { id: string; kind: 'screen' | 'control' | 'diagnostics' }; res: { ok: true } };
+  /** People with the IT capability. */
+  'help.staff': { req: void; res: string[] };
+  'admin.help.staff': { req: { userId: string; on: boolean }; res: string[] };
+  // ------------------------------------------------------------ lounges
+  'lounge.list': { req: { convId?: string } | void; res: Lounge[] };
+  'lounge.create': { req: { convId: string; name: string }; res: Lounge };
+  'lounge.rename': { req: { id: string; name: string }; res: Lounge };
+  'lounge.archive': { req: { id: string; archived: boolean }; res: Lounge };
+  /** Come into a lounge (audio only; screen sharing allowed). */
+  'lounge.join': { req: { id: string }; res: RoomInfo };
+  /** Which lounge each person is in (the lounge's name only for Spaces you are in). */
+  'lounge.presence': { req: void; res: Array<{ userId: string; loungeId: string; name: string | null }> };
+  // ------------------------------------------------------------ live pointers
+  /** A small message to everyone else in your Room (pointers when the data channel is not there, e.g. on the relay). */
+  'room.data': { req: { roomId: string; data: unknown }; res: { ok: true } };
+  /** In a lounge: you started or stopped speaking (the Space sees a live pip on the lounge). */
+  'room.speaking': { req: { roomId: string; speaking: boolean }; res: { ok: true } };
+  /** Look at a file or whiteboard together: join its pointer session (invite: tell the conversation). */
+  'point.join': { req: { surface: string; convId?: string; invite?: boolean; name?: string }; res: PointSession };
+  'point.leave': { req: { surface: string }; res: { ok: true } };
+  'point.send': { req: { surface: string; data: unknown }; res: { ok: true } };
+  /** The presenter (whoever opened the session) turns pointers on or off for everyone. */
+  'point.set': { req: { surface: string; enabled: boolean }; res: PointSession };
   'search': {
     req: {
       q: string; convId?: string; limit?: number;
@@ -1064,6 +1136,21 @@ export interface Events extends FlowEvents, BotEvents {
   'reminder.removed': { id: string };
   'sched.updated': ScheduledMessage;
   'sched.removed': { id: string; sentMessageId: string | null };
+  'help.updated': HelpTicket;
+  'help.entry': HelpEntry;
+  /** A support session started, changed (consent) or ended. */
+  'help.session': SupportSession;
+  /** To the requester: the technician asks for screen, control or diagnostics. */
+  'help.ask': { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string };
+  'help.staff': string[];
+  'lounge.updated': Lounge;
+  /** Someone came into or left a lounge (name is null for Spaces you are not in). */
+  'lounge.where': { userId: string; loungeId: string | null; name: string | null };
+  'room.data': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
+  'point.data': { surface: string; fromDevice: string; fromUser: string; data: unknown };
+  'point.session': PointSession;
+  /** Someone asks the conversation to look at a file with them. */
+  'point.invite': { surface: string; convId: string; name: string; by: string };
 }
 export type EventName = keyof Events;
 

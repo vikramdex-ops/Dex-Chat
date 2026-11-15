@@ -10,6 +10,7 @@ import { ComplianceAdmin, GuestsAdmin } from './GuestsCompliance.tsx';
 import { PoliciesAdmin, ReportsAdmin, UsageAdmin } from './PoliciesUsage.tsx';
 import { RemoteAdmin } from './Remote.tsx';
 import { AutomationsAdmin } from '../flows/FlowsPanel.tsx';
+import { ItDeskAdmin } from '../help/ItDesk.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
 type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'audit';
@@ -173,6 +174,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
         </div>
       )}
 
+      {tab === 'roles' && <ItDeskAdmin session={session} live={live} />}
       {tab === 'roles' && (
         <div className="list">
           <div className="list-row roles list-head"><span /><span>Person</span><span>Windows account</span><span>Role</span></div>

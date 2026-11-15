@@ -26,6 +26,7 @@ import { LobbySheet } from '../meet/Lobby.tsx';
 import { HostExtras, SoundMenu, useRoomUsers } from '../meet/RoomExtras.tsx';
 import { BreakoutBanner } from '../meet/Breakouts.tsx';
 import { useNoise } from './noise.ts';
+import { RoomPointers } from '../pointers/surfaces.tsx';
 import '../meet/meet.css';
 
 const MeetPanel = lazy(() => import('../meet/MeetPanel.tsx'));
@@ -342,9 +343,11 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
           {layout === 'presentation' && shareStream && (
             <figure className="room-share">
               <Video stream={shareStream} muted fit="contain" />
+              <RoomPointers presenterDevice={sharedStream && shared ? shared.deviceId : meDevice} users={users} meId={meId} />
               <figcaption className="room-cap"><b>SHEET</b><span>{screen && !sharedStream ? 'YOUR SCREEN · SHARED' : `${capName(nameOf(shared!.userId))} · SCREEN`}</span></figcaption>
             </figure>
           )}
+          {screen && !(layout === 'presentation' && !sharedStream) && <div className="pt-hidden"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
           {mainSeat && <div className="room-main">{tileFor(mainSeat, 'main')}</div>}
           <div className={stripMode ? 'room-strip room-grid' : 'room-grid'} style={stripMode ? undefined : { ['--cols' as string]: cols, ['--tile-w' as string]: fit.tileW ? `${fit.tileW}px` : undefined }}>
             {shown.map((s) => tileFor(s))}

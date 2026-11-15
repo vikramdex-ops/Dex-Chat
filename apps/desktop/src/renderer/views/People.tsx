@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { Department, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Dialog, Icon, PRESENCE_LABEL, Popover, ROLE_LABEL, Segmented, presenceFor, useToast, relativeTime } from '../ui.tsx';
+import { Avatar, Dialog, Icon, Popover, ROLE_LABEL, Segmented, presenceFor, presenceText, useToast, relativeTime } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { formatBirthday, formatJoined, managersOf, reportsOf, teamSize, useOrg } from '../org/store.ts';
 import { startCall } from '../rooms/engine.ts';
@@ -196,7 +196,7 @@ function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onCl
       k: 'Line manager',
       v: manager ? <button className="tb-link" onClick={() => onPick(manager.id)}>{manager.displayName}</button> : null,
     },
-    { k: 'Status', v: u.role === 'bot' ? null : <>{sentence(PRESENCE_LABEL[presence])}{u.statusText && <span className="tb-sub">{u.statusEmoji ? `${u.statusEmoji} ` : ''}{u.statusText}</span>}</> },
+    { k: 'Status', v: u.role === 'bot' ? null : <>{sentence(presenceText(u.id, presence))}{u.statusText && <span className="tb-sub">{u.statusEmoji ? `${u.statusEmoji} ` : ''}{u.statusText}</span>}</> },
     { k: 'Day', v: workLine(work) },
     { k: 'Last on', v: u.id !== meId && presence === 'off' && u.lastSeen ? relativeTime(u.lastSeen) : null },
     {

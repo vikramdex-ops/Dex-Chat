@@ -10,6 +10,9 @@ import { Glyph, useDuration } from './parts.tsx';
 import './rooms.css';
 
 const Stage = lazy(() => import('./Stage.tsx'));
+// a lounge shows as a small bar, a help-desk session as its own sheet (both load when used)
+const LoungeBar = lazy(() => import('../lounges/LoungeBar.tsx'));
+const SupportStage = lazy(() => import('../help/Support.tsx'));
 
 /**
  * The Room sheet, loaded the first time a Room or a meeting's lobby opens and kept while it runs
@@ -20,10 +23,13 @@ export function RoomStage(props: {
   users: Map<string, PublicUser>; title: (convId: string) => string; onOpenConversation: (convId: string) => void; meDevice: string; meId: string;
 }) {
   const open = useCall((s) => !!s.room || !!s.lobby);
+  const purpose = useCall((s) => s.room?.purpose?.kind ?? null);
   const notice = useCall((s) => s.notice);
   const toast = useToast();
   useEffect(() => { if (notice) { toast(notice.text); clearNotice(); } }, [notice, toast]);
   if (!open) return null;
+  if (purpose === 'lounge') return <Suspense fallback={null}><LoungeBar users={props.users} meId={props.meId} meDevice={props.meDevice} /></Suspense>;
+  if (purpose === 'support') return <Suspense fallback={null}><SupportStage users={props.users} meId={props.meId} meDevice={props.meDevice} /></Suspense>;
   return <Suspense fallback={null}><Stage {...props} /></Suspense>;
 }
 
@@ -36,7 +42,7 @@ export function RoomChip() {
   const minimized = useCall((s) => s.minimized);
   const muted = useCall((s) => s.muted);
   const duration = useDuration(room?.startedAt);
-  if (!room || !minimized) return null;
+  if (!room || !minimized || room.purpose) return null;
   const n = room.participants.length;
   const recording = room.participants.some((p) => p.recording);
   const waiting = room.lobby?.length ?? 0;

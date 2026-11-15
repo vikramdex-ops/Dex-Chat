@@ -102,17 +102,19 @@ const safeName = (n: string) => n.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').sli
 /** Downloads in progress, so two requests for one file (a video asks more than once) share one. */
 const inFlight = new Map<string, Promise<string>>();
 
-function fetchToCache(access: HubAccess, id: string, name: string): Promise<string> {
+type Progress = (got: number, total: number) => void;
+
+function fetchToCache(access: HubAccess, id: string, name: string, onProgress?: Progress): Promise<string> {
   const target = path.join(cacheDir(), id, safeName(name));
-  if (fs.existsSync(target)) return Promise.resolve(target);
+  if (fs.existsSync(target)) { if (onProgress) { const n = fs.statSync(target).size; onProgress(n, n); } return Promise.resolve(target); }
   const running = inFlight.get(target);
   if (running) return running;
-  const p = download(access, id, target).finally(() => inFlight.delete(target));
+  const p = download(access, id, target, onProgress).finally(() => inFlight.delete(target));
   inFlight.set(target, p);
   return p;
 }
 
-async function download(access: HubAccess, id: string, target: string): Promise<string> {
+async function download(access: HubAccess, id: string, target: string, onProgress?: Progress): Promise<string> {
   const dir = path.dirname(target);
   await fsp.mkdir(dir, { recursive: true });
   if (access.tunnel) {
@@ -120,8 +122,14 @@ async function download(access: HubAccess, id: string, target: string): Promise<
     if (r.status !== 200) { for await (const _ of r.body) { /* drain */ } throw new Error(r.status === 404 ? 'That file is no longer available.' : `Download failed (${r.status}).`); }
     const part = `${target}.part`;
     const out = fs.createWriteStream(part);
+    const total = Number(r.headers['content-length'] ?? 0);
+    let got = 0;
     try {
-      for await (const p of r.body) if (!out.write(p)) await new Promise<void>((res) => out.once('drain', () => res()));
+      for await (const p of r.body) {
+        got += p.length;
+        onProgress?.(got, total || got);
+        if (!out.write(p)) await new Promise<void>((res) => out.once('drain', () => res()));
+      }
       await new Promise<void>((res, rej) => { out.end(() => res()); out.on('error', rej); });
     } catch (e) { out.destroy(); await fsp.rm(part, { force: true }); throw new Error(`Download interrupted: ${(e as Error).message}`); }
     await fsp.rename(part, target);
@@ -132,6 +140,12 @@ async function download(access: HubAccess, id: string, target: string): Promise<
   const r = await res;
   if ((r.statusCode ?? 0) !== 200) { r.resume(); throw new Error(r.statusCode === 404 ? 'That file is no longer available.' : `Download failed (${r.statusCode}).`); }
   const part = `${target}.part`;
+  if (onProgress) {
+    const total = Number(r.headers['content-length'] ?? 0);
+    let got = 0;
+    let last = 0;
+    r.on('data', (c: Buffer) => { got += c.length; if (Date.now() - last > 100 || got === total) { last = Date.now(); onProgress(got, total || got); } });
+  }
   await new Promise<void>((resolve, reject) => {
     const out = fs.createWriteStream(part);
     r.pipe(out);
@@ -152,8 +166,8 @@ export async function openFile(access: HubAccess, id: string, name: string): Pro
   if (err) { shell.showItemInFolder(p); }
 }
 
-export async function saveFile(access: HubAccess, id: string, name: string): Promise<string> {
-  const cached = await fetchToCache(access, id, name);
+export async function saveFile(access: HubAccess, id: string, name: string, onProgress?: Progress): Promise<string> {
+  const cached = await fetchToCache(access, id, name, onProgress);
   const dir = app.getPath('downloads');
   const ext = path.extname(name);
   const base = safeName(path.basename(name, ext));

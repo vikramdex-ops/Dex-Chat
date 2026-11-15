@@ -40,6 +40,7 @@ import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeopl
 import { useMsgLayout } from './prefs.ts';
 import { keyFor, keyHint, keyText, pressed, useKeys } from './keys.ts';
 import './chat.css';
+import { LoungeStrip } from '../lounges/Lounges.tsx';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
@@ -285,6 +286,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           <dl className="title-block" aria-label="About this conversation">
             {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
+          {conv.kind === 'space' && <LoungeStrip convId={convId} live={live} />}
           {conv.members.length > 1 && <RoomButton convId={convId} live={live} />}
           <button ref={moreBtn} className="icon-btn head-more" title="More for this conversation" aria-label="More for this conversation" aria-haspopup="menu" aria-expanded={headMenu} onClick={() => setHeadMenu(!headMenu)}><Icon name="more" size={18} /></button>
           {onClose && <button className="icon-btn pane-x" title="Close this Pane" aria-label="Close this Pane" onClick={onClose}><Icon name="x" size={16} /></button>}
@@ -420,7 +422,7 @@ function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const inCall = useCall((s) => s.room);
   const [menu, setMenu] = useState(false);
   const caret = useRef<HTMLButtonElement>(null);
-  if (inCall?.convId === convId) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
+  if (inCall?.convId === convId && !inCall.purpose) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
   if (active && active.participants.length) {
     return (
       <button className="room-open live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>

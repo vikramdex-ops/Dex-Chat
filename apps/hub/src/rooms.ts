@@ -3,7 +3,7 @@
 // (lobby, lock, host and co-hosts, hands, reactions, spotlight, mute requests). Audio and video
 // travel directly between the PCs on the LAN, or through the hub's relay for large Rooms.
 import { MEETING_REACTIONS, ROOM_CHAT_MAX, isWebGuest, ulid } from '@dex/core';
-import type { LobbyEntry, MeetingInfo, PublicUser, RaisedHand, RoomChatLine, RoomInfo, RoomVisitor } from '@dex/core';
+import type { LobbyEntry, MeetingInfo, PublicUser, RaisedHand, RoomChatLine, RoomInfo, RoomPurpose, RoomVisitor } from '@dex/core';
 import { MeetingError, Meetings } from './meetings.ts';
 import type { Meeting } from './meetings.ts';
 import { Breakouts } from './breakouts.ts';
@@ -31,6 +31,10 @@ export interface Room extends RoomInfo {
   coHostSet: Set<string>;
   /** The meeting chat (shared by a meeting's breakouts: the same array). */
   chat: RoomChatLine[];
+  /** A lounge or a support session (see openPurpose). */
+  purpose?: RoomPurpose;
+  /** Only these people may see or join it (a support session); otherwise the conversation's members. */
+  only?: Set<string>;
 }
 
 /** What breakout rooms (breakouts.ts) use of the Rooms. */
@@ -65,6 +69,8 @@ export interface RoomHost {
   audit?(actorId: string | null, action: string, target: string | null, meta?: Record<string, unknown>): void;
   /** Attendance, hands and reactions, for the meeting's report. */
   track?: RoomTracker;
+  /** A lounge's or support session's Room changed (people came or went) or ended. */
+  purposeChanged?(room: RoomInfo, ended: boolean, durationMs: number): void;
 }
 
 /** A small sliding-window limiter: true when the key may act now. */
@@ -110,6 +116,7 @@ export class Rooms {
       hostId: r.hostId, coHosts: [...r.coHostSet], locked: !!r.locked, hands: r.handList.map((h) => ({ ...h })), spotlight: r.spotlight ?? null,
       ...(forHost ? { lobby: r.lobbyList.map((l) => ({ ...l })) } : {}),
       ...this.extras(r),
+      ...(r.purpose ? { purpose: { ...r.purpose } } : {}),
     };
   }
 
@@ -136,6 +143,7 @@ export class Rooms {
 
   /** Who hears about a Room: its conversation, everyone in it, and people let in from outside. */
   private audience(r: Room): string[] {
+    if (r.only) return [...r.only];
     // a breakout is news only to the people in it and the meeting's hosts
     if (r.parentId) {
       const fam = this.breakouts.family(r);
@@ -145,6 +153,7 @@ export class Rooms {
   }
 
   publish(r: Room): void {
+    if (r.purpose && this.rooms.has(r.id)) this.host.purposeChanged?.(this.view(r), false, 0);
     const all = this.audience(r);
     const hosts = all.filter((u) => this.isHost(r, u));
     if (hosts.length) this.host.deliverToUsers(hosts, 'room.updated', this.view(r, true));
@@ -158,6 +167,7 @@ export class Rooms {
   }
 
   private canSee(r: Room, userId: string): boolean {
+    if (r.only) return r.only.has(userId);
     return this.host.members(r.convId).includes(userId) || r.participants.some((p) => p.userId === userId) || r.admittedUsers.has(userId) || r.ringing.includes(userId);
   }
 
@@ -196,6 +206,8 @@ export class Rooms {
     for (const l of r.lobbyList) this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: 'denied' });
     this.host.deliverToUsers(this.audience(r), 'room.ended', { roomId: r.id, convId: r.convId, missed, startedBy: r.startedBy, durationMs, ...(endedBy ? { endedBy } : {}) });
     const view = this.view(r);
+    // a lounge or support session is not a call or a meeting: its own module records it
+    if (r.purpose) { this.host.purposeChanged?.(view, true, durationMs); return; }
     this.host.ended?.(view, missed, durationMs);
     // a missed call is not a meeting; anything else goes into "Recent meetings"
     if (this.host.meetings && (!missed || (r.meeting && r.meeting.kind !== 'conversation'))) {
@@ -204,7 +216,7 @@ export class Rooms {
   }
 
   /** Open a Room in a conversation (the caller is first in). */
-  private open(convId: string, me: PublicUser, deviceId: string, video: boolean, meeting: Meeting | null, ring: boolean, fromOutside: boolean): Room {
+  private open(convId: string, me: PublicUser, deviceId: string, video: boolean, meeting: Meeting | null, ring: boolean, fromOutside: boolean, special?: { purpose: RoomPurpose; only?: string[] }): Room {
     const members = this.host.members(convId);
     this.leaveAll(deviceId);
     const expected = Math.max(members.length, meeting && this.host.meetings ? this.host.meetings.expected(meeting) : 0);
@@ -219,6 +231,7 @@ export class Rooms {
       admittedUsers: new Set(), removedUsers: new Set(), lobbyList: [], handList: [],
       coHostSet: new Set(meeting && meeting.kind !== 'conversation' ? meeting.coHosts : []),
       chat: [],
+      ...(special ? { purpose: special.purpose, ...(special.only ? { only: new Set(special.only) } : {}) } : {}),
     };
     // nobody runs it yet (the host is not here): the first member of the office in it does
     if (!this.isHost(room, me.id) && me.role !== 'guest') room.coHostSet.add(me.id);
@@ -377,7 +390,7 @@ export class Rooms {
         const members = this.host.members(convId);
         if (!members.includes(me.id)) throw new RoomError('Conversation not found.');
         // one Room per conversation: starting again joins the running one
-        const running = [...this.rooms.values()].find((r) => r.convId === convId && !r.parentId);
+        const running = [...this.rooms.values()].find((r) => r.convId === convId && !r.parentId && !r.purpose);
         if (running) return this.handleOp('room.join', me, deviceId, { roomId: running.id, fromOutside });
         const meeting = this.host.meetings ? this.host.meetings.forConv(convId, me.id) : null;
         const ownSpace = meeting && (meeting.kind === 'instant' || meeting.kind === 'personal');
@@ -393,6 +406,7 @@ export class Rooms {
         const r = this.get(d.roomId, me);
         if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r, this.isHost(r, me.id));
         if (r.parentId) throw new RoomError('A host moves people into breakout rooms. Join the meeting itself.');
+        if (r.purpose) throw new RoomError(r.purpose.kind === 'lounge' ? 'Come into a lounge from its Space.' : 'Join a support session from its ticket.');
         if (r.locked && !this.isHost(r, me.id)) throw new RoomError('The host has locked this meeting. Ask them to unlock it.');
         if (this.mustWait(r, me)) throw new RoomError('This meeting has a lobby: join it with its meeting ID so the host can let you in.');
         return this.enter(r, me, deviceId, fromOutside);
@@ -425,6 +439,7 @@ export class Rooms {
 
       case 'room.invite': {
         const r = this.get(d.roomId, me);
+        if (r.purpose) throw new RoomError(r.purpose.kind === 'lounge' ? 'Lounges never ring anyone: people drop in when they like.' : 'A support session is between you and IT.');
         if (!r.participants.some((p) => p.userId === me.id)) throw new RoomError('Join the call first.');
         if (r.locked && !this.isHost(r, me.id)) throw new RoomError('The host has locked this meeting.');
         const members = this.host.members(r.convId);
@@ -455,6 +470,7 @@ export class Rooms {
         const p = r.participants.find((x) => x.deviceId === deviceId);
         if (!p) throw new RoomError('Not in this call.');
         p.muted = d.muted === true; p.camera = d.camera === true; p.screen = d.screen === true;
+        if (p.muted) p.speaking = false;
         this.publish(r);
         return { ok: true };
       }
@@ -609,6 +625,27 @@ export class Rooms {
         this.publish(r);
         return { ok: true };
       }
+      case 'room.data': {
+        // small messages to everyone else in the Room (live pointers when there is no data channel)
+        const r = this.mine(d.roomId, me, deviceId);
+        if (JSON.stringify(d.data ?? null).length > 8 * 1024) throw new RoomError('That message is too large.');
+        if (!this.limits.allow(`${r.id}:data:${deviceId}`, 60, 1000)) return { ok: true, limited: true };
+        const evt = { roomId: r.id, fromDevice: deviceId, fromUser: me.id, data: d.data ?? null };
+        for (const p of r.participants) if (p.deviceId !== deviceId) this.host.deliverToDevice(p.deviceId, 'room.data', evt);
+        return { ok: true };
+      }
+      case 'room.speaking': {
+        const r = this.mine(d.roomId, me, deviceId);
+        if (r.purpose?.kind !== 'lounge') return { ok: true };
+        const p = r.participants.find((x) => x.deviceId === deviceId)!;
+        const on = d.speaking === true && !p.muted;
+        if (!!p.speaking === on) return { ok: true };
+        // a stop always goes through; starts at most four a second
+        if (on && !this.limits.allow(`${r.id}:speak:${deviceId}`, 4, 1000)) return { ok: true, limited: true };
+        p.speaking = on;
+        this.publish(r);
+        return { ok: true };
+      }
       case 'room.react': {
         const r = this.mine(d.roomId, me, deviceId);
         const emoji = str(d.emoji);
@@ -675,7 +712,7 @@ export class Rooms {
       return;
     }
     // a one-to-one call ends when either person hangs up; group Rooms and meetings run until the last leaves
-    const plainCall = !r.meeting || r.meeting.kind === 'conversation';
+    const plainCall = (!r.meeting || r.meeting.kind === 'conversation') && !r.purpose;
     const oneToOne = plainCall && this.host.members(r.convId).length === 2 && r.everJoined.size > 1;
     if (!r.participants.length || (oneToOne && r.participants.length === 1)) this.end(r);
     else {
@@ -693,6 +730,50 @@ export class Rooms {
   private notGuest(userId: string, r: Room): boolean {
     if (isWebGuest(userId)) return false;
     return this.host.members(r.convId).includes(userId) || r.admittedUsers.has(userId);
+  }
+
+  // ------------------------------------------------------------ lounges and support sessions
+  private findPurpose(p: RoomPurpose): Room | undefined {
+    return [...this.rooms.values()].find((r) => r.purpose?.kind === p.kind
+      && (p.kind === 'lounge' ? (r.purpose as { loungeId: string }).loungeId === p.loungeId : (r.purpose as { ticketId: string }).ticketId === p.ticketId));
+  }
+
+  /** The running Room of a lounge or support session, if anyone is in it. */
+  purposeRoom(p: RoomPurpose): RoomInfo | null {
+    const r = this.findPurpose(p);
+    return r ? this.view(r) : null;
+  }
+
+  /**
+   * Come into a lounge's or support session's Room, opening it when nobody is there. No ringing,
+   * no lobby, no meeting ID. `only` limits who may see and join it (a support session).
+   */
+  enterPurpose(spec: { convId: string; purpose: RoomPurpose; only?: string[] }, me: PublicUser, deviceId: string, fromOutside: boolean): RoomInfo {
+    if (spec.only && !spec.only.includes(me.id)) throw new RoomError('This session is not yours to join.');
+    const running = this.findPurpose(spec.purpose);
+    if (running) {
+      if (running.purpose?.kind === 'lounge' && spec.purpose.kind === 'lounge' && running.purpose.name !== spec.purpose.name) running.purpose = { ...spec.purpose };
+      return this.enter(running, me, deviceId, fromOutside);
+    }
+    const room = this.open(spec.convId, me, deviceId, false, null, false, fromOutside, { purpose: spec.purpose, only: spec.only });
+    return this.view(room, this.isHost(room, me.id));
+  }
+
+  /** Rename a running lounge's Room (its people see the new name at once). */
+  renamePurpose(p: RoomPurpose & { kind: 'lounge' }): void {
+    const r = this.findPurpose(p);
+    if (r) { r.purpose = { ...p }; this.publish(r); }
+  }
+
+  /** End a lounge's or support session's Room for everyone in it. */
+  endPurpose(p: RoomPurpose, by?: string): void {
+    const r = this.findPurpose(p);
+    if (!r) return;
+    for (const x of r.participants) this.host.deviceLeft?.(r.id, x.deviceId);
+    const users = r.participants.map((x) => x.userId);
+    r.participants = [];
+    this.end(r, by);
+    for (const u of new Set(users)) this.setBusy(u);
   }
 
   /** A device can only be in one Room; also called when a device disconnects. */

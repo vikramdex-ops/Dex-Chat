@@ -10,6 +10,7 @@ import { useChat } from './store.ts';
 import { timeOpts } from '../time.ts';
 import { CONV_DRAG, openBeside, openInPane, usePanes } from './panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, nextMonday, todayAt } from './officeTime.ts';
+import { LoungeSection } from '../lounges/Lounges.tsx';
 
 export type Chip = 'all' | 'people' | 'spaces' | 'projects';
 export const CHIPS: Array<{ id: Chip; label: string; icon: IconName }> = [
@@ -268,6 +269,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
             {g.items.map(row)}
           </div>
         ))}
+        <LoungeSection folded={!!folded} />
         {archived.length > 0 && !folded && (
           <div className="sb-group">
             <button className="sb-group-title label link" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Hide' : 'Show'} archived · {archived.length}</button>
