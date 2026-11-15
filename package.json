@@ -18,13 +18,15 @@
     "hub:build": "npm run build -w @dex/hub",
     "desktop:dev": "npm run dev -w @dex/desktop",
     "desktop:build": "npm run build -w @dex/desktop",
-    "desktop:dist": "npm run dist -w @dex/desktop"
+    "desktop:dist": "npm run dist -w @dex/desktop",
+    "e2e": "node apps/desktop/e2e/run.mjs"
   },
   "license": "UNLICENSED",
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/node-forge": "^1.3.14",
     "@types/ws": "^8.18.2",
+    "playwright-core": "^1.63.0",
     "typescript": "^5.9.3"
   }
 }
