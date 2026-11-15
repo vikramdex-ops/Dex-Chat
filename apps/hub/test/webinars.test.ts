@@ -407,6 +407,7 @@ test('after the webinar: attended or no-show, the follow-up in the app and as em
   // ending it from the stage ends the stage's Room too
   const ended = await priya.request('web.state', { id, state: 'ended' });
   assert.equal(ended.state, 'ended');
+  assert.ok((await priya.request('web.polls', { id })).every((p) => !p.open), 'an open poll closes with the webinar');
   assert.equal((await priya.request('room.list')).some((r) => r.id === room.id), false);
 
   // attended or no-show

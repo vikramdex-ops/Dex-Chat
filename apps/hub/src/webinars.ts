@@ -504,6 +504,8 @@ export class Webinars {
     const row = this.row(id);
     if (!row || row.state === 'ended') return;
     const wasLive = row.state === 'live' || !!row.went_live_at;
+    // a poll still open closes with the webinar
+    if (wasLive) this.db.prepare('UPDATE webinar_polls SET open = 0 WHERE meeting_id = ? AND open = 1').run(id);
     this.db.prepare(`UPDATE webinars SET state = ?, ended_at = CASE WHEN ? THEN ? ELSE ended_at END WHERE meeting_id = ?`).run(wasLive ? 'ended' : 'scheduled', wasLive ? 1 : 0, Date.now(), id);
     const w = this.lives.get(id);
     if (!w) return;

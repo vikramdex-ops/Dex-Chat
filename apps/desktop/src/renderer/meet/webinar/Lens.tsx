@@ -429,7 +429,8 @@ function FollowUpTab({ info, onChange }: { info: WebinarInfo; onChange: (w: Webi
       const r = await window.dex.request('web.followup', { id: info.meetingId, note, recordingId: rec || null, outsideLink: outside.trim() || null, survey: withSurvey ? cleanFields(survey) : [], when: when(info) });
       setResult(r);
       onChange({ ...info, followUpAt: Date.now() });
-      toast(`Sent to ${r.sentInApp} colleagues in the app; ${r.mails.length} emails to send`);
+      toast(`Sent to ${r.sentInApp} ${r.sentInApp === 1 ? 'colleague' : 'colleagues'} in the app; ${r.mails.length} ${r.mails.length === 1 ? 'email' : 'emails'} to send`);
+      setTimeout(() => document.querySelector('.wb-followup .wb-sent')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
     } catch (e) { toast((e as Error).message, true); }
     setSending(false);
   };
@@ -458,7 +459,7 @@ function FollowUpTab({ info, onChange }: { info: WebinarInfo; onChange: (w: Webi
         <button className="btn primary" disabled={!ready || sending} onClick={() => void send()}>{sending ? <span className="spinner" /> : <Icon name="send" size={15} />}{info.followUpAt ? 'Send again' : 'Send the follow-up'}</button>
       </div>
       {result && (
-        <section className="wb-sec">
+        <section className="wb-sec wb-sent">
           <div className="tb-head"><span className="label">Sent in the app · {result.sentInApp}</span><span className="mono">{result.mails.length} EMAILS TO SEND</span></div>
           <div className="wb-row-actions">
             <button className="btn sm" onClick={() => void navigator.clipboard.writeText(result.mails.map((m) => `To: ${m.email}\nSubject: ${m.subject}\n\n${m.text}`).join('\n\n———\n\n')).then(() => toast('All follow-up emails copied'))}><Glyph name="copy" size={14} />Copy all</button>

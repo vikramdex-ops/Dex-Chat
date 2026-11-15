@@ -172,11 +172,11 @@ function Broadcaster({ room, meId, meDevice, nameOf, preview, onClosePreview }: 
 const useWebSnapshot = (id: string) => webState().stage.get(id);
 
 // ------------------------------------------------------------------ the panel's webinar tabs
-export default function WebinarPanel({ tab, room, meId }: { tab: WebinarTab; room: RoomInfo; meId: string; users: Map<string, PublicUser> }) {
+export default function WebinarPanel({ tab, room, meId, users }: { tab: WebinarTab; room: RoomInfo; meId: string; users: Map<string, PublicUser> }) {
   const id = room.meetingId!;
   const organizer = room.hostId === meId || (room.coHosts ?? []).includes(meId);
   if (tab === 'questions') return <QuestionsTab id={id} organizer={organizer} />;
-  if (tab === 'audience') return <AudienceTab id={id} organizer={organizer} room={room} meId={meId} />;
+  if (tab === 'audience') return <AudienceTab id={id} organizer={organizer} room={room} meId={meId} users={users} />;
   if (tab === 'wpolls') return <PollsTab id={id} organizer={organizer} />;
   return <HandoutsTab id={id} organizer={organizer} />;
 }
@@ -237,7 +237,7 @@ function QuestionsTab({ id, organizer }: { id: string; organizer: boolean }) {
 
 const ROUTE_LABEL: Record<AudienceMember['route'], string> = { relay: 'RELAY', direct: 'DIRECT', full: 'NO SEAT', none: 'WAITING' };
 
-function AudienceTab({ id, organizer, room, meId }: { id: string; organizer: boolean; room: RoomInfo; meId: string }) {
+function AudienceTab({ id, organizer, room, meId, users }: { id: string; organizer: boolean; room: RoomInfo; meId: string; users: Map<string, PublicUser> }) {
   const toast = useToast();
   const bump = useWeb((s) => s.stage.get(id)?.audience ?? 0);
   const [list, setList] = useState<AudienceMember[] | null>(null);
@@ -262,7 +262,7 @@ function AudienceTab({ id, organizer, room, meId }: { id: string; organizer: boo
         <section className="wb-speakers">
           <div className="tb-head"><span className="label">Invited to speak</span><span className="mono">{speakers.length}</span></div>
           <ul className="wb-alist">{speakers.map((p) => (
-            <li key={p.deviceId}><span className="wb-aname">{visitorName(p.userId) ?? 'Speaker'}</span><span className="role-tag">ON STAGE</span>
+            <li key={p.deviceId}><span className="wb-aname"><b>{visitorName(p.userId) ?? users.get(p.userId)?.displayName ?? 'Speaker'}</b></span><span className="role-tag">ON STAGE</span>
               {organizer && <button className="btn sm ghost" onClick={() => act(window.dex.request('web.demote', { id, userId: p.userId }), 'Back in the audience')}>Back to audience</button>}</li>
           ))}</ul>
         </section>
@@ -278,9 +278,7 @@ function AudienceTab({ id, organizer, room, meId }: { id: string; organizer: boo
         {shown.map((a) => (
           <li key={a.deviceId} className={a.hand ? 'hand' : ''}>
             {a.hand ? <span className="wb-hand mono" aria-label={`Hand ${a.hand}`}>✋ {a.hand}</span> : <span className="wb-hand" aria-hidden="true" />}
-            <span className="wb-aname">{a.name}</span>
-            <span className="role-tag">{a.web ? 'BROWSER' : 'APP'}</span>
-            <span className={`mono wb-route ${a.route}`}>{ROUTE_LABEL[a.route]}</span>
+            <span className="wb-aname"><b>{a.name}</b><span className={`mono wb-route ${a.route}`}>{a.web ? 'BROWSER' : 'APP'} · {ROUTE_LABEL[a.route]}</span></span>
             {organizer && (a.invited
               ? <span className="mono faint wb-invited">INVITED</span>
               : <button className="btn sm ghost" onClick={() => act(window.dex.request('web.promote', { id, deviceId: a.deviceId }), `${a.name} is asked to speak`)} title="Ask them onto the stage: they say yes or no">Invite to speak</button>)}
@@ -301,7 +299,9 @@ function PollsTab({ id, organizer }: { id: string; organizer: boolean }) {
   const [multi, setMulti] = useState(false);
   const [show, setShow] = useState(false);
   const [making, setMaking] = useState(false);
-  useEffect(() => { void window.dex.request('web.polls', { id }).then(setPolls).catch(() => setPolls([])); }, [id, liveAt]);
+  // answers move the results: the hub says so with each update (results hidden from attendees too)
+  const bump = useWeb((s) => s.stage.get(id)?.audience ?? 0);
+  useEffect(() => { void window.dex.request('web.polls', { id }).then(setPolls).catch(() => setPolls([])); }, [id, liveAt, bump]);
   const opts = options.split('\n').map((o) => o.trim()).filter(Boolean);
   const launch = () => void window.dex.request('web.poll.launch', { id, question: question.trim(), options: opts, multi, showResults: show })
     .then((p) => { setPolls([p, ...(polls ?? []).map((x) => ({ ...x, open: false }))]); setQuestion(''); setOptions(''); setMaking(false); toast('Poll launched: attendees see it now'); })
@@ -331,8 +331,8 @@ function PollsTab({ id, organizer }: { id: string; organizer: boolean }) {
             <p className="faint wb-poll-note">{p.showResults ? 'Attendees see the results.' : 'Attendees do not see the results.'}</p>
             {organizer && p.open && (
               <div className="wb-row-actions">
-                <button className="btn sm ghost" onClick={() => void window.dex.request('web.poll.close', { id, pollId: p.id, showResults: false }).then((x) => setPolls((polls ?? []).map((y) => (y.id === x.id ? x : y)))).catch((e: Error) => toast(e.message, true))}>Close</button>
-                <button className="btn sm" onClick={() => void window.dex.request('web.poll.close', { id, pollId: p.id, showResults: true }).then((x) => setPolls((polls ?? []).map((y) => (y.id === x.id ? x : y)))).catch((e: Error) => toast(e.message, true))}>Close and show results</button>
+                <button className="btn sm ghost" onClick={() => void window.dex.request('web.poll.close', { id, pollId: p.id, showResults: p.showResults }).then((x) => setPolls((polls ?? []).map((y) => (y.id === x.id ? x : y)))).catch((e: Error) => toast(e.message, true))}>Close</button>
+                {!p.showResults && <button className="btn sm" onClick={() => void window.dex.request('web.poll.close', { id, pollId: p.id, showResults: true }).then((x) => setPolls((polls ?? []).map((y) => (y.id === x.id ? x : y)))).catch((e: Error) => toast(e.message, true))}>Close and show results</button>}
               </div>
             )}
           </div>

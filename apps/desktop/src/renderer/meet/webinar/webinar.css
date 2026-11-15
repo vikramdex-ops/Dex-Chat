@@ -68,16 +68,17 @@
 .wb-q .wb-row-actions { justify-content: flex-start; }
 .wb-audience-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .wb-alist { list-style: none; margin: 0; padding: 0; display: grid; }
-.wb-alist li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto auto auto; align-items: center; gap: 8px; min-height: 38px; border-top: 1px solid var(--stroke); font-size: 13px; }
+.wb-alist li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 38px; border-top: 1px solid var(--stroke); font-size: 13px; }
 .wb-alist li:first-child { border-top: 0; }
 .wb-alist li.hand { background: color-mix(in srgb, var(--amber) 9%, transparent); }
 .wb-hand { font-size: 11px; color: var(--amber-ink); font-weight: 700; padding-left: 4px; }
-.wb-aname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-aname { display: grid; min-width: 0; padding: 4px 0; }
+.wb-aname b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-alist .role-tag { margin-left: 0; }
 .wb-route { font-size: 10px; letter-spacing: .06em; color: var(--text-3); }
 .wb-route.full { color: var(--danger); }
 .wb-invited { font-size: 10px; letter-spacing: .08em; }
-.wb-speakers .wb-alist li { grid-template-columns: minmax(0, 1fr) auto auto; padding-left: 4px; }
+.wb-speakers .wb-alist li { grid-template-columns: minmax(0, 1fr) auto auto; padding-left: 8px; }
 .wb-speakers { border: 1px solid var(--stroke-strong); }
 .wb-find { height: 30px; }
 .wb-pollform { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--stroke-strong); background: var(--layer-solid); }
@@ -125,7 +126,7 @@
 .wb-stage-frame { position: relative; display: grid; place-items: center; padding: 28px; min-height: 0; }
 .wb-stage, .wb-soon { position: relative; width: min(100%, calc((100vh - 220px) * 16 / 9)); aspect-ratio: 16 / 9; margin: 0; border: 1px solid var(--text-3); outline: 1px solid var(--stroke-strong); outline-offset: 4px; background: #0f1d1f; overflow: hidden; }
 .wb-stage video { width: 100%; height: 100%; object-fit: contain; display: block; }
-.wb-stage .room-cap { position: absolute; left: 10px; top: 10px; }
+.wb-stage .room-cap { position: absolute; right: 10px; top: 10px; left: auto; }
 .wb-cap-live { color: var(--amber-ink); font-weight: 700; }
 .wb-connecting { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: #b0c5c8; font-size: 13px; }
 .wb-soon { display: grid; place-content: center; justify-items: center; gap: 14px; padding: 24px; text-align: center; color: #e8f2f3; }
@@ -219,7 +220,7 @@
 .wb-fields > .btn { justify-self: start; }
 
 /* ------------------------------------------------------------------ the organiser's sheet */
-.wb-sheet-panel { width: min(1060px, calc(100vw - 16px)); }
+.wb-sheet-panel { width: min(1060px, calc(100vw - 16px)); overflow: clip; }
 .wb-sheet-grid { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; }
 .wb-sheet-head { display: grid; gap: 4px; padding: 22px 28px 0; border-bottom: 1px solid var(--stroke-strong); }
 .wb-sheet-head h1 { margin: 0; font: 600 24px/1.2 var(--font-display); padding-right: 40px; }

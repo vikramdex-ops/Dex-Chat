@@ -161,7 +161,12 @@ export function startCompositor(scene: () => StageScene, nameOf: (userId: string
       }
     }
     const sharerStream = st.screen ?? [...st.peers.values()].map((p) => p.streams.find((x, i) => i > 0 && x.getVideoTracks().length)).find(Boolean) ?? null;
-    const top = 24, bottom = STAGE_H - STRIP - 24;
+    // a question shown on the stage takes the top of the sheet; the people move down beneath it
+    const q = sc.question;
+    ctx.font = `600 26px ${DISPLAY}`;
+    const qLines = q ? wrap(ctx, q.text, 1120, 2) : [];
+    const qH = q ? 64 + qLines.length * 34 : 0;
+    const top = q ? 24 + qH + 16 : 24, bottom = STAGE_H - STRIP - 24;
     let area = { x: 24, y: top, w: STAGE_W - 48, h: bottom - top };
     if (sharerStream) {
       // the shared sheet, large; the people in a column on the right
@@ -209,21 +214,17 @@ export function startCompositor(scene: () => StageScene, nameOf: (userId: string
       ctx.fillStyle = '#9db4b7'; ctx.font = `600 22px ${DISPLAY}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('The stage is empty', STAGE_W / 2, (STAGE_H - STRIP) / 2);
     }
-    // a question the organiser shows on the stage: a ruled callout at the top left
-    const q = sc.question;
+    // a question the organiser shows on the stage: a ruled callout across the top
     if (q) {
-      ctx.font = `600 26px ${DISPLAY}`;
-      const lines = wrap(ctx, q.text, 560, 3);
-      const bw = 620, bh = 64 + lines.length * 34;
-      const bx = 40, by = 40;
-      ctx.fillStyle = 'rgba(15,29,31,.94)'; ctx.fillRect(bx, by, bw, bh);
+      const bw = STAGE_W - 48, bh = qH, bx = 24, by = 24;
+      ctx.fillStyle = 'rgba(15,29,31,.96)'; ctx.fillRect(bx, by, bw, bh);
       ctx.strokeStyle = '#47b0a4'; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, by + 1, bw - 2, bh - 2); ctx.lineWidth = 1;
       ctx.fillStyle = '#243a3d'; ctx.fillRect(bx + 2, by + 2, bw - 4, 34);
       ctx.font = `700 14px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillStyle = '#7fd0d9'; ctx.fillText(`QUESTION · ${q.anonymous || !q.author ? 'ANONYMOUS' : capName(q.author)}`, bx + 16, by + 19);
       ctx.textAlign = 'right'; ctx.fillStyle = '#e8f2f3'; ctx.fillText(`▲ ${q.votes}`, bx + bw - 16, by + 19);
       ctx.textAlign = 'left'; ctx.fillStyle = '#ffffff'; ctx.font = `600 26px ${DISPLAY}`;
-      lines.forEach((l, i) => ctx.fillText(l, bx + 18, by + 60 + i * 34));
+      qLines.forEach((l, i) => ctx.fillText(l, bx + 18, by + 60 + i * 34));
     }
     // the title strip: the webinar, its ID, LIVE in amber and how long it has run
     const sy = STAGE_H - STRIP;

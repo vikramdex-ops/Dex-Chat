@@ -65,9 +65,9 @@ function fieldInput(f: WebinarField, value = ''): HTMLElement {
     const sel = h('select', { id, name: f.id, class: 'input', required: f.required || undefined },
       h('option', { value: '' }, f.required ? 'Choose one' : 'Choose one (optional)'),
       ...f.options.map((o) => h('option', { value: o, selected: o === value || undefined }, o)));
-    return h('div', { class: 'field' }, label, sel);
+    return h('div', { class: 'wfield' }, label, sel);
   }
-  return h('div', { class: 'field' }, label, h('input', { id, name: f.id, class: 'input', maxlength: '1000', required: f.required || undefined, value }));
+  return h('div', { class: 'wfield' }, label, h('input', { id, name: f.id, class: 'input', maxlength: '1000', required: f.required || undefined, value }));
 }
 
 function readFields(form: HTMLFormElement, fields: WebinarField[]): FieldAnswers {
@@ -103,9 +103,9 @@ async function register(): Promise<void> {
   const problem = h('p', { class: 'problem', role: 'alert', hidden: true });
   const submit = h('button', { class: 'btn primary', type: 'submit' }, 'Register');
   const form = h('form', { class: 'reg-form', novalidate: true },
-    h('div', { class: 'field' }, h('label', { class: 'field-label', for: 'reg-name' }, 'Your name', h('span', { class: 'req', 'aria-hidden': 'true' }, ' *')),
+    h('div', { class: 'wfield' }, h('label', { class: 'field-label', for: 'reg-name' }, 'Your name', h('span', { class: 'req', 'aria-hidden': 'true' }, ' *')),
       h('input', { id: 'reg-name', name: 'name', class: 'input', autocomplete: 'name', maxlength: '80', required: true })),
-    h('div', { class: 'field' }, h('label', { class: 'field-label', for: 'reg-email' }, 'Email', h('span', { class: 'req', 'aria-hidden': 'true' }, ' *')),
+    h('div', { class: 'wfield' }, h('label', { class: 'field-label', for: 'reg-email' }, 'Email', h('span', { class: 'req', 'aria-hidden': 'true' }, ' *')),
       h('input', { id: 'reg-email', name: 'email', type: 'email', class: 'input', autocomplete: 'email', maxlength: '254', required: true })),
     ...w.fields.map((f) => fieldInput(f)),
     // the honeypot: off the page for people, there for form-filling robots
@@ -178,6 +178,7 @@ const st = {
   sound: false,
 };
 let ping: ReturnType<typeof setInterval> | null = null;
+let retries = 0;
 let recheck: ReturnType<typeof setTimeout> | null = null;
 let tick: ReturnType<typeof setInterval> | null = null;
 const send = (f: unknown) => { if (st.ws?.readyState === WebSocket.OPEN) st.ws.send(JSON.stringify(f)); };
@@ -187,15 +188,23 @@ function watch(): void {
   message('Watch', 'Opening the webinar', 'Connecting to the office…');
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/w/${meetingId}/ws`);
   st.ws = ws;
-  ws.onopen = () => { send({ t: 'watch', token }); ping = setInterval(() => send({ t: 'ping' }), 25_000); };
   ws.onmessage = (e) => { try { onFrame(JSON.parse(String(e.data)) as WebinarDown); } catch { /* not ours */ } };
+  ws.onopen = () => { send({ t: 'watch', token }); ping = setInterval(() => send({ t: 'ping' }), 25_000); };
   ws.onclose = (e) => {
     if (ping) clearInterval(ping);
     if (st.ws !== ws) return;
     st.ws = null;
     closePc();
     if (st.ended) return;
-    const again = h('button', { class: 'btn primary', type: 'button', onclick: () => watch() }, 'Try again');
+    // a dropped connection (the network, the office reconnecting) comes back by itself a few times
+    const transient = e.code === 1006 || e.code === 1001 || e.code === 1011 || e.code === 1012 || e.code === 4404;
+    if (transient && retries < 6) {
+      retries++;
+      message('Watch', 'Reconnecting', 'The connection to the office dropped. Coming back…');
+      setTimeout(() => { if (!st.ended) watch(); }, Math.min(15_000, 1000 * 2 ** (retries - 1)));
+      return;
+    }
+    const again = h('button', { class: 'btn primary', type: 'button', onclick: () => { retries = 0; watch(); } }, 'Try again');
     message('Watch', e.code === 4403 || e.code === 4429 ? 'This link did not work' : 'The connection was lost', e.reason || 'The office could not be reached. Try again in a moment.', h('div', { class: 'actions' }, again));
   };
 }
@@ -215,6 +224,7 @@ function onFrame(f: WebinarDown): void {
       return;
     }
     case 'webinar':
+      retries = 0;
       if (recheck) clearTimeout(recheck);
       st.self = f.self; st.live = f.live; st.route = f.route; st.ice = f.iceServers as RTCIceServer[]; st.hand = f.hand;
       st.questions = new Map(f.questions.map((q) => [q.id, q]));
@@ -301,7 +311,7 @@ function openPc(from: string): void {
   pc.onicecandidate = (e) => send({ t: 'signal', to: from, data: { candidate: e.candidate ? e.candidate.toJSON() : null } });
   pc.ontrack = (e) => {
     const stream = e.streams[0] ?? new MediaStream([e.track]);
-    if (st.stream !== stream) { st.stream = stream; renderStage(); }
+    if (st.stream !== stream) { st.stream = stream; renderStage(); renderBar(); }
   };
 }
 
@@ -383,8 +393,9 @@ function renderStage(): void {
   }
   const v = h('video', { autoplay: true, playsinline: true, class: 'stage-video', 'aria-label': 'The stage' }) as HTMLVideoElement;
   v.srcObject = st.stream;
-  v.muted = !st.sound;
-  void v.play().catch(() => { v.muted = true; st.sound = false; void v.play().catch(() => {}); renderBar(); });
+  // with sound when the browser allows it; otherwise muted, with a button to turn it on
+  v.muted = false;
+  void v.play().then(() => { st.sound = true; renderBar(); }, () => { v.muted = true; st.sound = false; void v.play().catch(() => {}); renderBar(); });
   els.stage.replaceChildren(h('figure', { class: 'stage-fig' }, v, h('figcaption', { class: 'stage-cap' }, h('b', {}, 'STAGE'), h('span', {}, 'LIVE'))));
 }
 
@@ -511,7 +522,7 @@ async function survey(): Promise<void> {
   message('Survey', 'Loading the survey', 'One moment.');
   const r = await api<{ title: string; name: string; fields: WebinarField[]; answered: boolean }>('survey-info', { token });
   if (!r.ok) { message('Survey', 'This survey is not available', r.data.error ?? 'Try again later.'); return; }
-  titleCells[0] = ['Webinar', r.data.title, 'wide'];
+  titleCells = [['Webinar', r.data.title, 'wide'], ['ID', displayId, 'mono'], ['For', r.data.name], titleCells[3]];
   if (r.data.answered) { message('Survey', 'Thank you', 'You answered this survey already.'); return; }
   const problem = h('p', { class: 'problem', role: 'alert', hidden: true });
   const form = h('form', { class: 'reg-form', novalidate: true },
