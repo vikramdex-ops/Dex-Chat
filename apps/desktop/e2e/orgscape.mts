@@ -18,6 +18,10 @@ try {
   const priya = users.find((u: any) => u.account.endsWith('priya'));
   await s.profiles({ priya: priya.id });
   const id = (u: string) => s.ids.get(u)!;
+  // the floor is the office's real plan (seating): seat the people the walk looks at
+  const seats: Array<[string, string]> = [['W-A01', 'priya'], ['W-A02', 'ravi'], ['W-C07', 'anand'], ['W-C08', 'sneha'], ['POD1-1', 'kiran'], ['POD1-2', 'deepa'], ['MD-01', 'vikram'], ['MD-02', 'meera'], ['HC-03', 'lalitha'], ['W-B01', 'rohan'], ['W-B02', 'imran']];
+  const seated = await owner.request('seating.draft', { title: 'Seats', moves: seats.map(([seatId, u]) => ({ seatId, to: { kind: 'person', userId: id(u) } })) });
+  await owner.request('seating.apply', { id: seated.id });
   // a Space Priya shares with Structural people, and one private Space she is not in
   await owner.request('conv.create', { kind: 'space', name: 'P-12 Pipe rack', members: [priya.id, id('anand'), id('sneha'), id('ravi'), id('deepa')] });
   await owner.request('conv.create', { kind: 'space', name: 'Board only', private: true, members: [id('meera'), id('arjun')] });
@@ -169,7 +173,7 @@ try {
   await page.keyboard.press('Enter');
   await page.locator('.os-callout', { hasText: 'Anand Pillai' }).waitFor();
   await page.locator('.os-callout').getByRole('button', { name: 'Walk there' }).click();
-  await page.locator('.os-route', { hasText: 'along the corridor' }).waitFor();
+  await page.locator('.os-route', { hasText: 'round the desks' }).waitFor();
   await page.locator('.os-callout').getByRole('button', { name: 'Close' }).click();
   await sleep(1300);
   await shot(page, 'os-15-floor-walk');
