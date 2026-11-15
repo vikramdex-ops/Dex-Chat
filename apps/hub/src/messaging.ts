@@ -2,7 +2,8 @@
 // typing, stored on the hub (SQLite). Every operation is authorised by membership.
 import type { DatabaseSync } from 'node:sqlite';
 import { MENTION_RE, hashtags, ulid } from '@dex/core';
-import { addWraps, isSealed } from '@dex/core/e2e';
+import { addWraps, isSealed, sealsFiles } from '@dex/core/e2e';
+import { encryptionRequiredMessage } from '@dex/core/e2e-client';
 import { applyDlp, dlpBlockedMessage } from '@dex/core/dlp';
 import type { DlpRule } from '@dex/core/dlp';
 import type { Conversation, FlowEvent, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
@@ -118,7 +119,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(body, message_id UNIN
 `;
 
 interface ConvRow { id: string; kind: 'space' | 'direct'; name: string | null; topic: string | null; private: number; everyone: number; created_by: string; created_at: number; archived: number; post_policy: 'everyone' | 'moderators' }
-export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; pin_until?: number | null; client_id: string | null; forwarded: string | null; ref?: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null }
+export interface MsgRow { id: string; conv_id: string; author_id: string; body: string; parent_id: string | null; created_at: number; edited_at: number | null; deleted: number; pinned: number; pin_until?: number | null; client_id: string | null; forwarded: string | null; ref?: string | null; system?: string | null; reply_to?: string | null; removed_by?: string | null; removed_reason?: string | null; plain?: string | null }
+
+const SEALED_FILES_ONLY = 'Encrypted files stay in the end-to-end encrypted Direct conversation they were sent in. Save the file and attach it again to share it somewhere else.';
+
+function parsePlain(raw: string): Message['plain'] {
+  try {
+    const v = JSON.parse(raw) as { reason?: unknown; users?: unknown };
+    if ((v.reason === 'no-key' || v.reason === 'sender') && Array.isArray(v.users)) return { reason: v.reason, users: v.users.filter((u): u is string => typeof u === 'string') };
+  } catch { /* fall through */ }
+  return null;
+}
 
 const MAX_BODY = 8000;
 /** An end-to-end encrypted message is larger than its text (base64 and a key per device). */
@@ -148,6 +159,30 @@ export class Messaging {
   readonly viewExtras: Array<(r: MsgRow, viewer: string | null) => Partial<Message>> = [];
   /** Other parts of the hub forget their data about a message removed for good (retention). */
   readonly purgeExtras: Array<(messageId: string) => void> = [];
+
+  /** People among these with no end-to-end encryption key on any approved device (set by the hub). */
+  keyless: (userIds: string[]) => string[] = () => [];
+  /** The office requires Direct messages to be end-to-end encrypted (Control room ▸ Policies). */
+  requireE2E: () => boolean = () => false;
+
+  /**
+   * Why a Direct message is going out without end-to-end encryption, or null when it is sealed or
+   * encryption does not apply (Spaces, integrations, polls, references, notices). Throws when the
+   * office requires encryption, so an older app cannot post plain text where the policy forbids it.
+   */
+  private plainReason(me: PublicUser, c: ConvRow, body: string, hasFiles: boolean): Message['plain'] {
+    if (c.kind !== 'direct' || isSealed(body) || (!body && !hasFiles) || me.role === 'bot') return null;
+    const members = this.members(c.id);
+    const roles = new Map(this.users().map((u) => [u.id, u.role]));
+    if (members.some((m) => roles.get(m) === 'bot')) return null;
+    const keyless = this.keyless(members);
+    const plain: NonNullable<Message['plain']> = keyless.length ? { reason: 'no-key', users: keyless } : { reason: 'sender', users: [me.id] };
+    if (this.requireE2E()) {
+      const names = new Map(this.users().map((u) => [u.id, u.displayName]));
+      throw new MsgError(encryptionRequiredMessage(plain.users.map((u) => (u === me.id && plain.reason === 'sender' ? 'This app' : names.get(u) ?? 'Someone'))));
+    }
+    return plain;
+  }
 
   /** Office data-loss rules on a message the hub can read: throws when blocked, returns it masked otherwise. */
   guardText(body: string, convId: string): string {
@@ -185,6 +220,8 @@ export class Messaging {
     if (!cols.includes('reply_to')) db.exec('ALTER TABLE messages ADD COLUMN reply_to TEXT');
     if (!cols.includes('removed_by')) { db.exec('ALTER TABLE messages ADD COLUMN removed_by TEXT'); db.exec('ALTER TABLE messages ADD COLUMN removed_reason TEXT'); }
     if (!cols.includes('pin_until')) db.exec('ALTER TABLE messages ADD COLUMN pin_until INTEGER');
+    // a Direct message sent without end-to-end encryption, and why (shown with an open lock)
+    if (!cols.includes('plain')) db.exec('ALTER TABLE messages ADD COLUMN plain TEXT');
     db.exec('CREATE TABLE IF NOT EXISTS form_files (form_id TEXT NOT NULL, file_id TEXT NOT NULL, PRIMARY KEY (form_id, file_id))');
     // a file given as a form answer opens for the form's author and administrators
     files.extraRead = (userId, fileId) => !!db.prepare(`SELECT 1 FROM form_files ff JOIN forms fo ON fo.id = ff.form_id JOIN messages m ON m.id = fo.message_id
@@ -359,6 +396,7 @@ export class Messaging {
       removed: r.deleted && r.removed_by && r.removed_by !== r.author_id ? { by: r.removed_by, reason: r.removed_reason ?? null } : null,
       inReplyTo: r.reply_to ? (() => { const p = this.message(r.reply_to!); return p ? { messageId: p.id, authorId: p.author_id } : null; })() : null,
       poll: r.deleted ? null : this.pollView(r.id, viewer),
+      ...(r.plain && !r.deleted ? { plain: parsePlain(r.plain) } : {}),
       form: r.deleted ? null : this.formView(r.id, viewer),
       ...(r.deleted || !this.extraView ? {} : this.extraView(r)),
       ...Object.assign({}, ...this.viewExtras.map((f) => f(r, viewer))),
@@ -1014,9 +1052,13 @@ export class Messaging {
         const raw = typeof d.body === 'string' ? d.body.replace(/\r\n/g, '\n').trim() : '';
         if (!raw) throw new MsgError('A message cannot be empty. Delete it instead.');
         if (raw.length > (isSealed(raw) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+        // an edit must keep the keys of the message's encrypted files
+        if (this.files.forMessage(msg.id).some((f) => f.sealed) && !sealsFiles(raw)) throw new MsgError('This message has encrypted files. Edit it in an app that can encrypt them, or delete it and send it again.');
         const body = this.guardText(raw, msg.conv_id);
+        const conv = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(msg.conv_id) as unknown as ConvRow;
+        const plain = msg.system || msg.ref || this.db.prepare('SELECT 1 FROM polls WHERE message_id = ?').get(msg.id) ? null : this.plainReason(me, conv, body, false);
         this.beforeChange?.(msg, 'edit', me.id);
-        this.db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, Date.now(), msg.id);
+        this.db.prepare('UPDATE messages SET body = ?, edited_at = ?, plain = ? WHERE id = ?').run(body, Date.now(), plain ? JSON.stringify(plain) : null, msg.id);
         this.db.prepare('DELETE FROM mentions WHERE message_id = ?').run(msg.id);
         this.recordMentions(msg.id, msg.conv_id, body);
         this.index(msg.id, msg.conv_id, body);
@@ -1178,7 +1220,10 @@ export class Messaging {
     if (!extra.skipFileCheck) for (const f of fileIds) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
     if (!body && !fileIds.length) throw new MsgError('Write something first.');
     if (body.length > (isSealed(body) ? MAX_SEALED : MAX_BODY)) throw new MsgError(`Messages can be up to ${MAX_BODY} characters.`);
+    // ciphertext is useless without its key, which only an encrypted Direct message carries
+    if (fileIds.some((f) => this.files.isSealed(f)) && (c.kind !== 'direct' || !sealsFiles(body))) throw new MsgError(SEALED_FILES_ONLY);
     body = this.guardText(body, c.id);
+    const plain = extra.poll || extra.ref ? null : this.plainReason(me, c, body, fileIds.length > 0);
     if (c.everyone && me.role === 'guest') throw new MsgError('Guests cannot post in the Office space.');
     if (c.archived) throw new MsgError('This Space is archived. Restore it to post again.');
     // announcement Spaces: only moderators start new messages (everyone can still reply in side-tracks)
@@ -1195,8 +1240,8 @@ export class Messaging {
       parentId = parent.id;
     }
     const id = ulid();
-    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id, forwarded, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, c.id, me.id, body, parentId, Date.now(), clientId, extra.forwarded ?? null, extra.ref ?? null);
+    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id, forwarded, ref, plain) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, c.id, me.id, body, parentId, Date.now(), clientId, extra.forwarded ?? null, extra.ref ?? null, plain ? JSON.stringify(plain) : null);
     if (extra.poll) {
       this.db.prepare('INSERT INTO polls (message_id, question, options, multi, anonymous, closes_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(id, body, JSON.stringify(extra.poll.options), extra.poll.multi ? 1 : 0, extra.poll.anonymous ? 1 : 0, extra.poll.closesAt);

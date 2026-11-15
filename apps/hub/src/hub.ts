@@ -204,6 +204,13 @@ export class Hub {
     this.system = new SystemBot(this.store, this.messaging);
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
     this.messaging.dlpRules = () => this.policies.get().dlp ?? [];
+    this.messaging.requireE2E = () => this.policies.get().requireE2E === true;
+    this.messaging.keyless = (userIds) => {
+      if (!userIds.length) return [];
+      const rows = this.store.db.prepare(`SELECT DISTINCT user_id FROM devices WHERE status = 'approved' AND enc_key IS NOT NULL AND user_id IN (${userIds.map(() => '?').join(',')})`).all(...userIds) as Array<{ user_id: string }>;
+      const have = new Set(rows.map((r) => r.user_id));
+      return userIds.filter((u) => !have.has(u));
+    };
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
     this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
@@ -627,10 +634,12 @@ export class Hub {
 
     if (req.method === 'POST' && url.pathname === '/files') {
       if (user.role === 'guest') { req.resume(); sendJson(403, { error: 'Guests cannot upload files.' }); return; }
+      // an encrypted file's type is checked on the sender's device, before it is encrypted
+      const sealed = url.searchParams.get('sealed') === '1';
       const ext = (url.searchParams.get('name') ?? '').toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
-      if (ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) { req.resume(); sendJson(403, { error: `Your office doesn't allow .${ext} files to be shared.` }); return; }
+      if (!sealed && ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) { req.resume(); sendJson(403, { error: `Your office doesn't allow .${ext} files to be shared.` }); return; }
       try {
-        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined);
+        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined, sealed);
         this.log('info', 'file uploaded', { user: user.account, size: info.size });
         sendJson(200, info);
       } catch (err) {

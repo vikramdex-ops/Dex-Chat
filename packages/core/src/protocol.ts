@@ -199,6 +199,11 @@ export interface OfficePolicy {
   outsideNetworks?: string[];
   /** Meetings and Rooms start with the camera off, and the app asks before turning it on. */
   cameraConsent?: boolean;
+  /**
+   * Direct messages must be end-to-end encrypted: nothing is sent to someone whose app has no
+   * encryption key yet (an older version) until they update. Conversations with an integration are exempt.
+   */
+  requireE2E?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -334,6 +339,11 @@ export interface FileInfo {
   size: number;
   uploaderId: string;
   createdAt: number;
+  /**
+   * Encrypted on the sender's device for an end-to-end encrypted Direct message: the hub holds
+   * only ciphertext. The app fills in the real name, type and size from the message once opened.
+   */
+  sealed?: boolean;
 }
 
 export interface Message {
@@ -379,6 +389,12 @@ export interface Message {
   hiddenPreviews?: string[];
   /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
   e2e?: 'ok' | 'unverified' | 'locked';
+  /**
+   * Set by the hub on a Direct message that was sent without end-to-end encryption, and why:
+   * someone in the conversation had no encryption key yet (`no-key`, naming them), or the
+   * sender's app did not encrypt it (`sender`, an older version).
+   */
+  plain?: { reason: 'no-key' | 'sender'; users: string[] } | null;
   /** Passed straight between PCs while the hub was off (posted to the hub once it is back). */
   via?: 'direct';
 }
@@ -580,6 +596,29 @@ export interface Reminder {
   /** The message it is about, if any (null once the viewer cannot see it). */
   message: Message | null;
   convId: string | null;
+}
+
+/** A message a phone was not told about while its connection was down (see notify.missed). */
+export interface MissedNotice {
+  id: string;
+  convId: string;
+  authorId: string;
+  kind: 'direct' | 'space';
+  /** Ready to show: "Ravi Kumar", "@ you in P-12 Piping · Ravi Kumar". */
+  title: string;
+  /** The text with names filled in (empty for an end-to-end encrypted message, which the app opens). */
+  text: string;
+  /** The message as stored: the app opens an encrypted one from this. */
+  body: string;
+  sealed: boolean;
+  /** A Direct message, a mention or a reply to you (notifies even with "Mentions only"). */
+  personal: boolean;
+  mentioned: boolean;
+  /** The conversation is hushed (only mentions notify). */
+  muted: boolean;
+  parentId: string | null;
+  at: number;
+  link: string;
 }
 
 export interface ScheduledMessage {
@@ -809,6 +848,10 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps {
   'e2e.keys': { req: { userIds: string[] }; res: Array<{ userId: string; deviceId: string; signKey: string; encKey: string; sig: string }> };
   /** Give more devices access to sealed messages (history for a new device of your own). */
   'e2e.addKeys': { req: { items: Array<{ messageId: string; wraps: Record<string, string> }> }; res: { updated: number } };
+  /** What arrived since a message id (missed while a phone was disconnected); with no `after`, only the cursor to start from. */
+  'notify.missed': { req: { after?: string | null; limit?: number }; res: { items: MissedNotice[]; cursor: string | null; more?: boolean } };
+  /** A token for this device's background service to wait for new messages on its own (GET /notify/wait). */
+  'notify.token': { req: void; res: { token: string } };
   'admin.guests.invites': { req: void; res: GuestInvite[] };
   'admin.guests.invite': { req: { spaceIds: string[]; accessDays: number; validDays: number; uses: number; note?: string }; res: GuestInvite & { code: string } };
   'admin.guests.revokeInvite': { req: { id: string }; res: { ok: true } };
