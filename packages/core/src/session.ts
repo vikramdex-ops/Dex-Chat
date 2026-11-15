@@ -331,6 +331,12 @@ export class HubSession extends Emitter {
       session.inMeeting = [...set];
     } else if (name === 'user.updated' || name === 'user.added') {
       upsert(data as PublicUser);
+    } else if (name === 'user.left') {
+      // offboarded: no longer among the colleagues you can reach
+      const { userId } = data as Events['user.left'];
+      session.users = session.users.filter((u) => u.id !== userId);
+      session.online = session.online.filter((u) => u !== userId);
+      session.away = (session.away ?? []).filter((u) => u !== userId);
     } else {
       return;
     }

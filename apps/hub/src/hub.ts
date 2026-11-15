@@ -2,6 +2,7 @@
 // people directory and an audit trail. Discovery answers LAN probes so apps find it unaided.
 import https from 'node:https';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -56,6 +57,9 @@ import { Links, LinkError } from './links.ts';
 import { ReactionInsights, InsightError } from './reactions.ts';
 import { Decisions, DecisionError } from './decisions.ts';
 import { Refs, RefError } from './refs.ts';
+import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
+import { OffboardError, Offboarding } from './offboard.ts';
+import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -156,6 +160,9 @@ export class Hub {
   readonly pointers: Pointers;
   readonly decisions: Decisions;
   readonly refs: Refs;
+  readonly backups: Backups;
+  readonly offboarding: Offboarding;
+  readonly feeds: CalendarFeeds;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -341,6 +348,32 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     this.reports.webinarFor = (meetingId) => this.webinars.reportFor(meetingId);
+    // keeping the office going: backups, offboarding and calendar feeds (backup.ts, offboard.ts, calfeed.ts)
+    this.feeds = new CalendarFeeds({
+      db: this.store.db, hubId: () => this.info.id, office: () => this.info.name,
+      userById: (uid) => this.store.userById(uid),
+      active: (uid) => this.canSignIn(uid),
+      lan: () => lanAddresses(this.port),
+      gateway: () => { const rc = this.remoteConfig(); return rc.enabled ? rc.url : null; },
+      meetingFor: (organizer, eventId) => this.meetings.forEvent(organizer, eventId).id,
+      venueName: (vid) => this.calendar.venues().find((v) => v.id === vid)?.name ?? null,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+    });
+    this.backups = new Backups({
+      db: this.store.db, dataDir: opts.dataDir, hubId: id, hubName: () => this.info.name, version: HUB_VERSION,
+      systemId: () => this.system.id,
+      admins: () => this.store.activeUsers().filter((u) => isAdminRole(u.role)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      changed: (status) => this.emit('admin.backup', status, (c) => this.isAdminConn(c)),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.offboarding = new Offboarding({
+      store: this.store, messaging: this.messaging, calendar: this.calendar, helpdesk: this.helpdesk, feeds: this.feeds, system: this.system,
+      signOut: (uid, reason) => this.signOut(uid, reason),
+      broadcast: (name, data, adminsOnly) => this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined),
+      active: (uid) => this.canSignIn(uid),
+    });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -371,8 +404,24 @@ export class Hub {
       onStatus: () => {},
       guests: this.meetGuests,
       web: (op, meetingId, ip, body) => this.webinars.webRequest(op, meetingId, ip, body),
+      calendar: (token, ip) => this.feeds.fetch(token, ip),
     });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
+  }
+
+  /** Has an approved device and has not left the office: can use Dexterity Connect now. */
+  private canSignIn(userId: string): boolean {
+    return !!this.store.db.prepare(`SELECT 1 FROM devices WHERE user_id = ? AND status = 'approved' LIMIT 1`).get(userId) && !this.offboarding.hasLeft(userId);
+  }
+
+  /** Close every connection of a person at once, and the file links their sessions handed out. */
+  private signOut(userId: string, reason: string): void {
+    for (const c of [...this.conns]) {
+      if (c.userId !== userId) continue;
+      this.send(c, { t: 'rejected', reason });
+      c.ws.close();
+    }
+    for (const [t, u] of this.fileTokens) if (u === userId) this.fileTokens.delete(t);
   }
 
   /** An event to one device: an app's connection, or a browser guest or attendee through the gateway. */
@@ -397,6 +446,8 @@ export class Hub {
         resolve();
       });
     });
+    // a restore (--restore) refuses to run while this is here and the program is alive
+    try { fs.writeFileSync(path.join(this.opts.dataDir, LOCK_FILE), JSON.stringify({ pid: process.pid, port: this.port, startedAt: Date.now() })); } catch (err) { this.log('warn', 'could not write the lock file', { error: (err as Error).message }); }
     if (this.opts.discoveryPort !== false) {
       this.announcer = new HubAnnouncer(() => this.beacon(), this.opts.discoveryPort ?? DISCOVERY_PORT);
       try {
@@ -422,6 +473,7 @@ export class Hub {
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
+      try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -483,9 +535,12 @@ export class Hub {
     for (const c of this.conns) c.ws.terminate();
     // let automations that are running finish before the database closes
     await Promise.race([this.flows.idle(), new Promise((r) => setTimeout(r, 3000).unref())]);
+    // a backup copying the database finishes that step; the rest of the run stops
+    await this.backups.halt();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     this.store.close();
+    try { fs.rmSync(path.join(this.opts.dataDir, LOCK_FILE), { force: true }); } catch { /* gone */ }
   }
 
   // --------------------------------------------------------------- http
@@ -494,6 +549,7 @@ export class Hub {
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/cal/')) { this.feeds.route(req, res); return; }
     if (/^\/api\/(flows|sessions)(\/|\?|$)/.test(req.url ?? '')) { void this.botflows.route(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
@@ -751,7 +807,8 @@ export class Hub {
       this.store.touchDevice(conn.deviceId);
       if (conn.userId && ![...this.conns].some((c) => c.ready && c.userId === conn.userId)) {
         const u = this.store.userById(conn.userId);
-        if (u) this.emit('user.updated', u);
+        // someone offboarded is not put back in colleagues' lists as they are signed out
+        if (u && !u.leftAt) this.emit('user.updated', u);
       }
     }
   }
@@ -830,6 +887,11 @@ export class Hub {
     // a guest invite approves a new person straight away, as a guest
     let invite: ReturnType<Guests['check']> | null = null;
     if (!first && typeof frame.invite === 'string' && frame.invite.trim() && (!user || user.role === 'guest')) {
+      if (user && this.offboarding.hasLeft(user.id)) {
+        this.send(conn, { t: 'rejected', reason: 'This account has left the office. Ask an administrator if you need access again.' });
+        conn.ws.close();
+        return;
+      }
       invite = this.guests.check(frame.invite.slice(0, 40));
       if ('error' in invite) {
         this.send(conn, { t: 'rejected', reason: invite.error });
@@ -1074,6 +1136,7 @@ export class Hub {
         if (!device) throw new OpError('Device not found.');
         if (device.status !== 'pending') throw new OpError('That device was already handled.');
         const approve = d.approve === true;
+        if (approve && this.offboarding.hasLeft(device.userId)) throw new OpError(`${device.displayName} has left the office. Give them access again first: Control room ▸ Backups & leavers.`);
         const wasActive = this.store.activeUsers().some((u) => u.id === device.userId);
         const updated = this.store.setDeviceStatus(device.id, approve ? 'approved' : 'rejected', me.id);
         this.store.audit(me.id, approve ? 'device.approved' : 'device.rejected', device.id, { account: device.account });
@@ -1554,6 +1617,25 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof LinkError || err instanceof InsightError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(admin\.backup\.(get|set|run)|admin\.offboard\.(preview|run|list|reactivate)|directory\.left|cal\.feed\.(get|set|reset))$/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            if (op.startsWith('admin.backup.')) {
+              this.requireAdmin(conn);
+              if (op === 'admin.backup.set') return await this.backups.configure(me, d);
+              if (op === 'admin.backup.run') {
+                if (!this.backups.config().folder) throw new OpError('Choose a backup folder first.');
+                void this.backups.start(true, me.id).catch(() => { /* recorded in the status */ });
+              }
+              return this.backups.status();
+            }
+            const result = op.startsWith('cal.feed.') ? this.feeds.handle(op, me, d) : this.offboarding.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof BackupFailure || err instanceof OffboardError || err instanceof CalFeedError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }

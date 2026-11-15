@@ -14,6 +14,7 @@ import { addConversation } from '../chat/store.ts';
 import { useWork, workLine } from '../work/store.ts';
 import { TeamDayLog } from '../work/WorkUi.tsx';
 import './people.css';
+import { LeftTheOffice } from './LeftOffice.tsx';
 
 /**
  * Sheet tabs: labels sitting on a ruled line, the open one cut into it like the tab of a
@@ -128,6 +129,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
                 ))}
               </div>
             )}
+            <LeftTheOffice session={session} query={query} onOpen={setSelected} />
           </>
         )}
 

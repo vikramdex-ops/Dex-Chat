@@ -6,6 +6,7 @@ import type { AppState, MessageSound, Settings, Theme } from '../../shared/bridg
 import { playSound } from '../sounds.ts';
 import { RemoteSettings } from './Remote.tsx';
 import { YourDevices } from './Pairing.tsx';
+import { CalendarFeedSettings } from './CalendarFeed.tsx';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
@@ -231,6 +232,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
         </section>}
 
         <YourDevices state={state} />
+        <CalendarFeedSettings state={state} session={session} />
         <RemoteSettings state={state} />
 
         <section>

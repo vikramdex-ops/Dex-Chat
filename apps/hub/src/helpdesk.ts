@@ -232,6 +232,39 @@ export class HelpDesk {
     return { fileId: info.id, name: info.name, size: info.size, mime: info.mime, kind, by: me.id, at };
   }
 
+  /**
+   * Someone left the office (offboarding): tickets they were working on go to the colleague taking
+   * over (or back to the queue when that colleague is not on the IT desk), tickets they asked for
+   * are closed, and they leave the IT desk.
+   */
+  handOver(fromId: string, toId: string, actorId: string, why: string): { moved: string[]; released: string[]; closed: string[] } {
+    const out = { moved: [] as string[], released: [] as string[], closed: [] as string[] };
+    const now = Date.now();
+    const toIt = this.isIt(toId) && toId !== fromId;
+    for (const r of this.db.prepare(`SELECT * FROM help_tickets WHERE tech_id = ? AND status != 'closed'`).all(fromId) as unknown as TicketRow[]) {
+      if (this.live.has(r.id)) this.endSession(r.id, actorId, why);
+      if (toIt && r.requester_id !== toId) {
+        this.db.prepare(`UPDATE help_tickets SET status = 'taken', tech_id = ?, taken_at = ?, updated_at = ? WHERE id = ?`).run(toId, now, now, r.id);
+        this.entry(r.id, actorId, 'taken', why, { from: fromId, to: toId });
+        out.moved.push(r.id);
+      } else {
+        this.db.prepare(`UPDATE help_tickets SET status = 'open', tech_id = NULL, updated_at = ? WHERE id = ?`).run(now, r.id);
+        this.entry(r.id, actorId, 'released', why);
+        out.released.push(r.id);
+      }
+      this.publish(r.id);
+    }
+    for (const r of this.db.prepare(`SELECT * FROM help_tickets WHERE requester_id = ? AND status != 'closed'`).all(fromId) as unknown as TicketRow[]) {
+      if (this.live.has(r.id)) this.endSession(r.id, actorId, why);
+      this.db.prepare(`UPDATE help_tickets SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`).run(now, now, r.id);
+      this.entry(r.id, actorId, 'note', `${why} The ticket was closed.`);
+      this.publish(r.id);
+      out.closed.push(r.id);
+    }
+    if (this.db.prepare('DELETE FROM help_staff WHERE user_id = ?').run(fromId).changes) this.host.broadcast('help.staff', this.staff());
+    return out;
+  }
+
   handle(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>, fromOutside: boolean): unknown {
     switch (op) {
       case 'help.staff':

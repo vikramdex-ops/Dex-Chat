@@ -118,6 +118,25 @@ export class Calendar {
     this.broadcast = broadcast;
     db.exec(SCHEMA);
     try { db.exec('ALTER TABLE events ADD COLUMN time_zone TEXT'); } catch { /* already there */ }
+    // calendar feeds: a change bumps the sequence, so Outlook and phones replace their copy
+    try { db.exec('ALTER TABLE events ADD COLUMN seq INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+    try { db.exec('ALTER TABLE events ADD COLUMN updated_at INTEGER'); } catch { /* already there */ }
+  }
+
+  /** A meeting changed: calendars subscribed to it pick up the new version. */
+  touch(eventId: string, now = Date.now()): void {
+    this.db.prepare('UPDATE events SET seq = seq + 1, updated_at = ? WHERE id = ?').run(now, eventId);
+  }
+
+  /** Tell everyone who sees a meeting that it changed (after a change made outside these operations). */
+  pushEvent(eventId: string, removedFor: string[] = []): void {
+    const r = this.row(eventId);
+    if (!r) return;
+    const ev = this.view(r);
+    const audience = this.audience(r);
+    this.deliver(audience, 'cal.updated', () => ev);
+    const gone = removedFor.filter((u) => !audience.includes(u));
+    if (gone.length) this.deliver(gone, 'cal.removed', () => ({ eventId }));
   }
 
   // ------------------------------------------------------------ views
@@ -349,6 +368,7 @@ export class Calendar {
           recurrence = ?, until_at = ?, reminder_min = ? WHERE id = ?`).run(v.title, v.description, v.location, v.venueId, v.startAt, v.endAt, v.allDay ? 1 : 0,
           v.convId, v.online ? 1 : 0, v.recurrence, v.until, v.reminderMin, r.id);
         this.db.prepare('UPDATE events SET time_zone = ? WHERE id = ?').run(v.timeZone, r.id);
+        this.touch(r.id);
         let added: string[] = [];
         if (v.attendees) {
           const cur = new Set(this.attendees(r.id).map((a) => a.userId));
@@ -373,6 +393,7 @@ export class Calendar {
         if (!r || !this.canSee(r, me.id)) throw new CalError('Meeting not found.');
         if (r.organizer_id !== me.id && !isAdmin) throw new CalError('Only the organiser can cancel this meeting.');
         this.db.prepare('UPDATE events SET cancelled = 1 WHERE id = ?').run(r.id);
+        this.touch(r.id);
         const ev = this.view(this.row(r.id)!);
         this.deliver(this.audience(r), 'cal.updated', () => ev);
         return ev;

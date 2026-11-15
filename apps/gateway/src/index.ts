@@ -7,7 +7,7 @@
 // Hardening, in the spirit of the relays it learnt from:
 // - Only the hub that proves it holds the pinned certificate key can take the hub side.
 // - Device sockets are binary-only, at most 1 MiB a frame, rate limited per address, and capped.
-// - Nothing but /hub/<id>, /c/<id>, /join, /m/<meeting>, /w/<webinar> and /health answers; every reply carries strict headers.
+// - Nothing but /hub/<id>, /c/<id>, /join, /m/<meeting>, /w/<webinar>, /cal/<token>.ics and /health answers; every reply carries strict headers.
 //
 // Guests (meetings, M2): /m/<meeting ID> serves a small join page (guest/page.ts, built into
 // guest-assets.gen.ts). Its WebSocket, /m/<meeting ID>/ws, goes to the office hub's relay as a
@@ -22,6 +22,11 @@
 // Object's storage), drops a form whose hidden honeypot field is filled, and caps how many
 // registrations it passes on in an hour. The watch page's socket, /w/<ID>/ws, is a guest socket
 // like the meeting page's (the token is checked by the hub; a wrong one counts as a wrong passcode).
+//
+// Calendar feeds: /cal/<token>.ics is a person's private calendar, for Outlook or a phone to
+// subscribe to. Calendar apps cannot open the devices' encrypted channel, so the token goes to the
+// hub over its own connection and the feed comes back as text: the gateway can read it (meeting
+// titles and times), which docs/REMOTE-ACCESS.md says. Fetches are limited per address.
 import { DurableObject } from 'cloudflare:workers';
 import { GUEST_CSS, GUEST_JS, WEBINAR_CSS, WEBINAR_JS } from './guest-assets.gen.ts';
 
@@ -55,6 +60,11 @@ const SURVEY_PER_HOUR = 10;
 const INFO_PER_MINUTE = 60;
 const MAX_FORM = 16 * 1024;
 const HUB_ANSWER_MS = 10_000;
+/** Calendar feeds: the token (32 random bytes), and how often one address may fetch. */
+const CAL_RE = /^\/cal\/([A-Za-z0-9_-]{43})\.ics$/;
+const CAL_PER_MINUTE = 30;
+/** The only types a feed answer may carry. */
+const CAL_TYPES = new Set(['text/calendar; charset=utf-8', 'text/plain; charset=utf-8']);
 
 const SECURITY_HEADERS: Record<string, string> = {
   'x-content-type-options': 'nosniff',
@@ -98,6 +108,14 @@ export default {
       if (!hubId) return sub === 'ws' ? refuse(4404, 'The office is not connected to the gateway') : json({ error: 'The office is not connected right now. Try again later.' }, 503);
       return env.RELAY.get(env.RELAY.idFromName(hubId)).fetch(req);
     }
+    const cal = url.pathname.match(CAL_RE);
+    if (cal) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return text('Method not allowed\n', 405, { allow: 'GET, HEAD' });
+      const home = await env.RELAY.get(env.RELAY.idFromName(HOME)).fetch('https://gateway/~home/get');
+      const hubId = home.ok ? ((await home.json()) as { hubId?: string }).hubId : undefined;
+      if (!hubId) return text('The office is not connected right now. Your calendar tries again later.\n', 503, { 'retry-after': '600' });
+      return env.RELAY.get(env.RELAY.idFromName(hubId)).fetch(req);
+    }
     const meet = url.pathname.match(MEETING_RE);
     if (meet) {
       if (req.method !== 'GET' && req.method !== 'HEAD') return text('Method not allowed\n', 405);
@@ -133,7 +151,7 @@ export class Relay extends DurableObject<Env> {
   private readonly attempts = new Map<string, { n: number; until: number }>();
   private readonly frames = new Map<number, { n: number; until: number }>();
   /** Webinar page requests waiting for the hub's answer. */
-  private readonly answers = new Map<number, (r: { s: number; d: string }) => void>();
+  private readonly answers = new Map<number, (r: { s: number; d: string; ct?: string }) => void>();
   private nextAnswer = 1;
 
   private limited(ip: string, max = CONNECTS_PER_MINUTE, key = ip): boolean {
@@ -185,6 +203,7 @@ export class Relay extends DurableObject<Env> {
     const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
     if (kind === 'm') return this.guest(req, ip, hubId);
     if (kind === 'w') return this.webinar(req, ip, hubId, url.pathname.split('/')[3] ?? '');
+    if (kind === 'cal') return this.calendar(req, ip, url.pathname.match(CAL_RE)?.[1] ?? '');
     if (this.limited(ip)) return refuse(4429, 'Too many connections; try again in a minute');
     const { 0: client, 1: server } = new WebSocketPair();
 
@@ -228,6 +247,31 @@ export class Relay extends DurableObject<Env> {
       const t = setTimeout(() => { this.answers.delete(r); resolve(json({ error: 'The office did not answer. Try again in a moment.' }, 504)); }, HUB_ANSWER_MS);
       this.answers.set(r, (a) => { clearTimeout(t); resolve(new Response(a.d, { status: a.s >= 200 && a.s < 600 ? a.s : 502, headers: { 'content-type': 'application/json; charset=utf-8', ...SECURITY_HEADERS } })); });
       hub.send(JSON.stringify({ t: 'w', r, op, m: meetingId, ip, country, b: body }));
+    });
+  }
+
+  /** A calendar app fetching someone's private feed: the hub checks the token and makes the feed. */
+  private calendar(req: Request, ip: string, token: string): Promise<Response> {
+    const plain = (body: string, status: number, extra: Record<string, string> = {}) => text(body, status, extra);
+    if (!token) return Promise.resolve(plain('Not found\n', 404));
+    if (this.limited(ip, CAL_PER_MINUTE, `cal:${ip}`)) return Promise.resolve(plain('Too many calendar requests from your network. Wait a minute.\n', 429, { 'retry-after': '60' }));
+    const hub = this.hub();
+    if (!hub) return Promise.resolve(plain('The office is not connected right now. Your calendar tries again later.\n', 503, { 'retry-after': '600' }));
+    const country = (req as Request & { cf?: { country?: string } }).cf?.country ?? null;
+    const r = this.nextAnswer++;
+    if (this.nextAnswer > 0x7fffffff) this.nextAnswer = 1;
+    return new Promise<Response>((resolve) => {
+      const t = setTimeout(() => { this.answers.delete(r); resolve(plain('The office did not answer. Your calendar tries again later.\n', 504)); }, HUB_ANSWER_MS);
+      this.answers.set(r, (a) => {
+        clearTimeout(t);
+        const type = a.ct && CAL_TYPES.has(a.ct) ? a.ct : 'text/plain; charset=utf-8';
+        const status = a.s >= 200 && a.s < 600 ? a.s : 502;
+        resolve(new Response(req.method === 'HEAD' ? null : a.d, { status, headers: {
+          'content-type': type, ...SECURITY_HEADERS,
+          ...(status === 200 ? { 'content-disposition': 'inline; filename="dexterity-connect.ics"' } : {}),
+        } }));
+      });
+      hub.send(JSON.stringify({ t: 'cal', r, k: token, ip, country }));
     });
   }
 
@@ -321,7 +365,8 @@ export class Relay extends DurableObject<Env> {
       if (c.t === 'w-res' && typeof c.r === 'number' && typeof c.d === 'string') {
         const done = this.answers.get(c.r);
         this.answers.delete(c.r);
-        done?.({ s: Number((c as { s?: unknown }).s) || 502, d: c.d });
+        const ct = (c as { ct?: unknown }).ct;
+        done?.({ s: Number((c as { s?: unknown }).s) || 502, d: c.d, ...(typeof ct === 'string' ? { ct } : {}) });
         return;
       }
       const code = c.code && c.code >= 4000 && c.code < 5000 ? c.code : 4000;

@@ -13,6 +13,7 @@ interface UserRow {
   // from profiles (LEFT JOIN)
   department_id?: string | null; manager_id?: string | null; phone?: string | null; extension?: string | null; location?: string | null;
   email?: string | null; employee_id?: string | null; joined_on?: string | null; birthday?: string | null; fields?: string | null;
+  left_at?: number | null;
 }
 interface DeviceRow {
   id: string; user_id: string; public_key: string; hostname: string; status: DeviceStatus;
@@ -81,6 +82,20 @@ CREATE TABLE IF NOT EXISTS bot_tokens (
   created_at INTEGER NOT NULL,
   last_used INTEGER
 );
+CREATE TABLE IF NOT EXISTS departures (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  left_at INTEGER NOT NULL,
+  by_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  meetings TEXT NOT NULL,
+  note TEXT,
+  summary TEXT NOT NULL,
+  devices TEXT NOT NULL,
+  returned_at INTEGER,
+  returned_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_departures_user ON departures(user_id, returned_at);
 CREATE TABLE IF NOT EXISTS hooks (
   id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,
@@ -121,12 +136,15 @@ export const toPublicUser = (r: UserRow): PublicUser => ({
     location: r.location ?? null, email: r.email ?? null, employeeId: r.employee_id ?? null, joinedOn: r.joined_on ?? null,
     birthday: r.birthday ?? null, fields: parseFields(r.fields),
   },
+  // offboarding (offboard.ts): only on people who have left
+  ...(r.left_at ? { leftAt: r.left_at } : {}),
 });
 
 /** Users with their organisation profile (the manager is stored by account so imports work before people join). */
 const USER_SELECT = `SELECT u.*, p.department_id, p.phone, p.extension, p.location, p.email, p.employee_id, p.joined_on, p.birthday, p.fields,
   (SELECT m.id FROM users m WHERE m.account = p.manager_account) AS manager_id,
-  (SELECT MAX(d.last_seen) FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') AS last_seen_at
+  (SELECT MAX(d.last_seen) FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') AS last_seen_at,
+  (SELECT MAX(dp.left_at) FROM departures dp WHERE dp.user_id = u.id AND dp.returned_at IS NULL) AS left_at
   FROM users u LEFT JOIN profiles p ON p.account = u.account`;
 
 const toDevice = (r: DeviceRow): DeviceRecord => ({
