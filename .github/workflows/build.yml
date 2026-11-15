@@ -1,14 +1,11 @@
 name: build
 
-# Every push: tests, then the Windows installer, macOS DMGs, Android APK and hub package.
-# Installers go straight into a draft release in the public repository (never into Actions
-# storage, which is small for private repositories); the last job checks them, writes the
-# update feed and publishes. main = stable channel (everyone), other branches = beta (opt-in).
-# Version = <major.minor from package.json>.<run number>, so every build is newer than the last.
+# Run by hand only (Actions → build → Run workflow): releases are normally built on an office PC
+# with scripts/release/Build-Release.cmd (docs/RELEASING.md), so pushes start nothing here.
+# When run: tests, then the Windows installer, macOS DMGs, Android APK and hub package, into a draft
+# release in the public repository; the last job writes the update feed and publishes.
+# main = stable channel (everyone), other branches = beta (opt-in).
 on:
-  push:
-    branches: ["**"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -52,7 +49,7 @@ jobs:
           BASE=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
           echo "version=$BASE.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           echo "channel=${{ github.ref_name == 'main' && 'stable' || 'beta' }}" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "push" ] && [ -n "$GH_TOKEN" ]; then
+          if [ -n "$GH_TOKEN" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"

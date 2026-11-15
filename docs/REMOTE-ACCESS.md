@@ -172,8 +172,9 @@ Things that remain the office's responsibility:
    Workers"** template. Also note your **Account ID** (Workers & Pages overview, right side).
 3. **Deploy the gateway.** In GitHub, add two repository secrets: `CLOUDFLARE_API_TOKEN` and
    `CLOUDFLARE_ACCOUNT_ID`. Then run **Actions → gateway → Run workflow**. Its summary shows
-   the gateway's address, `https://dexconnect-gateway.<your-subdomain>.workers.dev`. (Or, on any
-   PC with Node.js: `cd apps/gateway && npx wrangler deploy`.)
+   the gateway's address, `https://dexconnect-gateway.<your-subdomain>.workers.dev`. Without
+   GitHub: double-click `scripts\release\Deploy-Gateway.cmd` on an office PC with Node.js; it asks
+   for the token and account id and prints the address.
 4. **Turn it on.** In the app, **Control room → Outside the office**:
    - paste the address;
    - **Save address**;
@@ -181,7 +182,8 @@ Things that remain the office's responsibility:
 
    The status turns green within seconds.
 5. **Pin the gateway to the hub (recommended).** Copy the **Fingerprint** shown on the same page into a
-   third repository secret, `HUB_FINGERPRINT`, and run the workflow again. The status then says
+   third repository secret, `HUB_FINGERPRINT`, and run the workflow again (or run
+   `Deploy-Gateway.cmd -Fingerprint <it>`). The status then says
    *gateway pinned to this hub*.
 6. **Phones and home laptops.** People add their own devices; no administrator is involved:
    - On their office PC: **Preferences → Your devices → Add my phone** shows a QR code. The phone's

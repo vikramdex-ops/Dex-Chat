@@ -65,11 +65,12 @@ Apps find the hub on their own with a LAN broadcast probe. Every PC has its own 
 
 ## Getting the installers
 
-Every push runs GitHub Actions (**Actions → build**). It tests everything, builds the Windows installer,
-both macOS DMGs, the Android APK and the hub package, and publishes them to the
-[public release repository](https://github.com/dexterity-admin/dexterity-connect/releases):
-pushes to `main` publish to the **stable** channel, other branches to **beta**. Installed apps update from there,
-or from the hub's mirror when they have no internet.
+Releases are built on an office Windows PC: double-click `scripts\release\Build-Release.cmd`
+([docs/RELEASING.md](docs/RELEASING.md)). It tests everything and builds the Windows installer, the
+Android APK and the hub package. With `-Publish`, it puts them on the
+[public release repository](https://github.com/dexterity-admin/dexterity-connect/releases) and in the
+update feed: **stable** from `main`, **beta** from other branches. Installed apps update from there, or
+from the hub's mirror when they have no internet. Pushing code builds nothing.
 
 ### Setting up the office
 
