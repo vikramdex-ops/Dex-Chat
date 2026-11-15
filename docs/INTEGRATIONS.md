@@ -141,6 +141,66 @@ on a card the integration or a colleague posted.
 (Flows are conversations with a person. [Automations](AUTOMATIONS.md) are something else: rules
 that react to what happens in a conversation, such as a drawing being shared.)
 
+### Bots members make (the bot maker)
+
+Flows are not only for integrations. Any member (not guests) makes a bot of their own from
+**Desk → Bots → Make a bot**; administrators write integrations' flows in the same maker from
+**Control room → Bots & tools → Write a flow** (or **Change** on a flow).
+
+- **Start from something:** a template (Plot request, Leave note, Site visit, RFI log, Drawing
+  issue request), a few words ("Ask which site, which day, how many people and who hosts us, then
+  put a task on their Desk") drafted on the PC by the same small sentence model Automations uses
+  (it falls back to keyword cues when the model cannot load; nothing leaves the PC), a copy of a
+  bot you can already use, or a blank bot.
+- **The maker** is one sheet: the bot's title block (mark, name, revision, who can use it,
+  status), the editor in five numbered parts (01 Identity, 02 Questions, 03 At the end, 04
+  Sharing, 05 Advanced: the definition as JSON, kept in step both ways), and on the right a
+  **test run** that plays the bot in a real pane with the real cards, as a colleague sees it.
+  The test run follows the draft as it changes; nothing is sent. Problems are written in plain
+  words beside the question or end action that causes them.
+- **Identity:** a name, one of our drawn symbols or a two-letter monogram, a colour from the
+  palette, an "about" line, a greeting (`{{user.first}}` addresses people by name), a **voice**
+  (plain, warm, brief or formal) that words everything the bot says itself (its greeting, its
+  refusals, the Yes/No buttons when left blank, "Same as last time", the closing line; the
+  author's own questions are never changed), **office hours** (outside them it says when it is
+  back), and **remember answers**, which offers each person's last answers as a one-tap default.
+  Text questions can carry **quick replies**.
+- **At the end:** a task on the Desk of a person chosen in the bot, a post (the Space it was
+  started from, a Space its maker is in, or a message to a chosen person), a reminder for the
+  person who answered. The integration's webhook is for administrators only.
+- **Sharing:** *Only me*, *A Space* (its members can start it; a card with a Start button is
+  posted there), or *The whole office*, which an administrator approves in **Control room → Bots
+  & tools** (with a note the maker can read; in the audit log as `botflow.requested`,
+  `botflow.approved`, `botflow.rejected`). Until then the bot stays as it was. A member's later
+  change to an office-wide bot also waits for review, while everyone keeps the approved revision.
+  Slash commands are for office-wide bots only.
+- **Revisions:** every save is a revision, and a conversation keeps the revision it started on,
+  so an edit never breaks a run in progress (Start over moves it to the newest).
+- **After it is live:** each bot has a page on the Desk: runs, finished, stopped, in progress,
+  where people stop (runs that reached each question, and stopped there), recent runs and
+  revisions. Answers are never shown there, and a name appears only for finished runs. Pause (no
+  new runs; those under way may finish), retire, share, duplicate or delete it there.
+
+Each member-made bot is its own identity in conversations, with its mark as its tile and a BOT
+tag; it is not listed under Integrations and has no token anyone can use.
+
+| Operation | Who | What |
+| --- | --- | --- |
+| `botflow.make { definition, scope, spaceId?, baseVersion?, newBot? }` | members | make or change your bot; `baseVersion` refuses a stale save |
+| `botflow.mine` | members | your bots, with the newest revision, runs and the last review |
+| `botflow.status { name, status }` | maker, admins | `live`, `paused` or `retired` |
+| `botflow.stats { name }` | maker, admins | runs, drop-off per step, recent runs, revisions |
+| `botflow.definition { name }` | anyone who can start it | to duplicate it |
+| `botflow.forget { name }` | anyone | forget the answers a bot remembers for you |
+| `botflow.marks` | anyone | marks and colours of member-made bots, for their tiles |
+| `botflow.delete { name }` | maker, admins | remove it (conversations under way are cancelled) |
+| `admin.botflows.review { name, approve, note? }` | admins | office-wide sharing, or a newer revision of an office-wide bot |
+
+A definition takes these optional parts besides those below: `persona` (`mark`
+`{ kind: "glyph", glyph }` or `{ kind: "monogram", letters }`, `colour`, `about`, `greeting`,
+`tone`, `hours { days, from, to }`, `remember`), `suggestions` on a text input, and a
+`{ "do": "remind", "text", "due" | "dueInDays" }` finish action.
+
 ### Flows run by the hub
 
 Keep a flow with the integration's token:
