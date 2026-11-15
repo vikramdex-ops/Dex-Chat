@@ -16,7 +16,7 @@
   --stroke-strong: rgba(19, 43, 46, .2);
   --text: #15191b;
   --text-2: #43585b;
-  --text-3: #6f8386;
+  --text-3: #56696c;
   --accent: #1c7680;
   --accent-hover: #1e6066;
   --accent-text: #ffffff;
@@ -41,14 +41,14 @@
     --stroke-strong: rgba(232, 242, 243, .2);
     --text: #e8f2f3;
     --text-2: #b0c5c8;
-    --text-3: #829a9d;
+    --text-3: #99b0b3;
     --accent: #47b0a4;
     --accent-hover: #63c0b5;
     --accent-text: #0b1a1c;
     --accent-soft: rgba(71, 176, 164, .16);
     --amber-soft: rgba(247, 175, 68, .16);
     --amber-ink: #f7c372;
-    --danger: #ef7d6d;
+    --danger: #f4907f;
     --tile: #0b1618;
   }
 }
@@ -190,8 +190,8 @@ button:disabled { cursor: default; opacity: .45; }
 .controls { justify-content: flex-end; flex-wrap: nowrap; }
 /* with the chat open the title block is narrower: the clock alone tells the time */
 @media (max-width: 1360px) { .chat-open .rb-facts > div + div { display: none; } }
-.leave { display: inline-flex; align-items: center; gap: 8px; height: 54px; padding: 0 14px; flex: none; border: 1px solid var(--danger); border-radius: var(--radius); background: transparent; color: var(--danger); font-weight: 700; }
-.leave:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.leave { display: inline-flex; align-items: center; gap: 8px; height: 54px; padding: 0 14px; flex: none; border: 1.5px solid var(--amber); border-radius: var(--radius); background: transparent; color: var(--amber-ink); font-weight: 700; }
+.leave:hover { background: var(--amber-soft); }
 
 /* the meeting chat: a ruled panel */
 .chat { grid-area: chat; display: none; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; border: 1px solid var(--text-3); background: var(--layer); }

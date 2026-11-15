@@ -150,8 +150,8 @@
 .wb-react button { width: 38px; height: 38px; border: 0; background: none; border-radius: var(--radius-s); font-size: 19px; }
 .wb-react button:hover { background: var(--subtle-2); }
 .wb-tools-fill { flex: 1; }
-.wb-tools > .wb-leave { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 20px; border: 0; border-left: 1px solid var(--stroke-strong); background: none; font-size: 13px; font-weight: 600; color: var(--danger); }
-.wb-tools > .wb-leave:hover { background: var(--danger-soft); color: var(--danger); }
+.wb-tools > .wb-leave { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 20px; border: 0; border-left: 1px solid var(--stroke-strong); background: none; font-size: 13px; font-weight: 700; color: var(--amber-ink); }
+.wb-tools > .wb-leave:hover { background: var(--amber-soft); color: var(--amber-ink); }
 .wb-side { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .wb-side-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--stroke-strong); }
 .wb-side-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; border: 0; border-left: 1px solid var(--stroke-strong); background: var(--subtle); font-size: 12.5px; font-weight: 600; color: var(--text-2); }
