@@ -6,9 +6,9 @@
 // rules themselves are in @dex/core/bottrack, shared with the bot maker's test run.
 import type { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
-import type { BotFlowCard, BotFlowDefinition, BotItem, BotRegisterView, BotTrackView, PublicUser } from '@dex/core';
+import type { BotFlowCard, BotFlowDefinition, BotFlowStageAction, BotItem, BotRegisterView, BotStageBot, BotTrackView, PublicUser } from '@dex/core';
 import { BotFlowError, localDate, withinHours } from '@dex/core/botflows';
-import { OFFICE_WEEK, nudgeDue, personAnswer, queueOf, registerView, seatKey, seatLimit, stageOf, trackAct, trackNoted, trackOpen, trackTakeOver, trackTick, trackView, trackWithdraw } from '@dex/core/bottrack';
+import { OFFICE_WEEK, enterStage, nudgeDue, personAnswer, queueOf, registerView, seatKey, seatLimit, stageOf, trackAct, trackHandBack, trackNoted, trackOpen, trackTakeOver, trackTick, trackView, trackWithdraw } from '@dex/core/bottrack';
 import type { TrackPeople } from '@dex/core/bottrack';
 import type { Desk } from './desk.ts';
 import type { Messaging } from './messaging.ts';
@@ -72,9 +72,20 @@ export interface BotItemsDeps {
   say: (bot: PublicUser, convId: string, text: string) => void;
 }
 
+/** What other bots do as a request moves (the bot network sets these; docs/BOT-NETWORK.md). */
+export interface BotItemHooks {
+  /** After every move: events for bots listening, and a stage that waits on another bot. */
+  moved?: (def: BotFlowDefinition, before: BotItem | null, after: BotItem, ownerId: string | null) => void;
+  /** A button with a handoff was pressed. */
+  acted?: (def: BotFlowDefinition, item: BotItem, action: BotFlowStageAction, by: PublicUser) => void;
+  /** The cell of a stage waiting on another bot. */
+  stageBot?: (item: BotItem, stageId: string, flow: string) => BotStageBot;
+}
+
 export class BotItems {
   private readonly db: DatabaseSync;
   private readonly d: BotItemsDeps;
+  hooks: BotItemHooks = {};
 
   constructor(deps: BotItemsDeps) {
     this.d = deps;
@@ -130,6 +141,8 @@ export class BotItems {
       resolve: (who, item) => {
         const now = this.d.now();
         let id: string | null = null;
+        // a stage that waits on another bot has no person acting (unless the handoff fails)
+        if (who.startsWith('bot:')) return null;
         if (who === 'requester') id = item.requesterId;
         else {
           id = personAnswer(def, who, item);
@@ -185,6 +198,13 @@ export class BotItems {
     return !!item.actorId && (this.leadOf(item.actorId)?.id === me || this.escalateTo(def, item, ownerId) === me);
   }
 
+  /** The strip's cells for stages that wait on another bot carry that bot's mark and how it stands. */
+  private withBots(def: BotFlowDefinition, item: BotItem, v: BotTrackView): BotTrackView {
+    const sb = this.hooks.stageBot;
+    if (!sb || !def.track?.stages.some((s) => s.who.startsWith('bot:'))) return v;
+    return { ...v, stages: v.stages.map((c) => { const st = stageOf(def, c.id); return st?.who.startsWith('bot:') ? { ...c, bot: sb(item, c.id, st.who.slice(4)) } : c; }) };
+  }
+
   // ------------------------------------------------------------ cards
   private cardFor(bot: PublicUser, def: BotFlowDefinition, item: Kept, userId: string, purpose: CardPurpose, body: string): void {
     const convId = this.d.dm(bot, userId);
@@ -220,7 +240,7 @@ export class BotItems {
       const now = this.d.now();
       const stage = stageOf(f.def, got.item.stage);
       const peers = stage && got.item.status === 'open' ? this.openOf(got.item.flow).filter((x) => x.stage === stage.id) : [];
-      const view = trackView(f.def, got.item, viewer, { now, moved, canTakeOver: this.canTakeOver(f.def, f.ownerId, got.item, viewer), queue: peers.length ? queueOf(f.def, got.item, peers) : null });
+      const view = this.withBots(f.def, got.item, trackView(f.def, got.item, viewer, { now, moved, canTakeOver: this.canTakeOver(f.def, f.ownerId, got.item, viewer), queue: peers.length ? queueOf(f.def, got.item, peers) : null }));
       // the person who asked has a newer card for their turn: the first one only follows it
       if (meta?.purpose === 'requester' && view.role === 'actor' && this.db.prepare("SELECT 1 FROM bot_item_cards WHERE item_id = ? AND user_id = ? AND purpose = 'actor' AND superseded = 0").get(got.item.id, viewer)) {
         return { track: { ...view, role: 'requester', actions: [], turnBelow: true } };
@@ -347,6 +367,7 @@ export class BotItems {
       this.say(bot, after.requesterId, `${after.ref} · ${after.stamp ?? ''}: ${after.title}`);
     }
     this.refreshItem(after);
+    try { this.hooks.moved?.(def, before, after, this.ownerOf(after.flow)); } catch (err) { this.d.log('warn', 'bot network hook failed', { item: after.ref, error: (err as Error).message }); }
     return after;
   }
 
@@ -369,6 +390,61 @@ export class BotItems {
     const noted = trackNoted(got.item, 'nudge', now, holder.actorId) as Kept;
     this.store(noted, got.row);
     this.refreshItem(noted);
+  }
+
+  private ownerOf(flow: string): string | null { return this.d.flowOf(flow, null)?.ownerId ?? null; }
+
+  // ------------------------------------------------------------ for the bot network
+  /** Open requests of a bot (the oldest first). */
+  openItems(flow: string): BotItem[] { return this.openOf(flow); }
+  /** May this person see that request? */
+  visibleTo(flow: string, item: BotItem, userId: string): boolean {
+    const f = this.d.flowOf(flow, null);
+    return !!f && this.canSee(f.def, f.ownerId, item as Kept, userId);
+  }
+  /** A request by its number (DC-0007). */
+  byRef(flow: string, ref: string): BotItem | null {
+    const m = /^([A-Z]{1,4})-(\d{1,6})$/.exec(ref);
+    if (!m) return null;
+    const r = this.db.prepare('SELECT data FROM bot_items WHERE flow = ? AND num = ?').get(flow, Number(m[2])) as { data: string } | undefined;
+    try { return r ? JSON.parse(r.data) as BotItem : null; } catch { return null; }
+  }
+  refOf(itemId: string): string | null { return this.load(itemId)?.item.ref ?? null; }
+  peek(itemId: string): BotItem | null { return this.load(itemId)?.item ?? null; }
+
+  /** A request handed over by another bot, opened straight at a stage (its earlier stages happened there). */
+  createAt(def: BotFlowDefinition, version: number | null, bot: PublicUser, ownerId: string | null, requester: PublicUser, vars: BotItem['vars'], lines: BotItem['lines'], stageId: string): Kept {
+    const num = ((this.db.prepare('SELECT MAX(num) AS n FROM bot_items WHERE flow = ?').get(def.name) as { n: number | null }).n ?? 0) + 1;
+    const now = this.d.now();
+    let item = trackOpen(def, { id: ulid(), num, requesterId: requester.id, vars, lines, now, people: this.people(def, ownerId) }) as Kept;
+    if (stageId !== item.stage) item = { ...enterStage(def, item, stageId, now, this.people(def, ownerId)), history: [...item.history.slice(0, 1).map((e) => ({ ...e, to: stageId }))] } as Kept;
+    item.history[0] = { ...item.history[0], label: 'Handed over' };
+    return this.moved(def, bot, null, item, { flow_version: version, bot_id: bot.id, num }, { fresh: true, by: requester.id });
+  }
+
+  /** The other bot handed it back: the stage's button for that outcome is pressed for it. */
+  handBack(itemId: string, flow: string, outcome: 'done' | 'stopped', words: string): void {
+    const got = this.load(itemId);
+    if (!got) return;
+    const f = this.flowFor(got.row);
+    const after = trackHandBack(f.def, got.item, flow, outcome, words, this.d.now(), this.people(f.def, f.ownerId)) as Kept;
+    after.taskId = got.item.taskId;
+    this.moved(f.def, f.bot, got.item, after, got.row, {});
+    this.d.store.audit(null, 'botflow.item.handedBack', itemId, { flow: got.item.flow, ref: got.item.ref, from: flow, outcome });
+  }
+
+  /** A handoff did not happen: a person carries the stage on by hand, with the stage's buttons. */
+  assignFallback(itemId: string, userId: string, why: string): void {
+    const got = this.load(itemId);
+    if (!got || got.item.status !== 'open' || got.item.actorId) return;
+    const f = this.flowFor(got.row);
+    const now = this.d.now();
+    const item: Kept = { ...got.item, actorId: userId, actorNote: null, updatedAt: now, history: [...got.item.history, { at: now, by: null, stage: got.item.stage, action: 'fallback', label: 'Passed to a person', note: why }] };
+    this.taskFor(item, f.def);
+    this.store(item, got.row);
+    this.cardFor(f.bot, f.def, item, userId, 'actor', `${item.ref}: ${why} It is with you to carry on.`);
+    if (userId !== item.requesterId) this.say(f.bot, item.requesterId, `${item.ref}: ${why}`);
+    this.refreshItem(item);
   }
 
   /** A request is sent: numbered, at its first stage, the first person told. */
@@ -404,7 +480,7 @@ export class BotItems {
     const { item, f } = this.mine(me, itemId);
     const stage = stageOf(f.def, item.stage);
     const peers = stage && item.status === 'open' ? this.openOf(item.flow).filter((x) => x.stage === stage.id) : [];
-    return trackView(f.def, item, me.id, { now: this.d.now(), canTakeOver: this.canTakeOver(f.def, f.ownerId, item, me.id), queue: peers.length ? queueOf(f.def, item, peers) : null });
+    return this.withBots(f.def, item, trackView(f.def, item, me.id, { now: this.d.now(), canTakeOver: this.canTakeOver(f.def, f.ownerId, item, me.id), queue: peers.length ? queueOf(f.def, item, peers) : null }));
   }
 
   // ------------------------------------------------------------ operations
@@ -419,6 +495,8 @@ export class BotItems {
         after.taskId = item.taskId;
         this.moved(f.def, f.bot, item, after, row, { by: me.id });
         this.d.store.audit(me.id, 'botflow.item.acted', item.id, { flow: item.flow, ref: item.ref, action: String(d.action ?? ''), stage: item.stage });
+        const pressed = stageOf(f.def, item.stage)?.actions.find((a) => a.id === String(d.action ?? ''));
+        if (pressed?.handoff) { try { this.hooks.acted?.(f.def, after, pressed, me); } catch (err) { this.d.log('warn', 'button handoff failed', { error: (err as Error).message }); } }
         return { ok: true, track: this.viewFor(me, itemId) };
       }
       case 'botflow.tick': {
@@ -474,22 +552,27 @@ export class BotItems {
       const today = localDate(now);
       if (!(reg.days ?? [1, 2, 3, 4, 5]).includes(d.getDay()) || hm < reg.at || this.lastPosted(def.name) === today) continue;
       this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(`botreg_${def.name}`, today);
-      const open = this.openOf(def.name).length;
-      if (!open) continue;
-      try {
-        const to = reg.to ?? 'owner';
-        const body = open === 1 ? `${def.title}: 1 open request.` : `${def.title}: ${open} open requests.`;
-        if (to.startsWith('space:')) {
-          const id = this.d.messaging.spaceByName(to.slice(6));
-          if (!id) { this.d.log('warn', 'register Space not found', { flow: def.name, space: to.slice(6) }); continue; }
-          this.d.messaging.ensureMember(id, bot.id);
-          this.postRegister(bot, def, id, null, 'all', body, { space: true });
-        } else {
-          const who = to.startsWith('role:') ? def.track?.roles?.[to.slice(5)]?.person ?? ownerId : ownerId;
-          if (who && this.active(who)) this.postRegister(bot, def, this.d.dm(bot, who), who, 'all', body);
-        }
-      } catch (err) { this.d.log('warn', 'register not posted', { flow: def.name, error: (err as Error).message }); }
+      if (!this.openOf(def.name).length) continue;
+      try { this.registerNow(def, bot, ownerId); } catch (err) { this.d.log('warn', 'register not posted', { flow: def.name, error: (err as Error).message }); }
     }
+  }
+
+  /** Post a bot's register where it goes (its schedule, or a scheduled job). Returns where, or why not. */
+  registerNow(def: BotFlowDefinition, bot: PublicUser, ownerId: string | null, dry = false): { posted: boolean; note: string } {
+    const open = this.openOf(def.name).length;
+    if (!open) return { posted: false, note: 'Nothing is open, so no register was posted.' };
+    const to = def.track?.register?.to ?? 'owner';
+    const body = open === 1 ? `${def.title}: 1 open request.` : `${def.title}: ${open} open requests.`;
+    if (to.startsWith('space:')) {
+      const id = this.d.messaging.spaceByName(to.slice(6));
+      if (!id) throw new BotFlowError(`There is no Space called ${to.slice(6)}.`);
+      if (!dry) { this.d.messaging.ensureMember(id, bot.id); this.postRegister(bot, def, id, null, 'all', body, { space: true }); }
+      return { posted: true, note: `Register posted to ${to.slice(6)}.` };
+    }
+    const who = to.startsWith('role:') ? def.track?.roles?.[to.slice(5)]?.person ?? ownerId : ownerId;
+    if (!who || !this.active(who)) throw new BotFlowError('No one is named to receive the register.');
+    if (!dry) this.postRegister(bot, def, this.d.dm(bot, who), who, 'all', body);
+    return { posted: true, note: `Register posted to ${this.d.store.userById(who)?.displayName ?? 'its maker'}.` };
   }
 
   private tickFlow(flow: string, now: number): void {

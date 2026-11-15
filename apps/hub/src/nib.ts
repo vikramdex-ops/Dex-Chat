@@ -441,6 +441,12 @@ export class Nib {
     this.pushMe([it.userId]);
   }
 
+  /** For other bots (the nib.away skill): on leave that day, the last day away, who covers. */
+  leaveInfo(uid: string, date: string): { back: string | null; coverId: string | null } | null {
+    const r = this.db.prepare('SELECT to_date, cover_id FROM nib_leave WHERE user_id = ? AND cancelled = 0 AND from_date <= ? AND to_date >= ? ORDER BY created_at DESC LIMIT 1').get(uid, date, date) as { to_date: string; cover_id: string | null } | undefined;
+    return r ? { back: addDays(r.to_date, 1), coverId: r.cover_id } : null;
+  }
+
   /** On leave on that day (overdue reminders wait until they are back). */
   awayOn(uid: string, date: string): boolean { return !!this.leaveOn(uid, date); }
 
