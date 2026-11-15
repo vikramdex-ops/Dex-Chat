@@ -342,10 +342,10 @@ function AckRegister({ n, users }: { n: NoticeView; users: Map<string, PublicUse
       <header className="nb-acks-tb">
         <div><div className="label">Acknowledgement register</div><div className="mono" translate="no">{`${c.number} · Rev ${c.rev}`}</div></div>
         <div className="nb-acks-count"><span className="stat">{c.done}</span><span className="faint">{`of ${c.total} · ${pct}%`}</span></div>
-        <div className="nb-acks-bar" role="progressbar" aria-label="Acknowledged" aria-valuemin={0} aria-valuemax={c.total} aria-valuenow={c.done}><span style={{ width: `${pct}%` }} /></div>
         <button className="btn" disabled={busy || c.done === c.total || !!c.remindFrom} onClick={() => void remind()} title={c.remindFrom ? 'A reminder already went today' : undefined}>
           {busy ? <span className="spinner" /> : <Icon name="alarm" size={15} />}{c.remindFrom ? 'Reminded today' : 'Remind those waiting'}
         </button>
+        <div className="nb-acks-bar" role="progressbar" aria-label="Acknowledged" aria-valuemin={0} aria-valuemax={c.total} aria-valuenow={c.done}><span style={{ width: `${pct}%` }} /></div>
       </header>
       <div className="nb-acks-rows">
         {c.departments.map((d) => {

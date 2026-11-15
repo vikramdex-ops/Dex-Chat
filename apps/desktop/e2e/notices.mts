@@ -273,6 +273,16 @@ try {
   await pair(K, '17-phone-sheet');
   await K.keyboard.press('Escape');
   await K.setViewportSize({ width: 1440, height: 900 });
+  // the composer on a phone
+  await R.setViewportSize({ width: 390, height: 844 });
+  await R.locator('nav.lens-dock').getByRole('button', { name: /Pulse/ }).click();
+  await R.evaluate(() => window.dispatchEvent(new CustomEvent('dex-notice', { detail: { kind: 'compose' } })));
+  await R.locator('.nb-compose').waitFor();
+  await R.getByLabel('Title', { exact: true }).fill('Fire drill on Friday at 11:00');
+  await sleep(300);
+  await pair(R, '17b-phone-composer');
+  await R.keyboard.press('Escape');
+  await R.setViewportSize({ width: 1440, height: 900 });
 
   // ---------------------------------------------------------------- 11. Hindi
   console.log('step 11: Hindi');
