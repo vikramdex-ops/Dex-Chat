@@ -125,9 +125,9 @@ The parts:
   every meeting. The HTML holds no meeting data. The page asks `/api/m/<ref>` for what it may
   show, and POSTs the passcode to `/api/m/<ref>/check`.
 - **The meeting itself** (`apps/gateway/meet/room.ts`, the old guest page) loads only when the
-  guest presses Join. Before Join the page downloads about 41 KB of script and 21 KB of styles
-  (about 15 KB and 6 KB compressed) plus one 32 KB font; the meeting adds 19 KB (8 KB compressed)
-  on Join. No framework.
+  guest presses Join. Before Join the page downloads about 52 KB of script and 24 KB of styles
+  (about 19 KB and 6 KB compressed) plus one 32 KB font; the meeting adds 19 KB (8 KB compressed)
+  on Join. No framework. The living drawing (`plate.ts`) is about 11 KB of that script.
 - **The hub answers** in `apps/hub/src/meet-public.ts`. It resolves the name or ID, works out the
   state (upcoming, open, live, ended, cancelled) from the Calendar and the live Room, and builds
   the answers.
@@ -275,8 +275,31 @@ Every state is the same drawing sheet:
 
 - a border with grid references;
 - the work column on the left;
-- on the right, the room drawn on plan, and the title block in the corner (meeting, date, time in
-  their zone and at the office, host, ID, status).
+- on the right, a living drawing about this meeting and this visitor
+  (`apps/gateway/meet/plate.ts`), and the title block in the corner (meeting, date, time in their
+  zone and at the office, host, ID, status). On a desktop both stay in view as the visitor works
+  down the form; on a phone they come after it.
+
+The living drawing has three parts, all drawn in code:
+
+1. **Time, dimensioned.** The meeting's slot on a day ruler with two parallel scales: the
+   visitor's time above, the office's below, like a dual-unit dimension. A NOW cursor moves along
+   it. Before the start, a dashed leader from NOW to the start carries the countdown, and the ten
+   minutes the room is open early are hatched. While the meeting runs, the elapsed part is hatched
+   in amber. When it is over, its length is dimensioned. A repeating meeting shows its next time;
+   a cancelled one has a revision cloud round the slot with a CANCELLED note.
+2. **Readiness, as instrument tags.** CAM, MIC, SPK and NET as ISA bubbles on a loop to a YOU
+   node: hollow until checked, then teal with a tick. MIC draws a live trace from the level meter;
+   SPK fills after "Test speakers"; NET is a real round trip to the site (`/health`, three times,
+   the middle one, every 20 seconds). Before the passcode only NET and the clock are live.
+3. **A revision block that fills itself:** drawn when the page opens; CHECKED with the visitor's
+   name when all checks pass; AWAITING APPROVAL in the lobby (a quiet blink); APPROVED FOR ENTRY
+   when the host lets them in (a stamp plotted over the opening meeting for a moment, and kept in
+   the block); ISSUED with the time spent, after the meeting.
+
+The drawing shows only this meeting's times and the visitor's own checks, never anything about
+other people. It is decorative for screen readers; the same information is in a text caption kept
+current beside it. Reduced motion stops the cursor's glide, the leader and the blink.
 
 Light and dark follow the system or the page's switch. The page works at 390 px and on a desktop.
 
@@ -318,7 +341,17 @@ using it (speaker choice, `AudioContext`, screen sharing).
   2. Give it a name (checked as you type), choose **Show the title on the invitation page** and
      the lobby rule.
   3. Save. The dialog stays open on the invitation: the clean link with its passcode,
-     **Copy invitation** (text) and **Download invitation (.ics)**.
+     **Copy invitation** (text), **Download invitation (.ics)** and **Send by email**.
+- **Send by email** opens the invitation as a draft in the PC's mail program (Outlook, Windows Mail,
+  Thunderbird): the app writes an `.eml` file to a temporary folder (removed after a day) and opens
+  it. The draft has the subject "Invitation: P-12 design review · Wed 18 Nov, 3:00 PM IST", the
+  invitation as text and as a formatted message (a button to the meeting page, the meeting ID, the
+  passcode when the link carries it, "nothing to install", a tip to check the camera and
+  microphone early), and the `.ics` attached (`METHOD:PUBLISH`, so the guest's calendar adds it
+  rather than treating the draft as a meeting request from them). The guest's address is left for
+  you to fill in. Where no mail program opens drafts, and on phones, a plain email opens through
+  `mailto:` without the attachment, and the app says so. Webinar registrants get the same, addressed
+  to them, from the **Send by email** button on their row.
 - **Editing the meeting** keeps everything. The same block lets you:
   - rename the page;
   - renew the passcode (old links stop working);

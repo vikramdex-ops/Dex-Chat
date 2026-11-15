@@ -21,6 +21,7 @@ import { appLog } from './applog.ts';
 import { wireAssist } from './assist/index.ts';
 import { dropIndexKey, indexKey } from './localindex.ts';
 import { openTempCopy, pruneTempCopies, saveBytes } from './viewer.ts';
+import { mailtoOk, openMailDraft, pruneMailDrafts } from './maildraft.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -310,6 +311,12 @@ function wireIpc(c: Controller): void {
     throw new Error('There is nothing to open.');
   };
   ipcMain.handle('file:openCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => openTempCopy(String(name), await viewerSource(String(name), src))));
+  // Send by email: the invitation as a draft in the PC's mail program, or a mailto: link
+  ipcMain.handle('mail:draft', (_e, name: unknown, eml: unknown) => wrap(async () => openMailDraft(String(name), eml, {
+    open: (p) => shell.openPath(p),
+    record: readTestHook(process.env.DEXCONNECT_TEST_DRIVES, app.isPackaged) ? (p) => drives.testShell.push({ kind: 'file', path: p }) : null,
+  })));
+  ipcMain.handle('mail:to', (_e, url: unknown) => wrap(async () => { if (!mailtoOk(url)) throw new Error('That is not a mail link.'); await shell.openExternal(url); }));
   ipcMain.handle('file:saveCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => saveBytes(String(name), await viewerSource(String(name), src))));
   // the key of this office's on-device search index (sealed by the system's secure storage)
   ipcMain.handle('search:key', (_e, scope: string) => wrap(() => indexKey(String(scope))));
@@ -519,6 +526,7 @@ void app.whenReady().then(async () => {
   handleMiniAppScheme((op, data) => controller!.request(op, data));
   void pruneCache();
   void pruneTempCopies();
+  void pruneMailDrafts();
   applyLogin(config.settings);
   nativeTheme.themeSource = config.settings.theme;
   nativeTheme.on('updated', () => applyTheme(controller!.settings));

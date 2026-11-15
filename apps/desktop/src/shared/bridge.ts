@@ -235,6 +235,10 @@ export interface DexBridge {
   /** Desktop, the file viewer: open a temporary copy in the program the system uses for its type, or save into Downloads, from bytes the window has or a hub file. */
   openCopy?(name: string, src: { id?: string; data?: ArrayBuffer }): Promise<void>;
   saveCopy?(name: string, src: { id?: string; data?: ArrayBuffer }): Promise<string>;
+  /** Desktop: open an invitation as a draft (.eml) in the PC's mail program; returns the file written. */
+  openMailDraft?(name: string, eml: string): Promise<string>;
+  /** Desktop: open a mailto: link in the PC's mail program. */
+  openMailto?(url: string): Promise<void>;
   /**
    * The key (base64, 256 bits) that encrypts this office's on-device search index of end-to-end
    * encrypted Direct messages, held by the system's secure storage; null when there is none.
