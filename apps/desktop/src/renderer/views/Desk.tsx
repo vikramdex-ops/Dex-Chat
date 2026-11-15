@@ -15,10 +15,11 @@ import { KEEP_LABEL, REPEAT_LABEL, describeWhen, dismissRinging, setKeepKind, sn
 import type { WhenPreset } from '../desk/store.ts';
 import { SheetTabs } from './People.tsx';
 import { onOpenRequest } from '../chat/deeplinks.ts';
+import { MyBots } from '../bots/maker/MyBots.tsx';
 import { useProgressive } from '../progressive.ts';
 
-type Tab = 'callouts' | 'tracks' | 'reminders' | 'kept' | 'scheduled' | 'notes' | 'timesheet';
-const TABS: Tab[] = ['callouts', 'tracks', 'reminders', 'kept', 'scheduled', 'notes', 'timesheet'];
+type Tab = 'callouts' | 'tracks' | 'reminders' | 'kept' | 'scheduled' | 'notes' | 'bots' | 'timesheet';
+const TABS: Tab[] = ['callouts', 'tracks', 'reminders', 'kept', 'scheduled', 'notes', 'bots', 'timesheet'];
 type Jump = (convId: string, messageId?: string, parentId?: string | null) => void;
 
 const snooze = (r: Reminder, p: WhenPreset) => window.dex.request('remind.update', { id: r.id, dueAt: p.at() });
@@ -71,6 +72,7 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
         { value: 'kept', label: 'Kept', count: saved.size },
         { value: 'scheduled', label: 'Waiting to send', count: scheduled.size },
         { value: 'notes', label: 'Notes' },
+        { value: 'bots', label: 'Bots' },
         ...(session.me.role === 'guest' ? [] : [{ value: 'timesheet' as Tab, label: 'Timesheet' }]),
       ]} />
       <div className="desk-body">
@@ -78,6 +80,7 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
         {loaded && tab === 'reminders' && <Reminders list={[...reminders.values()]} users={users} meId={meId} jump={jump} onNew={() => setCreating(true)} />}
         {loaded && tab === 'kept' && <Kept list={[...saved.values()].sort((a, b) => b.savedAt - a.savedAt)} users={users} meId={meId} jump={jump} />}
         {tab === 'timesheet' && <Timesheet me={session.me} />}
+        {tab === 'bots' && <MyBots session={session} />}
         {tab === 'callouts' && <Callouts users={users} meId={meId} jump={jump} />}
         {tab === 'tracks' && <Tracks users={users} meId={meId} jump={jump} />}
         {tab === 'notes' && (

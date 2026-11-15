@@ -1,6 +1,7 @@
 // App frame in the "Drafting Table" design language (docs/DESIGN-LANGUAGE.md):
 // title bar with brand, the Lens bar (ending in the GO TO field) and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right. Phones get a bottom lens strip.
+import './styles.css';
 import { setAlertPrefs } from './alerts.ts';
 import { Pane } from './chat/Pane.tsx';
 import { setTimeFormat } from './time.ts';
@@ -48,6 +49,8 @@ import { WebinarSeat } from './meet/webinar/Seat.tsx';
 import { openRecording } from './meet/shelf.ts';
 import { parseMeetingId } from '@dex/core';
 import { AddToolHost } from './bots/AddTool.tsx';
+import { startBotMarks } from './bots/BotMark.tsx';
+import { BotMakerHost } from './bots/maker/host.tsx';
 import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
 import { timeOpts } from './time.ts';
 import { tr } from './i18n/index.ts';
@@ -349,6 +352,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     startCalls(session.deviceId, (t, b) => window.dex.notify(tr(t), tr(b)), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startWebinars();
+    startBotMarks();
     return desk;
   }, [state.phase, session.me.id, session.deviceId]);
 
@@ -670,6 +674,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
       )}
 
+      <BotMakerHost session={session} />
       <AutomationsHost session={session} />
       {shortcuts && <ShortcutsSheet lenses={LENSES} onClose={() => setShortcuts(false)} />}
       {palette && (

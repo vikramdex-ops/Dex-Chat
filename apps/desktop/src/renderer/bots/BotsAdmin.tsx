@@ -1,31 +1,18 @@
-// Control room → Bots & tools: the step-by-step flows integrations run (switch on or off,
-// write or change one), and the tools members can add to conversations (upload, review what
+// Control room → Bots & tools: the step-by-step flows bots and integrations run (switch on or
+// off, write or change one in the bot maker, approve members' bots for the whole office), and the tools members can add to conversations (upload, review what
 // each asks for, approve or reject, switch off). Every change is in the audit log.
 import { useCallback, useEffect, useState } from 'react';
-import type { BotFlowDefinition, BotFlowInfo, MiniAppInfo, Ops, PublicUser } from '@dex/core';
+import type { MiniAppInfo, Ops, PublicUser } from '@dex/core';
+import { describeAction } from '@dex/core/botmaker';
 import { Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
 import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { permissionWords } from './MiniAppCard.tsx';
+import { BotMarkTile } from './BotMark.tsx';
+import { openBotMaker } from './maker/open.ts';
 import './bots.css';
 
-type AdminFlow = BotFlowInfo & { definition: BotFlowDefinition };
-
-const STARTER: BotFlowDefinition = {
-  name: 'site-visit',
-  title: 'Book a site visit',
-  description: 'Ask for a site visit; the site lead gets it on their Desk.',
-  command: 'sitevisit',
-  steps: [
-    { id: 'site', label: 'Site', prompt: 'Which site?', input: { kind: 'choice', options: [{ value: 'refinery', label: 'Refinery' }, { value: 'depot', label: 'Depot' }] } },
-    { id: 'day', label: 'Day', prompt: 'Which day?', input: { kind: 'text', validate: { type: 'date', notBefore: 'today' } } },
-    { id: 'people', label: 'People', prompt: 'How many people?', input: { kind: 'text', validate: { type: 'number', integer: true, min: 1, max: 10 } } },
-    { id: 'lead', label: 'Site lead', prompt: 'Who is the site lead?', input: { kind: 'person' } },
-    { id: 'ok', prompt: 'Send this to {{lead}}?\n\n{{summary}}', input: { kind: 'confirm', yes: 'Send', no: 'Change something' }, branches: [{ if: { equals: 'no' }, goto: 'site' }] },
-  ],
-  finish: [{ do: 'task', assignee: 'lead', text: 'Site visit to {{site}} on {{day}} for {{people}} ({{user}})', due: 'day' }],
-  done: 'Sent to {{lead}}.',
-};
+type AdminFlow = Ops['admin.botflows.list']['res'][number];
 
 const STATUS: Record<MiniAppInfo['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting for review' },
@@ -33,70 +20,76 @@ const STATUS: Record<MiniAppInfo['status'], { cls: string; label: string }> = {
   rejected: { cls: 'bad', label: 'Rejected' },
 };
 
+/** One bot waiting for an administrator: what it asks, what it does at the end, a note, and the decision. */
+function Review({ f, users, onDone }: { f: AdminFlow; users: PublicUser[]; onDone: () => void }) {
+  const toast = useToast();
+  const [note, setNote] = useState('');
+  const def = f.pending ?? f.definition;
+  const maker = users.find((u) => u.id === f.ownerId)?.displayName ?? 'A member';
+  const decide = (approve: boolean) => void window.dex.request('admin.botflows.review', { name: f.name, approve, note: note.trim() || undefined })
+    .then(() => { toast(approve ? `${def.title} is now office-wide` : `${def.title} was not approved`); onDone(); })
+    .catch((e: Error) => toast(e.message, true));
+  return (
+    <div className="card token-card bm-review-card">
+      <div className="bm-review-head">
+        {def.persona && <BotMarkTile mark={def.persona.mark} colour={def.persona.colour} size={36} />}
+        <div className="grow">
+          <div className="eyebrow">Review · {f.pending ? `revision ${f.pendingVersion} of an office-wide bot` : 'share with the whole office'}</div>
+          <b translate="no">{def.title}</b> <span className="faint" translate="no">by {maker}</span>
+        </div>
+      </div>
+      {def.persona?.about && <p className="muted" style={{ margin: 0 }} translate="no">{def.persona.about}</p>}
+      <ol className="bm-review-steps">
+        {def.steps.map((s) => <li key={s.id}><span className="bm-kind">{s.input.kind.toUpperCase()}</span><span translate="no">{s.prompt.split('\n')[0]}</span></li>)}
+      </ol>
+      <ul className="flow-notes">{def.finish.map((a, i) => <li key={i}>{describeAction(a, def)}</li>)}</ul>
+      <div className="field"><label htmlFor={`note-${f.name}`}>Note for {maker} and the audit log (optional)</label><input id={`note-${f.name}`} className="input" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} /></div>
+      <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn danger" onClick={() => decide(false)}>Turn down</button>
+        <button className="btn primary" onClick={() => decide(true)}><Icon name="check" size={15} />Approve for the office</button>
+      </div>
+    </div>
+  );
+}
+
 function Flows({ users }: { users: PublicUser[] }) {
   const toast = useToast();
   const [flows, setFlows] = useState<AdminFlow[] | null>(null);
   const [bots, setBots] = useState<Ops['admin.bots']['res']>([]);
-  const [editing, setEditing] = useState<{ botId: string; text: string; isNew: boolean } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
     void window.dex.request('admin.botflows.list').then(setFlows).catch(() => setFlows([]));
     void window.dex.request('admin.bots').then(setBots).catch(() => {});
   }, []);
   useEffect(() => { load(); return window.dex.onHubEvent((n) => { if (n === 'botflow.catalog') load(); }); }, [load]);
   const active = bots.filter((b) => b.active);
-  const save = async () => {
-    if (!editing) return;
-    setError(null);
-    let definition: BotFlowDefinition;
-    try { definition = JSON.parse(editing.text) as BotFlowDefinition; } catch (e) { setError(`That is not valid JSON: ${(e as Error).message}`); return; }
-    try {
-      await window.dex.request('admin.botflows.save', { botId: editing.botId, definition });
-      toast(`${definition.title ?? 'Flow'} saved`);
-      setEditing(null);
-      load();
-    } catch (e) { setError((e as Error).message); }
-  };
   const botName = (id: string) => users.find((u) => u.id === id)?.displayName ?? 'Integration';
+  const who = (f: AdminFlow) => (f.source === 'member' ? `made by ${users.find((u) => u.id === f.ownerId)?.displayName ?? 'a member'} · ${f.scope === 'office' ? 'office-wide' : f.scope === 'space' ? 'one Space' : 'private'}` : `${botName(f.botId)} · ${f.source === 'builtin' ? 'comes with the hub' : f.source === 'api' ? 'kept by the integration' : 'written here'}`);
+  const waiting = flows?.filter((f) => f.requested === 'office') ?? [];
   return (
     <>
       <p className="muted" style={{ margin: '0 0 12px' }}>
-        A flow asks people one step at a time in their conversation with an integration, keeps their place for a week, and at the end posts a summary,
-        calls the integration's webhook, or puts a task on someone's Desk. Integrations also keep flows themselves through the Bot API (PUT /api/flows/&lt;name&gt;).
+        A flow asks people one step at a time in their conversation with a bot or an integration, keeps their place, and at the end puts a task on someone's Desk,
+        posts a summary, sets a reminder or calls the integration's webhook. Members make their own bots from the Desk; those for the whole office wait here for you.
+        Integrations also keep flows through the Bot API (PUT /api/flows/&lt;name&gt;).
       </p>
       <div className="row-actions" style={{ marginBottom: 12 }}>
-        <button className="btn primary" disabled={!active.length} onClick={() => { setError(null); setEditing({ botId: active[0]?.bot.id ?? '', text: JSON.stringify(STARTER, null, 2), isNew: true }); }}><Icon name="plus" size={15} />Write a flow</button>
+        <button className="btn primary" disabled={!active.length} onClick={() => openBotMaker({ admin: {} })}><Icon name="plus" size={15} />Write a flow</button>
         {!active.length && <span className="faint">Create an integration first (Integrations).</span>}
       </div>
-      {editing && (
-        <div className="card token-card">
-          <div className="eyebrow">{editing.isNew ? 'New flow' : 'Change flow'}</div>
-          <div className="field"><label htmlFor="flow-bot">Integration that asks</label>
-            <select id="flow-bot" className="input" value={editing.botId} onChange={(e) => setEditing({ ...editing, botId: e.target.value })}>
-              {active.map((b) => <option key={b.bot.id} value={b.bot.id}>{b.bot.displayName}</option>)}
-            </select></div>
-          <div className="field"><label htmlFor="flow-json">Definition, as JSON: its steps, branches and finish actions</label>
-            <textarea id="flow-json" className="input mono flow-json" rows={18} spellCheck={false} value={editing.text} onChange={(e) => setEditing({ ...editing, text: e.target.value })} /></div>
-          {error && <div className="flow-err" role="alert">{error}</div>}
-          <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
-            <button className="btn primary" onClick={() => void save()}>Save flow</button>
-          </div>
-        </div>
-      )}
+      {waiting.map((f) => <Review key={f.name} f={f} users={users} onDone={load} />)}
       <div className="list">
         {flows === null && <div className="list-row"><span className="spinner" /></div>}
         {flows?.length === 0 && <div className="list-row faint">No flows yet.</div>}
         {flows?.map((f) => (
           <div key={f.name} className="list-row bots-row">
-            <span className="mapp-mark" aria-hidden="true"><Icon name="branch" size={15} /></span>
+            {f.persona ? <BotMarkTile mark={f.persona.mark} colour={f.persona.colour} size={26} /> : <span className="mapp-mark" aria-hidden="true"><Icon name="branch" size={15} /></span>}
             <div className="grow">
-              <div><b>{f.title}</b> <span className="mono faint">{f.name}{f.command ? ` · /${f.command}` : ''} · {f.steps} steps</span></div>
-              <div className="faint" style={{ fontSize: 12 }}>{botName(f.botId)} · {f.source === 'builtin' ? 'comes with the hub' : f.source === 'api' ? 'kept by the integration' : 'written here'} · changed {relativeTime(f.updatedAt)}</div>
+              <div><b>{f.title}</b> <span className="mono faint">{f.name}{f.command ? ` · /${f.command}` : ''} · {f.steps} steps · rev {f.version}</span>{f.requested === 'office' && <> <span className="chip warn">Waiting for review</span></>}{f.status !== 'live' && <> <span className="chip">{f.status === 'paused' ? 'Paused' : 'Retired'}</span></>}</div>
+              <div className="faint" style={{ fontSize: 12 }}>{who(f)} · changed {relativeTime(f.updatedAt)}</div>
             </div>
             <Toggle checked={f.enabled} label={`${f.title} on`} onChange={(on) => void window.dex.request('admin.botflows.enable', { name: f.name, enabled: on }).then(load).catch((e: Error) => toast(e.message, true))} />
             <span className="row-actions">
-              <button className="btn ghost sm" onClick={() => { setError(null); setEditing({ botId: f.botId, text: JSON.stringify(f.definition, null, 2), isNew: false }); }}>Change</button>
+              <button className="btn ghost sm" onClick={() => openBotMaker({ admin: { name: f.name } })}>Change</button>
               {f.source !== 'builtin' && <button className="btn ghost sm danger" onClick={() => void confirmAction({ title: `Remove ${f.title}?`, body: 'Anyone in the middle of it is stopped.', confirm: 'Remove', danger: true }).then((ok) => { if (ok) void window.dex.request('admin.botflows.remove', { name: f.name }).then(load).catch((e: Error) => toast(e.message, true)); })}>Remove</button>}
             </span>
           </div>
