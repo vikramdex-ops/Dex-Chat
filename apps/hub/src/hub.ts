@@ -290,6 +290,7 @@ export class Hub {
       audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
+    this.meetings.pageUrl = (meetingId) => this.meetPublic.pageUrl(meetingId);
     this.rooms = new Rooms({
       members: (convId) => this.messaging.members(convId),
       deliverToUsers: (userIds, name, data) => {
@@ -1616,7 +1617,7 @@ export class Hub {
         }
         if (op === 'remote.info') {
           const c = this.remoteConfig();
-          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote };
+          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote, site: this.publicSite() };
         }
         if (op === 'admin.remote.get' || op === 'admin.remote.set') {
           const me = this.store.userById(conn.userId!)!;

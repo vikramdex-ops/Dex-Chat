@@ -84,7 +84,7 @@ test('personal rooms are named from the person, and they can change it', async (
 test('before the passcode: only the date, the time and the office; the title and first name only when allowed', async () => {
   const { owner, priya, ravi, hub } = await office();
   await online(owner);
-  await owner.request('admin.users.setProfile', { userId: me(priya), email: 'priya@dexteritydesign.co.in' }).catch(() => {});
+  await owner.request('admin.org.setProfile', { userId: me(priya), email: 'priya@dexteritydesign.co.in' });
   // an instant meeting: the title is hidden by default
   const inst = await priya.request('meet.create', { title: 'Leak at client X', invite: [me(ravi)] }) as MeetingInfo;
   await priya.request('meet.guestLink', { id: inst.id, enabled: true });

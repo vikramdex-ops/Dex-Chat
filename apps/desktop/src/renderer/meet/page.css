@@ -1,0 +1,28 @@
+/* A meeting's page on the meeting site (Dexterity Meet), as hosts set it: the name field with its
+   check, the "show the title" choice, and the page address on meeting cards. Ruled cells and
+   mono captions, as the rest of the guest link block. */
+.slug-field { display: grid; gap: 4px; width: 100%; }
+.slug-row { display: flex; align-items: stretch; min-width: 0; }
+.slug-base { display: grid; place-items: center; padding: 0 8px; border: 1px solid var(--stroke-strong); border-right: 0; border-radius: 8px 0 0 8px; background: var(--layer-2, var(--subtle)); color: var(--text-3); font-size: 11.5px; white-space: nowrap; max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
+.slug-row .input { flex: 1; min-width: 0; border-radius: 0 8px 8px 0; font-size: 12.5px; }
+.slug-row .btn { margin-left: 8px; }
+.slug-field.compact .slug-row .input { min-height: 30px; padding: 4px 8px; }
+.slug-note { font-size: 11.5px; color: var(--text-3); }
+.slug-note.bad { color: var(--amber-ink); }
+.guest-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.guest-check input { accent-color: var(--accent); }
+.guest-hint { display: block; font-size: 11.5px; margin-top: 2px; }
+.guest-cells select.input { min-height: 30px; padding: 4px 8px; font-size: 12.5px; }
+.page-link { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.page-url { font-size: 11.5px; color: var(--accent-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.page-link .tb-link { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 11.5px; }
+.ev-meeting { display: grid; gap: 4px; min-width: 0; }
+.ev-page-box { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--stroke-strong); border-radius: 8px; }
+.ev-suggest-slug { justify-self: start; font-size: 12px; }
+.ev-lobby { display: grid; gap: 4px; }
+.meet-page { display: grid; gap: 6px; padding: 0 14px 12px; justify-items: center; min-width: 0; }
+.meet-page .meet-link { padding: 0; font-size: 11px; }
+.meet-rename { width: 100%; }
+.meet-rename summary { cursor: pointer; font-size: 10px; text-align: center; padding: 2px 0; color: var(--accent-ink); }
+.meet-rename .slug-field { margin-top: 6px; }
+.meet-row-main .page-link { margin-top: 2px; }

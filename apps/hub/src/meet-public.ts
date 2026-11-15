@@ -202,7 +202,9 @@ export class MeetPublic {
   pageUrl(meetingId: string): string | null {
     const site = this.h.site();
     if (!site) return null;
-    return meetPageUrl(site, this.slugOf(meetingId) ?? meetingId);
+    const m = this.h.meetings.get(meetingId);
+    const slug = m?.kind === 'personal' ? this.ensurePersonalSlug(m) : this.slugOf(meetingId);
+    return meetPageUrl(site, slug ?? meetingId);
   }
 
   set(m: Meeting, me: PublicUser, d: Record<string, unknown>): MeetPublicView {

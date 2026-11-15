@@ -37,7 +37,7 @@ try {
   await a.page.getByText('Site handover with the client').first().click({ timeout: 15000 });
   const edit = a.page.getByRole('button', { name: /Edit/ });
   if (await edit.count()) await edit.first().click();
-  await a.page.getByRole('button', { name: 'Download .ics' }).waitFor({ timeout: 15000 });
+  await a.page.getByRole('button', { name: 'Download invitation (.ics)' }).waitFor({ timeout: 15000 });
   await a.page.getByRole('switch', { name: 'Guests can join from a browser' }).click();
   await a.page.locator('.guest-pass').waitFor({ timeout: 10000 });
   await sleep(300);

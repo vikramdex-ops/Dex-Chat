@@ -17,7 +17,7 @@ import { DAY, addDays, hm, startOfDay, useCal } from '../calendar/store.ts';
 import { usePolicy } from '../policy.ts';
 import { RecordingPlayer, RecordingShelf } from './Recordings.tsx';
 import { MeetingReportSheet } from './Report.tsx';
-import { GuestLinkControls } from './GuestLink.tsx';
+import { GuestLinkControls, PageLink, SlugField } from './GuestLink.tsx';
 import { clearMeetTarget, useMeetTarget } from './shelf.ts';
 import { SurveySheet, WebinarSheet, WebinarsBlock } from './webinar/Lens.tsx';
 import { clearOpenWebinar, joinAny, useWeb } from './webinar/store.ts';
@@ -217,7 +217,16 @@ function PersonalRoom({ onJoin, busy }: { onJoin: (id: string, video: boolean) =
         {m ? digits.map((d, i) => (d === '-' ? <i key={i} aria-hidden="true" /> : <span key={i}>{d}</span>)) : !problem && <span className="spinner" />}
       </div>
       {!m && problem && <p className="load-problem" role="alert"><Icon name="warning" size={15} /><span><b>Your room could not be loaded</b> · {problem}</span><button className="btn ghost sm" onClick={() => setTry((n) => n + 1)}>Try again</button></p>}
-      {m && <div className="meet-link mono" title={m.link}>{meetingLink(m.id)}</div>}
+      {m && (m.page
+        ? <div className="meet-page">
+            <PageLink url={m.page} />
+            <details className="meet-rename">
+              <summary className="label">Change the name</summary>
+              <SlugField meetingId={m.id} value={m.page.split('/').pop() ?? null} site={m.page.replace(/\/[^/]*$/, '')} onSave={(slug) => void window.dex.request('meet.personal.slug', { slug: slug ?? '' }).then(() => window.dex.request('meet.personal')).then((x) => { setM(x); toast(slug ? `Your room is now …/${slug}` : 'Your room is at its ID'); }).catch((e: Error) => toast(e.message, true))} />
+            </details>
+            <div className="meet-link mono faint" title={m.link}>{meetingLink(m.id)}</div>
+          </div>
+        : <div className="meet-link mono" title={m.link}>{meetingLink(m.id)}</div>)}
       {m && (
         <div className="meet-options">
           <label className="meet-opt"><span className="label">Lobby</span>
@@ -233,7 +242,7 @@ function PersonalRoom({ onJoin, busy }: { onJoin: (id: string, video: boolean) =
         </details>
       )}
       <div className="meet-block-foot">
-        <button className="btn ghost" disabled={!m} onClick={() => m && void navigator.clipboard.writeText(m.link).then(() => toast('Link to your room copied'))}><Glyph name="copy" size={15} />Copy link</button>
+        <button className="btn ghost" disabled={!m} onClick={() => m && void navigator.clipboard.writeText(m.page ?? m.link).then(() => toast('Link to your room copied'))}><Glyph name="copy" size={15} />Copy link</button>
         <button className="btn" disabled={!m || busy} onClick={() => m && onJoin(m.id, false)}><Glyph name="door" size={15} />Open your room</button>
       </div>
     </Block>
@@ -281,12 +290,21 @@ function ComingUp({ meId, onJoin, busy }: { meId: string; onJoin: (id: string, v
   const today = items.filter((o) => o.startAt < startOfDay(now) + DAY);
   const later = items.filter((o) => o.startAt >= startOfDay(now) + DAY);
   const join = (o: Occurrence) => void window.dex.request('meet.event', { eventId: o.event.id }).then((m) => onJoin(m.id, false)).catch((e: Error) => toast(e.message, true));
+  // each meeting's page on the meeting site, to copy from its card
+  const [pages, setPages] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    let alive = true;
+    const want = [...new Set(items.map((o) => o.event.id))].filter((id) => !(id in pages)).slice(0, 20);
+    for (const id of want) void window.dex.request('meet.event', { eventId: id }).then((m) => { if (alive) setPages((p) => ({ ...p, [id]: m.page ?? null })); }).catch(() => { if (alive) setPages((p) => ({ ...p, [id]: null })); });
+    return () => { alive = false; };
+  }, [items.map((o) => o.event.id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
   const row = (o: Occurrence) => {
     const soon = o.startAt - now < 15 * 60_000;
+    const page = pages[o.event.id];
     return (
       <li key={`${o.event.id}-${o.startAt}`} className={soon ? 'soon' : undefined}>
         <span className="mono meet-time">{o.startAt < startOfDay(now) + DAY ? hm(o.startAt) : new Date(o.startAt).toLocaleDateString([], { weekday: 'short' })}</span>
-        <span className="meet-row-main"><b>{o.event.title}</b><span className="faint">{hm(o.startAt)} – {hm(o.endAt)} · {o.event.attendees.length} invited</span></span>
+        <span className="meet-row-main"><b>{o.event.title}</b><span className="faint">{hm(o.startAt)} – {hm(o.endAt)} · {o.event.attendees.length} invited</span>{page && <PageLink url={page} />}</span>
         <button className={`btn sm${soon ? ' primary' : ''}`} disabled={busy} onClick={() => join(o)}>Join</button>
       </li>
     );
