@@ -302,6 +302,7 @@ replacement for Hopper's Cliq bot), and a launcher panel in Connect that shows w
 | An admin user | At hub install | The first person to sign in becomes admin; they approve everyone else. |
 | A department/designation CSV (optional) | P4 | Name, Windows username, department, designation, manager. Seeds the org chart. |
 | Code-signing certificate (optional) | Before rollout | Removes the Windows SmartScreen warning. Without one, users click "Run anyway" once. |
+| The office's actual seating layout drawing | Later stage (promised by the office) | The org chart's **Floor** sheet (`apps/desktop/src/renderer/orgscape/floor.ts`) currently invents a generic plan from people's seat text ("Bay 2, Desk 4", "Cabin 1"): bays along one side of a corridor, cabins and rooms opposite. When the drawing arrives, redraw the Floor sheet to the real layout (rooms, bays, desk positions, doors, north point), keep seat names matching what people enter, and update the user guide's floor figure (`docs/guide/figures/fig-org-floor.png`). |
 | A Cloudflare account (free plan) | For use outside the office | Hosts the gateway. Add an API token and account ID as repository secrets; the workflow deploys it. See [`REMOTE-ACCESS.md`](REMOTE-ACCESS.md). |
 
 Everything else (builds, installers, firewall rules, certificates, the hub setup) is automated.
