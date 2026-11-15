@@ -141,6 +141,7 @@ function facts() {
 function themeButton(): HTMLElement {
   const dark = () => document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
   const b = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Switch between light and dark' }, icon(dark() ? 'sun' : 'moon'));
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => b.replaceChildren(icon(dark() ? 'sun' : 'moon')));
   b.addEventListener('click', () => {
     const next = dark() ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
@@ -207,7 +208,10 @@ function say(text: string): void { const el = document.getElementById('say'); if
  * we wait, chairs taken while live, someone at the door in the lobby, a revision cloud when
  * cancelled, a dashed outline when there is nothing here.
  */
+let drawnOnce = false;
 function drawing(kind: string): HTMLElement {
+  // plotted in on the first sheet of a visit; later states show the room at once (the waiting loop and the lobby ring still move)
+  setTimeout(() => { drawnOnce = true; }, 2000);
   const p = (d: string, cls = 'ln', extra: Record<string, string | number> = {}) => svg('path', { d, class: cls, pathLength: 1, ...extra });
   const chairs: SVGElement[] = [];
   const seat = (x: number, y: number, i: number) => chairs.push(svg('rect', { x: x - 9, y: y - 7, width: 18, height: 14, rx: 2, class: `chair c${i}` }));
@@ -245,7 +249,7 @@ function drawing(kind: string): HTMLElement {
     tag.append(t);
     g.append(tag);
   }
-  const box = svg('svg', { viewBox: '0 0 320 276', class: `dwg k-${kind}`, role: 'img', 'aria-label': kind === 'live' ? 'The meeting room, with people at the table' : kind === 'lobby' ? 'The meeting room, with you waiting at the door' : kind === 'cancelled' ? 'The meeting room, marked cancelled' : 'The meeting room on plan' }, g);
+  const box = svg('svg', { viewBox: '0 0 320 276', class: `dwg k-${kind}${drawnOnce ? ' still' : ''}`, role: 'img', 'aria-label': kind === 'live' ? 'The meeting room, with people at the table' : kind === 'lobby' ? 'The meeting room, with you waiting at the door' : kind === 'cancelled' ? 'The meeting room, marked cancelled' : 'The meeting room on plan' }, g);
   return h('figure', { class: 'drawing' }, box);
 }
 
@@ -621,12 +625,12 @@ function renderHome(): void {
 
 function renderOver(f: ReturnType<typeof facts>): void {
   const cancelled = f.state === 'cancelled';
-  const next = f.next && f.next.startAt > now() ? f.next : null;
+  // a cancellation cancels every repeat: there is no next time
+  const next = !cancelled && f.next && f.next.startAt > now() ? f.next : null;
   frame({
     org: f.org,
     kicker: `${cancelled ? 'Cancelled' : 'Ended'} · ${refSegment(f.id)}`,
     title: cancelled ? 'This meeting was cancelled' : 'This meeting has ended',
-    state: stateLine(f),
     body: [
       h('p', { class: 'lead' }, cancelled ? `${f.host ?? 'The host'} cancelled ${f.title ? `"${f.title}"` : 'this meeting'}. There is nothing to join. If you still need to meet, reply to the invitation.` : `${f.title ? `"${f.title}"` : 'This meeting'} is over.${next ? ' It meets again:' : ''}`),
       f.followUp && !cancelled ? followUp(f) : null,
@@ -724,12 +728,12 @@ function renderConnecting(again: boolean): void {
 
 function renderLobby(): void {
   const f = S.det ? facts() : null;
-  const waited = h('b', { class: 'mono' }, '00:00');
+  const waited = h('b', { class: 'timer', 'aria-hidden': 'true' }, '00:00');
   frame({
     org: f?.org ?? 'Dexterity Design Services',
     kicker: `Lobby · ${f ? refSegment(f.id) : ''}`,
     title: SPEAKER ? 'Going on stage…' : 'The host will let you in',
-    state: h('div', { class: 'state wait' }, h('span', { class: 'pip', 'aria-hidden': 'true' }), h('span', { class: 'label' }, 'In the lobby'), h('span', { class: 'big mono', 'aria-hidden': 'true' }, 'waiting ', waited)),
+    state: h('div', { class: 'state wait' }, h('span', { class: 'pip', 'aria-hidden': 'true' }), h('span', { class: 'label' }, 'In the lobby · waiting'), waited),
     body: [
       h('p', { class: 'lead' }, `${S.lobby.host || 'The host'} sees that you are waiting. Your place is held while this page is open: you need not do anything.`),
       h('div', { class: 'lobby-grid' },

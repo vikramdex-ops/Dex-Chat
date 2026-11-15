@@ -1256,6 +1256,8 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .conn.remote { color: var(--accent-ink); background: var(--accent-soft); }
 .conn.remote svg { flex: none; color: var(--accent); }
 .gw-url-row { display: flex; gap: 8px; margin-top: 4px; }
+.site-note { font-size: 12.5px; margin: 6px 0 0; }
+.site-label { margin-top: 12px; }
 .gw-url-row .input { flex: 1; min-width: 0; }
 .gw-url-row .btn { flex: none; }
 .field-label { display: block; margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--text-2); }

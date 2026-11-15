@@ -28,8 +28,8 @@ the rest of the app.
 | Area | Feature | Today | Plan |
 | --- | --- | --- | --- |
 | Meetings | HD audio, video, screen and app sharing | ✅ Rooms | Simulcast layers on the relay so slow PCs get lighter video |
-| | Instant meeting with a link to share | ✅ **M1**: every Room is held under a meeting with a nine-digit ID (482-913-207) and a `dexconnect://meet/ID` link; instant meetings get a private Space of their own; ✅ **M2**: a guest link for browsers (`https://<gateway>/m/ID#passcode`) | |
-| | Scheduled meetings, invitations, RSVP, reminders | ✅ Calendar; ✅ **M1**: a Calendar event held as a call is a meeting with its own ID, lobby and co-hosts (the organiser hosts); ✅ **M2**: passcodes for guest links, invitations as text or `.ics` (one VEVENT, UTC, the organiser, the link and passcode) | |
+| | Instant meeting with a link to share | ✅ **M1**: every Room is held under a meeting with a nine-digit ID (482-913-207) and a `dexconnect://meet/ID` link; instant meetings get a private Space of their own; ✅ **M2**: a guest link for browsers; ✅ **Dexterity Meet**: a clean address on the office's meeting site (`https://dexterity-meet.pages.dev/482-913-207`, a name the host chose such as `…/p12-design-review`, or a personal room `…/vikram`), passcode after `#` ([DEXTERITY-MEET.md](DEXTERITY-MEET.md)) | |
+| | Scheduled meetings, invitations, RSVP, reminders | ✅ Calendar; ✅ **M1**: a Calendar event held as a call is a meeting with its own ID, lobby and co-hosts (the organiser hosts); ✅ **M2**: passcodes for guest links, invitations as text or `.ics` (one VEVENT, UTC, the organiser, the link and passcode); ✅ **Dexterity Meet**: the event dialog sets the meeting's page (name, show the title, lobby, a note for afterwards); rescheduling moves the page, cancelling shows it; one UID per meeting; the calendar feed carries the clean link without the passcode | |
 | | Personal room | ✅ **M1**: each person's standing ID, with its own Space made the first time it is used | |
 | | Join before host, lobby, lock meeting | ✅ **M1**: lobby (nobody, outsiders and guests, or everyone waits) with admit or deny one or all; lock; join before host | |
 | | Co-hosts | ✅ **M1**: the host gives and takes co-host rights; when every host leaves, the longest-present member runs the meeting | |
@@ -44,7 +44,7 @@ the rest of the app.
 | | Noise suppression | ✅ **M2**: RNNoise (BSD-3-Clause) as an audio worklet on the PC, on by default, switched in the Room's sound menu | |
 | | Consent before video | ✅ **M1**: Control room → Policies → Calls: join with the camera off, and ask before turning it on | |
 | | Recording, storage, playback, sharing | ✅ **M2**: kept on the hub (resumable chunks, a size limit), a Recordings shelf, a viewer with chapters (who spoke when), shared with the conversation or by a link for the office, retention, audited downloads | |
-| | Guests join from a browser (no install) | ✅ **M2**: the gateway serves a join page (name, camera and mic check, lobby); guests always wait to be let in; media PC to browser through TURN; meetings on the relay stay on the office network | |
+| | Guests join from a browser (no install) | ✅ **M2**: a join page (name, camera and mic check, lobby); guests always wait to be let in; media PC to browser through TURN; meetings on the relay stay on the office network; ✅ **Dexterity Meet**: a landing page per meeting (title block, countdown or "in progress since", Add to calendar, a device check with speakers and device choice, waiting, lobby, reconnecting, a closing page) on a clean host, the meeting's code loaded only on Join | |
 | | Dial-in by phone | — | Out of scope (needs a telephony provider) |
 | Webinars | Registration page and form, approval | ✅ **M3**: `https://<gateway>/w/ID` (name, email, the organiser's questions, a honeypot, limits per address); auto or manual approval; each registrant's personal link; registrants in a ruled table (approve, turn away, CSV); invitations and reminders as text, `.ics` and a mail-merge CSV | |
 | | Organizer, panelists, attendees | ✅ **M3**: organiser (host, co-hosts) and up to 7 panelists on a PC-to-PC stage with a backstage Space; attendees watch one composed stage, never seen or heard; invited to speak with their consent (app or browser) and brought back | |
@@ -94,8 +94,10 @@ suppression, and per-meeting reports.
 
 *Delivered (November 2026)*:
 
-- **Guests from a browser.** A meeting's guest link is `https://<gateway>/m/<ID>#<passcode>`. The
-  gateway Worker serves a small page (`apps/gateway/guest/`, built into the Worker with esbuild):
+- **Guests from a browser.** A meeting's guest link is now its page on the office's meeting site,
+  `https://dexterity-meet.pages.dev/<ID or name>#<passcode>` (Dexterity Meet, below; old
+  `https://<gateway>/m/<ID>#<passcode>` links redirect there). The meeting itself
+  (`apps/gateway/meet/room.ts`, formerly `guest/page.ts`, built with esbuild) loads on Join:
   the guest's name, a camera and mic check (preview and a ruled level scale), the lobby, then the
   meeting: tiles with zone captions, a shared screen, the meeting chat, a hand and reactions,
   their own screen share, all in the drafting-sheet look with system fonts and nothing loaded from
@@ -124,7 +126,7 @@ suppression, and per-meeting reports.
   meeting's breakout rooms share it, and it is gone when the meeting ends. Members see it as
   "Everyone here" beside the conversation in the panel's Chat tab whenever such people are in the
   Room. The conversation's own chat is unchanged (and stays end-to-end encrypted where it was).
-- **Invitations.** "Copy invitation" and "Download .ics" in the Calendar's meeting dialog and the
+- **Invitations.** "Copy invitation" and "Download invitation (.ics)" in the Calendar's meeting dialog and the
   Room's host controls: one VEVENT with a stable UID, DTSTART/DTEND in UTC, the organiser (their
   email when the Directory has one), and the guest link with its passcode when it is on
   (`packages/core/src/ics.ts`).
@@ -174,6 +176,25 @@ on the main thread over 12 seconds were 12 and 6 with it on and 20 with it off (
 software video rendering causes them), so it does not stall the interface. Hub tests: `meet-guests.test.ts` and `meet-m2.test.ts`; Worker tests:
 `apps/gateway/test/gateway.test.ts`; end-to-end runs: a guest in headless Chromium through the
 gateway with an Electron host, and four apps in breakout rooms.
+
+*Dexterity Meet, delivered (15 November 2026):* the public face of meetings
+([DEXTERITY-MEET.md](DEXTERITY-MEET.md)). Every meeting has a clean address on a free Cloudflare
+Pages project, `dexterity-meet`, whose only code passes requests to the gateway through a service
+binding (`apps/meet-site`), so guests never see the Worker's address; the address is configuration
+(Control room → Outside the office → Meeting site), ready for the office's own domain. Hosts name
+a meeting's page (checked, unique, homograph-safe, released with a 30-day grace period); personal
+rooms are named from the person. The landing page (`apps/gateway/meet/landing.ts`) is one drawing
+sheet: before the passcode only the date, time and "Meeting with Dexterity Design Services" (title
+and first name when the host allows it); after it, the whole title block, a countdown or "in
+progress since", Add to calendar (.ics, Google, Outlook.com), the device check, name and Join, and
+"Open in Dexterity Connect" for staff; waiting, lobby, reconnecting and closing states (time spent,
+the host's note, the next time). Unknown, ended, cancelled and switched-off meetings get one
+answer before the passcode; wrong passcodes share the guest socket's lockout; the gateway passes
+only an allowlist of fields; strict CSP and headers, no third-party requests (fonts served by the
+site). The Calendar dialog, the Meet lens and the Calendar's meeting details show the clean link;
+reminders open the Room directly. Tests: `packages/core/test/meetlink.test.ts`,
+`apps/hub/test/meet-public.test.ts`, `apps/gateway/test/gateway.test.ts`, and the end-to-end
+`apps/desktop/e2e/meetlink.mts` through `wrangler pages dev` bound to `wrangler dev`.
 
 *Annotation, delivered (November 2026):* live pointers (`apps/desktop/src/renderer/pointers/`,
 `packages/core/src/pointers.ts`). In a Room the messages travel over each link's data channel (or

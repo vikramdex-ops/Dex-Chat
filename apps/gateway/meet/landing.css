@@ -21,7 +21,7 @@ h1[tabindex="-1"]:focus { outline: none; }
 .lockup .wm small { font: 500 9.5px/1.5 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; color: var(--text-3); }
 
 /* ---- the sheet: a heavy frame inside a hairline one, grid references in the margin ------------ */
-.sheet { position: relative; width: min(1180px, calc(100% - 32px)); margin: 6px auto 0; padding: 22px; background: var(--layer); border: 1px solid var(--stroke-strong); box-shadow: 0 1px 0 var(--stroke), 0 18px 50px -30px rgba(19, 43, 46, .35); }
+.sheet { position: relative; display: flex; flex-direction: column; width: min(1180px, calc(100% - 32px)); margin: 6px auto 0; padding: 22px; background: var(--layer); border: 1px solid var(--stroke-strong); box-shadow: 0 1px 0 var(--stroke), 0 18px 50px -30px rgba(19, 43, 46, .35); }
 .sheet::before { content: ''; position: absolute; inset: 22px; border: 1.5px solid var(--ink-line); pointer-events: none; }
 .refs { position: absolute; display: flex; font: 500 9.5px/1 var(--font-mono); color: var(--text-3); letter-spacing: .1em; pointer-events: none; }
 .refs.top { left: 22px; right: 22px; top: 6px; }
@@ -29,7 +29,7 @@ h1[tabindex="-1"]:focus { outline: none; }
 .refs span { flex: 1; display: grid; place-items: center; }
 .refs.top span + span { border-left: 1px solid var(--stroke); }
 .refs.side span + span { border-top: 1px solid var(--stroke); }
-.sheet-in { position: relative; display: grid; grid-template-columns: minmax(0, 7fr) minmax(300px, 5fr); min-height: 560px; }
+.sheet-in { flex: 1; position: relative; display: grid; grid-template-columns: minmax(0, 7fr) minmax(300px, 5fr); min-height: 560px; }
 .work { display: flex; flex-direction: column; gap: 18px; padding: 40px 40px 36px 42px; min-width: 0; }
 .plan { display: flex; flex-direction: column; border-left: 1.5px solid var(--ink-line); min-width: 0; }
 
@@ -46,6 +46,7 @@ h1[tabindex="-1"]:focus { outline: none; }
 /* the state: a countdown in ruled cells, "In progress since 10:02" with an amber pip, or open */
 .state { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 0; border-top: 1px solid var(--stroke-strong); border-bottom: 1px solid var(--stroke-strong); }
 .state .big { font-size: 20px; font-weight: 500; color: var(--text); }
+.state .timer { font: 500 26px/1 var(--font-mono); letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text); }
 .state .count { display: flex; }
 .state .cell { display: grid; justify-items: center; min-width: 74px; padding: 2px 14px; border-left: 1px solid var(--stroke-strong); }
 .state .cell:first-child { border-left: 0; padding-left: 4px; }
@@ -89,15 +90,15 @@ h1[tabindex="-1"]:focus { outline: none; }
 
 /* add to calendar: a strip of ruled cells */
 .cal-row { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); align-items: stretch; border: 1px solid var(--stroke-strong); border-radius: var(--radius); overflow: hidden; }
-.cal-row > .label { display: grid; place-items: center; padding: 0 14px; background: var(--layer-2); border-right: 1px solid var(--stroke-strong); }
-.cal-cell { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 10px; min-height: 42px; white-space: nowrap; border: 0; border-left: 1px solid var(--stroke); background: var(--layer); color: var(--text); font-size: 13.5px; font-weight: 600; text-decoration: none; }
-.cal-cell:first-of-type { border-left: 0; }
+.cal-row > .label { display: grid; place-items: center; padding: 0 14px; background: var(--layer-2); }
+.cal-cell { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 10px; min-height: 42px; white-space: nowrap; border: 0; border-left: 1px solid var(--stroke-strong); background: var(--layer); color: var(--text); font-size: 13.5px; font-weight: 600; text-decoration: none; }
 .cal-cell:hover { background: var(--accent-soft); color: var(--accent-ink); }
 .cal-cell .ico { color: var(--accent); }
 .cal-cell i { font-style: normal; font-size: 10px; color: var(--text-3); }
 
 /* ---- the plan: the room drawn, and the title block ------------------------------------------- */
-.drawing { margin: 0; flex: 1; display: grid; place-items: center; padding: 26px 26px 10px; min-height: 260px; }
+.drawing { margin: 0; display: grid; place-items: center; padding: 34px 26px 18px; }
+.plan .tblock { margin-top: auto; }
 .dwg { width: 100%; max-width: 380px; height: auto; overflow: visible; color: var(--ink-line); }
 .dwg .ln { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: plot 1.6s var(--ease) forwards; }
 .dwg .wall { stroke-width: 1.8; }
@@ -114,10 +115,16 @@ h1[tabindex="-1"]:focus { outline: none; }
 @keyframes plot { to { stroke-dashoffset: 0; } }
 @keyframes appear { to { opacity: 1; } }
 @keyframes dx-wipe { from { clip-path: inset(0 0 100% 0); transform: translateY(.15em); } to { clip-path: inset(0 0 -10% 0); transform: none; } }
+/* the sheet was already drawn once on this visit: later states show it at once */
+.dwg.still .ln { animation: none; stroke-dashoffset: 0; }
+.dwg.still .swing, .dwg.still .chair, .dwg.still .dimtext, .dwg.still .void { animation: none; opacity: 1; }
+.dwg.still.k-none .ln { opacity: .8; }
+.dwg.still .cloud { stroke-dasharray: 1; stroke-dashoffset: 1; animation: plot 1.2s var(--ease) .1s forwards; }
 /* waiting for the start: the pen plots the room again, quietly, every few seconds */
 .k-waiting .ln { animation: replot 9s var(--ease) infinite; }
 .k-waiting .wall.in { animation-delay: .3s; }
 .k-waiting .table { animation-delay: .8s; }
+.dwg.still.k-waiting .ln { animation: replot 9s var(--ease) infinite; }
 @keyframes replot { 0% { stroke-dashoffset: 1; } 30%, 88% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: .15; } }
 /* live: people at the table */
 .k-live .chair { fill: var(--accent); stroke: var(--accent); }
@@ -165,8 +172,8 @@ h1[tabindex="-1"]:focus { outline: none; }
 @media (max-width: 960px) {
   .sheet-in { grid-template-columns: minmax(0, 1fr); }
   .plan { border-left: 0; border-top: 1.5px solid var(--ink-line); }
-  .drawing { min-height: 0; padding: 18px 18px 6px; }
-  .dwg { max-width: 300px; }
+  .drawing { padding: 18px 18px 6px; }
+  .dwg { max-width: 260px; }
 }
 @media (max-width: 600px) {
   .top { padding: 12px 16px 6px; }
@@ -182,9 +189,9 @@ h1[tabindex="-1"]:focus { outline: none; }
   .join-row { flex-direction: column; }
   .join .btn.join { width: 100%; min-width: 0; }
   .cal-row { display: grid; grid-template-columns: 1fr 1fr 1fr; }
-  .cal-row > .label { grid-column: 1 / -1; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--stroke-strong); place-items: start; }
+  .cal-row > .label { grid-column: 1 / -1; padding: 8px 12px; border-bottom: 1px solid var(--stroke-strong); place-items: start; }
   .cal-cell { flex-direction: column; justify-content: center; text-align: center; gap: 4px; padding: 10px 6px; font-size: 12px; }
-  .cal-cell:first-of-type { border-left: 0; }
+  .cal-row > .label + .cal-cell { border-left: 0; }
   .tb-row { grid-template-columns: 92px minmax(0, 1fr); }
   .tb-foot { grid-template-columns: 1fr 1fr; }
   .tb-foot > div:last-child { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--stroke-strong); }

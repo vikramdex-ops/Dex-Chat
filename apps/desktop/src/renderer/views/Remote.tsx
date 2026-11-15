@@ -114,13 +114,13 @@ function MeetSite({ v, save }: { v: RemoteView; save: (patch: Ops['admin.remote.
         <input id="meet-site" className="input mono" placeholder="https://dexterity-meet.pages.dev" value={site} onChange={(e) => setSite(e.target.value)} />
         <button className="btn" disabled={site.trim().replace(/\/+$/, '') === (v.config.siteUrl ?? '')} onClick={() => save({ siteUrl: site.trim() || null })}>Save address</button>
       </div>
-      <p className="faint" style={{ fontSize: 12.5, margin: '6px 0 0' }}>{v.config.siteUrl ? 'Links made from now on use this address. Older links on the gateway\'s address and /m/ links are sent here.' : 'Empty: meeting pages are served on the gateway\'s own address until the site is set up.'} Your own domain later (for example meet.dexteritydesign.co.in): add it to the Pages project under Custom domains, then enter it here.</p>
-      <label htmlFor="meet-org" className="field-label" style={{ marginTop: 12 }}>Name on meeting pages</label>
+      <p className="faint site-note">{v.config.siteUrl ? 'Links made from now on use this address. Older links on the gateway\'s address and /m/ links are sent here.' : 'Empty: meeting pages are served on the gateway\'s own address until the site is set up.'} Your own domain later (for example meet.dexteritydesign.co.in): add it to the Pages project under Custom domains, then enter it here.</p>
+      <label htmlFor="meet-org" className="field-label site-label">Name on meeting pages</label>
       <div className="gw-url-row">
         <input id="meet-org" className="input" maxLength={80} placeholder="Dexterity Design Services" value={org} onChange={(e) => setOrg(e.target.value)} />
         <button className="btn" disabled={org.trim() === (v.config.orgName ?? '')} onClick={() => save({ orgName: org.trim() })}>Save name</button>
       </div>
-      <p className="faint" style={{ fontSize: 12.5, margin: '6px 0 0' }}>Before the passcode, a page says only "Meeting with" this name, the date and the time (and the title, if its host allows it).</p>
+      <p className="faint site-note">Before the passcode, a page says only "Meeting with" this name, the date and the time (and the title, if its host allows it).</p>
     </section>
   );
 }

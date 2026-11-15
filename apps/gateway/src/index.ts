@@ -7,13 +7,14 @@
 // Hardening, in the spirit of the relays it learnt from:
 // - Only the hub that proves it holds the pinned certificate key can take the hub side.
 // - Device sockets are binary-only, at most 1 MiB a frame, rate limited per address, and capped.
-// - Nothing but /hub/<id>, /c/<id>, /join, /m/<meeting>, /w/<webinar>, /cal/<token>.ics and /health answers; every reply carries strict headers.
+// - Nothing but /hub/<id>, /c/<id>, /join, the meeting site (below), /m/<meeting> (old links),
+//   /w/<webinar>, /cal/<token>.ics and /health answers; every reply carries strict headers.
 //
-// Guests (meetings, M2): /m/<meeting ID> serves a small join page (guest/page.ts, built into
-// guest-assets.gen.ts). Its WebSocket, /m/<meeting ID>/ws, goes to the office hub's relay as a
-// "guest" socket: JSON frames, passed to the hub as guest frames on the hub's own connection.
-// The page sends the passcode (from the link's #fragment, which never reaches a server log) in
-// its first frame; the hub checks it. Connections and wrong passcodes are limited per address.
+// Guests (meetings, M2): the meeting's page (below) loads the meeting itself (meet/room.ts) on
+// Join. Its WebSocket, /api/m/<meeting ID>/ws (old pages: /m/<ID>/ws), goes to the office hub's
+// relay as a "guest" socket: JSON frames, passed to the hub as guest frames on the hub's own
+// connection. The page sends the passcode (from the link's #fragment, which never reaches a server
+// log) in its first frame; the hub checks it. Connections and wrong passcodes are limited per address.
 //
 // Webinars (M3): /w/<meeting ID> is the public registration page, /w/<ID>/watch#<token> an
 // attendee's personal link and /w/<ID>/survey#<token> the follow-up survey (webinar/page.ts). The

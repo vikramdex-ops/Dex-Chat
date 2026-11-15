@@ -64,6 +64,8 @@ const appShot = async (p: any, name: string) => {
 };
 /** A page state at 1440 and 390 wide, light and dark (the page's own theme toggle uses data-theme too). */
 const snap = async (p: any, name: string, opts: { full?: boolean } = {}) => {
+  // the sheet plots itself in on the first view of a visit: let it finish
+  await sleep(1800);
   for (const [w, hgt] of [[1440, 900], [390, 844]]) {
     await p.setViewportSize({ width: w, height: hgt });
     for (const t of ['light', 'dark']) {

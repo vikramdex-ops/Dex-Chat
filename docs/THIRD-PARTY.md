@@ -16,7 +16,8 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | Tesseract.js, tesseract.js-core | Reading text in images, on the PC | Apache-2.0 |
 | Tesseract English model (`eng.traineddata`, via @tesseract.js-data/eng) | Reading text in images | Apache-2.0 (model), MIT (package) |
 | wasm-feature-detect | Choosing the OCR engine build | Apache-2.0 |
-| Outfit (variable font, via Fontsource) | Headings | OFL-1.1 |
+| Outfit (variable font, via Fontsource) | Headings; also served by the Dexterity Meet pages (`apps/gateway/meet/fonts/`) | OFL-1.1 |
+| JetBrains Mono 500 (Latin subset) | Mono captions on the Dexterity Meet pages (`apps/gateway/meet/fonts/`, licence text beside it) | OFL-1.1 |
 | qrcode-generator | QR codes for setting up phones | MIT |
 | jsQR | Reading pairing QR codes with the camera | Apache-2.0 |
 | mediasoup (hub) and mediasoup-client (apps) | The relay for Rooms of more than 8 people | ISC |
@@ -33,7 +34,7 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | Adobe character maps (CMaps, in pdfjs-dist) | Chinese, Japanese and Korean text in PDFs | BSD-3-Clause |
 | ICC profile CGATS001Compat-v2-micro (in pdfjs-dist) | Colours of CMYK drawings in PDFs | CC0-1.0 |
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
-| esbuild (build tool only) | Building the gateway's guest meeting page into the Worker | MIT |
+| esbuild (build tool only) | Building the Dexterity Meet pages (landing page, meeting, webinar pages) into the Worker and the Pages site | MIT |
 | WinSW | Running the hub as a Windows service | MIT |
 | Onest (font, `docs/guide/Onest-*.ttf`) | The printed user guide only; not part of the app | OFL-1.1 |
 

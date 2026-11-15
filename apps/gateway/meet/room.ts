@@ -527,6 +527,8 @@ function dropLink(deviceId: string): void {
 }
 
 window.addEventListener('pagehide', () => { if (state.ws) send({ t: 'leave' }); });
+// a window narrowed to a phone's width: the chat makes way for the people
+matchMedia('(max-width: 720px)').addEventListener?.('change', (e) => { if (e.matches && state.chatOpen) { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } });
 
 function start(o: RoomStart): { leave(): void; setMic(on: boolean): void } {
   app = o.mount; meetingId = o.meetingId; passcode = o.passcode; on = o.on; speaker = o.speaker;

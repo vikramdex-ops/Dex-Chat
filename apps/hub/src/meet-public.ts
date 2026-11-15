@@ -255,7 +255,7 @@ export class MeetPublic {
     const after = cur ? occ.find((o) => o.startAt > cur.startAt) ?? null : null;
     const shown = cur ?? (ev.recurrence === 'none' ? { startAt: ev.start_at, endAt: ev.end_at } : null);
     const t = { ...base, zone: ev.time_zone || zone, repeats: ev.recurrence !== 'none', recurrence: ev.recurrence, startAt: shown?.startAt ?? null, endAt: shown?.endAt ?? null, next: after };
-    if (ev.cancelled) return { ...t, state: 'cancelled' };
+    if (ev.cancelled) return { ...t, next: null, state: 'cancelled' };
     if (live) return { ...t, state: 'live' };
     if (!cur) return { ...t, state: 'ended' };
     const opens = cur.startAt - ROOM_OPENS_BEFORE_MS;
