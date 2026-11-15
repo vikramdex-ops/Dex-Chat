@@ -15,6 +15,7 @@ import { KEEP_LABEL, REPEAT_LABEL, describeWhen, dismissRinging, setKeepKind, sn
 import type { WhenPreset } from '../desk/store.ts';
 import { SheetTabs } from './People.tsx';
 import { onOpenRequest } from '../chat/deeplinks.ts';
+import { useProgressive } from '../progressive.ts';
 
 type Tab = 'callouts' | 'tracks' | 'reminders' | 'kept' | 'scheduled' | 'notes' | 'timesheet';
 const TABS: Tab[] = ['callouts', 'tracks', 'reminders', 'kept', 'scheduled', 'notes', 'timesheet'];
@@ -91,6 +92,11 @@ export function Desk({ session, jump }: { session: Session; jump: Jump }) {
   );
 }
 
+/** A long list drawn a screenful first, the rest over the next frames (see progressive.ts). */
+function Progressive<T>({ items, render }: { items: readonly T[]; render: (item: T) => React.ReactNode }) {
+  return <>{useProgressive(items).map(render)}</>;
+}
+
 // ------------------------------------------------------------------ reminders
 function Reminders({ list, users, meId, jump, onNew }: { list: Reminder[]; users: Map<string, PublicUser>; meId: string; jump: Jump; onNew: () => void }) {
   const [showDone, setShowDone] = useState(false);
@@ -119,7 +125,7 @@ function Reminders({ list, users, meId, jump, onNew }: { list: Reminder[]; users
       {groups.filter((g) => g.items.length).map((g) => (
         <section key={g.id} className="desk-group">
           <h3 className={`label${g.id === 'due' ? ' due' : ''}`}>{g.label} · {g.items.length}</h3>
-          {g.items.map((r) => <ReminderRow key={r.id} r={r} users={users} meId={meId} jump={jump} />)}
+          <Progressive items={g.items} render={(r) => <ReminderRow key={r.id} r={r} users={users} meId={meId} jump={jump} />} />
         </section>
       ))}
       {done.length > 0 && (
@@ -211,7 +217,7 @@ function Kept({ list: all, users, meId, jump }: { list: SavedMessage[]; users: M
           <button key={k} role="tab" aria-selected={kind === k} className={`k-${k}${kind === k ? ' on' : ''}`} onClick={() => setKind(k)}>{KEEP_LABEL[k]} <i>{counts.get(k)}</i></button>
         ))}
       </div>
-      {list.map(({ message: m, savedAt, kind: k }) => {
+      <Progressive items={list} render={({ message: m, savedAt, kind: k }) => {
         const u = users.get(m.authorId);
         return (
           <div key={m.id} className="desk-row saved">
@@ -227,7 +233,7 @@ function Kept({ list: all, users, meId, jump }: { list: SavedMessage[]; users: M
               onClick={() => void toggleSaved(m).then(() => toast('Taken off your Desk')).catch((e: Error) => toast(e.message, true))}><Icon name="tray" size={15} />Take off Desk</button>
           </div>
         );
-      })}
+      }} />
     </section>
   );
 }

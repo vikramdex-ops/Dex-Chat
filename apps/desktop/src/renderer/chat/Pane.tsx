@@ -1,7 +1,8 @@
 // A conversation Pane: a title-block header, the spine timeline, the writing line and the Dock
 // composer. Notes, Whiteboards, Files, Pinned and People open as sheets from the tabs on the
 // Pane's right edge; a side-track opens the same way, tied to its message by a hairline.
-import { Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
 import { STICKER_RE } from '@dex/core';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
@@ -203,6 +204,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       if (d.parentId) { setSide({ kind: 'track', parentId: d.parentId }); return; }
       // far back (jump to a date, an old link) means loading older pages until it is there
       for (let i = 0; i < 80; i++) {
+        window.dispatchEvent(new CustomEvent('dex-reveal', { detail: { convId, messageId: d.messageId } }));
         const el = wrap.current?.querySelector(`.timeline [data-mid="${d.messageId}"]`);
         if (el) {
           el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -227,16 +229,19 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   }, [convId]);
 
   const refDrop = useRefTarget({ kind: 'conv', convId });
-  if (!conv) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
-  const ctx: Ctx = {
-    users, meId, isAdmin, conv, online, view: (file, all) => setViewer({ file, all }), selected, cards: layout === 'cards',
-    select: (id) => setSelected((cur) => {
-      if (id === null) return null;
-      const next = new Set(cur ?? []);
-      if (next.has(id)) next.delete(id); else if (next.size < 50) next.add(id);
-      return next;
-    }),
-  };
+  // one context for everything drawn in the Pane, kept while nothing in it changes, so the
+  // timeline's runs and messages are not drawn again whenever the Pane is
+  const view = useCallback((file: FileInfo, all: FileInfo[]) => setViewer({ file, all }), []);
+  const select = useCallback((id: string | null) => setSelected((cur) => {
+    if (id === null) return null;
+    const next = new Set(cur ?? []);
+    if (next.has(id)) next.delete(id); else if (next.size < 50) next.add(id);
+    return next;
+  }), []);
+  const ctx = useMemo<Ctx | null>(() => (conv ? { users, meId, isAdmin, conv, online, view, selected, cards: layout === 'cards', select } : null),
+    [users, meId, isAdmin, conv, online, view, selected, layout, select]);
+  const onTrack = useCallback((parentId: string) => setSide({ kind: 'track', parentId }), []);
+  if (!conv || !ctx) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
   const picked = (): AnyMessage[] => (chatState().timelines.get(convId)?.messages ?? []).filter((m) => selected?.has(m.id) && !('pending' in m));
   const canAttach = filesSupported() && live && !direct;
   const onDrop = (e: React.DragEvent) => {
@@ -350,7 +355,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           </div>
         ))}
         <div className={`ref-zone${refDrop.valid ? ' ref-valid' : ''}${refDrop.over ? ' ref-over' : ''}`} {...refDrop.props}>
-          <Timeline ctx={ctx} onTrack={(parentId) => setSide({ kind: 'track', parentId })} activeTrack={side?.kind === 'track' ? side.parentId : null} />
+          <Timeline ctx={ctx} onTrack={onTrack} activeTrack={side?.kind === 'track' ? side.parentId : null} />
           {refDrop.valid && <span className="ref-drop-label" aria-hidden={!refDrop.over}>{refDrop.over ? 'Drop to reference here' : `Reference in ${title}`}</span>}
         </div>
         {selected && (
@@ -523,6 +528,16 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   const prevHeight = useRef(0);
   const prevFirst = useRef<string | null>(null);
   const messages = tl?.messages ?? [];
+  const topGap = useRef<HTMLDivElement>(null);
+  const bottomGap = useRef<HTMLDivElement>(null);
+  const heights = useRef(new Map<string, number>());
+  const heightOf = (b: { kind: string; key: string }) => heights.current.get(b.key) ?? GUESS[b.kind] ?? 60;
+  const range = useRef({ start: 0, end: 0, n: 0 });
+  const pinTop = useRef(false);
+  const startKey = useRef<string | null>(null);
+  const shiftFrame = useRef(0);
+  const [, bump] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => () => cancelAnimationFrame(shiftFrame.current), []);
 
   // keep the view pinned to the bottom unless the reader scrolled up; keep position when older pages load
   useLayoutEffect(() => {
@@ -538,7 +553,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
     prevHeight.current = el.scrollHeight;
   }, [messages]);
 
-  useEffect(() => { stick.current = true; }, [convId]);
+  useEffect(() => { stick.current = true; pinTop.current = false; }, [convId]);
   // switching between spine and cards changes every height: stay with the newest message while
   // the runs settle (they are laid out as they come into view)
   useLayoutEffect(() => {
@@ -572,11 +587,15 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   const onScroll = () => {
     const el = scroller.current!;
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (stick.current) markRead(convId);
-    if (el.scrollTop < 200 && tl?.hasMore && !tl.loading) { prevHeight.current = el.scrollHeight; void loadOlder(convId); }
+    if (stick.current) { markRead(convId); pinTop.current = false; }
+    // older pages load once the reader reaches the top of what is loaded (not of what is drawn)
+    if (el.scrollTop < 200 && tl?.hasMore && !tl.loading && range.current.start === 0) { measure(); prevHeight.current = el.scrollHeight; pinTop.current = true; void loadOlder(convId); }
+    if (!shiftFrame.current) shiftFrame.current = requestAnimationFrame(() => { shiftFrame.current = 0; slide(); });
   };
   // runs: consecutive messages by one person within 5 minutes; a title-block label at each new day;
-  // a time tick on the spine whenever ten minutes have gone by
+  // a time tick on the spine whenever ten minutes have gone by. A run whose messages did not change
+  // keeps its list from last time, so it is not drawn again when an older page arrives.
+  const lastRuns = useRef(new Map<string, AnyMessage[]>());
   const blocks = useMemo(() => {
     type Block = { kind: 'day'; label: string; key: string } | { kind: 'tick'; label: string; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string };
     const out: Block[] = [];
@@ -596,24 +615,122 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
       }
       out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
     }
+    const runs = new Map<string, AnyMessage[]>();
+    for (const b of out) {
+      if (b.kind !== 'run') continue;
+      const was = lastRuns.current.get(b.key);
+      if (was && was.length === b.msgs.length && was.every((x, i) => x === b.msgs[i])) b.msgs = was;
+      runs.set(b.key, b.msgs);
+    }
+    lastRuns.current = runs;
     return out;
   }, [messages, ctx.meId]);
 
+  // ---------------------------------------------------------------- drawing a window of it
+  // A long history (scrolled back through thousands of messages) is drawn a window at a time:
+  // WINDOW blocks around where the reader is, and above and below them gaps as tall as the
+  // blocks they stand for (measured when they were drawn), so the scrollbar and the reading
+  // position stay where they were. The window slides as the reader nears either gap.
+  const n = blocks.length;
+  const last = Math.max(0, n - WINDOW);
+  let start: number;
+  // at the newest message: the window ends there; older pages asked for at the top are drawn at
+  // the top; otherwise the window stays on the block it starts with, whatever arrives below
+  if (stick.current) start = last;
+  else if (pinTop.current) start = 0;
+  else { const at = startKey.current ? blocks.findIndex((b) => b.key === startKey.current) : -1; start = at >= 0 ? at : last; }
+  start = Math.max(0, Math.min(start, last));
+  const end = Math.min(n, start + WINDOW);
+  startKey.current = blocks[start]?.key ?? null;
+  range.current = { start, end, n };
+  let above = 0;
+  let below = 0;
+  for (let i = 0; i < start; i++) above += heightOf(blocks[i]);
+  for (let i = end; i < n; i++) below += heightOf(blocks[i]);
+
+  /** Remember how tall each drawn block is (the gaps are built from these). */
+  function measure(): void {
+    const top = topGap.current;
+    if (!top) return;
+    let el = top.nextElementSibling as HTMLElement | null;
+    for (let i = range.current.start; i < range.current.end && el && el !== bottomGap.current; i++) {
+      const next = el.nextElementSibling as HTMLElement | null;
+      if (next) heights.current.set(blocks[i].key, next.getBoundingClientRect().top - el.getBoundingClientRect().top);
+      el = next;
+    }
+  }
+  /** Slide the window when the reader nears one of its gaps (or lands inside one, dragging the scrollbar). */
+  function slide(): void {
+    const el = scroller.current;
+    const top = topGap.current;
+    const bottom = bottomGap.current;
+    if (!el || !top || !bottom) return;
+    const { start: s0, end: e0, n: total } = range.current;
+    if (total <= WINDOW) return;
+    const box = el.getBoundingClientRect();
+    const h = el.clientHeight;
+    const topEdge = top.getBoundingClientRect().bottom - box.top; // where the drawn blocks begin, in the view
+    const bottomEdge = bottom.getBoundingClientRect().top - box.top; // where they end
+    let next = s0;
+    if (topEdge > h || bottomEdge < 0) {
+      // the view is inside a gap: draw the window around the block at its middle
+      const target = el.scrollTop + h / 2 - (top.getBoundingClientRect().top - box.top + el.scrollTop);
+      let y = 0;
+      let i = 0;
+      for (; i < total - 1; i++) { y += heightOf(blocks[i]); if (y > target) break; }
+      next = i - WINDOW / 2;
+    } else if (e0 < total && bottomEdge < 2 * h) next = s0 + STEP;
+    else if (s0 > 0 && topEdge > -h) next = s0 - STEP;
+    else return;
+    next = Math.max(0, Math.min(next, total - WINDOW));
+    if (next === s0) return;
+    measure();
+    pinTop.current = false;
+    startKey.current = blocks[next].key;
+    bump();
+  }
+  // a message far back (a search result, a link, a date) is drawn before the Pane scrolls to it
+  useEffect(() => {
+    const onReveal = (e: Event) => {
+      const d = (e as CustomEvent).detail as { convId: string; messageId: string };
+      if (d.convId !== convId) return;
+      const i = blocks.findIndex((b) => (b.kind === 'run' ? b.msgs.some((m) => m.id === d.messageId) : b.kind === 'notice' && b.m.id === d.messageId));
+      if (i < 0 || (i >= range.current.start && i < range.current.end)) return;
+      measure();
+      stick.current = false;
+      pinTop.current = false;
+      startKey.current = blocks[Math.max(0, Math.min(i - WINDOW / 2, n - WINDOW))].key;
+      flushSync(bump);
+    };
+    window.addEventListener('dex-reveal', onReveal);
+    return () => window.removeEventListener('dex-reveal', onReveal);
+  });
+  // after the window moves, older pages keep their place against the new height
+  useLayoutEffect(() => { if (scroller.current) prevHeight.current = scroller.current.scrollHeight; }, [start, end]);
+
   return (
-    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll}>
+    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll} data-loaded={messages.length}>
       <div className="spine">
         {tl?.hasMore && <div className="tl-more">{tl.loading ? <span className="spinner" /> : null}</div>}
         {tl?.loaded && !tl.hasMore && <Beginning ctx={ctx} />}
         {!tl?.loaded && <div className="tl-more"><span className="spinner" /></div>}
-        {blocks.map((b) => b.kind === 'day'
+        <div ref={topGap} className="tl-gap" style={{ height: above, flex: 'none' }} aria-hidden="true" />
+        {blocks.slice(start, end).map((b) => b.kind === 'day'
           ? <div key={b.key} className="day-mark"><span className="label">{b.label}</span></div>
           : b.kind === 'tick' ? <div key={b.key} className="spine-tick" aria-hidden="true"><span className="mono">{b.label}</span></div>
           : b.kind === 'notice' ? <Notice key={b.key} m={b.m as Message} users={ctx.users} meId={ctx.meId} />
-          : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} />)}
+          : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} size={heights.current.get(b.key)} />)}
+        <div ref={bottomGap} className="tl-gap" style={{ height: below, flex: 'none' }} aria-hidden="true" />
       </div>
     </div>
   );
 }
+
+/** Blocks drawn at once in a timeline, and how far the window slides at a time. */
+const WINDOW = 360;
+const STEP = 120;
+/** A block's height before it was ever drawn: what the browser assumes for a run (chat.css). */
+const GUESS: Record<string, number> = { day: 44, tick: 20, notice: 30, run: 72 };
 
 /** The head of the conversation: a title block, "SHEET 1 · started 12 Mar 2025 by Vikram". */
 function Beginning({ ctx }: { ctx: Ctx }) {
@@ -632,12 +749,17 @@ function Beginning({ ctx }: { ctx: Ctx }) {
   );
 }
 
-const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }: {
+interface RunProps {
   ctx: Ctx; author: string; mine: boolean; msgs: AnyMessage[]; onTrack: (id: string) => void; activeTrack: string | null;
-}) {
+  /** Its height when it was last drawn: the browser keeps that much room for it until it is laid out again. */
+  size?: number;
+}
+const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, size }: RunProps) {
   const u = ctx.users.get(author);
+  // only the height it had when it was first drawn here (a later measurement is not a change)
+  const [room] = useState(size);
   return (
-    <div className={`run${mine ? ' mine' : ''}`}>
+    <div className={`run${mine ? ' mine' : ''}`} style={room ? { containIntrinsicSize: `auto ${Math.round(room)}px` } : undefined}>
       <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
@@ -649,7 +771,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }:
       </div>
     </div>
   );
-});
+}, (a, b) => a.ctx === b.ctx && a.author === b.author && a.mine === b.mine && a.msgs === b.msgs && a.onTrack === b.onTrack && a.activeTrack === b.activeTrack);
 
 // ------------------------------------------------------------------ one message
 /** The tool column hangs down from a message; near the bottom of the timeline it hangs up instead. */
@@ -659,9 +781,45 @@ function toolsFit(e: React.SyntheticEvent<HTMLDivElement>): void {
   if (box) el.classList.toggle('tools-up', el.getBoundingClientRect().top + 150 > box.bottom);
 }
 
-function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
-  ctx: Ctx; m: AnyMessage; onTrack?: (id: string) => void; activeTrack?: string | null; inTrack?: boolean;
-}) {
+interface ItemProps { ctx: Ctx; m: AnyMessage; onTrack?: (id: string) => void; activeTrack?: string | null; inTrack?: boolean }
+
+/** The amber notch on my own messages: hollow when sent, half when some have seen it, solid when all have. */
+function seenOf(ctx: Ctx, m: AnyMessage, inTrack: boolean | undefined): { state: string; tag: string } | null {
+  if (m.authorId !== ctx.meId || 'pending' in m || inTrack) return null;
+  if (ctx.users.get(ctx.meId)?.readReceipts === false) return { state: 'plain', tag: '' };
+  const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
+  const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id).length;
+  const state = !others.length || read === 0 ? 'sent' : read === others.length ? 'all' : 'some';
+  const tag = others.length === 1 ? (read ? 'Seen' : 'Sent') : `Seen ${read}/${others.length}`;
+  return { state, tag };
+}
+
+/**
+ * A message is drawn again only when something it shows changed: itself, the people, the layout,
+ * picking, its side-track being open, or (for my own) who has read it. Presence, new messages and
+ * read receipts elsewhere leave the thousands already on screen alone.
+ */
+function sameMessage(a: ItemProps, b: ItemProps): boolean {
+  if (a.m !== b.m || a.inTrack !== b.inTrack || a.onTrack !== b.onTrack) return false;
+  if ((a.activeTrack === a.m.id) !== (b.activeTrack === b.m.id)) return false;
+  const x = a.ctx;
+  const y = b.ctx;
+  if (x === y) return true;
+  if (x.users !== y.users || x.meId !== y.meId || x.isAdmin !== y.isAdmin || x.cards !== y.cards || x.view !== y.view || x.select !== y.select) return false;
+  if (!x.selected !== !y.selected || (x.selected && y.selected && x.selected.has(a.m.id) !== y.selected.has(b.m.id))) return false;
+  const c = x.conv;
+  const d = y.conv;
+  if (c === d) return true;
+  if (c.id !== d.id || c.kind !== d.kind || c.createdBy !== d.createdBy || c.moderators.join() !== d.moderators.join()) return false;
+  if (b.m.authorId !== y.meId) return true;
+  const s1 = seenOf(x, a.m, a.inTrack);
+  const s2 = seenOf(y, b.m, b.inTrack);
+  return s1?.state === s2?.state && s1?.tag === s2?.tag;
+}
+
+const MessageItem = memo(MessageItemView, sameMessage);
+
+function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [stamp, setStamp] = useState<'chips' | 'picker' | null>(null);
@@ -725,15 +883,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   );
 
   // the amber notch on my own messages: hollow when sent, half when some have seen it, solid when all have
-  const seen = (() => {
-    if (!mine || pending || inTrack) return null;
-    if (!receiptsOn) return { state: 'plain', tag: '' };
-    const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
-    const read = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id).length;
-    const state = !others.length || read === 0 ? 'sent' : read === others.length ? 'all' : 'some';
-    const tag = others.length === 1 ? (read ? 'Seen' : 'Sent') : `Seen ${read}/${others.length}`;
-    return { state, tag };
-  })();
+  const seen = seenOf(ctx, m, inTrack);
 
   return (
     <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
@@ -950,9 +1100,16 @@ function WritingLine({ k, users }: { k: string; users: Map<string, PublicUser> }
 }
 
 // ------------------------------------------------------------------ the Dock (composer)
+const grownFor = new WeakMap<HTMLTextAreaElement, { len: number; width: number }>();
 const autoGrow = (el: HTMLTextAreaElement) => {
   // empty: one row (a long placeholder in a narrow Pane must not make it grow)
-  if (!el.value) { el.style.height = ''; return; }
+  if (!el.value) { el.style.height = ''; grownFor.delete(el); return; }
+  // more text that still fits: nothing to measure. Letting the box collapse to measure it lays out
+  // the whole Pane twice a key, which a long timeline makes slow.
+  const was = grownFor.get(el);
+  const width = el.clientWidth;
+  grownFor.set(el, { len: el.value.length, width });
+  if (was && was.width === width && el.value.length >= was.len && el.scrollHeight <= el.clientHeight) return;
   el.style.height = 'auto';
   el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
 };

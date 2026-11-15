@@ -1,7 +1,7 @@
 // The Switchboard: one panel for every conversation, shared by Direct and Spaces and narrowed by
 // lens chips (People · Spaces · Projects). While a Pane is open it folds to a 56 px strip of tiles.
 // Unread = bold name + a teal tick on the left edge; only callouts to you get an (amber) count.
-import { useMemo, useRef, useState } from 'react';
+import { memo, useDeferredValue, useMemo, useRef, useState } from 'react';
 import type { Conversation, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
@@ -12,6 +12,7 @@ import { CONV_DRAG, openBeside, openInPane, usePanes } from './panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, nextMonday, todayAt } from './officeTime.ts';
 import { LoungeSection } from '../lounges/Lounges.tsx';
 import { RefDropRow } from './refs.tsx';
+import { useProgressive } from '../progressive.ts';
 
 export type Chip = 'all' | 'people' | 'spaces' | 'projects';
 export const CHIPS: Array<{ id: Chip; label: string; icon: IconName }> = [
@@ -130,6 +131,8 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
   const panes = usePanes();
   const focusId = panes.ids[panes.focus] ?? null;
   const [filter, setFilter] = useState('');
+  // the list follows the filter a moment behind the typing, so keys never wait for it
+  const query = useDeferredValue(filter);
   const [showArchived, setShowArchived] = useState(false);
   // how the list is ordered and narrowed (kept per device)
   const [sort, setSort] = useState<Sort>(() => { try { return (localStorage.getItem('dex-sb-sort') as Sort | null) ?? 'recent'; } catch { return 'recent'; } });
@@ -140,7 +143,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
 
   const all = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     return [...conversations.values()]
       .filter((c) => c.joined && inChip(c, chip))
       .filter((c) => !q || convTitle(c, users, meId).toLowerCase().includes(q) || (c.topic ?? '').toLowerCase().includes(q))
@@ -151,7 +154,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
         if (sort === 'unread') { const d = Number(b.mentions > 0) - Number(a.mentions > 0) || Number(b.unread > 0) - Number(a.unread > 0); if (d) return d; }
         return (b.lastMessage?.createdAt ?? b.createdAt) - (a.lastMessage?.createdAt ?? a.createdAt);
       });
-  }, [conversations, chip, filter, users, meId, sort, only, focusId]);
+  }, [conversations, chip, query, users, meId, sort, only, focusId]);
   const archived = all.filter((c) => c.archived);
   const live = all.filter((c) => !c.archived);
   // kept on top first, then each person's own drawers, then projects, Spaces and people
@@ -186,34 +189,11 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
   }, [conversations]);
 
   const row = (c: Conversation) => {
-    const title = convTitle(c, users, meId);
-    const last = c.lastMessage;
-    const who = last ? (last.authorId === meId ? 'You' : users.get(last.authorId)?.displayName.split(' ')[0] ?? '') : '';
-    const preview = last ? `${c.kind === 'space' || c.members.length > 2 || last.authorId === meId ? `${who}: ` : ''}${last.body ? plainPreview(last.body, users) : 'Message deleted'}` : (c.topic ?? 'No messages yet');
     const at = panes.ids.indexOf(c.id);
     const state = c.id === focusId ? ' active' : at >= 0 ? ' open' : '';
-    return (
-      <RefDropRow key={c.id} convId={c.id} className="sb-row-wrap">
-        <button role="listitem" className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
-          draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
-          onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
-          aria-current={c.id === focusId ? 'true' : undefined}
-          title={folded ? `${title}${c.mentions ? ` · ${c.mentions} for you` : c.unread ? ' · unread' : ''}\nCtrl+click or drag to lay it beside` : 'Ctrl+click or drag to lay it beside'}
-          onContextMenu={(e) => { e.preventDefault(); setMenu({ id: c.id, anchor: e.currentTarget }); }}>
-          <ConvTile c={c} users={users} meId={meId} />
-          <span className="sb-main">
-            <span className="sb-title">
-              <span className="sb-name" translate="no">{title}</span>
-              {c.private && c.kind === 'space' && <Icon name="lock" size={12} />}
-              {c.muted && <Icon name="mute" size={12} />}
-            </span>
-            <span className="sb-preview">{last && <span className="sb-time">{shortTime(last.createdAt)}</span>}<span translate={last?.body || (!last && c.topic) ? 'no' : undefined}>{preview}</span></span>
-          </span>
-          {c.mentions > 0 ? <span className="badge" aria-label={`${c.mentions} for you`}>{c.mentions}</span> : c.pinnedAt && !folded ? <Icon name="pin" size={11} className="sb-pin" /> : null}
-        </button>
-        {!folded && <button className="sb-more" aria-label={`Options for ${title}`} title="Options" onClick={(e) => setMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="chevron" size={14} /></button>}
-      </RefDropRow>
-    );
+    // a person's beacon ring is part of the row (the row is kept while nothing about it changes)
+    const one = c.kind === 'direct' ? c.members.filter((m) => m !== meId) : [];
+    return <SbRow key={c.id} c={c} users={users} meId={meId} state={state} folded={folded} onMenu={setMenu} presence={one.length === 1 ? presenceFor(one[0]) : ''} />;
   };
 
   const label = CHIPS.find((x) => x.id === chip)!.label;
@@ -267,7 +247,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
         {groups.map((g) => (
           <div key={g.title} className="sb-group">
             <div className="sb-group-title label">{g.title}</div>
-            {g.items.map(row)}
+            <Rows items={g.items} row={row} />
           </div>
         ))}
         <LoungeSection folded={!!folded} />
@@ -282,6 +262,49 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     </aside>
   );
 }
+
+/** A group's rows: a screenful at once, the rest over the next frames (see progressive.ts). */
+function Rows({ items, row }: { items: Conversation[]; row: (c: Conversation) => React.ReactNode }) {
+  return <>{useProgressive(items, 30).map(row)}</>;
+}
+
+/**
+ * One conversation in the list, drawn again only when it changes (its conversation, the people,
+ * whether it is open), not for every change elsewhere in a list of hundreds.
+ */
+const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu }: {
+  c: Conversation; users: Map<string, PublicUser>; meId: string; state: string; folded: boolean;
+  onMenu: (m: { id: string; anchor: HTMLElement }) => void;
+  /** The other person's presence in a one-to-one (drawn by the tile; here so a change redraws the row). */
+  presence: string;
+}) {
+    const title = convTitle(c, users, meId);
+    const last = c.lastMessage;
+    const who = last ? (last.authorId === meId ? 'You' : users.get(last.authorId)?.displayName.split(' ')[0] ?? '') : '';
+    const preview = last ? `${c.kind === 'space' || c.members.length > 2 || last.authorId === meId ? `${who}: ` : ''}${last.body ? plainPreview(last.body, users) : 'Message deleted'}` : (c.topic ?? 'No messages yet');
+    return (
+      <RefDropRow convId={c.id} className="sb-row-wrap">
+        <button role="listitem" className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
+          draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
+          onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
+          aria-current={state === ' active' ? 'true' : undefined}
+          title={folded ? `${title}${c.mentions ? ` · ${c.mentions} for you` : c.unread ? ' · unread' : ''}\nCtrl+click or drag to lay it beside` : 'Ctrl+click or drag to lay it beside'}
+          onContextMenu={(e) => { e.preventDefault(); onMenu({ id: c.id, anchor: e.currentTarget }); }}>
+          <ConvTile c={c} users={users} meId={meId} />
+          <span className="sb-main">
+            <span className="sb-title">
+              <span className="sb-name" translate="no">{title}</span>
+              {c.private && c.kind === 'space' && <Icon name="lock" size={12} />}
+              {c.muted && <Icon name="mute" size={12} />}
+            </span>
+            <span className="sb-preview">{last && <span className="sb-time">{shortTime(last.createdAt)}</span>}<span translate={last?.body || (!last && c.topic) ? 'no' : undefined}>{preview}</span></span>
+          </span>
+          {c.mentions > 0 ? <span className="badge" aria-label={`${c.mentions} for you`}>{c.mentions}</span> : c.pinnedAt && !folded ? <Icon name="pin" size={11} className="sb-pin" /> : null}
+        </button>
+        {!folded && <button className="sb-more" aria-label={`Options for ${title}`} title="Options" onClick={(e) => onMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="chevron" size={14} /></button>}
+      </RefDropRow>
+    );
+  });
 
 function ConvMenu({ c, anchor, drawers, onClose }: { c: Conversation; anchor: HTMLElement; drawers: string[]; onClose: () => void }) {
   const toast = useToast();
