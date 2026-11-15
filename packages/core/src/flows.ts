@@ -15,8 +15,8 @@ export type FlowTrigger =
   | { kind: 'reaction.added'; emoji: string; by?: PersonRef[] }
   /** A file attached to a new message, optionally only some file types or names. */
   | { kind: 'file.added'; types?: string[]; namePattern?: string }
-  /** Someone confirmed a response: a vote in a poll or an answer to a form. */
-  | { kind: 'response.confirmed'; source?: 'poll' | 'form' | 'any'; choice?: string }
+  /** Someone confirmed a response: a vote in a poll, an answer to a form, or the end of their path through a Decision. */
+  | { kind: 'response.confirmed'; source?: 'poll' | 'form' | 'decision' | 'any'; choice?: string }
   /** A new message with any of the keywords (comma separated), or matching a regular expression. */
   | { kind: 'message.matched'; mode: 'keywords' | 'regex'; pattern: string; caseSensitive?: boolean }
   /** A new message that mentions one of these people, or anyone in these groups. */
@@ -121,7 +121,7 @@ export interface FlowDryRun {
 export type FlowEvent =
   | { kind: 'message.new'; messageId: string; convId: string; authorId: string }
   | { kind: 'reaction.added'; messageId: string; convId: string; userId: string; emoji: string }
-  | { kind: 'response.confirmed'; messageId: string; convId: string; userId: string; source: 'poll' | 'form'; choice: string; answers?: Record<string, string | string[]> };
+  | { kind: 'response.confirmed'; messageId: string; convId: string; userId: string; source: 'poll' | 'form' | 'decision'; choice: string; answers?: Record<string, string | string[]> };
 
 export interface FlowOps {
   /** Rules for one conversation (members), the office-wide rules, or every rule (administrators). */
@@ -357,7 +357,7 @@ function trigger(raw: unknown): TriggerNode {
       return { id, kind: 'file.added', ...(ty ? { types: ty } : {}), ...(namePattern ? { namePattern } : {}) };
     }
     case 'response.confirmed': {
-      const source = t.source === 'poll' || t.source === 'form' ? t.source : 'any';
+      const source = t.source === 'poll' || t.source === 'form' || t.source === 'decision' ? t.source : 'any';
       const choice = str(t.choice, 200);
       return { id, kind: 'response.confirmed', source, ...(choice ? { choice } : {}) };
     }

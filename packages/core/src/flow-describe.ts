@@ -223,7 +223,7 @@ type Cue = [RegExp, number];
 const TRIGGER_CUES: Record<TriggerKind, Cue[]> = {
   'file.added': [[/\b(upload(s|ed|ing)?|attach(es|ed|ing|ment|ments)?|drops?|dropped|adds? a (file|pdf|drawing|document|dwg|sheet)|(shares?|shared|posts?|posted|sends?|sent|puts?) (a |an |the |any |new )*(file|pdf|drawing|document|dwg|dxf|spreadsheet|sheet|image|photo|revision)s?|new (file|pdf|drawing|document|revision)s?)\b/i, 3], [/\b(pdfs?|dwgs?|dxfs?|files?|drawings?|documents?|spreadsheets?|excel|images?|photos?|ifc|zip)\b/i, 1.2]],
   'reaction.added': [[/\breact(s|ed|ing|ion|ions)?\b/i, 3], [/\p{Extended_Pictographic}/u, 2], [/\b(thumbs?[ -]?up|tick|check ?mark|stamps?|stamped|emoji)\b/i, 1.5]],
-  'response.confirmed': [[/\b(votes?|voted|voting|poll|polls|form|forms|answers?|answered|responds?|responded|responses?|submits?|submitted|submission|picks?|picked|chooses?|chose|rsvps?)\b/i, 3]],
+  'response.confirmed': [[/\b(votes?|voted|voting|poll|polls|form|forms|answers?|answered|responds?|responded|responses?|submits?|submitted|submission|picks?|picked|chooses?|chose|rsvps?|decisions?)\b/i, 3]],
   'message.matched': [[/\b(says?|said|saying|contains?|containing|includes?|including|writes?|wrote|keywords?|words?|phrases?|matches|matching|pattern|regex|text)\b/i, 2], [/⟦q\d+⟧/, 2.5], [/⟦r\d+⟧/, 3.5]],
   'message.mentioned': [[/\b(mention(s|ed|ing)?|@-?mentions?)\b/i, 3], [/(^|\s)@[\p{L}]/u, 2], [/\btags? (me|someone|a colleague)\b/i, 1.5]],
 };
@@ -430,7 +430,7 @@ export async function draftFlow(description: string, ctx: DescribeContext, ranke
     case 'response.confirmed': {
       const q = quotesIn(triggerText, spans);
       const choice = q[0] ?? /\b(?:votes?|picks?|chooses?|answers?|selects?|says?)\s+(?:for\s+)?(yes|no|maybe|approved?|reject(?:ed)?|[A-Z][\w-]*)\b/.exec(restore(triggerText, spans))?.[1] ?? '';
-      const source = /\bpoll/i.test(triggerText) || /\bvot/i.test(triggerText) ? 'poll' : /\bform|submi/i.test(triggerText) ? 'form' : 'any';
+      const source = /\bpoll/i.test(triggerText) || /\bvot/i.test(triggerText) ? 'poll' : /\bform|submi/i.test(triggerText) ? 'form' : /\bdecision/i.test(triggerText) ? 'decision' : 'any';
       trigger = { id: 't1', kind: 'response.confirmed', source, ...(choice ? { choice } : {}) };
       break;
     }

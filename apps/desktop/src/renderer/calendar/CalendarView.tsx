@@ -13,6 +13,7 @@ import { allZones, fromZoneInput, localZone, zoneOffsetMin, setCalPrefs, timeIn,
 import './calendar.css';
 import { DAY, addDays, describeSpan, dismissSoon, hm, joinMeeting, startOfDay, startOfWeek, useCal } from './store.ts';
 import { timeOpts } from '../time.ts';
+import { onOpenRequest } from '../chat/deeplinks.ts';
 
 const HOUR_PX = 48;
 const H = 3600_000;
@@ -40,6 +41,11 @@ export function CalendarView({ session, openConv }: { session: Session; openConv
   useEffect(() => { setAnchor((a) => startOfWeek(a + 3 * DAY, prefs.firstDay)); }, [prefs.firstDay]);
   const [editing, setEditing] = useState<{ ev?: CalEvent; startAt?: number; allDay?: boolean } | null>(null);
   const [viewing, setViewing] = useState<Occurrence | null>(null);
+  // dexconnect://calendar/event/<id>: show that meeting (the hub checks it may be seen)
+  useEffect(() => onOpenRequest('event', ({ id }) => {
+    void window.dex.request('cal.get', { eventId: id }).then((event) => { setAnchor(startOfWeek(event.startAt)); setViewing({ event, startAt: event.startAt, endAt: event.endAt }); })
+      .catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
+  }), []);
   const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
   const from = mode === 'week' ? anchor : startOfDay(Date.now());
   const to = mode === 'week' ? addDays(anchor, 7) : addDays(from, 60);

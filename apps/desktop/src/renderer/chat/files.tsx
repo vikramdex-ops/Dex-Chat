@@ -70,7 +70,11 @@ export function FileActions({ f }: { f: FileInfo }) {
   );
 }
 
-export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f: FileInfo, all: FileInfo[]) => void }) {
+export function MessageFiles({ files, onView, draggableAs }: {
+  files: FileInfo[]; onView: (f: FileInfo, all: FileInfo[]) => void;
+  /** Files can be dragged into other conversations as references (see refs.tsx). */
+  draggableAs?: (f: FileInfo) => Record<string, unknown>;
+}) {
   if (!files.length) return null;
   const images = files.filter(isImage);
   const showImages = filesSupported();
@@ -82,7 +86,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
       {showImages && images.length > 0 && (
         <div className={`img-grid n${Math.min(images.length, 4)}`}>
           {images.slice(0, 4).map((f, i) => (
-            <button key={f.id} className="img-tile" onClick={() => onView(f, images)} title={f.name}>
+            <button key={f.id} className="img-tile" onClick={() => onView(f, images)} title={f.name} {...draggableAs?.(f)}>
               <FileImg f={f} lazy />
               {i === 3 && images.length > 4 && <span className="more">+{images.length - 4}</span>}
             </button>
@@ -94,7 +98,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
       {[...(showImages ? [] : images), ...others].map((f) => {
         const k = kind(f);
         return (
-          <div key={f.id} className="file-card">
+          <div key={f.id} className="file-card" {...draggableAs?.(f)}>
             <span className="file-ico" data-kind={k.icon}><Icon name={k.icon} size={18} /><span>{k.label}</span></span>
             <span className="sb-main"><span className="sb-name" title={f.name} translate="no">{f.name}</span><span className="sb-preview">{formatSize(f.size)}</span></span>
             <FileActions f={f} />

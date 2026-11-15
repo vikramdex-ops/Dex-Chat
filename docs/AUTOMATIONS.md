@@ -38,7 +38,7 @@ or mention rule cannot match it; a rule about files still can).
 | --- | --- | --- |
 | A file is attached | A new message has a file | File types (pdf, dwg, xlsx…), a name pattern (`GA-*`, or a word in the name) |
 | Someone reacts | A reaction is added to a message | The reaction (an emoji or an office emoji such as `:approved:`); only on messages written by some people |
-| A vote or form answer | Someone votes in a poll or answers a form (`response.confirmed`) | Polls, forms or both; only one choice (for a form, the answer to its first multiple-choice question) |
+| A vote, form answer or Decision | Someone votes in a poll, answers a form, or reaches the end of their path through a Decision (`response.confirmed`) | Polls, forms, Decisions or all; only one choice (for a form, the answer to its first multiple-choice question; for a Decision, the option that closed it, or the option before a written answer) |
 | A message has these words | A new message has any of the words (whole words, any capitals) or matches a regular expression | Words separated by commas, or a pattern; capitals must match |
 | Someone is mentioned | A new message mentions one of the people, or anyone in a group | People and groups |
 

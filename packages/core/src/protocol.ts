@@ -1,6 +1,7 @@
 // Wire protocol shared by the hub, the desktop app and (later) the phone web app.
 // Every frame is one JSON object with a `t` discriminator.
 import type { FlowEvents, FlowOps } from './flows.ts';
+import type { DecisionView, MessageKindOps, MessageRef } from './message-kinds.ts';
 
 import type { BotEvents, BotOps, BotFlowCard, MiniAppView } from './bots.ts';
 
@@ -370,6 +371,12 @@ export interface Message {
   botflow?: BotFlowCard | null;
   /** A tool added to the conversation. */
   miniapp?: MiniAppView | null;
+  /** A Decision: a small tree of questions each person walks on their own. */
+  decision?: DecisionView | null;
+  /** A reference to a message or file elsewhere, as this viewer may see it. */
+  ref?: MessageRef | null;
+  /** Links whose cards the author removed from this message. */
+  hiddenPreviews?: string[];
   /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
   e2e?: 'ok' | 'unverified' | 'locked';
   /** Passed straight between PCs while the hub was off (posted to the hub once it is back). */
@@ -762,7 +769,7 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 }
 
 // Request/response operations available in a session.
-export interface Ops extends FlowOps, BotOps {
+export interface Ops extends FlowOps, BotOps, MessageKindOps {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
   'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
@@ -1159,7 +1166,7 @@ export type EventName = keyof Events;
 export type LinkCardKind =
   | 'message' | 'conversation' | 'person' | 'file' | 'event' | 'task'
   | 'search' | 'workbook' | 'project' | 'component' | 'calculator' | 'tool'
-  | 'folder' | 'path'
+  | 'folder' | 'path' | 'meeting'
   | 'web' | 'video' | 'repo' | 'issue' | 'pull' | 'pdf' | 'image'
   | 'restricted' | 'unavailable';
 
@@ -1268,6 +1275,8 @@ export interface Ops {
   'links.preview': { req: { url: string }; res: LinkCard };
   /** Find or start the side-track about a link in a conversation (messageId: the message to anchor to, needed in Direct conversations). */
   'links.discuss': { req: { url: string; convId: string; messageId?: string }; res: LinkThread };
+  /** The author removes (or brings back) the card for one link in their own message. */
+  'links.hide': { req: { messageId: string; url: string; hidden: boolean }; res: Message };
   'admin.links.get': { req: void; res: LinkSettings };
   'admin.links.set': { req: Partial<LinkSettings>; res: LinkSettings };
   /** Who reacted how, and when; members of the conversation only. */

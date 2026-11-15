@@ -35,6 +35,8 @@ import { startCalendar } from './calendar/store.ts';
 import { ShareDialog, parseShare } from './views/ShareDialog.tsx';
 import { ShortcutsSheet } from './views/Shortcuts.tsx';
 import { MdPreview } from './chat/MdPreview.tsx';
+import { LinkedFiles, openFileLink } from './chat/linkcards.tsx';
+import { requestOpen } from './chat/deeplinks.ts';
 import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
@@ -305,7 +307,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   });
   // the Control room's Reports opens the reported message
   useEffect(() => {
-    const on = (e: Event) => { const d = (e as CustomEvent).detail as { convId: string; messageId: string }; if (chatState().conversations.has(d.convId)) jump(d.convId, d.messageId); else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'You are not in that conversation' })); };
+    const on = (e: Event) => { const d = (e as CustomEvent).detail as { convId: string; messageId: string; parentId?: string | null }; if (chatState().conversations.has(d.convId)) jump(d.convId, d.messageId, d.parentId); else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'You are not in that conversation' })); };
     window.addEventListener('dex-open-message', on);
     return () => window.removeEventListener('dex-open-message', on);
   });
@@ -420,32 +422,40 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     window.dex.notify('A device was added to your account', `${host} is now signed in as you. Not you? Remove it in Preferences → Your devices.`, 'dexconnect://settings');
   }), []);
 
-  useEffect(() => window.dex.onDeepLink((url) => {
-    const shareReq = parseShare(url);
-    if (shareReq) { setShare(shareReq); return; }
-    const m = url.match(/^dexconnect:\/\/([a-z]+)\/?([\w-]*)\/?([\w-]*)/i);
-    if (!m) return;
-    const target = m[1].toLowerCase();
-    if (target === 'message' && m[2]) {
-      if (conversations.has(m[2])) jump(m[2], m[3] || undefined);
-      else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'That message is in a conversation you are not part of' }));
-      return;
-    }
-    if (target === 'people' || target === 'directory') { setLens('directory'); if (m[2]) setFocusUser(m[2]); }
-    else if (target === 'admin' && isAdmin) setSheet('control');
-    else if (target === 'settings') setSheet('preferences');
-    else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
-    else if (target === 'desk') { setLens('desk'); setSheet(null); }
-    else if (target === 'calendar') { setLens('calendar'); setSheet(null); }
-    else if (target === 'recording' && m[2]) { setLens('meet'); setSheet(null); openRecording({ token: m[2] }); }
-    else if (target === 'help') { setSheet(null); openHelp(m[2] === 'desk' ? { view: 'desk' } : { view: 'me' }); }
-    else if (target === 'meet') {
-      setLens('meet'); setSheet(null);
-      const id = parseMeetingId(m[2] ?? '');
-      if (id) void joinMeeting(id, false).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
-    }
-    else setLens('pulse');
-  }), [isAdmin, conversations]);
+  // links from other apps and notifications (through the main process), and the app's own (phones)
+  useEffect(() => {
+    const route = (url: string) => {
+      const shareReq = parseShare(url);
+      if (shareReq) { setShare(shareReq); return; }
+      const m = url.match(/^dexconnect:\/\/([a-z]+)\/?([\w-]*)\/?([\w-]*)/i);
+      if (!m) return;
+      const target = m[1].toLowerCase();
+      if (target === 'message' && m[2]) {
+        if (conversations.has(m[2])) jump(m[2], m[3] || undefined);
+        else window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'That message is in a conversation you are not part of' }));
+        return;
+      }
+      if (target === 'people' || target === 'directory') { setLens('directory'); if (m[2]) setFocusUser(m[2]); }
+      else if (target === 'admin' && isAdmin) setSheet('control');
+      else if (target === 'settings') setSheet('preferences');
+      else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
+      else if (target === 'file' && m[2]) void openFileLink(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
+      else if (target === 'desk') { setLens('desk'); setSheet(null); if ((m[2] === 'task' || m[2] === 'reminder') && m[3]) requestOpen({ kind: 'task', id: m[3] }); }
+      else if (target === 'calendar') { setLens('calendar'); setSheet(null); if (m[2] === 'event' && m[3]) requestOpen({ kind: 'event', id: m[3] }); }
+      else if (target === 'recording' && m[2]) { setLens('meet'); setSheet(null); openRecording({ token: m[2] }); }
+      else if (target === 'help') { setSheet(null); openHelp(m[2] === 'desk' ? { view: 'desk' } : { view: 'me' }); }
+      else if (target === 'meet') {
+        setLens('meet'); setSheet(null);
+        const id = parseMeetingId(m[2] ?? '');
+        if (id) void joinMeeting(id, false).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
+      }
+      else setLens('pulse');
+    };
+    const onLocal = (e: Event) => route(String((e as CustomEvent).detail));
+    window.addEventListener('dex-deeplink', onLocal);
+    const off = window.dex.onDeepLink(route);
+    return () => { off(); window.removeEventListener('dex-deeplink', onLocal); };
+  }, [isAdmin, conversations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = (s: Section) => {
     if (s === 'admin') setSheet('control');
@@ -601,6 +611,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <RecordingReady />
       <MdPreview users={users} meId={session.me.id} />
       <AddToolHost />
+      <LinkedFiles />
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />

@@ -341,6 +341,7 @@ priority, with a tally board).
 | `dexconnect://file/<file id>` | A file shared in a conversation |
 | `dexconnect://calendar/event/<event id>` | A meeting on the Calendar |
 | `dexconnect://desk/task/<reminder id>` | A task (reminder) on someone's Desk |
+| `dexconnect://meet/<meeting ID>` | Joins a meeting by its ID (482-913-207), through its lobby if it has one |
 | `dexconnect://desk`, `dexconnect://calendar`, `dexconnect://settings` | Those screens |
 
 Every one of these links, the tools' own links below, and paths on the office share are shown in
@@ -365,12 +366,23 @@ can read).
 | `dexconnect://file/<id>` | `file` | Name, type, size, who shared it; a thumbnail (`preview.fileId`) for images |
 | `dexconnect://calendar/event/<id>` | `event` | Title, when, organiser, invited and going, your reply; `join` for a meeting held as a call |
 | `dexconnect://desk/task/<id>` | `task` | The task, due, open, overdue or done |
+| `dexconnect://meet/<meeting ID>` | `meeting` | Title, host, kind, whether it is running (how many people, only for people inside the meeting), lobby; `join` and `copy-path` (the meeting link). Anyone signed in may see what `meet.get` shows for an ID |
 | `sleuth://search?q=` | `search` | The search; `open-in-tool` (Sleuth) |
 | `dexterity://open/<server>/<book>?at=` | `workbook` | The workbook's name, its server and cell; `open-in-tool` (Dexterity Sheets) |
 | `projectopener://open/<id>` | `project` | The project; `open-in-tool` (Project Opener) |
 | `datum://c/<id>`, `datum://m/<module>/<calculator>` | `component`, `calculator` | `open-in-tool` (Datum) |
 | `\\server\share\…`, `file://…`, `D:\…` | `folder`, `path` | The name, the folder, the file type and server; actions `open-in-tool` (label *Open folder*, `tool: 'folder'`) and `copy-path`. The hub never reads the path. |
 | `http://`, `https://` | `web`, `video` (YouTube), `repo`, `issue`, `pull` (GitHub), `pdf`, `image` | Title, site, description, picture and icon from `og:*`, `twitter:*`, `<title>` and `<meta name="description">`; size for PDFs, dimensions for images |
+
+In the apps, the first three links of a message get cards under it (links to messages are drawn as
+a quote card in the text instead, with Reply). A card is asked for only when its message comes
+near the screen and is kept per link for the session; every card, whether loading, ready, failed
+or without access, is drawn in the same reserved box, so the timeline never moves when one
+arrives. Links in end-to-end encrypted messages only get cards when they point into the office
+(`dexconnect://`): other links are never sent to the hub. **Discuss** on a card opens its
+side-track (`links.discuss`). **Open folder** on a share or drive path goes through the PC's own
+Explorer, and only for a path written as `\\server\share\…` or `D:\…` that exists and is a folder,
+never a file or program; the PC needs access to the share as usual.
 
 Hopper has no link scheme of its own (`hopper://` only serves files inside Hopper's window), so
 office-share paths are the way to point at files Hopper manages.
@@ -406,6 +418,11 @@ office; cards then have `status: 'disabled'` and only the site's name. Guests ge
 unless `guestExternalPreviews` is on (off by default, the data-protection friendly choice).
 `allowLanHosts` lists up to 50 office-network host names (an intranet wiki) the hub may fetch.
 
+### `links.hide { messageId, url, hidden }` → `Message`
+
+The author of a message removes the card for one of its links (or brings it back), for everyone.
+The message carries `hiddenPreviews: string[]` with the links whose cards are removed. Up to 20.
+
 ### `links.discuss { url, convId, messageId? }` → `LinkThread`
 
 Opens the side-track about a link in a conversation: the same side-tracks as everywhere else
@@ -435,6 +452,8 @@ before count as added when they were made).
 - `anonymous`: for an anonymous poll only counts are given (no departments, no read counts).
 
 Every answer carries `note: 'Reactions are not approvals'`, which the app shows with the numbers.
+In the apps, **Reaction insights** is in a message's More menu and on the count at the end of its
+stamps: the numbers as small charts (and as a table), with that note always on top.
 
 ### Communication styles (in the app, no hub)
 
@@ -447,6 +466,61 @@ writes the SI symbol and a thin space after a number). It returns the new text a
 the changes the person undid put back. `opts.names` lists more names to keep, `opts.glossary` adds
 the office's own abbreviations, and `opts.courtesy: false` stops the diplomatic style adding a
 greeting and thanks.
+
+In the apps, **Restyle** in the Dock shows the five styles as stamps; the chosen one opens a sheet
+with the draft as written beside the restyled text, each change a numbered revision mark that can
+be accepted or rejected, then *Use this* or *Keep mine*. The directory's names are passed as
+`opts.names`. **Restyle a copy** in a message's More menu does the same for someone else's
+message, for the reader only (to copy). On phones the sheet comes up from the bottom.
+
+## 6. Decisions and references
+
+Two more kinds of message, with their state on the hub. Types are in
+`packages/core/src/message-kinds.ts`.
+
+### Decisions
+
+A question whose options either close ("Approved", with an optional closing note) or lead to a
+follow-up step: another question with options, or a written answer (which always ends the path).
+At most 4 steps deep, 6 options a step and 24 steps in all; labels up to 80 characters, questions
+up to 300, notes up to 500, written answers up to 1,000. Every member of the conversation walks
+their own path. Guests can answer but not start one.
+
+| Operation | What it does |
+| --- | --- |
+| `decision.create { convId, parentId?, clientId?, root }` → `Message` | Posts the Decision. `root` is `{ prompt, kind: 'choice', options: [{ label, note?, next? }] }`; `next` is the follow-up step (`kind: 'choice'` or `'text'`). The hub checks the tree and gives every step an id (`s1`, `s2`…) and every option one (`s1.1`, `s1.2`…). The message's text is `Decision: <question>` for notifications and search |
+| `decision.answer { messageId, stepId, optionId?, text? }` → `Message` | Answers the step in front of you: an option, or the text for a written step |
+| `decision.reset { messageId }` → `Message` | Starts your own path again |
+| `decision.close { messageId }` → `Message` | The author (or an administrator) stops further answers |
+| `decision.results { messageId }` → `DecisionResults` | The author (or an administrator): the tree, everyone's path and outcome, who has not started, and how many picked each option |
+
+`Message.decision` is the Decision as each person sees it: the question, their path (`trail`),
+the step in front of them (`current`; later steps stay hidden until they are reached), whether they
+reached an end, its `outcome` and closing `note`, how many started and finished, and, for its
+author only, the whole `tree`. When someone reaches an end the hub emits `response.confirmed` with
+`source: 'decision'`, `choice` (the closing option, or the option before a written answer) and
+`answers: { path, answer? }`, so Automations react as they do to polls and forms.
+
+### References
+
+Dragging a message or a file into another conversation (or **Reference in…** in a message's menu)
+posts a reference: a pointer, not a copy. Like a forward it is a message (its `ref` is stored with
+it), but what it points at is worked out for each person as they look.
+
+| Operation | What it does |
+| --- | --- |
+| `refs.send { convId, parentId?, clientId?, target }` → `Message` | Posts a reference. `target` is `{ convId, messageId }` or `{ fileId }`. Only someone who can open the source may reference it, and only into a conversation they are in (not the source's own). A reference to a reference points at the original. The message's text is *Shared a reference* |
+| `refs.check { convId, target }` → `{ members, without }` | Before posting: how many people in the conversation (integrations left out) could not open the source. Only a count |
+| `refs.resolve { messageId }` → `MessageRef` | A reference message, resolved for the person asking |
+
+`Message.ref` (a `MessageRef`) gives everyone `kind` and `authorId`. People who may open the source
+(members of its conversation; for a file, anyone the file store lets open it) also get where it is
+(`convId`, `messageId`, the Space's name), the message itself (its text, encrypted for Direct
+conversations and opened by the app as usual) or the file's details, and `gone` if it was deleted.
+Everyone else sees only that it exists, *From a conversation you're not in*, with the author's
+name. A file reference is the same file id: it is never linked to the new conversation, so opening
+it is checked against the conversations it was really shared in. Forwarding a reference forwards
+the pointer; a reference cannot be edited.
 
 ## What each tool does today
 

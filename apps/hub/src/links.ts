@@ -14,7 +14,8 @@ import net from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { isSealed } from '@dex/core/e2e';
-import type { CalEvent, FileInfo, LinkAction, LinkCard, LinkCardMeta, LinkSettings, LinkThread, Message, PublicUser } from '@dex/core';
+import { formatMeetingId } from '@dex/core';
+import type { CalEvent, FileInfo, LinkAction, LinkCard, LinkCardMeta, LinkSettings, LinkThread, MeetingInfo, Message, PublicUser } from '@dex/core';
 import type { FileStore } from './files.ts';
 import type { Messaging } from './messaging.ts';
 import type { Store } from './store.ts';
@@ -447,6 +448,8 @@ export interface LinkDeps {
   event: (viewer: PublicUser, eventId: string) => CalEvent | null;
   /** People this viewer may see (guests see only people they share a Space with). */
   visibleUsers: (viewer: PublicUser) => PublicUser[];
+  /** A meeting by its nine-digit ID, as meet.get shows it, and whether the viewer is inside it. */
+  meeting?: (viewer: PublicUser, id: string) => { info: MeetingInfo; insider: boolean } | null;
 }
 
 interface CacheRow { card: string; fetched_at: number; ok: number }
@@ -466,7 +469,15 @@ export class Links {
     this.db.exec(`CREATE TABLE IF NOT EXISTS link_cache (url_hash TEXT PRIMARY KEY, url TEXT NOT NULL, card TEXT NOT NULL, ok INTEGER NOT NULL, fetched_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_link_cache_at ON link_cache(fetched_at);
       CREATE TABLE IF NOT EXISTS link_threads (conv_id TEXT NOT NULL, url_hash TEXT NOT NULL, url TEXT NOT NULL, root_message_id TEXT NOT NULL,
-        created_by TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conv_id, url_hash));`);
+        created_by TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conv_id, url_hash));
+      CREATE TABLE IF NOT EXISTS link_hidden (message_id TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY (message_id, url));`);
+    // cards the author removed from their message are left out for everyone
+    deps.messaging.viewExtras.push((r) => {
+      if (r.deleted) return {};
+      const hidden = (this.db.prepare('SELECT url FROM link_hidden WHERE message_id = ?').all(r.id) as Array<{ url: string }>).map((x) => x.url);
+      return hidden.length ? { hiddenPreviews: hidden } : {};
+    });
+    deps.messaging.purgeExtras.push((id) => { this.db.prepare('DELETE FROM link_hidden WHERE message_id = ?').run(id); });
   }
 
   // ---------------------------------------------------------------- settings
@@ -498,6 +509,23 @@ export class Links {
         return this.preview(url, me);
       }
       case 'links.discuss': return this.discuss(me, d);
+      case 'links.hide': {
+        const msg = typeof d.messageId === 'string' ? this.deps.messaging.row(d.messageId) : undefined;
+        if (!msg || msg.deleted || !this.deps.messaging.isMember(msg.conv_id, me.id)) throw new LinkError('Message not found.');
+        if (msg.author_id !== me.id) throw new LinkError('Only the person who wrote the message can remove its link cards.');
+        const url = typeof d.url === 'string' ? d.url.trim() : '';
+        if (!url || url.length > MAX_URL) throw new LinkError('Give the link whose card to remove.');
+        if (d.hidden === false) this.db.prepare('DELETE FROM link_hidden WHERE message_id = ? AND url = ?').run(msg.id, url);
+        else {
+          const n = (this.db.prepare('SELECT COUNT(*) AS n FROM link_hidden WHERE message_id = ?').get(msg.id) as { n: number }).n;
+          if (n >= 20) throw new LinkError('This message already has 20 link cards removed.');
+          this.db.prepare('INSERT OR IGNORE INTO link_hidden (message_id, url) VALUES (?, ?)').run(msg.id, url);
+        }
+        this.deps.messaging.pushUpdate(msg.id);
+        const view = this.deps.messaging.messageFor(msg.id, me.id);
+        if (!view) throw new LinkError('Message not found.');
+        return view;
+      }
       case 'admin.links.get': {
         if (!isAdmin) throw new LinkError('Only administrators can do that.');
         return this.settings();
@@ -555,6 +583,7 @@ export class Links {
       if ((target === 'event' || target === 'meeting') && parts[0]) return this.eventCard(url, me, parts[0], names);
       if (target === 'desk' && (parts[0] === 'task' || parts[0] === 'reminder') && parts[1]) return this.taskCard(url, me, parts[1], names);
       if ((target === 'task' || target === 'reminder') && parts[0]) return this.taskCard(url, me, parts[0], names);
+      if (target === 'meet' && parts[0]) return this.meetingCard(url, me, parts[0], names);
     } catch { return restricted(url); }
     const screens: Record<string, string> = { desk: 'Your Desk', calendar: 'Calendar', settings: 'Preferences', admin: 'Control room' };
     if (screens[target] && !parts.length) {
@@ -679,6 +708,25 @@ export class Links {
       url, kind: 'task', title: r.text.slice(0, 200), subtitle: r.user_id === me.id ? 'On your Desk' : `For ${names.get(r.user_id) ?? 'someone'}`, meta: rows,
       preview: null, actions: [action('open', 'Open', `dexconnect://desk/task/${r.id}`)],
       ref: { taskId: r.id, ...(r.conv_id ? { convId: r.conv_id } : {}), ...(r.message_id ? { messageId: r.message_id } : {}) }, fetchedAt: Date.now(),
+    };
+  }
+
+  /** dexconnect://meet/482-913-207: what meet.get shows anyone with the ID; who is in it only for people inside the meeting. */
+  private meetingCard(url: string, me: PublicUser, rawId: string, names: Map<string, string>): LinkCard {
+    const id = rawId.replace(/[\s-]/g, '');
+    if (!/^\d{9}$/.test(id) || !this.deps.meeting) return restricted(url);
+    const found = this.deps.meeting(me, id);
+    if (!found) return restricted(url);
+    const m = found.info;
+    const kinds: Record<string, string> = { instant: 'Instant meeting', personal: 'Personal room', conversation: 'A conversation’s Room', event: 'Calendar meeting' };
+    const rows: LinkCardMeta[] = [meta('author', 'Host', names.get(m.hostId) ?? 'Someone', m.hostId), meta('type', 'Kind', kinds[m.kind] ?? 'Meeting')];
+    if (m.live) rows.push(meta('status', 'Status', found.insider ? `In progress · ${m.live.participants} ${m.live.participants === 1 ? 'person' : 'people'}` : 'In progress', m.live.participants));
+    else rows.push(meta('status', 'Status', 'Not started'));
+    if (m.settings.lobby !== 'off') rows.push(meta('location', 'Lobby', m.settings.lobby === 'everyone' ? 'Everyone waits to be let in' : 'People from outside wait to be let in'));
+    return {
+      url, kind: 'meeting', title: m.title || 'Meeting', subtitle: `Meeting ${formatMeetingId(m.id)}`, meta: rows, preview: null,
+      actions: [action('join', m.live ? 'Join the meeting' : 'Start or join', m.link), action('copy-path', 'Copy meeting link', m.link)],
+      ref: { ...(found.insider && m.convId ? { convId: m.convId } : {}), ...(found.insider && m.eventId ? { eventId: m.eventId } : {}) }, fetchedAt: Date.now(),
     };
   }
 

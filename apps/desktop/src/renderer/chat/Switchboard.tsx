@@ -11,6 +11,7 @@ import { timeOpts } from '../time.ts';
 import { CONV_DRAG, openBeside, openInPane, usePanes } from './panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, nextMonday, todayAt } from './officeTime.ts';
 import { LoungeSection } from '../lounges/Lounges.tsx';
+import { RefDropRow } from './refs.tsx';
 
 export type Chip = 'all' | 'people' | 'spaces' | 'projects';
 export const CHIPS: Array<{ id: Chip; label: string; icon: IconName }> = [
@@ -192,7 +193,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     const at = panes.ids.indexOf(c.id);
     const state = c.id === focusId ? ' active' : at >= 0 ? ' open' : '';
     return (
-      <div key={c.id} className="sb-row-wrap">
+      <RefDropRow key={c.id} convId={c.id} className="sb-row-wrap">
         <button role="listitem" className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
           draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
           onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
@@ -211,7 +212,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
           {c.mentions > 0 ? <span className="badge" aria-label={`${c.mentions} for you`}>{c.mentions}</span> : c.pinnedAt && !folded ? <Icon name="pin" size={11} className="sb-pin" /> : null}
         </button>
         {!folded && <button className="sb-more" aria-label={`Options for ${title}`} title="Options" onClick={(e) => setMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="chevron" size={14} /></button>}
-      </div>
+      </RefDropRow>
     );
   };
 

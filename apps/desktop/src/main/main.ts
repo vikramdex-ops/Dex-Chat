@@ -14,6 +14,7 @@ import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
 import { guardFrames, handleMiniAppScheme } from './miniapps.ts';
+import { checkFolder } from './folders.ts';
 import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 import { appLog } from './applog.ts';
@@ -289,6 +290,12 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('tools:open', (_e, url: string) => wrap(async () => {
     if (String(url).startsWith('dexconnect://')) { routeDeepLink(String(url)); return; }
     await openToolLink(String(url));
+  }));
+  // Open folder on a link card: a share or drive folder that exists, never a file or program
+  ipcMain.handle('shell:openFolder', (_e, p: unknown) => wrap(async () => {
+    const folder = await checkFolder(p);
+    const err = await shell.openPath(folder);
+    if (err) throw new Error(err);
   }));
   ipcMain.handle('file:stat', (_e, p: string) => wrap(async () => {
     const full = path.resolve(String(p));
