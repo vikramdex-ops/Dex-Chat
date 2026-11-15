@@ -74,7 +74,8 @@
 }
 @media (prefers-reduced-motion: reduce) { .recap-card, .ap-strip { transition: none; } }
 /* in a narrow column (the Register, the recap): ref, status and edit on the first line, owner and due below */
-.ap-strip.compact > .ap-box, .ap-strip.compact > .ap-ref, .ap-strip.compact > .tag { order: 0; }
+.ap-strip.compact > .ap-box, .ap-strip.compact > .ap-ref, .ap-strip.compact > .tag, .ap-strip.compact > .ap-title { order: 0; }
+.ap-strip > .ap-title { flex: 1 1 200px; min-width: 0; font-weight: 600; font-size: 13px; overflow-wrap: anywhere; border-right: 0; }
 .ap-strip.compact > .ap-status { order: 1; margin-left: auto; border-left: 1px solid var(--stroke); }
 .ap-strip.compact > .ap-edit { order: 2; margin-left: 0; }
 .ap-strip.compact::before { content: ''; order: 3; flex-basis: 100%; height: 0; }

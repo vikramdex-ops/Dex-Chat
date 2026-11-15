@@ -136,7 +136,7 @@ export function ActionPreview({ draft, pool, meId, next, onPick, busy }: { draft
 export const actionWords = (text: string): string | null => actionTrigger(text);
 
 // ------------------------------------------------------------------ the register entry on a message
-export function ApStrip({ ap, users, meId, compact }: { ap: ActionPoint; users: Map<string, PublicUser>; meId: string; compact?: boolean }) {
+export function ApStrip({ ap, users, meId, compact, title }: { ap: ActionPoint; users: Map<string, PublicUser>; meId: string; compact?: boolean; /** The point itself, drawn in the strip's top row (the recap). */ title?: React.ReactNode }) {
   const toast = useToast();
   const [edit, setEdit] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
@@ -151,6 +151,7 @@ export function ApStrip({ ap, users, meId, compact }: { ap: ActionPoint; users: 
         {done && <Icon name="check" size={13} />}
       </button>
       <span className="ap-ref mono">{apRef(ap.n)}</span>
+      {title !== undefined && <span className="ap-title">{title}</span>}
       {ap.carried && <span className="tag mono">BROUGHT FORWARD</span>}
       <span className="ap-cell"><span className="cap mono">OWNER</span><span className="ap-val" translate={ap.ownerId || ap.ownerName ? 'no' : undefined}>{owner}</span></span>
       <span className="ap-cell"><span className="cap mono">DUE</span><span className="ap-val">{ap.due ? dueLabel(ap.due) : '—'}</span></span>

@@ -117,8 +117,8 @@ export default function RecapSheet({ occurrenceId, users, meId, onClose, jump }:
                 <div className="recap-aps">
                   {r.actions.map((a) => (
                     <div key={a.id} className="recap-ap">
-                      <div className="recap-ap-text" translate="no">{a.text || <span className="faint"><Icon name="lock" size={12} /> End-to-end encrypted: open it in the thread</span>}</div>
-                      <ApStrip ap={a} users={users} meId={meId} compact />
+                      <ApStrip ap={a} users={users} meId={meId} compact
+                        title={a.text ? <span translate="no">{a.text}</span> : <span className="faint"><Icon name="lock" size={12} /> End-to-end encrypted: open it in the thread</span>} />
                       {r.viewer.member && <button className="link sm" onClick={() => jump(a.convId, a.messageId)}>In the thread</button>}
                     </div>
                   ))}
