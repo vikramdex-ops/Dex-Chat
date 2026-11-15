@@ -58,6 +58,7 @@ import { ReactionInsights, InsightError } from './reactions.ts';
 import { Decisions, DecisionError } from './decisions.ts';
 import { Refs, RefError } from './refs.ts';
 import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
+import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 
 export const HUB_VERSION = '0.1.0';
@@ -160,6 +161,7 @@ export class Hub {
   readonly decisions: Decisions;
   readonly refs: Refs;
   readonly backups: Backups;
+  readonly offboarding: Offboarding;
   readonly feeds: CalendarFeeds;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
@@ -346,7 +348,7 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     this.reports.webinarFor = (meetingId) => this.webinars.reportFor(meetingId);
-    // keeping the office going: backups and calendar feeds (backup.ts, calfeed.ts)
+    // keeping the office going: backups, offboarding and calendar feeds (backup.ts, offboard.ts, calfeed.ts)
     this.feeds = new CalendarFeeds({
       db: this.store.db, hubId: () => this.info.id, office: () => this.info.name,
       userById: (uid) => this.store.userById(uid),
@@ -365,6 +367,12 @@ export class Hub {
       changed: (status) => this.emit('admin.backup', status, (c) => this.isAdminConn(c)),
       audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
       log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.offboarding = new Offboarding({
+      store: this.store, messaging: this.messaging, calendar: this.calendar, helpdesk: this.helpdesk, feeds: this.feeds, system: this.system,
+      signOut: (uid, reason) => this.signOut(uid, reason),
+      broadcast: (name, data, adminsOnly) => this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined),
+      active: (uid) => this.canSignIn(uid),
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
     // databases from before messaging existed: create the Office space and add everyone
@@ -401,9 +409,19 @@ export class Hub {
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
   }
 
-  /** Has an approved device: can use Dexterity Connect now. */
+  /** Has an approved device and has not left the office: can use Dexterity Connect now. */
   private canSignIn(userId: string): boolean {
-    return !!this.store.db.prepare(`SELECT 1 FROM devices WHERE user_id = ? AND status = 'approved' LIMIT 1`).get(userId);
+    return !!this.store.db.prepare(`SELECT 1 FROM devices WHERE user_id = ? AND status = 'approved' LIMIT 1`).get(userId) && !this.offboarding.hasLeft(userId);
+  }
+
+  /** Close every connection of a person at once, and the file links their sessions handed out. */
+  private signOut(userId: string, reason: string): void {
+    for (const c of [...this.conns]) {
+      if (c.userId !== userId) continue;
+      this.send(c, { t: 'rejected', reason });
+      c.ws.close();
+    }
+    for (const [t, u] of this.fileTokens) if (u === userId) this.fileTokens.delete(t);
   }
 
   /** An event to one device: an app's connection, or a browser guest or attendee through the gateway. */
@@ -789,7 +807,8 @@ export class Hub {
       this.store.touchDevice(conn.deviceId);
       if (conn.userId && ![...this.conns].some((c) => c.ready && c.userId === conn.userId)) {
         const u = this.store.userById(conn.userId);
-        if (u) this.emit('user.updated', u);
+        // someone offboarded is not put back in colleagues' lists as they are signed out
+        if (u && !u.leftAt) this.emit('user.updated', u);
       }
     }
   }
@@ -868,6 +887,11 @@ export class Hub {
     // a guest invite approves a new person straight away, as a guest
     let invite: ReturnType<Guests['check']> | null = null;
     if (!first && typeof frame.invite === 'string' && frame.invite.trim() && (!user || user.role === 'guest')) {
+      if (user && this.offboarding.hasLeft(user.id)) {
+        this.send(conn, { t: 'rejected', reason: 'This account has left the office. Ask an administrator if you need access again.' });
+        conn.ws.close();
+        return;
+      }
       invite = this.guests.check(frame.invite.slice(0, 40));
       if ('error' in invite) {
         this.send(conn, { t: 'rejected', reason: invite.error });
@@ -1112,6 +1136,7 @@ export class Hub {
         if (!device) throw new OpError('Device not found.');
         if (device.status !== 'pending') throw new OpError('That device was already handled.');
         const approve = d.approve === true;
+        if (approve && this.offboarding.hasLeft(device.userId)) throw new OpError(`${device.displayName} has left the office. Give them access again first: Control room ▸ Backups & leavers.`);
         const wasActive = this.store.activeUsers().some((u) => u.id === device.userId);
         const updated = this.store.setDeviceStatus(device.id, approve ? 'approved' : 'rejected', me.id);
         this.store.audit(me.id, approve ? 'device.approved' : 'device.rejected', device.id, { account: device.account });
@@ -1595,7 +1620,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(admin\.backup\.(get|set|run)|cal\.feed\.(get|set|reset))$/.test(op)) {
+        if (typeof op === 'string' && /^(admin\.backup\.(get|set|run)|admin\.offboard\.(preview|run|list|reactivate)|directory\.left|cal\.feed\.(get|set|reset))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             if (op.startsWith('admin.backup.')) {
@@ -1607,10 +1632,10 @@ export class Hub {
               }
               return this.backups.status();
             }
-            const result = this.feeds.handle(op, me, d);
+            const result = op.startsWith('cal.feed.') ? this.feeds.handle(op, me, d) : this.offboarding.handle(op, me, d);
             if (result !== undefined) return result;
           } catch (err) {
-            if (err instanceof BackupFailure || err instanceof CalFeedError) throw new OpError(err.message);
+            if (err instanceof BackupFailure || err instanceof OffboardError || err instanceof CalFeedError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }
