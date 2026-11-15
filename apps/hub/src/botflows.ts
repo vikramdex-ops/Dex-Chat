@@ -26,6 +26,7 @@ import { MsgError } from './messaging.ts';
 import type { Messaging, MsgRow } from './messaging.ts';
 import type { Store } from './store.ts';
 import { BUILTIN_FLOWS, FRONT_OFFICE_ACCOUNT, FRONT_OFFICE_NAME } from './botflows-builtin.ts';
+import { BotItems } from './botitems.ts';
 
 export class BotFlowsError extends Error {
   readonly status: number;
@@ -135,7 +136,13 @@ interface FlowRow {
   owner_id: string | null; scope: BotScope; space_id: string | null; status: BotStatus; version: number; requested: 'office' | null; pending_version: number | null; review: string | null;
 }
 interface CardRow { client_id: string; bot_id: string; session_id: string | null; kind: BotFlowCard['kind']; step: string | null; data: string; message_id: string | null; created_at: number }
-type CardData = Partial<Pick<BotFlowCard, 'title' | 'stepNo' | 'stepCount' | 'prompt' | 'input' | 'answer' | 'previous' | 'canBack' | 'flows' | 'lines' | 'notes' | 'requesterId' | 'persona' | 'intro' | 'lastTime' | 'lastTimeWords'>> & { ownerId?: string };
+type CardData = Partial<Pick<BotFlowCard, 'title' | 'stepNo' | 'stepCount' | 'prompt' | 'input' | 'answer' | 'previous' | 'canBack' | 'flows' | 'lines' | 'notes' | 'requesterId' | 'persona' | 'intro' | 'lastTime' | 'lastTimeWords' | 'suggested' | 'suggestedWhy'>> & {
+  ownerId?: string;
+  /** A tracked request's cards (and the done card of a tracked bot): the request they follow. */
+  itemId?: string;
+  /** A register card: the bot, what it lists, and for whom. */
+  flow?: string; mode?: 'all' | 'mine' | 'team'; itemIds?: string[]; space?: boolean;
+};
 
 function parse<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;
@@ -167,6 +174,11 @@ export class BotFlows {
   resumeAfterMs = 2 * 60_000;
   /** Answers to cards are given one at a time per session. */
   private readonly busy = new Set<string>();
+  /** The clock for tracked requests (reminders, registers, due dates); tests move it. */
+  now: () => number = () => Date.now();
+  /** Requests a tracked bot carries on after they are sent. */
+  readonly items: BotItems;
+  private itemsTickedAt = 0;
 
   constructor(deps: BotFlowsDeps) {
     this.d = deps;
@@ -176,6 +188,19 @@ export class BotFlows {
       if (!(this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
     }
     this.seed();
+    this.items = new BotItems({
+      db: this.db, store: deps.store, messaging: deps.messaging, desk: deps.desk, log: deps.log, now: () => this.now(),
+      flowOf: (flow, version) => {
+        const u = this.usable(flow);
+        if (!u) return null;
+        const def = version && version !== (u.row.version ?? 1) ? this.versionDef(flow, version) ?? u.def : u.def;
+        return { def, bot: u.bot, ownerId: u.row.owner_id ?? null };
+      },
+      postCard: (bot, convId, body, kind, data) => this.postCard(bot, convId, body, kind, null, null, data as CardData),
+      refreshCard: (clientId) => this.refreshCard(clientId),
+      dm: (bot, userId) => this.dm(bot, userId),
+      say: (bot, convId, text) => this.say(bot, convId, text),
+    });
   }
 
   // ------------------------------------------------------------ built-in flows
@@ -306,6 +331,15 @@ export class BotFlows {
     const c = this.db.prepare('SELECT * FROM bot_cards WHERE client_id = ? AND bot_id = ?').get(r.client_id, r.author_id) as CardRow | undefined;
     if (!c) return {};
     const data = parse<CardData>(c.data, {});
+    if (c.kind === 'track' || c.kind === 'register' || (c.kind === 'done' && data.itemId)) {
+      // a tracked request's card is drawn from the request as it is now
+      const live = this.items.cardView(c.client_id, data);
+      return { botflow: {
+        kind: c.kind, botId: c.bot_id, sessionId: c.session_id, ownerId: data.ownerId ?? null, title: data.title ?? '', state: c.kind === 'done' ? 'done' : 'active',
+        ...(data.persona ? { persona: data.persona } : {}), ...(data.prompt !== undefined ? { prompt: data.prompt } : {}),
+        ...(data.lines ? { lines: data.lines } : {}), ...(data.notes ? { notes: data.notes } : {}), ...(live ?? {}),
+      } };
+    }
     const s = c.session_id ? this.row(c.session_id) : null;
     let state: BotFlowCard['state'] = 'done';
     if (c.kind === 'step' || c.kind === 'resume') {
@@ -320,6 +354,7 @@ export class BotFlows {
       ...(data.persona ? { persona: data.persona } : {}),
       ...(data.intro ? { intro: data.intro } : {}),
       ...(data.lastTime && state === 'active' ? { lastTime: data.lastTime, lastTimeWords: data.lastTimeWords ?? '' } : {}),
+      ...(data.suggested && state === 'active' ? { suggested: data.suggested, suggestedWhy: data.suggestedWhy ?? 'lead' } : {}),
       ...(c.step ? { stepId: c.step } : {}),
       ...(data.stepNo !== undefined ? { stepNo: data.stepNo } : {}),
       ...(data.stepCount !== undefined ? { stepCount: data.stepCount } : {}),
@@ -411,10 +446,27 @@ export class BotFlows {
     try { return checkAnswer(step, r.value, this.answerContext(who, def)); } catch { return null; }
   }
 
+  /** Defaults from the office's records for a step: the person's lead, job numbers from their Spaces. */
+  private officeDefaults(s: S, def: BotFlowDefinition): { suggested: BotFlowAnswer | null; jobs: string[] } {
+    const step = stepById(def, s.step);
+    let suggested: BotFlowAnswer | null = null;
+    let jobs: string[] = [];
+    if (step?.input.suggest === 'lead') {
+      const lead = this.items.leadOf(s.userId);
+      if (lead) suggested = { value: lead.id, label: lead.displayName };
+    }
+    if (step?.input.suggest === 'jobs') {
+      const names = this.db.prepare("SELECT c.name FROM conversations c JOIN conv_members m ON m.conv_id = c.id WHERE m.user_id = ? AND c.kind = 'space' AND c.name IS NOT NULL LIMIT 300").all(s.userId) as Array<{ name: string }>;
+      const re = /\b([A-Z]{1,4}-?\d{3,6})\b/;
+      jobs = [...new Set(names.map((n) => re.exec(n.name)?.[1]).filter((x): x is string => !!x))].sort().slice(0, 4);
+    }
+    return { suggested, jobs };
+  }
+
   private postStep(s: S, def: BotFlowDefinition, bot: PublicUser, fresh = false): void {
     let data;
     try {
-      data = stepCard(def, { step: s.step, history: s.history, answers: s.answers, vars: s.vars as BotFlowVars }, { fresh, lastTime: this.lastTime(s, def, null) });
+      data = stepCard(def, { step: s.step, history: s.history, answers: s.answers, vars: s.vars as BotFlowVars }, { fresh, lastTime: this.lastTime(s, def, null), ...this.officeDefaults(s, def) });
     } catch (err) { throw new BotFlowsError((err as Error).message); }
     this.postCard(bot, s.convId, data.prompt, 'step', s.id, s.step, data, [], s);
   }
@@ -686,6 +738,19 @@ export class BotFlows {
         this.d.log('warn', 'flow action failed', { flow: def.name, action: a.do, error: (err as Error).message });
       }
     }
+    // a tracked bot: the request lives on, and the done card follows it
+    let itemId: string | null = null;
+    if (def.track && s.flow) {
+      try {
+        const owner = this.flowRow(s.flow)?.owner_id ?? null;
+        const item = this.items.create(def, s.flowVersion, bot, owner, me, vars, lines);
+        itemId = item.id;
+        notes.push(...this.items.notesFor(def, item));
+      } catch (err) {
+        notes.push(`It could not be tracked: ${(err as Error).message}`);
+        this.d.log('warn', 'tracked request not created', { flow: def.name, error: (err as Error).message });
+      }
+    }
     s.status = 'done';
     s.step = null;
     this.save(s);
@@ -698,7 +763,8 @@ export class BotFlows {
       }
     }
     const done = doneLine(def, vars, summary);
-    this.postCard(bot, s.convId, done, 'done', s.id, null, { title: def.title, lines, notes, prompt: done, ...(def.persona ? { persona: { mark: def.persona.mark, colour: def.persona.colour } } : {}) });
+    const doneCard = this.postCard(bot, s.convId, done, 'done', s.id, null, { title: def.title, lines, notes, prompt: done, ...(itemId ? { itemId, ownerId: me.id } : {}), ...(def.persona ? { persona: { mark: def.persona.mark, colour: def.persona.colour } } : {}) });
+    if (itemId) this.items.attachRequesterCard(doneCard, { id: itemId, flow: def.name, requesterId: me.id }, s.convId);
     this.refreshCard(s.card);
     this.d.store.audit(me.id, 'botflow.completed', s.id, { flow: def.name });
   }
@@ -851,6 +917,13 @@ export class BotFlows {
       return;
     }
     const t = text.toLowerCase().replace(/^\//, '');
+    // a tracked bot's register, on asking
+    const tracked = flows.find(({ def }) => def.track);
+    if (tracked && /^(register|status|open|list|queue|who has one)$/.test(t)) {
+      const v = this.items.register(tracked.def.name, author.id, 'all');
+      if (v) this.items.postRegister(bot, tracked.def, convId, author.id, 'all', v.counts.open === 1 ? `${tracked.def.title}: 1 open request.` : `${tracked.def.title}: ${v.counts.open} open requests.`);
+      return;
+    }
     const hit = flows.find(({ def }) => [def.name, def.command ?? '', def.title.toLowerCase(), ...(def.keywords ?? [])].filter((k) => k.length > 1)
       .some((k) => t === k || new RegExp(`(^|\\W)${escapeRe(k)}($|\\W)`, 'i').test(t)));
     if (hit) { await this.start(author, hit.def.name, null).catch((e: Error) => this.say(bot, convId, e.message)); return; }
@@ -893,8 +966,20 @@ export class BotFlows {
   tick(now = Date.now()): void {
     const due = this.db.prepare("SELECT * FROM bot_sessions WHERE status = 'active' AND expires_at <= ? LIMIT 200").all(now) as unknown as SessionRow[];
     for (const r of due.map(toS)) this.end(r, 'expired');
+    // tracked requests: reminders, passing up, and the registers of the day (once a minute is plenty)
+    if (now - this.itemsTickedAt >= 60_000 || now < this.itemsTickedAt) { this.itemsTickedAt = now; this.tickItems(now); }
     // finished conversations are kept half a year for integrations to read back
     this.db.prepare("DELETE FROM bot_sessions WHERE status != 'active' AND updated_at < ?").run(now - 180 * DAY);
+  }
+
+  /** Reminders and scheduled registers of tracked bots (on the hub timer; tests call it with their clock). */
+  tickItems(now = this.now()): void {
+    try { this.items.tick(now); } catch (err) { this.d.log('warn', 'tracked requests timer failed', { error: (err as Error).message }); }
+    const live = (this.db.prepare("SELECT * FROM bot_flows WHERE enabled = 1 AND status = 'live'").all() as unknown as FlowRow[])
+      .map((r) => ({ r, def: parse<BotFlowDefinition | null>(r.def, null) }))
+      .filter((x) => !!x.def?.track?.register?.at && this.d.store.botActive(x.r.bot_id))
+      .map(({ r, def }) => ({ def: def!, bot: this.d.store.userById(r.bot_id)!, ownerId: r.owner_id ?? null })).filter((x) => !!x.bot);
+    if (live.length) this.items.tickRegisters(now, live);
   }
 
   // ------------------------------------------------------------ slash commands
@@ -1152,6 +1237,19 @@ export class BotFlows {
         const mine = r && r.source === 'member' && r.owner_id === me.id;
         if (!r || (!mine && (!this.usable(r.name) || !this.canUse(r, me)))) throw new BotFlowsError('That bot was not found.', 404);
         return { definition: mine ? this.latest(r) : parse<BotFlowDefinition>(r.def, { name: r.name, title: r.name, steps: [], finish: [] }) } satisfies Ops['botflow.definition']['res'];
+      }
+      case 'botflow.act': case 'botflow.tick': case 'botflow.withdraw': case 'botflow.takeover': case 'botflow.item':
+        if (me.role === 'bot') throw new BotFlowsError('Integrations cannot act on requests.', 403);
+        try { return this.items.handle(op, me, d); } catch (err) { if (err instanceof BotFlowError) throw new BotFlowsError(err.message); throw err; }
+      case 'botflow.register': {
+        const u = this.usable(String(d.flow ?? ''));
+        if (!u || !u.def.track || !this.canUse(u.row, me)) throw new BotFlowsError('That bot was not found.', 404);
+        const register = this.items.register(u.def.name, me.id, 'all');
+        if (!register) throw new BotFlowsError('That bot was not found.', 404);
+        if (d.post !== true) return { register } satisfies Ops['botflow.register']['res'];
+        const convId = this.dm(u.bot, me.id);
+        this.items.postRegister(u.bot, u.def, convId, me.id, 'all', register.counts.open === 1 ? `${u.def.title}: 1 open request.` : `${u.def.title}: ${register.counts.open} open requests.`);
+        return { register, convId } satisfies Ops['botflow.register']['res'];
       }
       case 'botflow.forget':
         this.db.prepare('DELETE FROM bot_memory WHERE flow = ? AND user_id = ?').run(String(d.name ?? ''), me.id);
