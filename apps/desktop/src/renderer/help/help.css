@@ -95,7 +95,9 @@
 /* ------------------------------------------------------------------ Help me */
 .hm-form, .hm-sent { display: grid; gap: 14px; width: 100%; }
 .label-like { font-size: 13px; font-weight: 600; color: var(--text-2); }
-.hm-warn { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: var(--radius-m); background: var(--amber-soft); color: var(--amber-ink); font-size: 13px; }
+/* a fact about the desk, not something live: a ruled note in ink, not amber */
+.hm-warn { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent); border-radius: var(--radius-s); background: var(--layer-solid); color: var(--text-2); font-size: 13px; }
+.hm-warn svg { color: var(--accent-ink); flex: none; margin-top: 2px; }
 .hm-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); border-top: 1px solid var(--stroke-strong); border-left: 1px solid var(--stroke-strong); }
 .hm-cat {
   display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 8px; row-gap: 1px; align-items: center; text-align: left;

@@ -105,7 +105,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
         )}
       </section>
 
-      <div className="grid cols-3">
+      <div className="grid cols-3 pulse-sheet">
         <MeetPulseCard onOpen={() => go('meet')} />
         <DayLogCard users={session.users} meId={session.me.id} onPerson={onPerson} />
         <NextMeeting meId={session.me.id} onOpen={() => go('calendar')} />

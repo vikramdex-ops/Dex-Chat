@@ -51,6 +51,8 @@ import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/Assist
 import { timeOpts } from './time.ts';
 import { tr } from './i18n/index.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
+// last: the drawing-office layer decides the shape of the shared controls (after every screen's own sheet)
+import './drawing.css';
 
 // the Control room is used by a few people now and then: load it when opened
 const Admin = lazy(() => import('./views/Admin.tsx').then((m) => ({ default: m.Admin })));

@@ -41,11 +41,13 @@ const PATHS = {
   play: 'M7 5v14l11-7z',
   open: 'M14 4.5h5.5V10M19.5 4.5 11 13M17 13.5V19.5H4.5V7H10',
   download: 'M12 4.5v11M7 11l5 5 5-5M5 19.5h14',
-  phone: 'M6.5 3.5h3l1.5 4.5-2 1.5a11 11 0 0 0 5.5 5.5l1.5-2 4.5 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4.5 5.5a2 2 0 0 1 2-2z',
+  /** Voice: a Room on plan with sound leaving it (not a handset). */
+  phone: 'M3.5 6.5h9v11h-9zM3.5 10h3.5v4H3.5M15.5 9.5a3.5 3.5 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10',
   history: 'M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3h3M12 8v4.5l3 2',
   globe: 'M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17zM3.5 12h17M12 3.5c2.3 2.3 3.5 5.2 3.5 8.5s-1.2 6.2-3.5 8.5c-2.3-2.3-3.5-5.2-3.5-8.5S9.7 5.8 12 3.5z',
   mobile: 'M8 3.5h8a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19V5A1.5 1.5 0 0 1 8 3.5zM11 17.5h2',
-  'phone-off': 'M4 15.5c4.6-4.4 11.4-4.4 16 0l-1.6 2.6-3.6-1.3v-2.5a10 10 0 0 0-5.6 0v2.5l-3.6 1.3z',
+  /** Leave or end: a door with the way out (not a hung-up handset). */
+  'phone-off': 'M3.5 20.5h10M5.5 20.5V3.5h7v17M10 12h.01M13.5 12h7.5M18 9l3 3-3 3',
   video: 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3',
   'video-off': 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3M3 3l18 18',
   mic: 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21',
@@ -66,8 +68,10 @@ const PATHS = {
   copy: 'M8 8h11v12H8zM5 16V4h11',
   trash: 'M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13',
   at: 'M16 12a4 4 0 1 1-1.2-2.9M16 8v5.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.6 7.2',
-  send: 'M4.5 12 20 4.5 15.5 20l-3.5-6.5zM12 13.5l8-9',
-  chat: 'M4.5 5.5h15v10h-8l-4.5 4v-4h-2.5z',
+  /** Send on: a transmittal, a sheet with a dimension arrow leaving it (not a paper plane). */
+  send: 'M4 4.5h8l3 3v3M4 4.5v15h11v-3M8.5 13.5H20.5M17.5 10.5l3 3-3 3',
+  /** Messages: a spine with entries hanging off it (not a speech bubble). */
+  chat: 'M5 3.5v17M5 7h2.5M5 14h2.5M10.5 6h9M10.5 9h6M10.5 13h9M10.5 16h5',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   star: 'M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.7l-5.1 2.7 1-5.6-4.1-4 5.7-.8z',
   alarm: 'M12 20.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm0-11v3.5l2.5 1.5M4 5.5 6.5 3M20 5.5 17.5 3',
@@ -191,11 +195,12 @@ export function ToggleRow({ checked, onChange, label }: { checked: boolean; onCh
   );
 }
 
-export function Segmented<T extends string | number>({ value, options, onChange, label }: {
-  value: T; label: string; onChange: (v: T) => void; options: Array<{ value: T; label: string; icon?: IconName; badge?: number }>;
+/** A choice of one, drawn as a row of ruled cells (`className` adds a variant, such as the Control room's register). */
+export function Segmented<T extends string | number>({ value, options, onChange, label, className }: {
+  value: T; label: string; onChange: (v: T) => void; options: Array<{ value: T; label: string; icon?: IconName; badge?: number }>; className?: string;
 }) {
   return (
-    <div className="seg" role="group" aria-label={label}>
+    <div className={`seg${className ? ` ${className}` : ''}`} role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
           {o.icon && <Icon name={o.icon} size={16} />}

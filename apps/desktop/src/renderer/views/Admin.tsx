@@ -103,7 +103,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
         </div>
       </div>
       <div className="toolbar">
-        <Segmented<Tab> label="Admin section" value={tab} onChange={setTab} options={[
+        <Segmented<Tab> label="Admin section" className="seg-register" value={tab} onChange={setTab} options={[
           { value: 'approvals', label: 'Approvals', icon: 'check', badge: pending.length },
           { value: 'devices', label: 'Devices', icon: 'laptop' },
           { value: 'roles', label: 'People & roles', icon: 'people' },

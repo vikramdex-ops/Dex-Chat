@@ -116,7 +116,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
                         <span className="line">{u.displayName}</span>
                         {u.id === session.me.id && <span className="chip accent">You</span>}
                         {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
-                        {u.role === 'guest' && <span className="chip warn">Guest</span>}
+                        {u.role === 'guest' && <span className="chip guest">Guest</span>}
                       </div>
                       <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
                       <div className="line faint">{departments.get(u.profile.departmentId ?? '')?.name ?? u.account}</div>
