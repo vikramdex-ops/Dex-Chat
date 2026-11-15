@@ -120,6 +120,7 @@ export function GuestLinkControls({ meetingId, compact, onChange }: { meetingId:
       {v.problem && <p className="guest-problem"><Icon name="warning" size={14} />{v.problem}</p>}
       {v.enabled && v.passcode && (
         <table className="guest-cells">
+          <colgroup><col className="c-label" /><col /><col className="c-act" /></colgroup>
           <tbody>
             {v.guestUrl && (
               <tr><th className="label">Link</th><td className="mono guest-url" title={v.guestUrl}>{v.guestUrl}</td>

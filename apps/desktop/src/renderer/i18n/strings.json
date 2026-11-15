@@ -3366,6 +3366,8 @@
  "The invitation with their personal link, to paste into an email": "meet/webinar/Lens.tsx",
  "The meeting's report": "meet/webinar/Lens.tsx",
  "The PC composing the stage sends it to the hub; ffmpeg on the hub PC encodes H.264 and AAC and sends it to the service. Start it while the stage is open (the practice session counts).": "meet/webinar/Lens.tsx",
+ "The registration page is at the webinar ID again": "meet/webinar/Lens.tsx",
+ "The registration page is now …/w/{0}": "meet/webinar/Lens.tsx",
  "The streaming service": "meet/webinar/Lens.tsx",
  "The thank-you": "meet/webinar/Lens.tsx",
  "This app sends no email: copy the texts or save the .ics and mail-merge files and send them from your own mailbox. Each person's link is theirs alone.": "meet/webinar/Lens.tsx",

@@ -27,3 +27,20 @@
 .meet-rename .slug-field { margin-top: 6px; }
 .meet-row-main .page-link { margin-top: 2px; }
 .slug-row.followup .input { border-radius: 8px; min-height: 30px; padding: 4px 8px; font-size: 12.5px; }
+/* the block sits in narrow dialogs and the Room's side panel: fixed columns, long values cut */
+.guest-cells { table-layout: fixed; }
+.guest-cells col.c-label { width: 86px; }
+.guest-cells col.c-act { width: 82px; }
+.guest-cells td { min-width: 0; overflow: hidden; }
+.guest-cells .guest-url { max-width: none; }
+.slug-row { min-width: 0; }
+.slug-field.compact .slug-base { max-width: 38%; }
+.meet-invite-block, .guest-link { min-width: 0; }
+@media (max-width: 560px) {
+  .guest-cells col.c-label { width: 70px; }
+  .guest-cells col.c-act { width: 70px; }
+  .slug-base { display: none; }
+  .slug-row .input { border-radius: 8px; }
+  .slug-row { flex-wrap: wrap; gap: 6px; }
+  .slug-row .btn { margin-left: 0; }
+}

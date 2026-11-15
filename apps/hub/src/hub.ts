@@ -360,6 +360,7 @@ export class Hub {
       relayClose: (roomId) => this.relay.closeRoom(roomId),
       // registration and watch pages live on the office's meeting site (or the gateway's address)
       gateway: () => this.publicSite(),
+      pageRef: (meetingId) => this.meetPublic.slugOf(meetingId),
       office: () => this.info.name,
       tell: (userId, text, key) => this.system.tell(userId, text, key),
       recordingLink: (me, recordingId) => {

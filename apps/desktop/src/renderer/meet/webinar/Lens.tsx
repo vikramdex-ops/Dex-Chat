@@ -11,7 +11,7 @@ import type { PublicUser, RecordingInfo, Registrant, Session, WebinarCard, Webin
 import { Avatar, Dialog, Icon, presenceFor, useToast } from '../../ui.tsx';
 import { Glyph } from '../../rooms/parts.tsx';
 import { hm } from '../../calendar/store.ts';
-import { saveText, whenText } from '../GuestLink.tsx';
+import { SlugField, saveText, whenText } from '../GuestLink.tsx';
 import { bumpWebinars, joinAny, useWeb } from './store.ts';
 import { streamLine } from './StageTabs.tsx';
 import './webinar.css';
@@ -249,6 +249,10 @@ function SetupTab({ info, session, onChange }: { info: WebinarInfo; session: Ses
           ? <div className="wb-linkrow"><code className="mono wb-url">{info.registerUrl}</code><button className="btn sm" onClick={() => void navigator.clipboard.writeText(info.registerUrl!).then(() => toast('Registration link copied'))}><Glyph name="copy" size={14} />Copy</button></div>
           : <p className="wb-problem-line">{info.problem}</p>}
         {info.registerUrl && info.problem && <p className="wb-problem-line">{info.problem}</p>}
+        {info.registerUrl && (
+          <SlugField meetingId={info.meetingId} value={/\/w\/([a-z][a-z0-9-]+)$/.exec(info.registerUrl)?.[1] ?? null} site={info.registerUrl.replace(/\/w\/[^/]+$/, '/w')} compact
+            onSave={(slug) => void window.dex.request('meet.public.set', { id: info.meetingId, slug }).then(() => window.dex.request('web.get', { id: info.meetingId } as never)).then((w) => { onChange(w as WebinarInfo); toast(slug ? `The registration page is now …/w/${slug}` : 'The registration page is at the webinar ID again'); }).catch((e: Error) => toast(e.message, true))} />
+        )}
         {organizer && (
           <div className="wb-toggles">
             <label className="check-line"><input type="checkbox" checked={info.settings.registrationOpen} onChange={(e) => save({ settings: { registrationOpen: e.target.checked } }, e.target.checked ? 'Registration is open' : 'Registration is closed')} />Registration is open</label>
