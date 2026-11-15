@@ -185,7 +185,7 @@ try {
   const vreg = V.locator('.flow-card.register').last();
   await vreg.waitFor({ timeout: 10000 });
   await scrollEnd(V);
-  await both(V, 'tp-11-digest-vikram-1440');
+  await both(V, 'tp-11-digest-lead-1440');
 
   // ------------------------------------------------------------ 3. software seats between Priya and Ravi
   await P.getByRole('button', { name: /^Desk/ }).first().click();
