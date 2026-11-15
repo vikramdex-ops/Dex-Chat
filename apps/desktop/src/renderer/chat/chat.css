@@ -112,6 +112,7 @@ body.resizing { user-select: none; cursor: col-resize; }
 .pane-title { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .pane-title h2 { font-size: 17px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pane-title h2 svg { color: var(--text-3); flex: none; }
+.pane-title h2 > .pane-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pane-title p { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; white-space: nowrap; }
 .pane-sub { overflow: hidden; text-overflow: ellipsis; }
 .pane-title .e2e-chip { margin-right: 0; flex: none; }
@@ -170,7 +171,7 @@ body.resizing { user-select: none; cursor: col-resize; }
 .side-track .pen { display: none; }
 .track-parent { position: relative; padding: 10px 12px; border-radius: 4px; background: var(--subtle); border: 1px solid var(--stroke-strong); }
 .track-parent::after { content: ''; position: absolute; left: 25px; top: 100%; height: 16px; width: 1px; background: var(--accent); }
-.track-replies { margin-top: 16px; padding-left: 12px; border-left: 1px solid var(--accent); display: grid; gap: 10px; }
+.track-replies { margin-top: 16px; padding-left: 12px; border-left: 1px solid var(--accent); display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .track-reply .run-head { margin-bottom: 0; }
 .track-reply .msg { margin-left: 26px; }
 .track-parent .run-head .avatar, .track-reply .run-head .avatar { box-shadow: none; }
@@ -200,14 +201,32 @@ body.resizing { user-select: none; cursor: col-resize; }
 .day-mark { position: relative; display: flex; align-items: center; gap: 10px; margin: 18px 0 10px calc(var(--spine-x) - 14px); }
 .day-mark .label { position: relative; z-index: 1; padding: 4px 9px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); font: 600 10px/1.2 var(--font-mono); letter-spacing: .12em; color: var(--text-2); }
 .day-mark::after { content: ''; flex: 1; border-top: 1px solid var(--stroke); }
+/* what arrived since you last read here: an amber rule across the sheet, labelled at its end */
+.new-line { position: relative; display: flex; align-items: center; gap: 8px; margin: 10px 0 6px calc(var(--spine-x) - 4px); }
+.new-line::before { content: ''; flex: 1; border-top: 1.5px solid var(--amber); }
+.new-line .label { padding: 2px 7px; border: 1.5px solid var(--amber); border-radius: 3px; background: var(--layer-solid); font: 600 10px/1.2 var(--font-mono); letter-spacing: .12em; color: var(--amber-ink); }
+/* back to the newest messages, once they are a screen away */
+.to-latest {
+  position: absolute; right: 22px; bottom: 12px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px 0 12px;
+  border: 1px solid var(--stroke-strong); border-radius: 15px; background: var(--layer-solid); color: var(--text-2); box-shadow: var(--shadow-2);
+  font: 600 11px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; animation: drop 140ms var(--ease);
+}
+.to-latest:hover { color: var(--text); border-color: var(--accent); }
+.to-latest.fresh { border-color: var(--amber); color: var(--amber-ink); }
+/* the keyboard reaches messages: the one it is on is outlined and shows its tools */
+.timeline:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.msg:focus { outline: none; }
+.msg.kbd-on:focus { box-shadow: 0 0 0 2px var(--accent); }
+.msg.kbd-on > .spine-tools { display: flex; }
 
 .run { position: relative; display: grid; grid-template-columns: 76px 1fr; padding: 6px 0 4px; content-visibility: auto; contain-intrinsic-size: auto 72px; }
 .run-tile { display: flex; justify-content: center; padding-top: 2px; position: relative; z-index: 1; }
 .run-body { min-width: 0; padding-right: 8px; }
 .run-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
-.run-name { font-weight: 600; font-size: 13.5px; }
+.run-head { min-width: 0; }
+.run-name { font-weight: 600; font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run.mine .run-name { color: var(--text); }
-.run-time { font: 10.5px/1 var(--font-mono); color: var(--text-3); }
+.run-time { flex: none; white-space: nowrap; font: 10.5px/1 var(--font-mono); color: var(--text-3); }
 .notice-line { display: flex; justify-content: center; align-items: baseline; gap: 8px; margin: 6px 0 6px 76px; padding: 2px 0; font-size: 12px; color: var(--text-3); }
 .notice-line .mono { font-size: 10.5px; }
 

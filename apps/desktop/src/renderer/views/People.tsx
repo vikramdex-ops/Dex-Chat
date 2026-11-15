@@ -82,7 +82,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
         <div className="view-head">
           <div>
             <h1>Directory</h1>
-            <p className="label">{everyone.length} people · {online.size} online{org.departments.length ? ` · ${org.departments.length} departments` : ''}</p>
+            <p className="label">{`${everyone.length} people · ${online.size} online`}{org.departments.length ? ` · ${org.departments.length} departments` : ''}</p>
           </div>
         </div>
         <SheetTabs<View> label="Directory view" value={view} onChange={setView} tabs={[
@@ -105,7 +105,7 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
               <Segmented<Filter> label="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'Everyone' }, { value: 'online', label: 'Online' }]} />
             </div>
             {people.length === 0 ? (
-              <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span></div>
+              <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span>{(query.trim() || dept || filter !== 'all') && <button className="btn" onClick={() => { setQuery(''); setDept(''); setFilter('all'); }}>Show everyone</button>}</div>
             ) : (
               <div className="grid cols-people">
                 {people.map((u) => (
@@ -114,16 +114,16 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
                     <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
                     <div className="who">
                       <div className="name">
-                        <span className="line">{u.displayName}</span>
+                        <span className="line" translate="no" title={u.displayName}>{u.displayName}</span>
                         {u.id === session.me.id && <span className="chip accent">You</span>}
                         {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
                         {u.role === 'guest' && <span className="chip warn">Guest</span>}
                       </div>
-                      <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
-                      <div className="line faint">{departments.get(u.profile.departmentId ?? '')?.name ?? u.account}</div>
+                      <div className="line muted" translate={u.title ? 'no' : undefined} title={u.title || undefined}>{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
+                      <div className="line faint" translate="no">{departments.get(u.profile.departmentId ?? '')?.name ?? u.account}</div>
                       {workLine(work.get(u.id)) && <div className={`work-line ${work.get(u.id)?.status}`}><span className="work-dot" />{workLine(work.get(u.id))}</div>}
                       {u.ooo && u.ooo.until > Date.now() && <div className="work-line leave"><span className="work-dot" />On leave until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}</div>}
-                      {u.statusText && <div className="status">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
+                      {u.statusText && <div className="status" translate="no">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
                     </div>
                   </button>
                 ))}
@@ -279,7 +279,7 @@ function InCommon({ userId }: { userId: string }) {
       {d.spaces.length > 0 && (
         <>
           <div className="label">Spaces in common · {d.spaces.length}</div>
-          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
+          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" translate="no" title={s.name} onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
         </>
       )}
       {d.calls.length > 0 && (

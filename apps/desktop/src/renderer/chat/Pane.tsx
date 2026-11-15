@@ -7,7 +7,7 @@ import { STICKER_RE } from '@dex/core';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
-import { Avatar, Icon, Popover, colorFor, relativeTime, useToast, presenceFor } from '../ui.tsx';
+import { Avatar, Icon, Popover, colorFor, confirmAction, relativeTime, useToast, presenceFor } from '../ui.tsx';
 import type { IconName, Presence } from '../ui.tsx';
 import { SPACE_REF_RE, isEmojiOnly, openSpaces, renderBody, spaceName } from './format.tsx';
 import {
@@ -56,6 +56,12 @@ const WhiteboardStage = lazy(() => import('./Whiteboard.tsx').then((m) => ({ def
 const ScanDialog = lazy(() => import('../scan/ScanDialog.tsx').then((m) => ({ default: m.ScanDialog })));
 
 const RUN_GAP = 5 * 60 * 1000;
+/**
+ * Where you were reading in each conversation you scrolled back in (a message and its distance from
+ * the top), so coming back to it puts you there again. At the newest messages nothing is kept.
+ */
+const READING = new Map<string, { id: string; top: number }>();
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 /** A time tick on the spine every ten minutes of activity. */
 const TICK = 10 * 60 * 1000;
 
@@ -189,6 +195,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
+  // Esc closes the side-track or side sheet of the Pane you are in, once nothing is open above it
+  useEffect(() => {
+    if (!side || !focused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('.scrim, .sheet-scrim, .popover, .lightbox, .board-stage, .reminder-card:focus-within')) return;
+      setSide(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [side, focused]);
   useEffect(() => {
     const onPlan = (e: Event) => { if ((e as CustomEvent).detail === convId) setPlanning(true); };
     window.addEventListener('dex-plan', onPlan);
@@ -264,7 +280,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
     : one
       ? [['Status', STATUS_WORD[presenceFor(others[0])]], ['Last on', lastOn(one, online.has(others[0]))]]
       : [['People', String(conv.members.length)], ['On now', String(others.filter((id) => online.has(id)).length)]];
-  const placeholder = conv.kind === 'space' ? `Write in ${title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
+  // a long Space name is cut short so the hint never runs out of the Dock
+  const placeholder = conv.kind === 'space' ? `Write in ${title.length > 28 ? `${title.slice(0, 26).trimEnd()}…` : title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
   const toggleSheet = (kind: SheetKind) => setSide(side?.kind === kind ? null : openSheet(kind));
   const canPlan = live && !!session && session.me.role !== 'guest';
 
@@ -279,7 +296,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           {onBack && <button className="icon-btn only-narrow" onClick={onBack} aria-label="Back to the Switchboard"><Icon name="back" size={18} /></button>}
           <ConvTile c={conv} users={users} meId={meId} />
           <div className="pane-title">
-            <h2 translate="no">{title}{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
+            <h2 translate="no" title={title}><span className="pane-name">{title}</span>{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
             <p className="faint">
               {e2e && conv.kind === 'direct' && (
                 <button className={`e2e-chip${e2e.encrypted ? '' : ' off'}`} onClick={() => setVerify(true)} title={e2e.encrypted ? 'Messages here are end-to-end encrypted' : 'Not end-to-end encrypted yet'}>
@@ -360,7 +377,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <button className="btn sm" disabled={!selected.size} onClick={() => { void navigator.clipboard.writeText(picked().map((m) => `${users.get(m.authorId)?.displayName ?? ''} (${new Date(m.createdAt).toLocaleString()}):\n${m.body}`).join('\n\n')); toast('Copied'); }}><Icon name="copy" size={14} />Copy</button>
             <button className="btn sm" disabled={!selected.size} onClick={() => void Promise.all(picked().filter((m) => !deskState().saved.has(m.id)).map((m) => toggleSaved(m as never).catch(() => null))).then(() => toast('Kept on your Desk'))}><Icon name="drawer" size={14} />Keep</button>
             {picked().length > 0 && picked().every((m) => m.authorId === meId || (isAdmin && conv.kind === 'space')) && (
-              <button className="btn sm danger" onClick={() => { if (confirm(`Delete ${selected.size} messages for everyone?`)) void Promise.all(picked().map((m) => window.dex.request('msg.delete', { messageId: m.id }).catch(() => null))).then(() => { toast('Deleted'); setSelected(null); }); }}><Icon name="trash" size={14} />Delete</button>
+              <button className="btn sm danger" onClick={() => void confirmAction({ title: `Delete ${selected.size} messages for everyone?`, confirm: 'Delete', danger: true }).then((ok) => { if (ok) void Promise.all(picked().map((m) => window.dex.request('msg.delete', { messageId: m.id }).catch(() => null))).then(() => { toast('Deleted'); setSelected(null); }); })}><Icon name="trash" size={14} />Delete</button>
             )}
             <span style={{ flex: 1 }} />
             <button className="btn ghost sm" onClick={() => setSelected(null)}>Done</button>
@@ -519,26 +536,102 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   const convId = ctx.conv.id;
   const tl = useChat((s) => s.timelines.get(convId));
   const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
+  // back where you were reading, if you had scrolled back here before
+  const restore = useRef(READING.get(convId) ?? null);
+  const stick = useRef(!restore.current);
   const prevHeight = useRef(0);
   const prevFirst = useRef<string | null>(null);
+  const prevLast = useRef<string | null>(null);
   const messages = tl?.messages ?? [];
+  // the line above what arrived since you last read here (kept while the Pane is open; gone once you write)
+  const [readTo, setReadTo] = useState<string | undefined>(() => (ctx.conv.unread > 0 ? ctx.conv.lastReadId ?? '' : undefined));
+  // scrolled away from the newest messages, and how many arrived since
+  const [away, setAway] = useState(!!restore.current);
+  const [fresh, setFresh] = useState(0);
 
   // keep the view pinned to the bottom unless the reader scrolled up; keep position when older pages load
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const first = messages[0]?.id ?? null;
-    if (prevFirst.current && first !== prevFirst.current && !stick.current) {
+    const last = messages.at(-1);
+    const sentNow = !!last && last.id !== prevLast.current && prevLast.current !== null && last.authorId === ctx.meId && 'pending' in last;
+    if (restore.current && tl?.loaded) {
+      // coming back: the message you were reading sits where it was
+      const { id, top } = restore.current;
+      const place = () => {
+        const at = el.querySelector<HTMLElement>(`[data-mid="${CSS.escape(id)}"]`);
+        if (at) el.scrollTop += at.getBoundingClientRect().top - el.getBoundingClientRect().top - top;
+        return !!at;
+      };
+      if (place()) {
+        // runs above it are drawn as they come into view and change height: hold it in place while they settle
+        let n = 0;
+        const again = () => { if (!stick.current && place() && ++n < 12) requestAnimationFrame(again); };
+        requestAnimationFrame(again);
+      } else { stick.current = true; setAway(false); el.scrollTop = el.scrollHeight; }
+      restore.current = null;
+    } else if (sentNow) {
+      // what you just wrote is always in view
+      stick.current = true; setAway(false); setFresh(0); setReadTo(undefined);
+      el.scrollTop = el.scrollHeight;
+    } else if (prevFirst.current && first !== prevFirst.current && !stick.current) {
       el.scrollTop += el.scrollHeight - prevHeight.current;
     } else if (stick.current) {
       el.scrollTop = el.scrollHeight;
+    } else if (last && prevLast.current && last.id !== prevLast.current && last.authorId !== ctx.meId) {
+      setFresh((n) => n + 1);
     }
     prevFirst.current = first;
+    prevLast.current = last?.id ?? null;
     prevHeight.current = el.scrollHeight;
-  }, [messages]);
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { stick.current = true; }, [convId]);
+  // where you are reading, for when you come back (nothing kept at the newest messages); measured once a frame
+  const noting = useRef(0);
+  const noteReading = () => {
+    if (noting.current) return;
+    noting.current = requestAnimationFrame(() => {
+      noting.current = 0;
+      const el = scroller.current;
+      if (!el || restore.current) return;
+      if (stick.current) { READING.delete(convId); return; }
+      const box = el.getBoundingClientRect();
+      const top = [...el.querySelectorAll<HTMLElement>('[data-mid]')].find((m) => m.getBoundingClientRect().bottom > box.top + 8);
+      if (top?.dataset.mid) READING.set(convId, { id: top.dataset.mid, top: top.getBoundingClientRect().top - box.top });
+    });
+  };
+  useEffect(() => () => cancelAnimationFrame(noting.current), []);
+  // on the way down to the newest message (a smooth scroll that the scroll handler leaves alone)
+  const goingDown = useRef(false);
+  const toLatest = () => {
+    const el = scroller.current;
+    if (!el) return;
+    stick.current = true; setAway(false); setFresh(0);
+    goingDown.current = true;
+    // runs drawn on the way change the height: land on the real bottom when the scroll ends
+    const land = () => { if (!goingDown.current) return; goingDown.current = false; el.scrollTop = el.scrollHeight; stick.current = true; markRead(convId); };
+    el.addEventListener('scrollend', land, { once: true });
+    setTimeout(land, 900);
+    el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    markRead(convId);
+  };
+  // arrow keys move between messages; Home and End go to the first and the newest loaded
+  const onKeys = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target as HTMLElement;
+    if (t !== e.currentTarget && !t.matches('.msg[data-mid]')) return; // a field or button inside a message keeps its keys
+    const all = [...e.currentTarget.querySelectorAll<HTMLElement>('.spine .msg[data-mid]')];
+    if (!all.length) return;
+    e.preventDefault();
+    const at = all.indexOf(t);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : at < 0 ? all.length - 1 : Math.max(0, Math.min(all.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
+    // its tools stay out while the keyboard is in the message (a class, not :focus: Tab into the tools must find them there)
+    for (const m of e.currentTarget.querySelectorAll('.msg.kbd-on')) m.classList.remove('kbd-on');
+    all[next].classList.add('kbd-on');
+    all[next].focus({ preventScroll: true });
+    all[next].scrollIntoView({ block: 'nearest' });
+  };
   // switching between spine and cards changes every height: stay with the newest message while
   // the runs settle (they are laid out as they come into view)
   useLayoutEffect(() => {
@@ -571,23 +664,32 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
 
   const onScroll = () => {
     const el = scroller.current!;
-    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (stick.current) markRead(convId);
+    if (goingDown.current) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stick.current = gap < 60;
+    if (stick.current) { markRead(convId); if (fresh) setFresh(0); }
+    // the way back to the newest messages shows once they are a screen away
+    const far = gap > Math.max(240, el.clientHeight * 0.6);
+    if (far !== away) setAway(far);
+    noteReading();
     if (el.scrollTop < 200 && tl?.hasMore && !tl.loading) { prevHeight.current = el.scrollHeight; void loadOlder(convId); }
   };
   // runs: consecutive messages by one person within 5 minutes; a title-block label at each new day;
   // a time tick on the spine whenever ten minutes have gone by
   const blocks = useMemo(() => {
-    type Block = { kind: 'day'; label: string; key: string } | { kind: 'tick'; label: string; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string };
+    type Block = { kind: 'day'; label: string; key: string } | { kind: 'tick'; label: string; key: string } | { kind: 'new'; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string };
     const out: Block[] = [];
     let lastDay = '';
     let lastTick = 0;
+    // the first message that arrived since you last read here (not your own)
+    const firstNew = readTo === undefined ? null : messages.find((m) => !('pending' in m) && m.id > readTo && m.authorId !== ctx.meId && !('system' in m && m.system))?.id ?? null;
     for (const m of messages) {
+      if (m.id === firstNew) out.push({ kind: 'new', key: 'new-line' });
       const day = new Date(m.createdAt).toDateString();
       if (day !== lastDay) { out.push({ kind: 'day', label: dayLabel(m.createdAt), key: `d${day}` }); lastDay = day; lastTick = m.createdAt; }
       if ('system' in m && m.system) { out.push({ kind: 'notice', m, key: `n${m.id}` }); continue; }
       const prev = out[out.length - 1];
-      if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP) { prev.msgs.push(m); continue; }
+      if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP && m.id !== firstNew) { prev.msgs.push(m); continue; }
       if (m.createdAt - lastTick >= TICK) {
         const at = Math.floor(m.createdAt / TICK) * TICK;
         // a dimension mark, not a timestamp: no AM/PM
@@ -597,10 +699,13 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
       out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
     }
     return out;
-  }, [messages, ctx.meId]);
+  }, [messages, ctx.meId, readTo]);
 
   return (
-    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll}>
+    <>
+    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll} onKeyDown={onKeys}
+      onBlur={(e) => { const m = (e.target as HTMLElement).closest('.msg.kbd-on'); if (m && !m.contains(e.relatedTarget as Node | null)) m.classList.remove('kbd-on'); }}
+      tabIndex={0} role="log" aria-label="Messages" aria-live="off">
       <div className="spine">
         {tl?.hasMore && <div className="tl-more">{tl.loading ? <span className="spinner" /> : null}</div>}
         {tl?.loaded && !tl.hasMore && <Beginning ctx={ctx} />}
@@ -608,10 +713,17 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
         {blocks.map((b) => b.kind === 'day'
           ? <div key={b.key} className="day-mark"><span className="label">{b.label}</span></div>
           : b.kind === 'tick' ? <div key={b.key} className="spine-tick" aria-hidden="true"><span className="mono">{b.label}</span></div>
+          : b.kind === 'new' ? <div key={b.key} className="new-line" role="separator" aria-label="New since you last read"><span className="label">New</span></div>
           : b.kind === 'notice' ? <Notice key={b.key} m={b.m as Message} users={ctx.users} meId={ctx.meId} />
           : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} />)}
       </div>
     </div>
+    {away && (
+      <button className={`to-latest${fresh ? ' fresh' : ''}`} onClick={toLatest} title="Go to the newest message">
+        {fresh ? `${fresh} new` : 'Newest'}<Icon name="chevron" size={14} />
+      </button>
+    )}
+    </>
   );
 }
 
@@ -641,7 +753,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }:
       <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
-          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
+          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
           {u?.role === 'bot' && <span className="chip accent bot-chip">Integration</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
@@ -736,7 +848,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   })();
 
   return (
-    <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
+    <div data-mid={m.id} tabIndex={-1} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
       onPointerDown={refPayload && !ctx.selected && !editing ? (e) => startHoldDrag(e, refPayload, ctx.users) : undefined}
       onMouseEnter={inTrack ? undefined : toolsFit} onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
@@ -895,7 +1007,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
               {!mine && author?.role !== 'bot' && <button role="menuitem" onClick={() => close(() => setDialog('report'))}><Icon name="warning" size={16} />Report to administrators…</button>}
               {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => close(() => {
                 if (!mine) { setDialog('remove'); return; }
-                if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id }));
+                void confirmAction({ title: 'Delete this message for everyone?', confirm: 'Delete', danger: true }).then((ok) => { if (ok) void act(window.dex.request('msg.delete', { messageId: m.id })); });
               })}><Icon name="trash" size={16} />{mine ? 'Delete' : 'Remove…'}</button></>}
             </Popover>
           )}
@@ -1451,7 +1563,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
   return (
     <aside className="side-panel side-track" aria-label="Side-track">
       <header className="side-head">
-        <span className="label">Side-track <span className="mono">· {n} {n === 1 ? 'reply' : 'replies'}</span></span>
+        <span className="label">Side-track <span className="mono">{n === 1 ? '· 1 reply' : `· ${n} replies`}</span></span>
         <button className="icon-btn" onClick={onClose} aria-label="Close side-track"><Icon name="x" size={16} /></button>
       </header>
       <div className="side-body">
@@ -1459,7 +1571,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
           <div className="track-parent">
             <div className="run-head">
               <Avatar user={{ id: parent.authorId, displayName: author?.displayName ?? '?' }} size="sm" />
-              <span className="run-name" translate={parent.authorId === ctx.meId ? undefined : 'no'}>{parent.authorId === ctx.meId ? 'You' : author?.displayName}</span>
+              <span className="run-name" translate={parent.authorId === ctx.meId ? undefined : 'no'} title={parent.authorId === ctx.meId ? undefined : author?.displayName}>{parent.authorId === ctx.meId ? 'You' : author?.displayName}</span>
               <span className="run-time">{clock(parent.createdAt)}</span>
             </div>
             <div className="msg-text selectable">{parent.deleted ? <span className="faint">Message deleted</span> : renderBody(parent.body, ctx.users, ctx.meId)}</div>
@@ -1472,7 +1584,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
               <div key={m.clientId ?? m.id} className={`track-reply${m.authorId === ctx.meId ? ' mine' : ''}`}>
                 <div className="run-head">
                   <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} size="sm" />
-                  <span className="run-name" translate={m.authorId === ctx.meId ? undefined : 'no'}>{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
+                  <span className="run-name" translate={m.authorId === ctx.meId ? undefined : 'no'} title={m.authorId === ctx.meId ? undefined : u?.displayName}>{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
                   <span className="run-time">{clock(m.createdAt)}</span>
                 </div>
                 <MessageItem ctx={ctx} m={m} inTrack />
@@ -1483,7 +1595,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
         </div>
       </div>
       <WritingLine k={tlKey(convId, parentId)} users={ctx.users} />
-      <Dock convId={convId} parentId={parentId} ctx={ctx} live={live} placeholder="Write in this side-track" />
+      <Dock convId={convId} parentId={parentId} ctx={ctx} live={live} placeholder="Write a reply" />
     </aside>
   );
 }
@@ -1500,7 +1612,7 @@ function PinsPanel({ ctx, onClose, onJump }: { ctx: Ctx; onClose: () => void; on
         {pins?.length === 0 && <div className="empty"><Icon name="pin" size={28} /><span>Pin what everyone here needs to find again.</span></div>}
         {pins?.map((m) => (
           <button key={m.id} className="pin-card" onClick={() => onJump(m.id)}>
-            <div className="run-head"><span className="run-name" translate="no">{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}{m.pinnedUntil ? ` · ${pinEnd(m.pinnedUntil)}` : ''}</span></div>
+            <div className="run-head"><span className="run-name" translate="no" title={ctx.users.get(m.authorId)?.displayName}>{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}{m.pinnedUntil ? ` · ${pinEnd(m.pinnedUntil)}` : ''}</span></div>
             <div className="msg-text">{renderBody(m.body, ctx.users, ctx.meId)}</div>
           </button>
         ))}
@@ -1534,7 +1646,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
             <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
             <span className="sb-main"><span className="sb-name" translate="no">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last on ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
             {canModerate && c.kind === 'space' && !c.everyone && u.id !== ctx.meId && (
-              <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => { if (confirm(`Remove ${u.displayName} from ${c.name}?`)) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); }}><Icon name="x" size={14} /></button>
+              <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => void confirmAction({ title: `Remove ${u.displayName} from ${c.name}?`, confirm: 'Remove', danger: true }).then((ok) => { if (ok) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); })}><Icon name="x" size={14} /></button>
             )}
           </div>
         ))}
@@ -1556,7 +1668,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
             )
         )}
         {c.kind === 'space' && !c.everyone && (
-          <button className="btn ghost danger" style={{ marginTop: 16 }} onClick={() => { if (confirm(`Leave ${c.name}?`)) void window.dex.request('conv.leave', { convId: c.id }).catch((e: Error) => toast(e.message, true)); }}>Leave this Space</button>
+          <button className="btn ghost danger" style={{ marginTop: 16 }} onClick={() => void confirmAction({ title: `Leave ${c.name}?`, confirm: 'Leave', danger: true }).then((ok) => { if (ok) void window.dex.request('conv.leave', { convId: c.id }).catch((e: Error) => toast(e.message, true)); })}>Leave this Space</button>
         )}
       </div>
     </aside>
@@ -1580,7 +1692,7 @@ function SpaceSettings({ c, users }: { c: Conversation; users: PublicUser[] }) {
           </label>
         ))}
       </div>
-      {!c.everyone && <button className="btn" onClick={() => { if (confirm(`Archive ${c.name}? It becomes read-only for everyone until it is restored.`)) act(window.dex.request('conv.archive', { convId: c.id, archived: true }), 'Space archived'); }}><Icon name="archive" size={15} />Archive this Space</button>}
+      {!c.everyone && <button className="btn" onClick={() => void confirmAction({ title: `Archive ${c.name}? It becomes read-only for everyone until it is restored.`, confirm: 'Archive this Space' }).then((ok) => { if (ok) void act(window.dex.request('conv.archive', { convId: c.id, archived: true }), 'Space archived'); })}><Icon name="archive" size={15} />Archive this Space</button>}
     </div>
   );
 }

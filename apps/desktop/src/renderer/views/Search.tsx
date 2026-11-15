@@ -10,6 +10,7 @@ import { plainPreview } from '../chat/format.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { chatState } from '../chat/store.ts';
 import { timeOpts } from '../time.ts';
+import { translating } from '../i18n/index.ts';
 
 export interface SearchInit { q?: string; convId?: string | null }
 type When = 'any' | 'today' | 'week' | 'month' | 'year';
@@ -30,7 +31,8 @@ function since(w: When): number | undefined {
 }
 function Snippet({ text }: { text: string }) {
   const parts = text.replace(/<@[0-9A-Z]{26}>/g, '@…').split(/\[\[|\]\]/);
-  return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}</>;
+  // what people wrote is shown as written, never translated
+  return <>{parts.map((p, i) => (i % 2 ? <mark key={i} translate="no">{p}</mark> : <span key={i} translate="no">{p}</span>))}</>;
 }
 const when = (t: number) => {
   const d = new Date(t);
@@ -128,7 +130,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
         </div>
         <div className={`sr-cell${period !== 'any' ? ' on' : ''}`}>
           <button ref={anchors.when} className="sr-pick" onClick={() => setMenu('when')} aria-haspopup="menu">
-            <span className="sr-k">When</span><span className="sr-v">{WHEN.find((w) => w.value === period)!.label.toLowerCase()}</span>
+            <span className="sr-k">When</span><span className="sr-v">{translating() ? WHEN.find((w) => w.value === period)!.label : WHEN.find((w) => w.value === period)!.label.toLowerCase()}</span>
           </button>
         </div>
         {!convId && (
@@ -179,7 +181,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
           <p className="faint" style={{ fontSize: 12.5 }}>End-to-end encrypted Direct messages are searched on this device, among the conversations it has open: the hub cannot read them.</p></div>
       ) : tab === 'text' ? (
         <div className="search-results" role="list">
-          {!busy && hits.length === 0 && <div className="empty"><p>Nothing written matches.</p></div>}
+          {!busy && hits.length === 0 && <div className="empty"><p>Nothing written matches.</p>{(from || convId || hasFile || period !== 'any' || kind !== 'all') && <button className="btn" onClick={() => { setFrom(null); setConvId(null); setHasFile(false); setPeriod('any'); setKind('all'); }}>Clear the filters</button>}</div>}
           {hits.map((h) => {
             const c = conversations.get(h.message.convId);
             const a = byId.get(h.message.authorId);
@@ -187,8 +189,8 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <button key={h.message.id} role="listitem" className="search-hit" onClick={() => onOpen(h.message.convId, h.message.id, h.message.parentId)}>
                 <Avatar user={a ?? { id: h.message.authorId, displayName: '?' }} size="sm" />
                 <span className="sb-main">
-                  <span className="search-meta"><b>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint"> in {convTitle(c, byId, meId)}</span>}{h.message.parentId && <span className="faint"> · side-track</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
-                  <span className="search-snippet">{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
+                  <span className="search-meta"><b translate={a ? 'no' : undefined}>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint sm-where" title={convTitle(c, byId, meId)}> in <span translate="no">{convTitle(c, byId, meId)}</span></span>}{h.message.parentId && <span className="faint"> · side-track</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
+                  <span className="search-snippet" translate={h.snippet ? undefined : 'no'}>{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
                 </span>
               </button>
             );
@@ -204,7 +206,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <button key={`${f.id}-${f.messageId}`} role="listitem" className="search-hit" onClick={() => onOpen(f.convId, f.messageId, null)}>
                 <span className="file-ico"><Icon name="paperclip" size={18} /></span>
                 <span className="sb-main">
-                  <span className="search-meta"><b>{f.name}</b><span className="mono faint">{when(f.createdAt)}</span></span>
+                  <span className="search-meta"><b translate="no" className="sm-where" title={f.name}>{f.name}</b><span className="mono faint">{when(f.createdAt)}</span></span>
                   <span className="search-snippet faint">{formatSize(f.size)} · {byId.get(f.uploaderId)?.displayName ?? 'Someone'}{c ? ` · ${convTitle(c, byId, meId)}` : ''}</span>
                   {f.textMatch && <span className="search-snippet"><span className="faint">Text in the image: </span><Snippet text={f.textMatch.replace(/\n/g, ' · ')} /></span>}
                 </span>

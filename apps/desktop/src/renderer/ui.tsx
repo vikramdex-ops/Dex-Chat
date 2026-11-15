@@ -227,16 +227,52 @@ export function deviceCode(deviceId: string): string {
   return deviceId.slice(0, 8).toUpperCase().replace(/(.{4})/, '$1 ');
 }
 
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const visible = (el: HTMLElement) => !!(el.offsetParent || el.getClientRects().length);
+/** The keyboard stays inside a dialog: Tab from the last control goes back to the first. */
+export function trapTab(e: React.KeyboardEvent<HTMLElement>): void {
+  if (e.key !== 'Tab') return;
+  const all = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(visible);
+  if (!all.length) { e.preventDefault(); return; }
+  const first = all[0];
+  const last = all[all.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !e.currentTarget.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+/**
+ * Focus for a dialog or sheet: into it when it opens (its first field, or the dialog itself),
+ * and back to whatever had it when it closes.
+ */
+export function useDialogFocus(ref: React.RefObject<HTMLElement | null>, field = true): void {
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) {
+      const first = !field ? undefined : [...el.querySelectorAll<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea:not([disabled]), select:not([disabled])')].find(visible);
+      (first ?? el).focus({ preventScroll: true });
+    }
+    return () => {
+      const now = document.activeElement;
+      if (before?.isConnected && (!now || now === document.body || el?.contains(now))) before.focus({ preventScroll: true });
+    };
+  }, [ref, field]);
+}
+/** Is this the dialog on top (the last one opened)? Escape closes only that one. */
+const onTop = (el: HTMLElement | null) => { const all = document.querySelectorAll('.scrim'); return !!el && all[all.length - 1] === el; };
+
 /** A centred dialog over a blurred scrim, rendered at the top of the document. */
 export function Dialog({ title, children, onClose, narrow }: { title: string; children: ReactNode; onClose: () => void; narrow?: boolean }) {
+  const scrim = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && onTop(scrim.current)) onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return createPortal(
-    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={scrim} className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={box} tabIndex={-1} onKeyDown={trapTab} className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
           <h2 style={{ flex: 1 }}>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
@@ -252,6 +288,20 @@ export function Dialog({ title, children, onClose, narrow }: { title: string; ch
  * A menu or picker anchored to a button, rendered at the top of the document so a
  * scrolling or clipped container never cuts it off. Flips above the anchor near the bottom.
  */
+/** Arrow keys, Home and End move between the items of a menu (from its search field too). */
+export function menuKeys(e: React.KeyboardEvent<HTMLElement>): void {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (typing && (e.key === 'Home' || e.key === 'End')) return;
+  const items = [...e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')].filter(visible);
+  if (!items.length) return;
+  e.preventDefault();
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const down = e.key === 'ArrowDown';
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : at < 0 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
+}
+
 export function Popover({ anchor, onClose, className, children, align = 'end' }: {
   anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode;
   /** 'right': beside the anchor, for menus that open from a vertical tool column. */
@@ -298,16 +348,27 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
       window.removeEventListener('resize', onClose);
     };
   }, [anchor, onClose]);
+  // a menu takes the keyboard when it opens (unless a field in it already has it) and gives it back when it closes
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) el.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    return () => { if (el?.contains(document.activeElement) && anchor?.isConnected) anchor.focus({ preventScroll: true }); };
+  }, [anchor]);
   return createPortal(
-    <div ref={ref} className={`popover ${className}`} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
+    <div ref={ref} className={`popover ${className}`} onKeyDown={menuKeys} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
     document.body,
   );
 }
 
 // ------------------------------------------------------------------ toasts
-interface Toast { id: number; text: string; bad?: boolean }
-const ToastCtx = createContext<(text: string, bad?: boolean) => void>(() => {});
+/** A button in a toast, such as Undo. */
+export interface ToastAction { label: string; run: () => void }
+interface Toast { id: number; text: string; bad?: boolean; action?: ToastAction }
+type Push = (text: string, bad?: boolean, action?: ToastAction) => void;
+const ToastCtx = createContext<Push>(() => {});
 export const useToast = () => useContext(ToastCtx);
+/** Long enough to read: longer for long text, for problems and for toasts with a button. */
+const toastTime = (t: Toast) => Math.max(t.action ? 7000 : 4200, 1800 + t.text.length * 55) + (t.bad ? 1800 : 0);
 
 export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -318,11 +379,14 @@ export function ToastHost({ children }: { children: ReactNode }) {
     window.addEventListener('dex-redraw', on);
     return () => window.removeEventListener('dex-redraw', on);
   }, []);
-  const push = useCallback((text: string, bad?: boolean) => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-3), { id, text, bad }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
-  }, []);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const drop = useCallback((id: number) => { clearTimeout(timers.current.get(id)); timers.current.delete(id); setToasts((t) => t.filter((x) => x.id !== id)); }, []);
+  const later = useCallback((id: number, ms: number) => { clearTimeout(timers.current.get(id)); timers.current.set(id, setTimeout(() => drop(id), ms)); }, [drop]);
+  const push = useCallback<Push>((text, bad, action) => {
+    const t: Toast = { id: Date.now() + Math.random(), text, bad, action };
+    setToasts((all) => [...all.slice(-3), t]);
+    later(t.id, toastTime(t));
+  }, [later]);
   // parts of the app without access to the toast context (message formatting) raise errors this way
   useEffect(() => {
     // a plain string is a problem; { text, ok: true } is good news (a reference posted from a drag)
@@ -335,12 +399,50 @@ export function ToastHost({ children }: { children: ReactNode }) {
       <Fragment key={epoch}>{children}</Fragment>
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`}>
+          <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`} role={t.bad ? 'alert' : undefined}
+            onMouseEnter={() => clearTimeout(timers.current.get(t.id))} onMouseLeave={() => later(t.id, 2500)}>
             <Icon name={t.bad ? 'warning' : 'check'} />
-            <span>{t.text}</span>
+            <span className="toast-text">{t.text}</span>
+            {t.action && <button className="btn sm toast-action" onClick={() => { drop(t.id); t.action!.run(); }}>{t.action.label}</button>}
+            <button className="icon-btn toast-x" aria-label="Dismiss" title="Dismiss" onClick={() => drop(t.id)}><Icon name="x" size={14} /></button>
           </div>
         ))}
       </div>
+      <ConfirmHost />
     </ToastCtx.Provider>
+  );
+}
+
+// ------------------------------------------------------------------ asking before something that cannot be taken back
+interface Ask { title: string; body?: string; confirm: string; danger?: boolean; resolve: (ok: boolean) => void }
+let ask: ((a: Ask) => void) | null = null;
+
+/**
+ * Ask before a step that is hard to undo, in the app's own dialog (a verb on the button, never "OK").
+ * Resolves true when the person confirms.
+ */
+export function confirmAction(o: { title: string; body?: string; confirm: string; danger?: boolean }): Promise<boolean> {
+  if (!ask) return Promise.resolve(window.confirm(o.body ? `${o.title}\n\n${o.body}` : o.title));
+  const show = ask;
+  return new Promise((resolve) => show({ ...o, resolve }));
+}
+
+function ConfirmHost() {
+  const [cur, setCur] = useState<Ask | null>(null);
+  useEffect(() => {
+    ask = (a) => setCur((prev) => { prev?.resolve(false); return a; });
+    return () => { ask = null; };
+  }, []);
+  if (!cur) return null;
+  const done = (ok: boolean) => { cur.resolve(ok); setCur(null); };
+  return (
+    <Dialog title={cur.title} onClose={() => done(false)} narrow>
+      {cur.body && <p className="muted confirm-body">{cur.body}</p>}
+      <div className="dialog-actions confirm-actions">
+        <span />
+        <button className="btn ghost" onClick={() => done(false)}>Cancel</button>
+        <button className={`btn ${cur.danger ? 'danger-solid' : 'primary'}`} autoFocus onClick={() => done(true)}>{cur.confirm}</button>
+      </div>
+    </Dialog>
   );
 }

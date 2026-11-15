@@ -3,7 +3,7 @@
 // Slate (the office text editor); whatever is saved there comes back into the note.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Note, NoteSummary, PublicUser } from '@dex/core';
-import { Icon, relativeTime, useToast } from '../ui.tsx';
+import { Icon, confirmAction, relativeTime, useToast } from '../ui.tsx';
 import { renderBody } from './format.tsx';
 
 export function useNotes(convId: string | null): NoteSummary[] | null {
@@ -151,7 +151,7 @@ export function NoteEditor({ id, convId, users, meId, onClose }: { id: string | 
         ? <div className="note-preview selectable">{body.trim() ? renderBody(body, users, meId) : <span className="faint">Nothing written yet.</span>}</div>
         : <textarea className="note-body" value={body} placeholder={'Write here. **bold**, *italic*, - lists, `code`, > quotes'} onChange={(e) => change(title, e.target.value)} autoFocus={!id} />}
       {note && (note.ownerId === meId || !note.convId) && (
-        <button className="link danger note-delete" onClick={() => { if (confirm(`Delete "${note.title}"?`)) void window.dex.request('note.delete', { id: note.id }).then(onClose).catch((e: Error) => toast(e.message, true)); }}>Delete note</button>
+        <button className="link danger note-delete" onClick={() => void confirmAction({ title: `Delete "${note.title}"?`, confirm: 'Delete', danger: true }).then((ok) => { if (ok) void window.dex.request('note.delete', { id: note.id }).then(onClose).catch((e: Error) => toast(e.message, true)); })}>Delete note</button>
       )}
     </div>
   );

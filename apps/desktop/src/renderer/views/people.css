@@ -203,6 +203,9 @@ button.card.person { position: relative; text-align: left; color: inherit; font:
   border-radius: 4px; overflow: hidden; box-shadow: var(--shadow-1);
 }
 .tb-head { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 1px; }
+/* the Room stage has its own .tb-head and .tb-name (rooms.css): inside a Directory card they are this title block's */
+.tblock .tb-head { height: auto; padding: 0; border-bottom: 0; align-items: stretch; justify-content: normal; white-space: normal; }
+.tblock .tb-name { display: block; padding: 0; border-bottom: 0; }
 .tb-tile { grid-row: span 2; display: grid; place-items: start; padding: 14px 15px; background: var(--layer-solid); }
 .tb-cell { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 8px 12px 10px; background: var(--layer-solid); }
 .tb-head .tb-cell:nth-of-type(2) { padding-top: 10px; }
@@ -264,6 +267,9 @@ button.card.person { position: relative; text-align: left; color: inherit; font:
   .directory.with-profile { grid-template-columns: 1fr; }
   .profile-panel { position: fixed; inset: var(--titlebar) 0 0 auto; width: min(400px, 100vw); z-index: 14; height: auto; box-shadow: var(--shadow-2); background: var(--layer-solid); }
 }
+@media (max-width: 720px) {
+  .profile-panel { left: 0; width: auto; padding: 12px 16px 24px; }
+}
 
 /* ------------------------------------------------------------------ Search */
 .search-view { display: grid; gap: 12px; align-content: start; }
@@ -307,6 +313,9 @@ button.card.person { position: relative; text-align: left; color: inherit; font:
 .search-hit .file-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 30%; background: var(--accent-soft); color: var(--accent); flex: none; }
 .search-meta { display: flex; gap: 6px; align-items: baseline; font-size: 13px; min-width: 0; }
 .search-meta .mono { margin-left: auto; font-size: 11px; flex: none; }
+.search-meta b { flex: none; white-space: nowrap; }
+.search-meta b.sm-where { flex: 0 1 auto; }
+.search-meta .sm-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-snippet { display: block; font-size: 13px; line-height: 1.45; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .search-snippet mark { background: var(--amber-soft); color: inherit; border-radius: 2px; padding: 0 2px; }
 

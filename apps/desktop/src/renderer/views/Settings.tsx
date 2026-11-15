@@ -8,7 +8,7 @@ import { RemoteSettings } from './Remote.tsx';
 import { YourDevices } from './Pairing.tsx';
 import { CalendarFeedSettings } from './CalendarFeed.tsx';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
+import { Avatar, Icon, Popover, Segmented, Toggle, confirmAction, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
 import { setMsgLayout, useMsgLayout } from '../chat/prefs.ts';
 import type { MsgLayout } from '../chat/prefs.ts';
@@ -75,7 +75,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               )}
             </div>
             <div className="full row-actions" style={{ justifyContent: 'flex-end' }}>
-              <button className="btn primary" disabled={!dirty || !live || !name.trim()}>Save profile</button>
+              <button className="btn primary" disabled={!dirty || !live || !name.trim()} title={!live ? 'Waiting for the office hub…' : !name.trim() ? 'Your name cannot be empty' : !dirty ? 'Nothing has changed yet' : undefined}>Save profile</button>
             </div>
           </form>
         </section>
@@ -93,7 +93,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               <input id="s-bday" className="input" value={contact.birthday} maxLength={5} placeholder="06-30" onChange={(e) => setContact({ ...contact, birthday: e.target.value })} disabled={!live} /></div>
             <div className="full row-actions" style={{ justifyContent: 'space-between' }}>
               <span className="faint" style={{ fontSize: 12.5 }}>Your department, designation and manager are set by an administrator.</span>
-              <button className="btn primary" disabled={!contactDirty || !live}>Save contact details</button>
+              <button className="btn primary" disabled={!contactDirty || !live} title={!live ? 'Waiting for the office hub…' : !contactDirty ? 'Nothing has changed yet' : undefined}>Save contact details</button>
             </div>
           </form>
         </section>
@@ -255,7 +255,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           <div className="setting">
             <Icon name="laptop" className="lead" />
             <div className="txt"><div>{state.platform === 'android' ? 'This phone' : 'This PC'}</div><div className="faint">{state.platform === 'android' ? '' : `${state.account.domain}\\${state.account.username} · `}{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
-            <button className="btn" onClick={() => { if (confirm('Disconnect from this hub? You can join it or another hub again from the welcome screen.')) void window.dex.forgetHub(); }}>Disconnect</button>
+            <button className="btn" onClick={() => void confirmAction({ title: 'Disconnect from this hub? You can join it or another hub again from the welcome screen.', confirm: 'Disconnect', danger: true }).then((ok) => { if (ok) void window.dex.forgetHub(); })}>Disconnect</button>
           </div>
         </section>
 

@@ -6,8 +6,8 @@ export const Fragment = R.Fragment;
 const PROPS = ['title', 'placeholder', 'aria-label', 'alt', 'label'] as const;
 
 function translateProps(type: unknown, props: Record<string, unknown>): Record<string, unknown> {
-  // only elements on the page (not components), and never inside translate="no"
-  if (!translating() || typeof type !== 'string' || props.translate === 'no') return props;
+  // only elements on the page and fragments (<>…</> holds text too), not components; never inside translate="no"
+  if (!translating() || (typeof type !== 'string' && type !== R.Fragment) || props.translate === 'no') return props;
   let out = props;
   const set = (k: string, v: unknown) => { if (out === props) out = { ...props }; out[k] = v; };
   for (const k of PROPS) if (typeof props[k] === 'string') set(k, tr(props[k] as string));
