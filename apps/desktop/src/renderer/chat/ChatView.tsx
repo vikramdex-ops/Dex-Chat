@@ -9,6 +9,7 @@ import { Switchboard } from './Switchboard.tsx';
 import type { Chip } from './Switchboard.tsx';
 import { addConversation, useChat } from './store.ts';
 import { CONV_DRAG, closePane, focusPane, openBeside, openInPane, prunePanes, usePanes } from './panes.ts';
+import { RefHost } from './refs.tsx';
 
 const FOLD_KEY = 'dex-sb-open';
 
@@ -91,6 +92,7 @@ export function ChatView({ chip, setChip, state, session }: {
       </div>
       {dialog === 'new' && <NewConversation kind={chip === 'people' || guest ? 'direct' : 'space'} users={session.users.filter((u) => u.id !== meId && u.role !== 'bot')} online={online}
         onClose={() => setDialog(null)} onCreated={(c) => { addConversation(c); openInPane(c.id); setDialog(null); }} />}
+      <RefHost users={users} meId={meId} />
       {dialog === 'browse' && <BrowseSpaces onClose={() => setDialog(null)} onJoined={(c) => { addConversation(c); openInPane(c.id); setDialog(null); }} />}
     </div>
   );
