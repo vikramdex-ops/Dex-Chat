@@ -663,7 +663,10 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
     all[next].focus({ preventScroll: true });
     all[next].scrollIntoView({ block: 'nearest' });
   };
-  useEffect(() => { stick.current = !restore.current; pinTop.current = false; }, [convId]);
+  // another conversation in the same Pane starts at its newest message (on first open the reading
+  // place restored above decides, so this leaves it alone)
+  const shownConv = useRef(convId);
+  useEffect(() => { if (shownConv.current === convId) return; shownConv.current = convId; stick.current = true; pinTop.current = false; }, [convId]);
   // switching between spine and cards changes every height: stay with the newest message while
   // the runs settle (they are laid out as they come into view)
   useLayoutEffect(() => {
