@@ -13,6 +13,7 @@ import { AutomationsAdmin } from '../flows/FlowsPanel.tsx';
 import { ItDeskAdmin } from '../help/ItDesk.tsx';
 import { CONTINUITY_AUDIT, ContinuityAdmin } from './Continuity.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 
 type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'continuity' | 'audit';
 
@@ -56,7 +57,64 @@ const AUDIT_TEXT: Record<string, string> = {
   'flow.deleted': 'removed an automation',
   'flow.settings': 'changed whether automations may call the office network',
   ...CONTINUITY_AUDIT,
+  'help.staff.granted': 'put someone on the IT desk',
+  'help.staff.removed': 'took someone off the IT desk',
+  'device.paired': 'paired a phone or another PC',
+  'device.removedByOwner': 'removed one of their own devices',
+  'pair.created': 'started pairing a device',
+  'policy.set': 'changed the office policies',
+  'remote.set': 'changed access from outside the office',
+  'links.settings': 'changed link previews',
+  'ice.set': 'changed the call relay settings',
+  'lines.add': 'added a quote for the day\'s line',
+  'emoji.add': 'added a custom emoji',
+  'emoji.remove': 'removed a custom emoji',
+  'sticker.add': 'added a sticker',
+  'sticker.remove': 'removed a sticker',
+  'hook.created': 'created a webhook',
+  'hook.revoked': 'stopped a webhook',
+  'botflow.saved': 'saved a bot flow',
+  'botflow.removed': 'removed a bot flow',
+  'botflow.completed': 'finished a bot flow',
+  'miniapp.added': 'added a tool to a conversation',
+  'miniapp.uploaded': 'uploaded a tool',
+  'help.opened': 'asked IT for help',
+  'help.taken': 'took a help request',
+  'help.closed': 'closed a help request',
+  'help.session.started': 'started a support session',
+  'help.session.ended': 'ended a support session',
+  'help.consent.granted': 'allowed IT to see or use their PC',
+  'help.consent.revoked': 'stopped IT seeing or using their PC',
+  'help.diagnostics': 'sent their PC\'s details to IT',
+  'meeting.guestKnocked': 'asked to join a meeting from a browser',
+  'meeting.guestJoined': 'let a browser guest into a meeting',
+  'meeting.guestRemoved': 'took a browser guest out of a meeting',
+  'recording.stored': 'kept a meeting recording on the hub',
+  'recording.uploadStarted': 'started keeping a recording on the hub',
+  'recording.shared': 'shared a meeting recording',
+  'recording.downloaded': 'downloaded a meeting recording',
+  'recording.deleted': 'deleted a meeting recording',
+  'recording.purged': 'removed old recordings past the office\'s limit',
+  'webinar.created': 'planned a webinar',
+  'webinar.registered': 'registered for a webinar',
+  'webinar.practice': 'opened a webinar\'s practice session',
+  'webinar.live': 'took a webinar live',
+  'webinar.ended': 'ended a webinar',
+  'webinar.watching': 'started watching a webinar',
+  'webinar.attendeeJoined': 'joined a webinar\'s audience',
+  'webinar.invitedToSpeak': 'invited someone in the audience to speak',
+  'webinar.speaking': 'came on a webinar\'s stage to speak',
+  'webinar.backToAudience': 'went back to a webinar\'s audience',
+  'webinar.handoutAdded': 'added a handout to a webinar',
+  'webinar.followUp': 'sent a webinar\'s follow-up',
+  'webinar.streamSet': 'set up a webinar\'s live stream',
+  'webinar.streamStarted': 'started a webinar\'s live stream',
+  'webinar.streamStopped': 'stopped a webinar\'s live stream',
 };
+/** A role as people read it ("Admin"), not its code ("admin"). */
+const roleWord = (r: string | undefined) => (r && r in ROLE_LABEL ? ROLE_LABEL[r as PublicUser['role']] : r ?? '');
+/** An action the list above does not know yet, in words rather than its code ("webinar.streamSet" → "webinar: stream set"). */
+const auditWords = (action: string) => AUDIT_TEXT[action] ?? action.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace('.', ': ').replace(/\./g, ' ');
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
@@ -167,7 +225,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
               <span>
                 {d.status === 'approved' && d.id !== session.deviceId && (
                   <button className="btn ghost danger" disabled={!live || busy === d.id}
-                    onClick={() => { if (confirm(`Remove ${d.hostname} for ${d.displayName}? It will be signed out immediately and must be approved again.`)) void act(d.id, () => window.dex.request('admin.revoke', { deviceId: d.id }), `Removed ${d.hostname}`); }}>
+                    onClick={() => void confirmAction({ title: `Remove ${d.hostname} for ${d.displayName}?`, body: 'It is signed out at once and must be approved again to come back.', confirm: 'Remove device', danger: true }).then((ok) => { if (ok) void act(d.id, () => window.dex.request('admin.revoke', { deviceId: d.id }), `Removed ${d.hostname}`); })}>
                     Remove
                   </button>
                 )}
@@ -228,9 +286,9 @@ export function Admin({ state, session }: { state: AppState; session: Session })
                 <span className="faint" title={new Date(a.at).toLocaleString()}>{relativeTime(a.at)}</span>
                 <span>
                   <b>{a.action === 'device.registered' && !a.actor ? detail?.account ?? 'A new device' : actor}</b>{' '}
-                  {AUDIT_TEXT[a.action] ?? a.action}
+                  {auditWords(a.action)}
                   {subject && a.action !== 'device.registered' ? <> · {subject}</> : null}
-                  {a.action === 'user.role' && detail ? <> · {detail.from} → {detail.to}</> : null}
+                  {a.action === 'user.role' && detail ? <> · {roleWord(detail.from)} → {roleWord(detail.to)}</> : null}
                 </span>
               </div>
             );

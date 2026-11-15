@@ -8,6 +8,7 @@ import { Glyph } from '../rooms/parts.tsx';
 import { clearRecording, keepOnHub, resetUpload, useRecorder, useUpload } from '../rooms/recorder.ts';
 import type { Recording } from '../rooms/recorder.ts';
 import { usePolicy } from '../policy.ts';
+import { confirmAction } from '../confirm.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { openRecording } from './shelf.ts';
 import './m2.css';
@@ -74,7 +75,9 @@ function Done({ rec }: { rec: Recording }) {
     <Dialog title="Room recording ready" onClose={() => {
       // an upload carries on without the dialog: the recording lands on the shelf
       if (up.status === 'uploading') { clearRecording(); toast('It keeps uploading to the hub and will be on your Recordings shelf'); return; }
-      if (up.status === 'done' || confirm('Close? The recording is not kept anywhere yet.')) close();
+      if (up.status === 'done') { close(); return; }
+      void confirmAction({ title: 'Close without keeping it?', body: 'The recording is not kept anywhere yet. Save it on this PC first if you need it.', confirm: 'Close and discard', cancel: 'Go back', danger: true })
+        .then((ok) => { if (ok) close(); });
     }}>
       <dl className="rec-facts">
         <div><dt className="label">Length</dt><dd className="mono">{lengthOf(rec.ms)}</dd></div>
@@ -95,8 +98,8 @@ function Done({ rec }: { rec: Recording }) {
           <p className="field-error">It could not be kept on the hub: {up.error}. <button className="tb-link" onClick={() => void keepOnHub(rec).catch(() => {})}>Try again</button></p>
         )}
       </div>
-      <div className="dialog-actions">
-        {up.status !== 'done' && <button className="btn ghost danger" onClick={() => { if (confirm('Discard this recording?')) close(); }}>Discard</button>}
+      <div className="dialog-actions rec-done-actions">
+        {up.status !== 'done' && <button className="btn ghost danger" onClick={() => void confirmAction({ title: 'Discard this recording?', body: 'It is not kept on the hub or on this PC, so it cannot be brought back.', confirm: 'Discard', danger: true }).then((ok) => { if (ok) close(); })}>Discard</button>}
         {!/Android/i.test(navigator.userAgent) && <button className="btn" onClick={save}><Icon name="download" size={15} />Save to this PC</button>}
         {up.status === 'done' && up.info && (
           <>

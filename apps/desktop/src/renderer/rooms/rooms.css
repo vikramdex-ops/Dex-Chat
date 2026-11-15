@@ -70,7 +70,7 @@
 .room-pager button:disabled { opacity: .35; }
 .room-pager .flip svg { transform: scaleX(-1); }
 
-.room-tile { position: relative; aspect-ratio: 16 / 10; min-width: 0; }
+.room-tile { position: relative; aspect-ratio: 16 / 10; min-width: 0; container: tile / inline-size; }
 .room-face {
   position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; container-type: size;
   border-radius: var(--radius-s); border: 1px solid var(--stroke-strong);
@@ -82,7 +82,7 @@
 }
 .room-tile.has-video .room-face { background: #0b1416; }
 .room-face video { position: absolute; inset: 0; width: 100%; height: 100%; }
-.room-face .avatar { --size: clamp(40px, 30cqh, 96px); box-shadow: 0 0 0 3px var(--layer-solid), 0 0 0 4px var(--stroke-strong); }
+.room-face .avatar, .room-face .avatar.lg { --size: clamp(32px, 30cqh, 96px); box-shadow: 0 0 0 3px var(--layer-solid), 0 0 0 4px var(--stroke-strong); }
 
 /* the caption is a drawing callout: zone reference, then the name in capitals */
 .room-cap {
@@ -150,7 +150,7 @@
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .room-tab-badge {
-  position: absolute; top: -6px; left: -6px; writing-mode: horizontal-tb; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center;
+  position: absolute; top: 4px; right: calc(100% + 3px); writing-mode: horizontal-tb; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center;
   font: 700 10px/1 var(--font-mono); font-style: normal; letter-spacing: 0; color: #2b1a00; background: var(--amber); border-radius: 2px;
   box-shadow: 0 0 0 2px var(--layer-solid);
 }
@@ -214,7 +214,7 @@
 .tb-controls button.hand svg { color: var(--amber-ink); }
 .tb-controls button[aria-expanded='true'] { background: var(--subtle); }
 .tb-controls button svg { flex: none; color: var(--text-2); }
-.tb-controls button span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-controls button span:last-child { overflow: hidden; line-height: 1.15; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .tb-controls button:hover { background: var(--subtle); }
 .tb-controls button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .tb-controls button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
@@ -329,13 +329,17 @@ body:has(.room-stage:not(.folded)) .scrim { z-index: 40; }
 .room-hostnote { margin: auto 0 0; padding: 10px 12px; font-size: 12px; border-top: 1px solid var(--stroke); }
 
 /* ------------------------------------------------------------------ menus from the title block */
-.room-react-menu { width: auto; }
+.popover.menu.room-react-menu { width: max-content; overflow: visible; }
 .room-react-row { display: flex; gap: 0; padding: 2px 4px 4px; }
-.room-react-row button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; font-size: 22px; border-radius: 3px; }
+.menu .room-react-row button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; font-size: 22px; border-radius: 3px; }
 .room-react-row button + button { border-left: 1px solid var(--stroke); border-radius: 0; }
 .room-layout-menu { width: 330px; }
 .room-layout-menu button[aria-checked='true'] { color: var(--accent-ink); font-weight: 600; background: var(--accent-soft); }
-.room-layout-menu .kbd { margin-left: auto; font-size: 11px; }
+.room-layout-menu button { align-items: baseline; }
+.room-layout-note { margin-left: auto; padding-left: 10px; font-size: 11.5px; color: var(--text-3); text-align: right; }
+.room-layout-menu button[aria-checked='true'] .room-layout-note { color: var(--accent-ink); font-weight: 400; }
+.room-layout-menu button:disabled { color: var(--text-3); }
+.room-menu-empty { margin: 2px 10px 8px; font-size: 12.5px; line-height: 1.4; }
 .room-person-menu { width: 260px; }
 .room-person-menu .danger { color: var(--danger); }
 .room-bg-menu { width: 372px; }
@@ -444,7 +448,7 @@ body:has(.room-stage:not(.folded)) .scrim { z-index: 40; }
 /* ------------------------------------------------------------------ small windows and phones */
 @media (max-width: 900px) {
   .room-stage { padding: 8px; }
-  .room-sheet { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; outline: 0; }
+  .room-sheet { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; outline: 0; }
   .room-sheet::before { display: none; }
   .room-field { padding: 22px 14px 14px; }
   .room-strip { grid-auto-columns: 132px; }
@@ -460,13 +464,41 @@ body:has(.room-stage:not(.folded)) .scrim { z-index: 40; }
 }
 @media (max-width: 720px) {
   .room-banner { flex-wrap: wrap; padding: 10px 14px 14px; }
-  .room-banner-actions { width: 100%; }
-  .rb-btn { flex: 1; justify-content: center; }
-  .rb-btn.plain { flex: none; }
+  /* voice and video side by side, "Not now" on its own line under them: nothing runs off the edge */
+  .room-banner-actions { width: 100%; flex-wrap: wrap; }
+  .rb-btn { flex: 1; justify-content: center; height: 40px; }
+  .rb-btn.plain { flex: 1 0 100%; height: 36px; }
+  /* touch targets on phones: 40 px at least */
+  .room-tabs button { height: 40px; }
+  .room-panel-body { max-height: calc(30vh - 40px); }
+  .room-stage .tb-link { height: 40px; }
+  .room-stage .tb-link.square { width: 40px; }
+  .room-leave { height: 40px; }
+  .room-tile-menu, .room-strip .room-tile-menu { width: 40px; height: 40px; opacity: 1; }
+  .row-menu { width: 40px; height: 40px; opacity: 1; }
+  .room-schedule td { height: 40px; }
+  .room-lobby .btn.sm, .room-host-actions button, .room-end, .room-ask .rb-btn { height: 40px; }
+  .room-host-settings summary { min-height: 40px; }
+  .room-pager button { width: 40px; height: 38px; }
+  .room-pager { height: 40px; }
+  .tb-id { height: 32px; }
+  /* a tighter title block on phones, so the tiles keep some of the screen */
+  .room-stage .tb-name { padding: 6px 12px 8px; }
+  .room-stage .tb-name h2 { font-size: 17px; }
+  .tb-facts > div { padding: 4px 12px 6px; }
+  .tb-controls button { height: 50px; }
   .tb-controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .tb-controls button:nth-child(3n) { border-right: 1px solid var(--stroke-strong); }
   .tb-controls button:nth-child(4n) { border-right: 0; }
   .room-ask { white-space: normal; width: calc(100% - 24px); flex-wrap: wrap; }
+}
+/* small tiles (strips, phones): the caption keeps the zone and name, tags drop to the foot, the
+   open seat's words sit below the caption instead of under it */
+@container tile (max-width: 200px) {
+  .room-tags { top: auto; bottom: 6px; right: 6px; }
+  .room-cap { top: 5px; left: 5px; max-width: calc(100% - 10px); }
+  .open-seat-text { margin-top: 22px; padding: 2px 6px; font-size: 12px; text-align: center; }
+  .open-seat-line { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .open-seat-line::before, .room-chip-pip, .ring-tag { animation: none; }
@@ -488,4 +520,27 @@ body:has(.room-stage:not(.folded)) .scrim { z-index: 40; }
   .titlebar:has(.room-chip) .lens-bar .lens-label { display: none; }
   .titlebar:has(.room-chip) .lens-bar .lens { padding: 0 11px; }
   .titlebar:has(.room-chip) .goto-hint { display: none; }
+}
+
+/* phones: the Room's own buttons, fields, the pointer tools and the title-bar chip take a finger (40 px) */
+@media (max-width: 720px) {
+  .room-stage .btn, .room-stage .input, .room-stage select { min-height: 40px; }
+  .room-stage .icon-btn { width: 40px; height: 40px; }
+  .room-stage .pt-tool { width: 40px; height: 40px; }
+  .room-stage .ctl-ask { height: 40px; }
+  .room-chip { height: 40px; }
+  .room-chip-mic { width: 40px; }
+}
+/* phones: a tile too small for a 40 px menu button leaves it to the People tab's row menu */
+@media (max-width: 720px) {
+  @container tile (max-width: 200px) { .room-tile-menu, .room-strip .room-tile-menu { display: none; } }
+}
+/* Hindi and Tamil: the panel's tabs and the Room's captions in the body face (the mono face has no
+   Devanagari or Tamil letters, and capitals and wide tracking do not apply to them) */
+:root:is(:lang(hi), :lang(ta)) .room-tabs button { font: 600 12px/1 var(--font-body); letter-spacing: 0; }
+:root:is(:lang(hi), :lang(ta)) .room-cap > span, :root:is(:lang(hi), :lang(ta)) .tb-kind, :root:is(:lang(hi), :lang(ta)) .role-tag, :root:is(:lang(hi), :lang(ta)) .ring-tag { font-family: var(--font-body); letter-spacing: 0; }
+/* phones: the foot of the title block wraps rather than pushing the sheet wider (long words in Tamil) */
+@media (max-width: 720px) {
+  .tb-foot { flex-wrap: wrap; row-gap: 6px; }
+  .room-side, .room-block { min-width: 0; }
 }

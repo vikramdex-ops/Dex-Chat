@@ -408,41 +408,9 @@ export function ToastHost({ children }: { children: ReactNode }) {
           </div>
         ))}
       </div>
-      <ConfirmHost />
     </ToastCtx.Provider>
   );
 }
 
-// ------------------------------------------------------------------ asking before something that cannot be taken back
-interface Ask { title: string; body?: string; confirm: string; danger?: boolean; resolve: (ok: boolean) => void }
-let ask: ((a: Ask) => void) | null = null;
-
-/**
- * Ask before a step that is hard to undo, in the app's own dialog (a verb on the button, never "OK").
- * Resolves true when the person confirms.
- */
-export function confirmAction(o: { title: string; body?: string; confirm: string; danger?: boolean }): Promise<boolean> {
-  if (!ask) return Promise.resolve(window.confirm(o.body ? `${o.title}\n\n${o.body}` : o.title));
-  const show = ask;
-  return new Promise((resolve) => show({ ...o, resolve }));
-}
-
-function ConfirmHost() {
-  const [cur, setCur] = useState<Ask | null>(null);
-  useEffect(() => {
-    ask = (a) => setCur((prev) => { prev?.resolve(false); return a; });
-    return () => { ask = null; };
-  }, []);
-  if (!cur) return null;
-  const done = (ok: boolean) => { cur.resolve(ok); setCur(null); };
-  return (
-    <Dialog title={cur.title} onClose={() => done(false)} narrow>
-      {cur.body && <p className="muted confirm-body">{cur.body}</p>}
-      <div className="dialog-actions confirm-actions">
-        <span />
-        <button className="btn ghost" onClick={() => done(false)}>Cancel</button>
-        <button className={`btn ${cur.danger ? 'danger-solid' : 'primary'}`} autoFocus onClick={() => done(true)}>{cur.confirm}</button>
-      </div>
-    </Dialog>
-  );
-}
+// Asking before something that cannot be taken back lives in confirm.tsx (one dialog for the whole app).
+export { confirmAction } from './confirm.tsx';

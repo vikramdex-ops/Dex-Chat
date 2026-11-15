@@ -277,7 +277,7 @@ export function PointerLayer(props: PointerLayerProps) {
       {note && (
         <form className="pt-note" style={{ left: note.sx, top: note.sy }} onSubmit={(e) => { e.preventDefault(); placePin(); }} onPointerDown={(e) => e.stopPropagation()}>
           <span className="mono">MARKER {board.nextMarker()}</span>
-          <input autoFocus className="input" maxLength={MAX_NOTE} placeholder="A short note (optional)" value={noteText} onChange={(e) => setNoteText(e.target.value)}
+          <input autoFocus className="input" maxLength={MAX_NOTE} placeholder="A short note (optional)" aria-label="Note on the marker" value={noteText} onChange={(e) => setNoteText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setNote(null); } }} />
           <button className="btn primary sm" type="submit">Place</button>
         </form>
@@ -287,7 +287,7 @@ export function PointerLayer(props: PointerLayerProps) {
           <span className="pt-tools-label mono">POINTERS{enabled ? '' : ' · OFF'}</span>
           {TOOLS.map((t) => (
             <button key={t.id} className={`pt-tool${tool === t.id ? ' on' : ''}`} aria-pressed={tool === t.id} disabled={!enabled && !isPresenter}
-              title={`${t.label} (${t.key})`} onClick={() => setTool(t.id)}>
+              title={!enabled && !isPresenter ? `${t.label}: the presenter has turned pointers off` : `${t.label} (${t.key})`} onClick={() => setTool(t.id)}>
               <ToolGlyph tool={t.id} />
             </button>
           ))}

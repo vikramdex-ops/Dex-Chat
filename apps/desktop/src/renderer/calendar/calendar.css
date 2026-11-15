@@ -6,3 +6,18 @@
 .zone-heads i { font-style: normal; }
 .zone-heads i:first-child { color: var(--accent); }
 @media (max-width: 720px) { .week.two-zones .week-head, .week.two-zones .week-allday, .week.two-zones .week-body { grid-template-columns: 76px repeat(7, minmax(44px, 1fr)); } }
+
+/* phones: the meeting dialog's fields and buttons take a finger (40 px) */
+@media (max-width: 720px) {
+  .dialog:has(.ev-invitees) .btn, .dialog:has(.ev-invitees) .input, .dialog:has(.ev-invitees) select, .dialog:has(.ev-invitees) .icon-btn,
+  .dialog:has(.ev-facts) .btn, .dialog:has(.ev-facts) .icon-btn { min-height: 40px; min-width: 40px; }
+}
+/* phones: the Calendar's own toolbar takes a finger (40 px) */
+@media (max-width: 720px) {
+  .view.calendar .view-head .btn, .view.calendar .view-head .icon-btn, .view.calendar .view-head .seg button { min-height: 40px; min-width: 40px; }
+}
+.view.calendar .week-body:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+/* the meeting dialog keeps to the window's width; long option text wraps or is cut inside its field */
+.dialog:has(.ev-invitees) { grid-template-columns: minmax(0, 1fr); }
+.dialog:has(.ev-invitees) > * { min-width: 0; }
+.dialog:has(.ev-invitees) .input, .dialog:has(.ev-invitees) select { max-width: 100%; min-width: 0; }

@@ -15,7 +15,7 @@ const FILE_TYPES = ['pdf', 'dwg', 'dxf', 'xlsx', 'docx', 'ifc', 'png', 'jpg', 'z
 const QUICK_EMOJI = ['✅', '👍', '👀', '❗', '🚩', '⭐', '📌', '🔥'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DUE = [0, 30, 60, 120, 240, 1440, 2880, 10080];
-const dueLabel = (m: number) => (m === 0 ? 'At once' : m < 60 ? `In ${m} minutes` : m < 1440 ? `In ${m / 60} hour${m === 60 ? '' : 's'}` : m < 10080 ? `In ${m / 1440} day${m === 1440 ? '' : 's'}` : 'In a week');
+const dueLabel = (m: number) => (m === 0 ? 'At once' : m < 60 ? `In ${m} minutes` : m < 1440 ? (m === 60 ? 'In 1 hour' : `In ${m / 60} hours`) : m < 10080 ? (m === 1440 ? 'In 1 day' : `In ${m / 1440} days`) : 'In a week');
 
 function PeoplePicker({ value, onChange, lists, roles, label }: {
   value: PersonRef[]; onChange: (v: PersonRef[]) => void; lists: PickLists; roles: Array<'author' | 'actor' | 'owner'>; label: string;

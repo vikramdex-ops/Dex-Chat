@@ -81,8 +81,9 @@
 .lg-btn:hover { background: var(--subtle-2); }
 .lg-btn.off { color: var(--text-2); background: transparent; }
 .lg-btn.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-.lg-btn.leave { background: #c8453d; border-color: #c8453d; color: #fff; }
-.lg-btn.leave:hover { background: #a83832; }
+/* leaving is the same amber outline as Leave Room (red is kept for recording) */
+.lg-btn.leave { background: none; border: 1.5px solid var(--amber); color: var(--amber-ink); font-weight: 700; }
+.lg-btn.leave:hover { background: var(--amber-soft); }
 .lg-btn .mono { font-size: 11px; }
 .lg-screen {
   position: fixed; right: 26px; bottom: 170px; z-index: 37; width: min(640px, 46vw); aspect-ratio: 16 / 10; margin: 0; overflow: hidden;
@@ -100,6 +101,7 @@
   .lg-bar { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom)); transform: none; flex-wrap: wrap; gap: 8px; }
   .lg-bar-tools { width: 100%; justify-content: space-between; }
   .lg-btn span:not(.mono) { display: none; }
+  .lg-btn { height: 40px; min-width: 40px; justify-content: center; }
   .lg-screen { left: 8px; right: 8px; width: auto; bottom: 170px; }
   .lg-strip .lg-chip-name, .lg-menu-btn span:not(.mono) { display: none; }
 }

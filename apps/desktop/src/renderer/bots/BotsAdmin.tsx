@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BotFlowDefinition, BotFlowInfo, MiniAppInfo, Ops, PublicUser } from '@dex/core';
 import { Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { permissionWords } from './MiniAppCard.tsx';
 import './bots.css';
@@ -74,7 +75,7 @@ function Flows({ users }: { users: PublicUser[] }) {
             <select id="flow-bot" className="input" value={editing.botId} onChange={(e) => setEditing({ ...editing, botId: e.target.value })}>
               {active.map((b) => <option key={b.bot.id} value={b.bot.id}>{b.bot.displayName}</option>)}
             </select></div>
-          <div className="field"><label htmlFor="flow-json">Definition (JSON: steps, branches, finish actions; see INTEGRATIONS.md)</label>
+          <div className="field"><label htmlFor="flow-json">Definition, as JSON: its steps, branches and finish actions</label>
             <textarea id="flow-json" className="input mono flow-json" rows={18} spellCheck={false} value={editing.text} onChange={(e) => setEditing({ ...editing, text: e.target.value })} /></div>
           {error && <div className="flow-err" role="alert">{error}</div>}
           <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
@@ -96,7 +97,7 @@ function Flows({ users }: { users: PublicUser[] }) {
             <Toggle checked={f.enabled} label={`${f.title} on`} onChange={(on) => void window.dex.request('admin.botflows.enable', { name: f.name, enabled: on }).then(load).catch((e: Error) => toast(e.message, true))} />
             <span className="row-actions">
               <button className="btn ghost sm" onClick={() => { setError(null); setEditing({ botId: f.botId, text: JSON.stringify(f.definition, null, 2), isNew: false }); }}>Change</button>
-              {f.source !== 'builtin' && <button className="btn ghost sm danger" onClick={() => { if (confirm(`Remove ${f.title}? Anyone in the middle of it is stopped.`)) void window.dex.request('admin.botflows.remove', { name: f.name }).then(load).catch((e: Error) => toast(e.message, true)); }}>Remove</button>}
+              {f.source !== 'builtin' && <button className="btn ghost sm danger" onClick={() => void confirmAction({ title: `Remove ${f.title}?`, body: 'Anyone in the middle of it is stopped.', confirm: 'Remove', danger: true }).then((ok) => { if (ok) void window.dex.request('admin.botflows.remove', { name: f.name }).then(load).catch((e: Error) => toast(e.message, true)); })}>Remove</button>}
             </span>
           </div>
         ))}

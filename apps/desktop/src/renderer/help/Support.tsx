@@ -228,7 +228,7 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
               <span>{techFirst} asks {ask.kind === 'screen' ? 'to see your screen' : ask.kind === 'control' ? 'to use your mouse and keyboard' : 'for this PC\'s diagnostics'}</span>
               <span className="sup-ask-actions">
                 <button className="btn primary sm" onClick={answerAsk}>{ask.kind === 'diagnostics' ? 'See what is sent' : 'Choose'}</button>
-                <button className="btn ghost sm" onClick={clearAsk}>No</button>
+                <button className="btn ghost sm" onClick={clearAsk}>Not now</button>
               </span>
             </div>
           )}
@@ -237,7 +237,7 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
               <span className="label">Your screen</span>
               <span>{c.screen ? (c.scope === 'window' ? `${techFirst} sees one window` : `${techFirst} sees your screen`) : 'Not shared'}</span>
               {c.screen ? <button className="btn sm danger" onClick={() => run(stopScreen())}>Stop sharing</button>
-                : <button className="btn sm primary" disabled={!window.dex.listScreens} onClick={() => setSheet('screen')}>Share…</button>}
+                : <button className="btn sm primary" disabled={!window.dex.listScreens} title={window.dex.listScreens ? undefined : 'Sharing a screen needs the desktop app on a PC'} onClick={() => setSheet('screen')}>Share…</button>}
             </div>
             <div className={`sup-perm${c.control ? ' on' : ''}`}>
               <span className="label">Mouse and keyboard</span>

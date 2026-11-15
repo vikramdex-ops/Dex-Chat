@@ -109,7 +109,7 @@ export function BreakoutSetup({ room, users, meDevice, onClose }: { room: RoomIn
       <div className="dialog-actions">
         <span className="faint">{placed} of {people.length} placed · you stay in the main Room</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={busy || !placed} onClick={() => void open()}>{busy ? <span className="spinner" /> : <Icon name="grid" size={15} />}Open {count} rooms</button>
+        <button className="btn primary" disabled={busy || !placed} title={placed ? undefined : 'Place at least one person in a breakout room first'} onClick={() => void open()}>{busy ? <span className="spinner" /> : <Icon name="grid" size={15} />}Open {count} rooms</button>
       </div>
     </Dialog>
   );

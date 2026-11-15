@@ -203,7 +203,9 @@ function JoinCard({ onJoin, busy, users }: { onJoin: (id: string, video: boolean
 function PersonalRoom({ onJoin, busy }: { onJoin: (id: string, video: boolean) => void; busy: boolean }) {
   const toast = useToast();
   const [m, setM] = useState<MeetingInfo | null>(null);
-  useEffect(() => { void window.dex.request('meet.personal').then(setM).catch(() => {}); }, []);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [attempt, setTry] = useState(0);
+  useEffect(() => { setProblem(null); void window.dex.request('meet.personal').then(setM).catch((e: Error) => setProblem(e.message)); }, [attempt]);
   const save = (patch: { lobby?: LobbyRule; joinBeforeHost?: boolean }) => {
     if (!m) return;
     void window.dex.request('meet.settings', { id: m.id, ...patch }).then(setM).catch((e: Error) => toast(e.message, true));
@@ -212,8 +214,9 @@ function PersonalRoom({ onJoin, busy }: { onJoin: (id: string, video: boolean) =
   return (
     <Block label="Your personal room" refText="STANDING ID" className="meet-personal">
       <div className="meet-number" aria-label={m ? `Meeting ID ${formatMeetingId(m.id)}` : 'Loading'}>
-        {m ? digits.map((d, i) => (d === '-' ? <i key={i} aria-hidden="true" /> : <span key={i}>{d}</span>)) : <span className="spinner" />}
+        {m ? digits.map((d, i) => (d === '-' ? <i key={i} aria-hidden="true" /> : <span key={i}>{d}</span>)) : !problem && <span className="spinner" />}
       </div>
+      {!m && problem && <p className="load-problem" role="alert"><Icon name="warning" size={15} /><span><b>Your room could not be loaded</b> · {problem}</span><button className="btn ghost sm" onClick={() => setTry((n) => n + 1)}>Try again</button></p>}
       {m && <div className="meet-link mono" title={m.link}>{meetingLink(m.id)}</div>}
       {m && (
         <div className="meet-options">

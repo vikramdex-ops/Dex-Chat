@@ -87,7 +87,7 @@ export function SoundMenu({ anchor, onClose }: { anchor: HTMLElement; onClose: (
         </div>
         <Toggle label="Strong noise suppression" checked={noise.on} onChange={(on) => void setNoiseSuppression(on).catch((e: Error) => toast(e.message, true))} />
       </div>
-      <div className="mono faint sound-state">{noise.on ? (noise.active ? 'RNNOISE · RUNNING' : 'RNNOISE · STARTS WITH YOUR MIC') : 'OFF · BROWSER FILTERS ONLY'}</div>
+      <div className="mono faint sound-state">{noise.on ? (noise.active ? 'ON · CLEANING YOUR MIC' : 'ON · STARTS WITH YOUR MIC') : 'OFF · BROWSER FILTERS ONLY'}</div>
       {noise.problem && <p className="field-error">{noise.problem}</p>}
     </Popover>
   );

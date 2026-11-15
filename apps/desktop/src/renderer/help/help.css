@@ -307,3 +307,12 @@ body:has(.sup-dock) .scrim, body:has(.sup-stage) .scrim { z-index: 40; }
   .hm-form .dialog-actions { flex-wrap: wrap; }
   .hm-who { flex-basis: 100%; }
 }
+/* the Help desk's counts stay clear of the sheet's close button */
+.hd-sheet .view-head { padding-right: 44px; }
+/* phones: Help me's note about what IT sees takes its own line above the buttons */
+@media (max-width: 520px) {
+  .hm-form .dialog-actions { flex-wrap: wrap; }
+  .hm-form .dialog-actions .hm-who { flex: 1 0 100%; margin-right: 0; }
+  .hm-form .dialog-actions .btn { min-height: 40px; }
+  .hm-form .dialog-actions .btn.primary { margin-left: auto; }
+}

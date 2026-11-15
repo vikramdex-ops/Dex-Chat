@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { parseRecordingLink } from '@dex/core';
 import type { RecordingInfo } from '@dex/core';
 import { Icon, Toggle, colorFor, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { Glyph } from '../rooms/parts.tsx';
 import { capName } from '../rooms/engine.ts';
 import { formatSize, useFileSrc } from '../chat/files.tsx';
@@ -40,7 +41,9 @@ export function RecordingShelf({ onOpen }: { onOpen: (r: RecordingInfo) => void 
             {list.map((r) => (
               <tr key={r.id} className={r.status === 'uploading' ? 'uploading' : undefined}>
                 <td className="rec-title"><b title={r.title}>{r.title}</b>
-                  <span className="faint">{r.status === 'uploading' ? `Uploading · ${Math.floor((r.received / Math.max(1, r.size)) * 100)}%` : `${r.chapters.length} chapters${r.sharedWithConv ? ' · shared with the conversation' : ''}${r.linkOn ? ' · link on' : ''}`}</span></td>
+                  <span className="faint">{r.status === 'uploading' ? `Uploading · ${Math.floor((r.received / Math.max(1, r.size)) * 100)}%` : (
+                  <span>{r.chapters.length === 0 ? 'No chapters' : r.chapters.length === 1 ? '1 chapter' : `${r.chapters.length} chapters`}{r.sharedWithConv ? ' · shared with the conversation' : ''}{r.linkOn ? ' · link on' : ''}</span>
+                )}</span></td>
                 <td className="mono">{dateOf(r.startedAt)}</td>
                 <td className="mono num">{hms(r.durationMs)}</td>
                 <td>{capName(r.recordedByName)}</td>
@@ -88,8 +91,8 @@ export function RecordingPlayer({ rec: initial, onClose }: { rec: RecordingInfo;
     setRec(r);
     if (patch.link && r.link) void navigator.clipboard.writeText(r.link).then(() => toast('Link copied: anyone in the office can watch it'));
   }).catch((e: Error) => toast(e.message, true));
-  const remove = () => {
-    if (!confirm(`Delete "${rec.title}" from the hub? Nobody can watch it after this.`)) return;
+  const remove = async () => {
+    if (!(await confirmAction({ title: `Delete "${rec.title}"?`, body: 'It is removed from the hub, and nobody can watch it after this, even with a link.', confirm: 'Delete recording', danger: true }))) return;
     void window.dex.request('rec.delete', { id: rec.id }).then(() => { toast('Recording deleted'); onClose(); }).catch((e: Error) => toast(e.message, true));
   };
   const total = Math.max(1, rec.durationMs);
@@ -99,7 +102,7 @@ export function RecordingPlayer({ rec: initial, onClose }: { rec: RecordingInfo;
         <section className="rec-stage">
           {src ? <video ref={video} src={src.startsWith('dexfile:') ? `${src}?as=video` : src} controls preload="metadata" onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} />
             : <div className="tl-more"><span className="spinner" /></div>}
-          <div className="rec-strip" aria-label="Who spoke when">
+          <div className="rec-strip" role="group" aria-label="Who spoke when">
             {parts.map((c, i) => (
               <button key={i} className={i === current ? 'on' : undefined} style={{ left: `${(c.at / total) * 100}%`, width: `${Math.max(0.4, ((c.end - c.at) / total) * 100)}%`, ['--tint' as string]: colorFor(c.userId) }}
                 title={`${hms(c.at)} · ${c.name}`} aria-label={`${c.name} from ${hms(c.at)}`} onClick={() => seek(c.at)} />

@@ -9,6 +9,7 @@ import type { CalEvent, GuestLinkView, MeetingInfo, PublicUser } from '@dex/core
 import { buildIcs, invitationText } from '@dex/core/ics';
 import type { Invitation } from '@dex/core/ics';
 import { Icon, Toggle, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { Glyph } from '../rooms/parts.tsx';
 
 /** "Wednesday 18 November 2026, 10:00 – 11:00 (Asia/Kolkata)": what an invitation says about when. */
@@ -70,7 +71,7 @@ export function GuestLinkControls({ meetingId, compact, onChange }: { meetingId:
         <table className="guest-cells">
           <tbody>
             <tr><th className="label">Passcode</th><td className="mono guest-pass">{v.passcode}</td>
-              <td><button className="tb-link" onClick={() => { if (confirm('Give the guest link a new passcode? The link people have now stops working.')) change({ regenerate: true }); }}><Icon name="refresh" size={13} />Renew</button></td></tr>
+              <td><button className="tb-link" onClick={() => void confirmAction({ title: 'Give the guest link a new passcode?', body: 'The link people have now stops working. Send the new one to the guests who still need it.', confirm: 'Renew the link' }).then((ok) => { if (ok) change({ regenerate: true }); })}><Icon name="refresh" size={13} />Renew</button></td></tr>
             {v.url && (
               <tr><th className="label">Link</th><td className="mono guest-url" title={v.url}>{v.url}</td>
                 <td><button className="tb-link" onClick={() => void navigator.clipboard.writeText(v.url!).then(() => toast('Guest link copied'))}><Glyph name="copy" size={13} />Copy</button></td></tr>

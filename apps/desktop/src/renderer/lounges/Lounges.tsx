@@ -4,6 +4,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { Conversation, Lounge, PublicUser } from '@dex/core';
 import { Avatar, Dialog, Icon, Popover, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { useChat } from '../chat/store.ts';
 import { useCall } from '../rooms/engine.ts';
 import { usePeople } from '../people.ts';
@@ -136,10 +137,11 @@ export function LoungeStrip({ convId, live: online }: { convId: string; live: bo
               {l.people.length > 0 && <People lounge={l} users={users} />}
               {manage && <button className="icon-btn" title="Rename" aria-label={`Rename ${l.name}`} onClick={() => { setMenu(false); setDialog({ kind: 'rename', lounge: l }); }}><Icon name="edit" size={14} /></button>}
               {manage && <button className="icon-btn" title="Archive (everyone in it leaves)" aria-label={`Archive ${l.name}`}
-                onClick={() => { if (!l.people.length || confirm(`Archive ${l.name}? The ${l.people.length} people in it leave.`)) void archiveLounge(l.id, true).then(() => toast(`${l.name} archived`)).catch((e: Error) => toast(e.message, true)); }}><Icon name="archive" size={14} /></button>}
+                onClick={() => void (l.people.length ? confirmAction({ title: `Archive ${l.name}?`, body: `The ${l.people.length} people in it leave. You can bring it back from the archive.`, confirm: 'Archive lounge', danger: true }) : Promise.resolve(true))
+                  .then((ok) => { if (ok) void archiveLounge(l.id, true).then(() => toast(`${l.name} archived`)).catch((e: Error) => toast(e.message, true)); })}><Icon name="archive" size={14} /></button>}
               {l.id === here
                 ? <button className="lg-join here" onClick={() => { setMenu(false); leaveLounge(); }}>Leave</button>
-                : <button className="lg-join" disabled={!online} onClick={() => { setMenu(false); join(l.id); }}>Join</button>}
+                : <button className="lg-join" disabled={!online} title={online ? undefined : 'You are offline: lounges open again when the hub is back'} onClick={() => { setMenu(false); join(l.id); }}>Join</button>}
             </div>
           ))}
           {manage && archived.length > 0 && (
