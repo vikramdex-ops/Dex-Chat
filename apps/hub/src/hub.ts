@@ -65,6 +65,7 @@ import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 import { Nib, NibError } from './nib.ts';
 import { NoticeBoard, NoticeError } from './notices.ts';
+import { Seating, SeatingError } from './seating.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -178,6 +179,8 @@ export class Hub {
   readonly meetThreads: MeetThreads;
   /** The notice board: the issuing desks' register of notices (notices.ts, docs/ANNOUNCEMENTS.md). */
   readonly notices: NoticeBoard;
+  /** The office's floor plan and who sits where (seating.ts, docs/SEATING.md). */
+  readonly seating: Seating;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -418,7 +421,11 @@ export class Hub {
     this.offboarding = new Offboarding({
       store: this.store, messaging: this.messaging, calendar: this.calendar, helpdesk: this.helpdesk, feeds: this.feeds, system: this.system,
       signOut: (uid, reason) => this.signOut(uid, reason),
-      broadcast: (name, data, adminsOnly) => this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined),
+      broadcast: (name, data, adminsOnly) => {
+        // a leaver's seat is freed on the floor plan
+        if (name === 'user.left') { try { this.seating.personLeft((data as { userId: string }).userId); } catch (err) { this.log('warn', 'seat not freed', { error: (err as Error).message }); } }
+        this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined);
+      },
       forgetNotify: (deviceId) => this.missed.revoke(deviceId),
       active: (uid) => this.canSignIn(uid),
     });
@@ -501,6 +508,15 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.notices.mayReadFile(userId, fileId); }
+    this.seating = new Seating({
+      db: this.store.db, store: this.store,
+      // guests never see the floor plan
+      broadcast: (name, data) => this.emit(name, data, (c) => { const u = c.userId ? this.store.userById(c.userId) : null; return !!u && u.role !== 'guest' && u.role !== 'bot'; }),
+      tell: (uid, key, text) => { if (!this.nib.note(uid, key, text)) this.system.tell(uid, text, key); },
+      userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -614,6 +630,7 @@ export class Hub {
       try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
       try { this.meetThreads.tick(); } catch (err) { this.log('error', 'meeting thread timer failed', { error: (err as Error).message }); }
       try { this.notices.tick(); } catch (err) { this.log('error', 'notice board timer failed', { error: (err as Error).message }); }
+      try { this.seating.tick(); } catch (err) { this.log('error', 'seating timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -1728,6 +1745,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof NoticeError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('seating.') || op.startsWith('admin.seating.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.seating.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof SeatingError) throw new OpError(err.message);
             throw err;
           }
         }

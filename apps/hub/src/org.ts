@@ -81,6 +81,11 @@ export class Org {
     return this.db.prepare('SELECT * FROM profiles WHERE account = ?').get(account) as Record<string, string | null> | undefined;
   }
 
+  /** Their seat on the floor plan, when they have one (their location then comes from it). */
+  private seatOf(account: string): string | null {
+    return (this.db.prepare('SELECT seat_id FROM profiles WHERE account = ?').get(account) as { seat_id: string | null } | undefined)?.seat_id ?? null;
+  }
+
   private department(id: unknown): DeptRow | undefined {
     return typeof id === 'string' ? this.db.prepare('SELECT * FROM departments WHERE id = ?').get(id) as DeptRow | undefined : undefined;
   }
@@ -120,7 +125,10 @@ export class Org {
         const patch: Partial<Record<ProfileCol, string | null>> = {};
         if (d.phone !== undefined) patch.phone = clean(d.phone, 40);
         if (d.extension !== undefined) patch.extension = clean(d.extension, 12);
-        if (d.location !== undefined) patch.location = clean(d.location, 80);
+        if (d.location !== undefined && clean(d.location, 80) !== (this.profileRow(me.account)?.location ?? null)) {
+          if (this.seatOf(me.account)) throw new OrgError('Your seat comes from the floor plan. Ask the office manager to move you.');
+          patch.location = clean(d.location, 80);
+        }
         if (d.birthday !== undefined) patch.birthday = validBirthday(clean(d.birthday, 5));
         this.writeProfile(me.account, patch);
         this.announce(me.id);
@@ -193,6 +201,11 @@ export class Org {
         const patch: Partial<Record<ProfileCol, string | null>> = {};
         const text: Array<[keyof typeof d, ProfileCol, number]> = [['phone', 'phone', 40], ['extension', 'extension', 12], ['location', 'location', 80], ['email', 'email', 120], ['employeeId', 'employee_id', 40]];
         for (const [k, col, max] of text) if (d[k] !== undefined) patch[col] = clean(d[k], max);
+        // a seat on the floor plan sets the location; the free text is only for offices with no plan
+        if (patch.location !== undefined && this.seatOf(target.account)) {
+          if (patch.location !== (this.profileRow(target.account)?.location ?? null)) throw new OrgError(`${target.displayName}'s seat comes from the floor plan. Move them on the Floor sheet.`);
+          delete patch.location;
+        }
         if (patch.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) throw new OrgError('That email address does not look right.');
         if (d.joinedOn !== undefined) patch.joined_on = validDate(clean(d.joinedOn, 10), 'Joining date');
         if (d.birthday !== undefined) patch.birthday = validBirthday(clean(d.birthday, 5));
@@ -256,7 +269,7 @@ export class Org {
           set('title', r.title, 80);
           set('phone', r.phone, 40);
           set('extension', r.extension, 12);
-          set('location', r.location, 80);
+          if (!this.seatOf(account)) set('location', r.location, 80);
           set('email', r.email, 120);
           set('employee_id', r.employeeId, 40);
           if (clean(r.joinedOn, 10)) patch.joined_on = validDate(clean(r.joinedOn, 10), 'Joining date');

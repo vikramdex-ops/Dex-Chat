@@ -76,6 +76,8 @@ export interface Profile {
   birthday: string | null;
   /** Custom fields set up by an administrator: field id -> value. */
   fields: Record<string, string>;
+  /** Their seat on the office's floor plan (then `location` is derived from it and read-only). */
+  seatId?: string | null;
 }
 
 export interface Department {

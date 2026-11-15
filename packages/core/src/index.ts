@@ -14,3 +14,4 @@ export * from './resilience.ts';
 export * from './nib.ts';
 export * from './meet-threads.ts';
 export * from './notices.ts';
+export * from './seating.ts';
