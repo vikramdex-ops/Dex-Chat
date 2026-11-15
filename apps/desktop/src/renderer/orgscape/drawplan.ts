@@ -5,7 +5,7 @@
 // as dashed arrows, revision clouds when two revisions are compared, and the layout editor's
 // selection. Only what is in view is drawn, and how much depends on the zoom.
 import type { FloorPlan, PlanFixture, PlanSeat, Pt as FPt } from '@dex/core';
-import { deskCorners, facingVec } from '@dex/core';
+import { deskCorners, facingVec, pointInPoly } from '@dex/core';
 import type { Camera } from './camera.ts';
 import type { Floor } from './floor.ts';
 import type { Pt } from './layout.ts';
@@ -217,13 +217,16 @@ function drawSeat(ctx: CanvasRenderingContext2D, m: PlanModel, sv: PlanSeatView,
   const ink = s.ink;
   const seat = sv.seat;
   const c = deskCorners(seat).map(([x, y]) => [X(m, x), Y(m, y)] as const);
-  // the desk
+  // the desk (a pod's seats sit at the pod's own drawn desks)
+  const ownDesk = !inPodDesk(m, seat);
   ctx.beginPath(); c.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
-  ctx.fillStyle = ink.paper; ctx.fill();
+  if (ownDesk) { ctx.fillStyle = ink.paper; ctx.fill(); }
+  else ctx.globalAlpha *= 0;
   if (sv.away) ctx.setLineDash([5 * Math.max(1, px * 0.5), 3]);
   const sel = ps.selSeats.has(seat.id), bad = ps.bad.has(seat.id);
   ctx.strokeStyle = bad ? ink.amberInk : sel ? ink.accent : ink.strokeStrong.startsWith('rgba') ? ink.text3 : ink.strokeStrong;
   ctx.lineWidth = lineW(px, sel || bad ? 2 : 1); ctx.stroke(); ctx.setLineDash([]);
+  if (!ownDesk) ctx.globalAlpha = 1;
   if (sv.holder?.kind === 'reserved') {
     ctx.beginPath(); c.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
     const xs = c.map((q) => q[0]), ys = c.map((q) => q[1]);
@@ -260,6 +263,24 @@ function drawSeat(ctx: CanvasRenderingContext2D, m: PlanModel, sv: PlanSeatView,
     }
   }
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+const podDesk = new WeakMap<object, Set<string>>();
+/** Seats whose desk is one of the plan's drawn pod desks. */
+function inPodDesk(m: PlanModel, seat: PlanSeat): boolean {
+  if (seat.type !== 'pod') return false;
+  let set = podDesk.get(m.plan);
+  if (!set) {
+    set = new Set();
+    const polys = m.plan.fixtures.filter((f) => f.kind === 'poly' && f.pts);
+    for (const q of m.plan.seats) {
+      if (q.type !== 'pod') continue;
+      const c = deskCorners(q), cx = (c[0][0] + c[2][0]) / 2, cy = (c[0][1] + c[2][1]) / 2;
+      if (polys.some((f) => pointInPoly(cx, cy, f.pts!))) set.add(q.id);
+    }
+    podDesk.set(m.plan, set);
+  }
+  return set.has(seat.id);
 }
 
 function drawFixture(ctx: CanvasRenderingContext2D, m: PlanModel, f: PlanFixture, ink: Ink, px: number, v: { x: number; y: number; w: number; h: number }, words: PlanScene['words']): void {
