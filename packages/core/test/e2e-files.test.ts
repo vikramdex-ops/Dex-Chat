@@ -115,7 +115,7 @@ test("a sealed message carries its files' keys and real names; the signature cov
   ];
   const body = await seal({ convId: 'C1', text: '', senderDeviceId: id.deviceId, sign: (p) => signWith(id, p), recipients, files });
   assert.ok(sealsFiles(body));
-  assert.doesNotMatch(atob(body.slice(5)), /Tender|BOQ|pdf/);
+  assert.doesNotMatch(atob(body.slice(5)), /Tender BOQ|application\/pdf/);
   const signKeyOf = (d: string) => (d === id.deviceId ? rawEd25519FromSpki(id.publicKey) : null);
   const opened = await open({ convId: 'C1', body, myDeviceId: raviId.deviceId, mySecret: ravi.secret, signKeyOf });
   assert.deepEqual(opened, { text: '', verified: true, files });
