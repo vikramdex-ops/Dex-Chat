@@ -11,6 +11,10 @@
 // Calendar feeds: a calendar app asks the gateway for /cal/<token>.ics; the gateway passes the
 // token here as a "cal" control frame and returns the feed the hub answers with. The feed (meeting
 // titles and times) is therefore readable by the gateway, unlike devices' traffic.
+//
+// Dexterity Meet: the meeting site's pages ask about a meeting (page.info, page.check) as "w"
+// requests too; the hub tells the gateway the site's address ("site"), so old /m/ links and the
+// gateway's own address lead there (docs/DEXTERITY-MEET.md).
 import crypto, { X509Certificate } from 'node:crypto';
 import https from 'node:https';
 import WebSocket from 'ws';
@@ -75,6 +79,21 @@ export class RemoteGateway {
   private readonly identity: HubIdentity;
   status: RemoteStatus = { url: null, connected: false, since: null, error: null, devices: 0, pinned: false };
   readonly opts: Options;
+  private siteUrl: string | null = null;
+
+  /**
+   * The office's meeting site (Dexterity Meet). The gateway sends old /m/ links there and serves
+   * meeting pages only on that address; it is told again on every connection.
+   */
+  set site(url: string | null) {
+    if (url === this.siteUrl) return;
+    this.siteUrl = url;
+    this.tellSite();
+  }
+  get site(): string | null { return this.siteUrl; }
+  private tellSite(): void {
+    if (this.ws?.readyState === WebSocket.OPEN && this.status.connected) this.ws.send(JSON.stringify({ t: 'site', url: this.siteUrl }));
+  }
 
   constructor(opts: Options) {
     this.opts = opts;
@@ -161,6 +180,7 @@ export class RemoteGateway {
     } else if (m.t === 'ready') {
       this.attempts = 0;
       this.setStatus({ connected: true, since: Date.now(), error: null, pinned: !!m.pinned });
+      this.tellSite();
       this.opts.log('info', 'gateway connected', { url: this.url, pinned: !!m.pinned });
     } else if (m.t === 'open' && typeof m.s === 'number') {
       if (this.streams.size >= MAX_STREAMS) { ws.send(JSON.stringify({ t: 'close', s: m.s, code: 4429, reason: 'The hub is busy' })); return; }

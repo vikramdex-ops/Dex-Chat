@@ -19,7 +19,7 @@ import crypto from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   EMAIL_RE, HANDOUTS_MAX, MEETING_REACTIONS, REG_TOKEN_RE, WEBINAR_ANSWER_MAX, WEBINAR_AUDIENCE_MAX, WEBINAR_DIRECT_VIEWERS, WEBINAR_MAX_PANELISTS,
-  WEBINAR_QUESTION_MAX, WEBINAR_REGISTRATION_MAX, checkAnswers, cleanEmail, cleanFields, cleanName, isWebGuest, passcodeFrom, ulid,
+  WEBINAR_QUESTION_MAX, WEBINAR_REGISTRATION_MAX, checkAnswers, cleanEmail, formatMeetingId, cleanFields, cleanName, isWebGuest, passcodeFrom, ulid,
   webinarFollowUp, webinarFollowUpMessage, webinarInvitation, webinarRegisterUrl, webinarSurveyUrl, webinarWatchUrl,
 } from '@dex/core';
 import type {
@@ -852,7 +852,7 @@ export class Webinars {
     const code = passcodeFrom(crypto.randomBytes(48), 10);
     w.passes.set(code, { name: v.name, registrantId: v.registrantId, voter: v.voter, expires: Date.now() + 120_000 });
     this.leaveDevice(v.deviceId);
-    return { t: 'speak', url: `/m/${id}#${code}` };
+    return { t: 'speak', url: `/${formatMeetingId(id)}#${code}` };
   }
 
   /** meet-guests.ts: a meeting-page join with a speaker's pass (used once, within two minutes). */

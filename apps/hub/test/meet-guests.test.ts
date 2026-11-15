@@ -64,7 +64,8 @@ test('the guest link: hosts turn it on, see the passcode, renew it; the office c
   assert.match(g.problem!, /gateway/);
   await withGateway(owner);
   g = await priya.request('meet.guestLink', { id: m.id });
-  assert.equal(g.url, `https://dexconnect-gateway.example.workers.dev/m/${m.id}#${g.passcode}`);
+  // with no meeting site set, the page is on the gateway's own address: /482-913-207#passcode
+  assert.equal(g.url, `https://dexconnect-gateway.example.workers.dev/${m.id.slice(0, 3)}-${m.id.slice(3, 6)}-${m.id.slice(6)}#${g.passcode}`);
   assert.equal(g.problem, null);
   const renewed = await priya.request('meet.guestLink', { id: m.id, regenerate: true });
   assert.notEqual(renewed.passcode, g.passcode);

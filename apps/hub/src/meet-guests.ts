@@ -7,7 +7,7 @@
 import crypto from 'node:crypto';
 import { GUEST_NAME_MAX, MEETING_ID_RE, WEB_GUEST_DEVICE_PREFIX, WEB_GUEST_PREFIX, formatMeetingId, isWebGuest, isWebGuestDevice, ulid } from '@dex/core';
 import type { GuestDown, GuestRoomView, IceServer, PublicUser, RoomChatLine, RoomInfo, RoomVisitor, WebinarDown } from '@dex/core';
-import type { Meetings } from './meetings.ts';
+import type { Meeting, Meetings } from './meetings.ts';
 import type { Rooms } from './rooms.ts';
 import { RoomError } from './rooms.ts';
 import type { Webinars } from './webinars.ts';
@@ -48,6 +48,10 @@ export interface GuestHost {
   /** Tell a Room's hosts that a guest could not be let in. */
   tellHosts(room: RoomInfo, name: string, reason: string): void;
   log(level: 'info' | 'warn', msg: string, extra?: Record<string, unknown>): void;
+  /** A meeting's name on the meeting site (a webinar's watch page may use it) to its ID. */
+  resolve?(ref: string): string | null;
+  /** Why a guest with the right passcode cannot ask to join now (cancelled, ended, not open yet), or null. */
+  joinProblem?(m: Meeting): string | null;
 }
 
 const cleanName = (v: unknown) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, GUEST_NAME_MAX) : '');
@@ -74,6 +78,7 @@ export class MeetGuests {
     const webinar = kind === 'w';
     // a webinar's audience is larger than a meeting's guests
     if (this.sessions.size >= (webinar ? MAX_SESSIONS + 400 : MAX_SESSIONS)) { this.host.close(gid, GUEST_CLOSE.full, 'Too many guests are connected. Try again in a few minutes.'); return; }
+    if (!MEETING_ID_RE.test(meetingId)) meetingId = this.host.resolve?.(meetingId) ?? '';
     if (!MEETING_ID_RE.test(meetingId)) { this.host.close(gid, GUEST_CLOSE.badPasscode, 'That meeting link is not valid.'); return; }
     const id = ulid();
     this.sessions.set(gid, { gid, ip: ip.slice(0, 80), meetingId, kind: webinar ? 'webinar' : 'meeting', state: 'new', name: '', userId: `${WEB_GUEST_PREFIX}${id}`, deviceId: `${WEB_GUEST_DEVICE_PREFIX}${id}`, roomId: null });
@@ -165,6 +170,9 @@ export class MeetGuests {
       this.end(s, blocked ? GUEST_CLOSE.tooMany : GUEST_CLOSE.badPasscode, blocked ? 'Too many wrong passcodes from your network. Try again in 10 minutes.' : 'The passcode is wrong, or the host turned this link off. Check the invitation.');
       return;
     }
+    // the right passcode: now the guest may hear that it was cancelled, ended or is not open yet
+    const problem = pass ? null : this.host.joinProblem?.(m) ?? null;
+    if (problem) { this.end(s, GUEST_CLOSE.refused, problem); return; }
     const name = pass ? pass.name : cleanName(f.name);
     if (!name) { this.host.send(s.gid, { t: 'error', message: 'Enter your name so the host knows who is asking.' }); return; }
     s.name = name;
