@@ -140,16 +140,20 @@ try {
   // ---------------------------------------------------------------- 5. slash commands, anywhere
   const dock = K.locator('.dock textarea').first();
   await dock.fill('/got 6 GAs from Anand for P-14');
+  await sleep(200);
   await dock.press('Enter');
   await K.getByText(/Noted for Anand: /).waitFor();
   await dock.fill('/done 9 of 12 isos P-12');
+  await sleep(200);
   await dock.press('Enter');
+  const seenToasts = new Set<string>();
   for (let i = 0; i < 60; i++) {
+    for (const t of await K.locator('.toast').allInnerTexts()) seenToasts.add(t);
     km = await K.evaluate(() => window.dex.request('nib.me'));
     if (km.items.find((x: any) => x.id === iso.id)?.qty?.done === 9) break;
     await sleep(250);
   }
-  if (km.items.find((x: any) => x.id === iso.id)?.qty?.done !== 9) console.log('DEBUG /done', await K.locator('.toast').allInnerTexts(), JSON.stringify(await dock.inputValue()));
+  if (km.items.find((x: any) => x.id === iso.id)?.qty?.done !== 9) console.log('DEBUG /done', [...seenToasts], JSON.stringify(km.items.map((x: any) => [x.activity, x.project, x.qty, x.status, x.source])), await K.locator('.nib-tray').count());
   assert.deepEqual(km.items.find((x: any) => x.id === iso.id).qty, { done: 9, total: 12, unit: 'isos' }, 'progress updates the item, not a new line');
   assert.ok(km.items.some((x: any) => x.source === 'slash' && x.qty?.unit === 'GAs'));
   const msgs = await K.evaluate((c: string) => window.dex.request('msg.list', { convId: c }), dm.id);
