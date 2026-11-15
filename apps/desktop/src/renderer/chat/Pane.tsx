@@ -1564,15 +1564,16 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     }
     if ((!body && !ready.length) || !live || uploading) return;
     if (text.startsWith('/') && !ready.length) {
-      const typed = text;
+      // clear the Dock now, not when the command finishes: a command that waits on the hub (/got, a bot's
+      // command) must not wipe what the person has typed since. /schedule keeps the text for its dialog.
+      if (!/^\/schedule\b/i.test(text)) clear();
       void runSlash(body, {
         convId, parentId, meId: ctx.meId, displayName: ctx.users.get(ctx.meId)?.displayName ?? 'Someone', toast,
         send: (b) => void sendMessage(convId, b, parentId),
         open: (d) => { if (d === 'meet') window.dispatchEvent(new CustomEvent('dex-plan', { detail: convId })); else setDockDialog(d); },
       }).then((handled) => {
-        if (!handled) { void sendMessage(convId, body.replace(/^\/\//, '/'), parentId, [], { alsoToConv }); clear(); return; }
-        // keep the text if a dialog needs it (for example /schedule), otherwise clear it
-        if (!/^\/schedule\b/i.test(typed)) clear();
+        // not a command (//text, or an unknown word starting with /): it goes as a message
+        if (!handled) void sendMessage(convId, body.replace(/^\/\//, '/'), parentId, [], { alsoToConv });
       });
       return;
     }
