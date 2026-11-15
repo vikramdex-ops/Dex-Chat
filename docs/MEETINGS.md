@@ -39,7 +39,7 @@ the rest of the app.
 | | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation | |
 | | Breakout rooms | ✅ **M2**: the host splits people into rooms (drag between columns, pick from a list, or deal out at random) with a timer; a note to every room; visit or move anyone; call everyone back after a 60-second countdown | |
 | | Annotation on a shared screen | ✅ **M2**: live pointers on a shared screen: everyone's labelled pointer, highlights that fade after 4 s unless kept, numbered markers with a note, ink that fades; the presenter clears all or turns pointers off, and sees them on their own screen in a click-through window. Also on pictures looked at together and on whiteboards | |
-| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time | In meetings: the presenter grants control the same way (to come; the helper is shared) |
+| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time; ✅ **meetings and webinar stages**: the presenter gives control of a shared screen to one person at a time ("Give control" in their person menu, or "Ask for control" answered by the presenter), with the same consent, banner, stop keys, rate limit and blocked chords; the hub passes input only from the person granted, and audits it | |
 | | Virtual backgrounds | ✅ Blur; ✅ **M1**: drafting sheet, blueprint and plain studio drawn in code, and your own picture (kept on the PC) | |
 | | Noise suppression | ✅ **M2**: RNNoise (BSD-3-Clause) as an audio worklet on the PC, on by default, switched in the Room's sound menu | |
 | | Consent before video | ✅ **M1**: Control room → Policies → Calls: join with the camera off, and ask before turning it on | |
@@ -187,7 +187,7 @@ presenter's own screen shows the pointers in a transparent, click-through, alway
 **M3: webinars.** Registration, roles, Q&A, handouts, practice sessions, live streaming, follow-up
 and remote control.
 
-*Delivered (November 2026)*, except remote control, which comes with Help Me (below):
+*Delivered (November 2026)*; remote control came after Help Me (see *Give control* below):
 
 - **A webinar is a meeting of kind `webinar`** (`apps/hub/src/webinars.ts`, types in
   `packages/core/src/webinar.ts`). The organiser plans it on the Meet lens (title, description,
@@ -278,9 +278,7 @@ and remote control.
   `meet-reports.ts`): registrants with attended or no-show and minutes watched while it was live,
   attendees (office or registered), questions with votes and answers, each poll with each person's
   answer, handout downloads, the survey's answers; all of it in the CSV.
-- **Remote control is not in M3.** The Help Me work (remote IT with remote control) builds the
-  input-injection helper; it joins meetings once both are merged, as "Give control" in the
-  presenter's person menu. No placeholder for it ships now.
+- **Remote control** was not in M3 itself: it came once Help Me had built the input helper (below).
 
 Hub tests: `webinars.test.ts` (planning, registration and approval, invitations and `.ics`, practice
 and go-live, attendees who cannot publish, the routes, Q&A, polls, hands, handouts, speakers from
@@ -299,6 +297,57 @@ the run. The run covers registration and approval, the countdown sheet, practice
 attendee refused when publishing, Q&A, a poll, a raised hand, a speaker invited and brought back,
 handouts in the app and the browser, folding the sheet away, the live stream, the end, the
 follow-up, the survey in the app and in the browser, and the report.
+
+### Give control (remote control in meetings), delivered (November 2026)
+
+While someone shares a whole screen in a meeting or on a webinar's stage, **the presenter** (the
+person sharing) can let one other person use their mouse and keyboard. It is the support session's
+remote control (docs/HELP-DESK.md) with the meeting's people: the same consent sheet, input path,
+rate limit, blocked chords, stop keys and injection on the presenter's PC, refactored into shared
+pieces rather than copied.
+
+- **Entry points.** *Give control…* in a person's menu (their tile's or the People tab's), shown
+  only to the person sharing. *Ask for control* on the shared screen for the people watching it:
+  the presenter gets a request sheet (*"Ravi Kumar asks for control"*: **Refuse** or **Accept…**);
+  a refusal is told to the asker; asks are limited to four a minute per person.
+- **Consent.** Either way the presenter then sees the same separate sheet as a support session:
+  *"Let Ravi Kumar use your mouse and keyboard?"*, what that means, how to stop it, that system keys
+  are never passed on, and when it ends; nothing happens until **Allow control**. Only a whole
+  screen can be given (not one window).
+- **While control is on.** The presenter has the amber banner across the app with a big **Stop
+  control**, the share bar above everything (amber, with **Stop control** and **Stop sharing**)
+  and an amber frame around the shared screen, and **Ctrl+Alt+Shift+S** stops it from anywhere,
+  even while the other person types. The controller sees an amber edge round the picture and
+  *"You are controlling Priya Raman's screen"* with **Release**; everyone else sees who is
+  controlling. One person at a time: giving it to someone else means taking it back first.
+- **Input.** The controller's pointer, buttons, wheel and keys become the same small events as in a
+  support session (positions relative to the shared picture, `KeyboardEvent.code` keys), batched
+  and sent to the presenter only: over that link's data channel PC to PC, or through the hub
+  (`room.data`) on the relay. The presenter's main process takes input only from the device it
+  was told and drops anything else, maps positions onto the shared display, and applies the 120
+  events a second and the blocked chords.
+- **It ends on its own** when the presenter stops sharing (or switches to one window), when either
+  person leaves the Room (or is moved to a breakout), or when the meeting ends; the presenter's PC
+  stops first and releases anything held down, and both are told why.
+- **Not offered** to browser guests, phones (no input to give), or attendees invited onto a
+  webinar's stage (only its organiser, co-hosts and panelists can be given control); a Mac
+  presenter's screen is view only (the person menu says so, and viewers see *VIEW ONLY · MAC*),
+  as is a Linux desktop without X11 and xdotool.
+- **The hub** keeps one grant per Room (`apps/hub/src/meet-control.ts`, `room.control.*`): only the
+  sharing device grants, only to someone allowed; on the relay it passes input events only from
+  the person granted and only to the presenter (anyone else's are dropped); it ends the grant when
+  the Room changes; and it audits `meeting.control.granted` and `meeting.control.revoked` (the
+  presenter, the controller, from, to, how long, and why it ended). Rules shared with the apps
+  are in `packages/core/src/meet-control.ts`; the app's side is `apps/desktop/src/renderer/meet/`
+  (`Control.tsx`, `control-store.ts`).
+
+Tested in `apps/hub/test/meet-control.test.ts` (granting, who may send, asking and refusing, ending
+on its own, who is not offered it, the webinar stage, the audit) and `apps/desktop/test/assist.test.ts`
+(input only from the allowed device), and end to end on Linux under Xvfb with xdotool: two apps in
+a meeting, one shares and gives control from the other's person menu, and the other's pointer
+moves the real X pointer and clicks a button in the presenter's window; Stop on the banner ends it
+and input afterwards (from the controller's view, through the hub, or straight to the main
+process) is ignored; asking, accepting and the stop keys; and stopping the share ends it.
 
 Each phase ships with end-to-end tests that drive several app instances through the feature. The
 performance targets above are measured in CI-like runs on the e2e harness.
