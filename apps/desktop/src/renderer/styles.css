@@ -531,7 +531,9 @@ select.input { padding-right: 6px; }
   grid-template-rows: var(--titlebar) 1fr;
 }
 .onboard-stage { display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 24px; overflow: auto; }
-.onboard-card { max-width: 100%; }
+.onboard-card { max-width: 100%; overflow-wrap: anywhere; }
+.onboard-card .stack-v { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 720px) { .sheet-body { overflow-x: hidden; } }
 .onboard-card h1.balance { text-wrap: balance; }
 .onboard-card {
   width: min(520px, 100%);
