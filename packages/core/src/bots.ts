@@ -40,6 +40,8 @@ export interface BotFlowInput {
   no?: string;
   /** May be skipped (the answer is then empty). */
   optional?: boolean;
+  /** text: quick replies, answers people can give with one tap ("Tomorrow", "Same as the GA"). */
+  suggestions?: string[];
 }
 
 /** A test on an answer or a variable. Every given test must pass. */
@@ -86,7 +88,53 @@ export type BotFlowAction =
   /** Call the integration's webhook with every answer. */
   | { do: 'webhook' }
   /** A task on someone's Desk: the person in `assignee` (a person variable). `due` names a date variable, or `dueInDays` counts from today. */
-  | { do: 'task'; assignee: string; text: string; due?: string; dueInDays?: number };
+  | { do: 'task'; assignee: string; text: string; due?: string; dueInDays?: number }
+  /** A reminder on the Desk of the person who answered. `due` names a date variable, or `dueInDays` counts from today. */
+  | { do: 'remind'; text: string; due?: string; dueInDays?: number };
+
+// ---------------------------------------------------------------- a bot's own identity
+/** How a bot words the phrases it says itself (the steps' own questions are the author's). */
+export type BotTone = 'plain' | 'warm' | 'brief' | 'formal';
+export const BOT_TONES: BotTone[] = ['plain', 'warm', 'brief', 'formal'];
+/** The palette a bot's mark is drawn in (the same family as people's tiles; each passes 4.5:1 with white). */
+export type BotColour = 'teal' | 'petrol' | 'slate' | 'indigo' | 'plum' | 'rust' | 'olive' | 'ochre';
+export const BOT_COLOURS: Record<BotColour, string> = {
+  teal: '#1e6066', petrol: '#1c7680', slate: '#3d5a5e', indigo: '#2f5d8a', plum: '#6a4c93', rust: '#a0522d', olive: '#4d6b2f', ochre: '#7a5a14',
+};
+/** Symbols drawn for us on the 24 px grid (see bots/maker/BotMark.tsx), from the drawing office. */
+export type BotGlyph = 'sheet' | 'plotter' | 'helmet' | 'level' | 'flange' | 'beam' | 'calendar' | 'stamp' | 'compass' | 'clipboard' | 'pin' | 'rfi';
+export const BOT_GLYPHS: BotGlyph[] = ['sheet', 'plotter', 'helmet', 'level', 'flange', 'beam', 'calendar', 'stamp', 'compass', 'clipboard', 'pin', 'rfi'];
+
+/** A bot's mark: two letters set in a title-block frame, or one of our drawn symbols. */
+export interface BotMark { kind: 'monogram' | 'glyph'; letters?: string; glyph?: BotGlyph }
+
+/** When a bot takes new requests, in the hub's local time. */
+export interface BotHours {
+  /** 0 = Sunday … 6 = Saturday. */
+  days: number[];
+  /** HH:MM, 24-hour. */
+  from: string;
+  to: string;
+}
+
+export interface BotPersona {
+  mark: BotMark;
+  colour: BotColour;
+  /** One or two lines: what it is for (shown on its card and page). */
+  about?: string;
+  /** The first thing it says ({{user.first}} and the other placeholders work). */
+  greeting?: string;
+  tone: BotTone;
+  /** Only during these hours; always when left out. */
+  hours?: BotHours | null;
+  /** Offer each person's last answers as the default ("Same as last time: Refinery"). */
+  remember?: boolean;
+}
+
+/** Who can start a bot a member made: only its maker, the people of one Space, or the whole office (approved by an administrator). */
+export type BotScope = 'private' | 'space' | 'office';
+/** live: people can start it; paused: no new runs for now; retired: put away (runs in progress may finish). */
+export type BotStatus = 'live' | 'paused' | 'retired';
 
 export interface BotFlowDefinition {
   /** Lower-case letters, digits and dashes; unique in the office. */
@@ -106,6 +154,8 @@ export interface BotFlowDefinition {
   finish: BotFlowAction[];
   /** The closing line shown to the person ({{name}} works here too). */
   done?: string;
+  /** Its own identity: a mark, a colour, a voice, its hours (member-made bots; optional for others). */
+  persona?: BotPersona;
 }
 
 export interface BotFlowInfo {
@@ -117,9 +167,47 @@ export interface BotFlowInfo {
   botName: string;
   enabled: boolean;
   /** Who keeps it: an integration through the Bot API, an administrator, or the hub itself. */
-  source: 'api' | 'admin' | 'builtin';
+  source: 'api' | 'admin' | 'builtin' | 'member';
   steps: number;
   updatedAt: number;
+  persona: BotPersona | null;
+  /** The member who made it (member-made bots). */
+  ownerId: string | null;
+  scope: BotScope;
+  /** scope "space": the Space whose people can start it. */
+  spaceId: string | null;
+  status: BotStatus;
+  /** The revision new runs use (runs in progress keep the one they started on). */
+  version: number;
+  /** Waiting for an administrator: sharing it office-wide, or a newer revision of an office-wide bot. */
+  requested: 'office' | null;
+  /** The revision waiting for review, when there is one. */
+  pendingVersion: number | null;
+  /** Open for new requests now (its hours). */
+  openNow: boolean;
+}
+
+/** A bot you made, with what you edit and the last review. */
+export interface BotMakerBot extends BotFlowInfo {
+  /** The newest revision (the one waiting for review, if any; otherwise the live one). */
+  definition: BotFlowDefinition;
+  runs: number;
+  finished: number;
+  review: { approved: boolean; note: string | null; by: string | null; at: number } | null;
+}
+
+/** How a bot is used: for its maker (and administrators). Answers are never shown here. */
+export interface BotStats {
+  runs: number;
+  finished: number;
+  cancelled: number;
+  expired: number;
+  active: number;
+  /** For each step of the live revision: runs that reached it, and runs that stopped there (cancelled or expired). */
+  steps: Array<{ id: string; label: string; reached: number; stopped: number; waiting: number }>;
+  /** Newest first. Who ran it is shown only for finished runs (they sent it to you anyway). */
+  recent: Array<{ at: number; status: BotSession['status']; reached: number; userId: string | null; version: number }>;
+  versions: Array<{ version: number; at: number; by: string | null }>;
 }
 
 export interface BotFlowAnswer { value: string; label: string }
@@ -173,6 +261,14 @@ export interface BotFlowCard {
   notes?: string[];
   /** summary: who asked (a task handed to someone else). */
   requesterId?: string;
+  /** A member-made bot's mark and colour, for the card's title strip. */
+  persona?: Pick<BotPersona, 'mark' | 'colour'> | null;
+  /** step: the bot's greeting, on the first step of a fresh start. */
+  intro?: string;
+  /** step: this person's answer last time, offered as a one-tap default. */
+  lastTime?: BotFlowAnswer | null;
+  /** step: the bot's own words for "Same as last time". */
+  lastTimeWords?: string;
   /** resume: when the conversation was started and last touched. */
   startedAt?: number;
   updatedAt?: number;
@@ -248,13 +344,31 @@ export interface BotOps {
   'botflow.resume': { req: { sessionId: string; over?: boolean }; res: { ok: true } };
   /** Your conversations in progress. */
   'botflow.sessions': { req: void; res: BotSession[] };
-  'admin.botflows.list': { req: void; res: Array<BotFlowInfo & { definition: BotFlowDefinition }> };
+  'admin.botflows.list': { req: void; res: Array<BotFlowInfo & { definition: BotFlowDefinition; pending: BotFlowDefinition | null }> };
   /** Author a flow for an integration in the Control room. */
   'admin.botflows.save': { req: { botId: string; definition: BotFlowDefinition }; res: BotFlowInfo };
   'admin.botflows.enable': { req: { name: string; enabled: boolean }; res: BotFlowInfo };
   'admin.botflows.remove': { req: { name: string }; res: { ok: true } };
   /** Post a card with a Start button into a conversation you are in. */
   'botflow.offer': { req: { flow: string; convId: string }; res: Message };
+  /** The bots you made (any member). */
+  'botflow.mine': { req: void; res: BotMakerBot[] };
+  /**
+   * Make or change your own bot. "office" is asked of an administrator (the bot stays as it was
+   * until then); `baseVersion` refuses the save when someone saved a newer revision meanwhile.
+   */
+  'botflow.make': { req: { definition: BotFlowDefinition; scope: BotScope; spaceId?: string | null; baseVersion?: number }; res: BotMakerBot };
+  'botflow.status': { req: { name: string; status: BotStatus }; res: BotFlowInfo };
+  'botflow.delete': { req: { name: string }; res: { ok: true } };
+  'botflow.stats': { req: { name: string }; res: BotStats };
+  /** A bot you can start, to duplicate and change. */
+  'botflow.definition': { req: { name: string }; res: { definition: BotFlowDefinition } };
+  /** Forget the answers a bot remembers for you. */
+  'botflow.forget': { req: { name: string }; res: { ok: true } };
+  /** Marks and colours of member-made bots (for their tiles in conversations). */
+  'botflow.marks': { req: void; res: Array<{ botId: string; name: string; mark: BotMark; colour: BotColour }> };
+  /** Approve or turn down a member's bot for the whole office (or a newer revision of one). */
+  'admin.botflows.review': { req: { name: string; approve: boolean; note?: string }; res: BotFlowInfo };
 
   /** Tools members may add (approved and switched on). */
   'miniapp.list': { req: void; res: MiniAppInfo[] };
