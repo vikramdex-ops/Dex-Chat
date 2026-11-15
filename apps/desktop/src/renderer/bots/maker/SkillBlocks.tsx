@@ -65,7 +65,7 @@ export function SkillFields({ def, ask, onChange, upTo }: { def: BotFlowDefiniti
               {def.steps.slice(0, upTo ?? def.steps.length).map((s) => <option key={s.id} value={`{{${s.save ?? s.id}}}`}>{`The answer to “${s.label || s.id}”`}</option>)}
             </select>
           ) : (
-            <input id={`${id}-${i.id}`} className="input" value={ask.with?.[i.id] ?? ''} placeholder={i.kind === 'person' ? '{{user.value}}' : i.kind === 'date' ? 'today, tomorrow or 2026-11-20' : ''} onChange={(e) => set(i.id, e.target.value)} />
+            <input id={`${id}-${i.id}`} className="input" value={ask.with?.[i.id] ?? ''} placeholder={i.kind === 'person' ? (i.optional ? 'Anyone' : 'The person answering') : i.kind === 'date' ? 'today, tomorrow or 2026-11-20' : ''} onChange={(e) => set(i.id, e.target.value)} />
           )}
           {!i.options?.length && <InsertChips def={def} upTo={upTo} summary={false} onInsert={(t) => set(i.id, `${ask.with?.[i.id] ?? ''}${i.kind === 'person' ? t.replace('}}', '.value}}') : t}`)} />}
           {i.kind === 'person' && !ask.with?.[i.id] && <span className="bm-hint">Left empty: the person answering.</span>}

@@ -386,7 +386,7 @@ html:is([lang='hi'], [lang='ta']) .bm-template-stage { font-family: var(--font-b
 .js-mark-cap { position: absolute; left: 0; top: -12px; font-size: 7.5px; font-weight: 700; letter-spacing: .12em; color: var(--accent-ink); white-space: nowrap; }
 .js-understood { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--accent-soft); font-size: 12.5px; }
 .js-understood.bad { border-left-color: var(--danger); background: var(--danger-soft); color: var(--danger); align-items: center; }
-.js-next { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); border: 1px solid var(--stroke-strong); }
+.js-next { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); border: 1px solid var(--stroke-strong); }
 .js-next li { display: flex; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--stroke); border-right: 1px solid var(--stroke); font-size: 11.5px; }
 .js-people { display: flex; flex-wrap: wrap; gap: 4px; }
 .js-people .chip { display: inline-flex; align-items: center; gap: 2px; }

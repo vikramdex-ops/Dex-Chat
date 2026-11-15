@@ -85,7 +85,7 @@ function Ruler({ range, from, to, width, tz, workdays, holidays, now }: { range:
       const p = officeParts(t + HOUR, tz);
       const hol = holidays.find((hd) => hd.date === p.date);
       if (!workdays.includes(p.dow) || hol) off.push({ x: x(t), w: x(t + DAY) - x(t), why: hol?.name ?? '' });
-      const label = range === 'week' ? `${['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][p.dow]} ${p.d}` : String(p.d);
+      const label = range === 'week' ? new Date(Date.UTC(p.y, p.m - 1, p.d)).toLocaleDateString([], { weekday: 'short', day: 'numeric', timeZone: 'UTC' }).toUpperCase() : String(p.d);
       ticks.push({ x: x(t), label, major: range === 'week' || p.dow === 1 });
     }
   }
@@ -120,7 +120,7 @@ function Lane({ lane, range, from, to, width, now, tz, workdays, holidays, onSel
   const [hover, setHover] = useState<Mark | null>(null);
   const marks = useMemo(() => marksOf(lane, from, to, width, now), [lane, from, to, width, now]);
   const x = (t: number) => ((t - from) / (to - from)) * width;
-  const next = lane.next.find((t) => t > now);
+  const next = lane.following ?? lane.next.find((t) => t > now);
   const set = async (d: Record<string, unknown>, words: string) => {
     setBusy(true);
     try { await window.dex.request('botjob.set', { flow: lane.flow, job: lane.job, ...d }); toast(words); onChanged(); } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
@@ -146,7 +146,7 @@ function Lane({ lane, range, from, to, width, now, tz, workdays, holidays, onSel
           {lane.skipAt && <span className="js-tag">SKIP NEXT</span>}
           {lane.moved.some((m) => m.to > now) && <span className="js-tag">MOVED</span>}
           {lane.problem && <span className="js-tag warn" title={lane.problem}>CANNOT RUN</span>}
-          {next && !lane.paused && <span className="js-tag mono">{countdown(next - now)}</span>}
+          {next && !lane.paused && <span className="js-tag mono" title={officeWhen(next, tz)}>{`Next ${officeWhen(next, tz)} · ${countdown(next - now)}`}</span>}
         </span>
         {lane.problem && <span className="faint" style={{ gridColumn: '1 / -1', fontSize: 11.5 }}>{trLine(lane.problem)}</span>}
         {lane.canEdit && (
@@ -325,6 +325,12 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
             <div className="js-range">
               <Segmented<Range> label="Show" value={range} onChange={setRange} options={[{ value: 'today', label: 'Today' }, { value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }]} />
               <span className="js-now">{rangeWords}</span>
+              <ul className="net-legend js-legend" aria-label="Key">
+                <li><svg width="12" height="12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" transform="rotate(45 6 6)" fill="var(--accent)" stroke="var(--accent)" /></svg>Next run</li>
+                <li><svg width="12" height="12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" transform="rotate(45 6 6)" fill="none" stroke="var(--accent)" /></svg>Coming up</li>
+                <li><svg width="30" height="12" aria-hidden="true"><rect x="1" y="1" width="28" height="10" fill="none" stroke="var(--accent)" /></svg>Past run, stamped</li>
+                <li><svg width="16" height="12" aria-hidden="true"><rect x="0" y="0" width="16" height="12" fill="url(#js-hatch-key)" /><defs><pattern id="js-hatch-key" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="var(--text-3)" /></pattern></defs></svg>Day off or holiday</li>
+              </ul>
             </div>
             {error && <div className="flow-err" role="alert">{error}</div>}
             {!sheet && !error && <div className="tl-more"><span className="spinner" /></div>}

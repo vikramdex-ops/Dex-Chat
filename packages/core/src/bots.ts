@@ -715,6 +715,8 @@ export interface BotJobLane {
   /** Runs moved once: from → to. */
   moved: Array<{ from: number; to: number }>;
   next: number[];
+  /** The next run, wherever it falls (the countdown). */
+  following: number | null;
   past: BotJobRun[];
   /** Why it cannot run (its bot is paused, a Space is gone). */
   problem: string | null;

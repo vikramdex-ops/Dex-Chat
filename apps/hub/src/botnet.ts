@@ -670,7 +670,8 @@ export class BotNet {
     if (this.byKey(key)) return;
     const person = this.active(personId);
     const label = o.item ? `${name.split('.').slice(1).join('.').toUpperCase()} · ${o.item.ref}` : `AWAY · ${person?.displayName ?? ''}`;
-    const base = { key, kind: 'event' as const, from_bot: source, to_bot: b.def.name, user_id: personId, owner_id: b.ownerId, grp: o.item?.id ?? `away:${personId}`, at: now, origin_item: o.item?.id ?? null, origin_session: null, ms: null };
+    // kept apart from the person's own relay cards: which bots listen is their makers' business
+    const base = { key, kind: 'event' as const, from_bot: source, to_bot: b.def.name, user_id: personId, owner_id: b.ownerId, grp: `evt:${b.def.name}`, at: now, origin_item: o.item?.id ?? null, origin_session: null, ms: null };
     const refuse = (status: BotLinkStatus, reason: string) => { this.record({ ...base, ask: label, answer: null, status, reason }); };
     // who may listen: the maker may use the bot it listens to (Nib's leave: anyone's bots)
     if (source !== 'nib') {

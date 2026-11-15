@@ -64,7 +64,7 @@ function route(a: { x: number; y: number }, b: { x: number; y: number }, lane: n
     return `M${sx} ${a.y}H${cx - r}Q${cx} ${a.y} ${cx} ${a.y + dy * r}V${b.y - dy * r}Q${cx} ${b.y} ${cx + r} ${b.y}H${ex}`;
   }
   // back along the drawing: down under the tags, along the bottom, up into the other
-  const yb = bottom + lane * 7;
+  const yb = bottom + lane * 5;
   const dx = Math.sign(b.x - a.x) || 1;
   return `M${a.x} ${a.y + 22}V${yb - r}Q${a.x} ${yb} ${a.x + dx * r} ${yb}H${b.x - dx * r}Q${b.x} ${yb} ${b.x} ${yb - r}V${b.y + 22}`;
 }
@@ -164,7 +164,7 @@ export default function NetworkSheet({ session, scope: first, onClose }: { sessi
                     const a = lay.pos.get(e.from); const b = lay.pos.get(e.to);
                     if (!a || !b) return null;
                     const k = kindOf(e);
-                    const d = route(a, b, (i % 5) - 2, lay.h - M - 4);
+                    const d = route(a, b, (i % 5) - 2, Math.max(a.y, b.y) + 72);
                     const weight = 1.1 + Math.min(4, Math.log2(e.count + 1));
                     const key = edgeKey(e);
                     const live = pulses.filter((p) => p.key === key);
@@ -178,7 +178,7 @@ export default function NetworkSheet({ session, scope: first, onClose }: { sessi
                         <path d={d} id={id} className="nw-line" style={{ strokeWidth: weight }} />
                         {k === 'handoff' && <path d={`M${b.x - 30} ${b.y - 4.5}l6 4.5l-6 4.5`} className="nw-line" style={{ strokeWidth: 1.4 }} />}
                         {k === 'query' && b.x > a.x + 30 && <><circle cx={a.x + 32} cy={a.y} r={2.2} className="nw-dots" /><circle cx={b.x - 34} cy={b.y} r={2.2} className="nw-dots" /></>}
-                        {e.count > 0 && <text x={b.x > a.x + 30 ? (a.x + b.x) / 2 + ((i % 5) - 2) * 7 + 5 : mid.x} y={b.x > a.x + 30 ? Math.min(a.y, b.y) + (Math.abs(a.y - b.y) < 2 ? -6 : Math.abs(a.y - b.y) / 2) : lay.h - M + 8} className="nw-count">{e.count}</text>}
+                        {e.count > 0 && <text x={b.x > a.x + 30 ? (a.x + b.x) / 2 + ((i % 5) - 2) * 7 + 5 : mid.x} y={b.x > a.x + 30 ? Math.min(a.y, b.y) + (Math.abs(a.y - b.y) < 2 ? -6 : Math.abs(a.y - b.y) / 2) : Math.max(a.y, b.y) + 72 + ((i % 5) - 2) * 7 - 4} className="nw-count">{e.count}</text>}
                         {e.failures > 0 && (
                           <g className="nw-fail" transform={`translate(${b.x - 52} ${b.y + (Math.abs(a.y - b.y) < 2 ? 6 : -16)})`}>
                             <rect width={22} height={11} />

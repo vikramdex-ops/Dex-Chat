@@ -312,11 +312,13 @@ export class BotJobs {
       next.sort((x, y) => x - y);
     }
     const past = (this.db.prepare('SELECT * FROM bot_job_runs WHERE flow = ? AND job = ? AND at >= ? AND at <= ? ORDER BY at DESC, ran_at DESC LIMIT 120').all(b.def.name, job.id, from, Math.min(to, now + DAY)) as unknown as RunRow[]).map(toRun);
+    const moved = new Map(st.moved.map((m) => [m.from, m.to]));
+    const coming = rule ? [...nextRuns(rule, cal, now, 3).map((t) => moved.get(t) ?? t), ...st.moved.filter((m) => m.to > now).map((m) => m.to)].filter((t) => t > now && t !== st.skipAt).sort((x, y) => x - y) : [];
     const problem = !rule ? 'Its schedule does not read any more.' : b.status !== 'live' ? `Its bot is ${b.status}.` : !this.ownerOf(b) ? 'Its maker is not in the office any more.' : null;
     const p = b.def.persona;
     return {
       flow: b.def.name, job: job.id, title: job.title, botTitle: b.def.title, mark: p?.mark ?? null, colour: p?.colour ?? null, ownerId: b.ownerId, when: job.when,
-      words: rule ? describeRule(rule, cal) : job.when, paused: st.paused, skipAt: st.skipAt, moved: st.moved, next, past, problem, canEdit: this.canEdit(me, b),
+      words: rule ? describeRule(rule, cal) : job.when, paused: st.paused, skipAt: st.skipAt, moved: st.moved, next, following: coming[0] ?? null, past, problem, canEdit: this.canEdit(me, b),
     };
   }
 

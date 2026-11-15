@@ -127,7 +127,8 @@
 .js-range { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
 .js-now { font: 600 11px var(--font-mono); color: var(--text-2); }
 .js-board { border: 1px solid var(--stroke-strong); background: var(--layer-solid); }
-.js-ruler, .js-lane { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+.js-ruler, .js-lane { display: grid; grid-template-columns: 264px minmax(0, 1fr); }
+.js-legend { margin: 0 0 0 auto; }
 .js-ruler { position: sticky; top: -14px; z-index: 2; background: var(--layer-solid); border-bottom: 1px solid var(--stroke-strong); }
 .js-ruler-cap { padding: 6px 10px; border-right: 1px solid var(--stroke-strong); display: grid; align-content: end; }
 .js-lane + .js-lane { border-top: 1px solid var(--stroke-strong); }
