@@ -64,6 +64,7 @@ import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 import { Nib, NibError } from './nib.ts';
+import { NoticeBoard, NoticeError } from './notices.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -175,6 +176,8 @@ export class Hub {
   readonly nib: Nib;
   /** Meeting threads, action points and recaps (meet-threads.ts). */
   readonly meetThreads: MeetThreads;
+  /** The notice board: the issuing desks' register of notices (notices.ts, docs/ANNOUNCEMENTS.md). */
+  readonly notices: NoticeBoard;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -479,6 +482,25 @@ export class Hub {
     this.nib.onMeetingItem = (itemId, status, by) => this.meetThreads.nibChanged(itemId, status, by);
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.meetThreads.mayReadFile(userId, fileId); }
     { const prev = this.messaging.beforeChange; this.messaging.beforeChange = (msg, change, actorId) => { prev?.(msg, change, actorId); if (change === 'delete') { try { this.meetThreads.messageDeleted(msg.id); } catch { /* the message still goes */ } } }; }
+    this.notices = new NoticeBoard({
+      db: this.store.db, store: this.store, files: this.files,
+      departments: () => this.org.info().departments,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      // reminders and answers are one quiet line from Nib (or the system bot while Nib is off)
+      tell: (uid, key, text) => { if (!this.nib.note(uid, key, text)) this.system.tell(uid, text, key); },
+      hasApp: (uid) => this.canSignIn(uid),
+      held: (uid) => !!this.store.db.prepare(`SELECT 1 FROM legal_holds WHERE kind = 'user' AND target_id = ? LIMIT 1`).get(uid),
+      officePins: () => {
+        const office = this.store.db.prepare('SELECT id FROM conversations WHERE everyone = 1 LIMIT 1').get() as { id: string } | undefined;
+        if (!office) return [];
+        return (this.store.db.prepare('SELECT id, body, author_id, created_at FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0 ORDER BY id DESC LIMIT 50').all(office.id) as Array<{ id: string; body: string; author_id: string; created_at: number }>)
+          .map((m) => ({ ...m, files: this.files.forMessage(m.id) }));
+      },
+      unpin: (messageId) => { this.store.db.prepare('UPDATE messages SET pinned = 0, pin_until = NULL WHERE id = ?').run(messageId); this.messaging.pushUpdate(messageId); },
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.notices.mayReadFile(userId, fileId); }
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -591,6 +613,7 @@ export class Hub {
       try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
       try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
       try { this.meetThreads.tick(); } catch (err) { this.log('error', 'meeting thread timer failed', { error: (err as Error).message }); }
+      try { this.notices.tick(); } catch (err) { this.log('error', 'notice board timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -1698,6 +1721,16 @@ export class Hub {
             throw err;
           }
         }
+        if (typeof op === 'string' && (op.startsWith('notices.') || op.startsWith('admin.notices.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.notices.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof NoticeError) throw new OpError(err.message);
+            throw err;
+          }
+        }
         if (typeof op === 'string' && op.startsWith('work.')) {
           const me = this.store.userById(conn.userId!)!;
           try {
@@ -1820,6 +1853,10 @@ export class Hub {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);
+            // search also reads the notice board: titles, text and the text of attached PDFs
+            if (op === 'search' && result && typeof result === 'object' && !(typeof d.convId === 'string' && d.convId)) {
+              try { (result as Ops['search']['res']).notices = this.notices.search(me, d.q, 5); } catch (err) { this.log('warn', 'notice search failed', { error: (err as Error).message }); }
+            }
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof MsgError) throw new OpError(err.message);

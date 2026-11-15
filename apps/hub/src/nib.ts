@@ -293,6 +293,26 @@ export class Nib {
   private posted(kind: NibCardKind, ref: string, uid: string): boolean {
     return !!this.db.prepare('SELECT 1 FROM nib_posts WHERE kind = ? AND ref = ? AND user_id = ?').get(kind, ref, uid);
   }
+  /**
+   * One plain line from Nib in someone's conversation with Nib, once per key (the notice board's
+   * reminders and answers). False when Nib is off or cannot reach them, so the caller can use the
+   * system bot instead.
+   */
+  note(uid: string, key: string, text: string): boolean {
+    if (!this.config().enabled) return false;
+    const ref = key.slice(0, 80);
+    if (this.db.prepare(`SELECT 1 FROM nib_posts WHERE kind = 'line' AND ref = ? AND user_id = ?`).get(ref, uid)) return true;
+    const convId = this.convFor(uid);
+    if (!convId) return false;
+    try {
+      const msg = this.d.messaging.sendAs(this.bot(), this.d.messaging.memberConv(convId, this.id), text.slice(0, 2000), undefined, [], `nibline|${ref}|${uid}`.slice(0, 96), {});
+      this.db.prepare('INSERT OR IGNORE INTO nib_posts (kind, ref, user_id, message_id, created_at) VALUES (?, ?, ?, ?, ?)').run('line', ref, uid, msg.id, this.now());
+      return true;
+    } catch (err) {
+      this.d.log('warn', 'nib line not posted', { error: (err as Error).message });
+      return false;
+    }
+  }
   /** A Space line from Nib (a leave notice). */
   private postInSpace(convId: string, ref: string, body: string): void {
     try {
