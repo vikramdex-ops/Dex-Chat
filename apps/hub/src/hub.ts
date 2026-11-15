@@ -45,6 +45,7 @@ import { BotFlowError } from '@dex/core/botflows';
 import { MiniApps, MiniAppError } from './miniapps.ts';
 import { MeetGuests } from './meet-guests.ts';
 import { MeetReports, ReportError } from './meet-reports.ts';
+import { MeetThreads, ThreadError } from './meet-threads.ts';
 import { Recordings, RecordingError } from './recordings.ts';
 import { Webinars, WebinarError } from './webinars.ts';
 import { MEET_ORG_DEFAULT, isWebGuest, isWebGuestDevice, normalizeSlug, siteBase, siteUrlProblem } from '@dex/core';
@@ -172,6 +173,8 @@ export class Hub {
   readonly feeds: CalendarFeeds;
   /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
   readonly nib: Nib;
+  /** Meeting threads, action points and recaps (meet-threads.ts). */
+  readonly meetThreads: MeetThreads;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -318,6 +321,14 @@ export class Hub {
         if (ended) this.helpdesk.roomEnded(room); else this.helpdesk.roomChanged(room);
       },
       webinar: { onStage: (m, u) => this.webinars.onStage(m, u), staff: (m, u) => this.webinars.isHost(m, u) || this.webinars.isPanelist(m, u), changed: (r) => this.webinars.roomChanged(r), ended: (r) => this.webinars.roomEnded(r) },
+      // made further down; the Rooms call these only once the hub runs
+      threads: {
+        opened: (r, m) => { const o = this.meetThreads.roomOpened(r, m); return o ? { id: o.id, noteTakerId: o.noteTakerId } : null; },
+        ended: (r) => this.meetThreads.roomEnded(r),
+        said: (main, me, text, opts) => this.meetThreads.said(main, me, text, opts),
+        log: (main) => this.meetThreads.chatLog(main),
+        noteTaker: (roomId, userId) => { this.meetThreads.setNoteTaker(roomId, userId); },
+      },
     });
     this.recordings = new Recordings({
       db: this.store.db, files: this.files, dir: path.join(opts.dataDir, 'recordings-partial'),
@@ -427,6 +438,47 @@ export class Hub {
     });
     { const prev = this.messaging.onPosted; this.messaging.onPosted = (author, convId, msg) => { prev?.(author, convId, msg); try { this.nib.onPosted(author, convId, msg); } catch (err) { this.log('warn', 'nib reply failed', { error: (err as Error).message }); } }; }
     this.botflows.away = (me, answers) => this.nib.leaveFromFlow(me, answers);
+    this.meetThreads = new MeetThreads({
+      db: this.store.db, messaging: this.messaging,
+      userById: (uid) => { const u = this.store.userById(uid); return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null; },
+      activeUsers: () => this.store.activeUsers(),
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      cardAuthor: () => this.system.user,
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      recordings: (roomIds, viewer) => roomIds.flatMap((id) => this.recordings.forRoom(id, viewer)),
+      roomLive: (roomIds) => roomIds.some((id) => this.rooms.rooms.has(id)),
+      desk: {
+        todo: (owner, messageId, on) => { this.desk.handle('msg.star', owner, { messageId, on, kind: 'todo' }); },
+        remind: (by, owner, messageId, text, dueAt) => {
+          try { return (this.desk.handle('remind.create', by, { forUserId: owner.id, messageId, text, dueAt: Math.max(dueAt, Date.now() + 60_000) }) as { id: string }).id; } catch { return null; }
+        },
+        reminderDone: (id, done, dueAt) => {
+          const r = this.store.db.prepare('SELECT user_id FROM reminders WHERE id = ?').get(id) as { user_id: string } | undefined;
+          const u = r ? this.store.userById(r.user_id) : null;
+          if (u) { try { this.desk.handle('remind.update', u, { id, done, ...(dueAt ? { dueAt } : {}) }); } catch { /* gone */ } }
+        },
+        reminderGone: (id) => {
+          const r = this.store.db.prepare('SELECT user_id FROM reminders WHERE id = ?').get(id) as { user_id: string } | undefined;
+          const u = r ? this.store.userById(r.user_id) : null;
+          if (u) { try { this.desk.handle('remind.delete', u, { id }); } catch { /* gone */ } }
+        },
+      },
+      nib: {
+        add: (owner, a) => this.nib.meetingItem(owner, a),
+        status: (itemId, status) => this.nib.meetingItemStatus(itemId, status),
+        gone: (itemId) => this.nib.meetingItemGone(itemId),
+        away: (uid, date) => this.nib.awayOn(uid, date),
+        hours: () => this.nib.workingDay(),
+      },
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.meetings.eventThread = (eventId) => this.meetThreads.ensureEventThread(eventId, true);
+    this.meetings.ownThread = (convId) => this.meetThreads.isOwn(convId);
+    this.meetings.occurrenceOf = (roomId) => this.meetThreads.occurrenceOf(roomId);
+    this.nib.onMeetingItem = (itemId, status, by) => this.meetThreads.nibChanged(itemId, status, by);
+    { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.meetThreads.mayReadFile(userId, fileId); }
+    { const prev = this.messaging.beforeChange; this.messaging.beforeChange = (msg, change, actorId) => { prev?.(msg, change, actorId); if (change === 'delete') { try { this.meetThreads.messageDeleted(msg.id); } catch { /* the message still goes */ } } }; }
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -451,6 +503,14 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
       resolve: (ref) => this.meetPublic.resolveId(ref),
       joinProblem: (m) => this.meetPublic.joinProblem(m),
+      // a guest's file follows the office's file rules (blocked types, the upload limit)
+      fileProblem: (name, size) => {
+        const ext = name.toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
+        if (ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) return `This office does not allow .${ext} files to be shared.`;
+        if (size > this.files.maxBytes) return `Files can be up to ${Math.floor(this.files.maxBytes / 1024 / 1024)} MB.`;
+        return null;
+      },
+      storeFile: (guestId, name, mime, data) => { const f = this.files.storeBuffer(guestId, name, mime, data); return { id: f.id, name: f.name, size: f.size }; },
     });
     this.gateway = new RemoteGateway({
       hubId: id, certPem: tls.cert, keyPem: tls.key, localPort: () => this.port, secret: this.gatewaySecret,
@@ -530,6 +590,7 @@ export class Hub {
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
       try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
       try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
+      try { this.meetThreads.tick(); } catch (err) { this.log('error', 'meeting thread timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -1477,6 +1538,24 @@ export class Hub {
             throw err;
           }
         }
+        if (typeof op === 'string' && /^(meet\.(thread|recap|recapChat|recapFor)$|ap\.(create|update|list)$|agenda\.(get|set|tick)$)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            switch (op) {
+              case 'meet.thread': return this.meetThreads.threadInfo(me, d, (id) => this.meetings.get(id));
+              case 'meet.recap': return this.meetThreads.recap(me, d.occurrenceId);
+              case 'meet.recapChat': return this.meetThreads.recapChat(me, d);
+              case 'meet.recapFor': return this.meetThreads.recapFor(me, d.eventId, d.slotStart);
+              case 'ap.create': return this.meetThreads.createAction(me, d);
+              case 'ap.update': return this.meetThreads.updateAction(me, d);
+              case 'ap.list': return this.meetThreads.listActions(me, d);
+              default: return this.meetThreads.agenda(me, op, d);
+            }
+          } catch (err) {
+            if (err instanceof ThreadError || err instanceof MsgError || err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
         if (typeof op === 'string' && (op.startsWith('room.') || op.startsWith('meet.'))) {
           const me = this.store.userById(conn.userId!)!;
           try {
@@ -1590,7 +1669,19 @@ export class Hub {
         if (typeof op === 'string' && /^(cal\.|admin\.cal\.)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
+            // the meeting's thread follows the invitations (meet-threads.ts)
+            const before = op === 'cal.update' && typeof d.eventId === 'string'
+              ? (this.store.db.prepare('SELECT user_id FROM event_attendees WHERE event_id = ?').all(d.eventId) as Array<{ user_id: string }>).map((r) => r.user_id) : [];
             const result = this.calendar.handle(op, me, d);
+            if ((op === 'cal.create' || op === 'cal.update') && result && typeof (result as { id?: unknown }).id === 'string') {
+              const id = (result as { id: string }).id;
+              try {
+                const had = (result as { convId: string | null }).convId;
+                this.meetThreads.eventSaved(id, before);
+                if (!had) { this.calendar.pushEvent(id); return this.calendar.handle('cal.get', me, { eventId: id }); }
+              } catch (err) { this.log('warn', 'meeting thread not made', { error: (err as Error).message }); }
+            }
+            if (op === 'cal.cancel' && typeof d.eventId === 'string') { try { this.meetThreads.eventCancelled(d.eventId); } catch (err) { this.log('warn', 'cancel card not posted', { error: (err as Error).message }); } }
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof CalError) throw new OpError(err.message);

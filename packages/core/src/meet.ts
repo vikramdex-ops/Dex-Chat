@@ -42,8 +42,20 @@ export interface RoomVisitor { userId: string; deviceId: string; name: string }
 
 // ---------------------------------------------------------------- the meeting chat
 /** A line in a Room's meeting chat: everyone in the Room reads it, guests from a browser too. */
-export interface RoomChatLine { id: string; roomId: string; userId: string; name: string; text: string; at: number; guest: boolean }
+export interface RoomChatLine {
+  id: string; roomId: string; userId: string; name: string; text: string; at: number; guest: boolean;
+  /** The message it was saved as in the meeting's thread. */
+  messageId?: string | null;
+  /** Said from a breakout room ("B2 · Piping"). */
+  breakout?: string | null;
+  /** A file sent with it (a guest's, from the browser): its name and size. */
+  file?: { id: string; name: string; size: number } | null;
+}
 export const ROOM_CHAT_MAX = 2000;
+/** The largest file a browser guest may send to the meeting chat (the office's upload limit applies when smaller). */
+export const GUEST_FILE_MAX = 25 * 1024 * 1024;
+/** A guest's file goes in chunks of this many bytes (base64 in a frame under the gateway's 64 KB). */
+export const GUEST_FILE_CHUNK = 36 * 1024;
 
 // ---------------------------------------------------------------- breakout rooms
 export interface BreakoutRoomView {
@@ -156,6 +168,9 @@ export type GuestUp =
   | { t: 'hand'; up: boolean }
   | { t: 'react'; emoji: string }
   | { t: 'chat'; text: string }
+  /** A file for the meeting chat, sent in chunks (base64) after this header. */
+  | { t: 'file'; id: string; name: string; mime: string; size: number }
+  | { t: 'fileChunk'; id: string; i: number; data: string }
   | { t: 'leave' }
   | { t: 'ping' };
 
@@ -171,6 +186,8 @@ export type GuestDown =
   | { t: 'moved'; room: GuestRoomView }
   | { t: 'signal'; from: string; data: unknown }
   | { t: 'chat'; line: RoomChatLine }
+  /** The hub took the guest's file (or refused it, with the reason). */
+  | { t: 'fileDone'; id: string; ok: boolean; reason?: string }
   | { t: 'reaction'; deviceId: string; emoji: string }
   | { t: 'muted'; by: string }
   | { t: 'unmuteAsk'; by: string }

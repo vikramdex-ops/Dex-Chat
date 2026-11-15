@@ -3,6 +3,7 @@
 // Laid out as a drawing register: ruled title-block cards, mono reference numbers, no pictures.
 // M2: the Recordings shelf and its viewer, a report for each past meeting, and the personal
 // room's guest link. M3: webinars (planning one, its sheet, watching one) and the survey.
+import { openRecap } from './threadcards.tsx';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { formatMeetingId, isWebGuest, meetingLink, parseMeetingId } from '@dex/core';
@@ -338,6 +339,7 @@ function Recent({ users, meId, onJoin, openConv, busy, onReport }: { users: Map<
                   <td className="meet-what"><b title={title}>{title}</b><span className="faint">{lengthOf(r.durationMs)} · {r.people.length === 1 ? '1 person' : `${r.people.length} people`}</span></td>
                   <td className="meet-who"><span className="stack">{r.people.filter((u) => !isWebGuest(u)).slice(0, 4).map((u) => <Avatar key={u} user={users.get(u) ?? { id: u, displayName: '?' }} size="sm" />)}</span></td>
                   <td className="meet-act">
+                    {r.occurrenceId && <button className="btn sm" onClick={() => openRecap(r.occurrenceId!)} title="Everything from it: chat, files, recording, action points, decisions"><Icon name="recap" size={14} />Recap</button>}
                     <button className="btn sm ghost" onClick={() => onReport(r.roomId)} title="Who came, for how long, hands, reactions and polls">Report</button>
                     {r.meetingId && r.kind !== 'conversation'
                       ? <button className="btn sm ghost" disabled={busy} onClick={() => onJoin(r.meetingId!, false)}>Rejoin</button>

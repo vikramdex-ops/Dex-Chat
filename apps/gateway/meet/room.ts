@@ -5,6 +5,7 @@
 // Media goes browser to PC (WebRTC, through the office's TURN relay when needed); the signalling
 // goes through the gateway to the office hub. Drawn in the app's drafting-sheet language, in code.
 import { MEETING_REACTIONS } from '@dex/core/protocol';
+import { GUEST_FILE_CHUNK, GUEST_FILE_MAX } from '@dex/core/meet';
 import type { GuestDown, GuestRoomView, GuestSeat, RoomChatLine } from '@dex/core/meet';
 import { capName, elapsed, h, icon, initials, tintFor, toast } from './shared.ts';
 
@@ -66,6 +67,8 @@ const state = {
   askUnmute: '',
   joinedAt: null as number | null,
   attempts: 0,
+  /** A file going to the meeting chat: its name and how much has gone. */
+  sending: null as { id: string; name: string; sent: number; size: number } | null,
 };
 
 const zone = (i: number, cols: number) => `${String.fromCharCode(65 + (i % cols))}${Math.floor(i / cols) + 1}`;
@@ -153,6 +156,11 @@ function onFrame(f: GuestDown): void {
     case 'room': setRoom(f.room, false); break;
     case 'moved': setRoom(f.room, true); break;
     case 'signal': void onSignal(f.from, f.data as Signal); break;
+    case 'fileDone':
+      if (state.sending?.id === f.id) state.sending = null;
+      if (!f.ok) toast(f.reason ?? 'The file could not be shared.');
+      renderChat();
+      break;
     case 'chat':
       state.chat.push(f.line);
       if (state.chat.length > 300) state.chat.shift();
@@ -429,27 +437,60 @@ function renderBanners(): void {
 function renderChat(): void {
   if (!roomEls) return;
   const list = h('div', { class: 'chat-list', 'aria-live': 'polite' });
-  if (!state.chat.length) list.append(h('p', { class: 'faint small empty' }, 'Nothing said yet. Everyone in the meeting reads this chat; it is not kept after the meeting.'));
+  if (!state.chat.length) list.append(h('p', { class: 'faint small empty' }, 'Nothing said yet. Everyone in the meeting reads this chat, and the office keeps it with the meeting.'));
   let prev: RoomChatLine | null = null;
+  // my own lines: by my guest identity (two guests may share a name)
+  const meUser = state.self ? `guest:${state.self.deviceId.slice('guestdev:'.length)}` : '';
   for (const l of state.chat) {
-    const run = prev && prev.name === l.name && l.at - prev.at < 5 * 60_000;
-    const mine = l.guest && l.name === state.self?.name;
+    const run = prev && prev.userId === l.userId && prev.name === l.name && l.at - prev.at < 5 * 60_000;
+    const mine = l.guest && (l.userId === meUser || (!l.userId && l.name === state.self?.name));
     list.append(h('div', { class: `line${run ? ' run' : ''}${mine ? ' mine' : ''}` },
-      run ? null : h('div', { class: 'line-head' }, h('span', { class: 'mono' }, mine ? 'YOU' : capName(l.name)), l.guest && !mine ? h('span', { class: 'flag' }, 'GUEST') : null, h('span', { class: 'mono faint' }, clock(l.at))),
-      h('div', { class: 'line-body' }, l.text)));
+      run ? null : h('div', { class: 'line-head' }, h('span', { class: 'mono' }, mine ? 'YOU' : capName(l.name)), l.guest && !mine ? h('span', { class: 'flag' }, 'GUEST') : null, l.breakout ? h('span', { class: 'mono faint' }, l.breakout.toUpperCase()) : null, h('span', { class: 'mono faint' }, clock(l.at))),
+      l.text ? h('div', { class: 'line-body' }, l.text) : null,
+      l.file ? h('div', { class: 'line-file' }, icon('clip', 14), h('span', {}, l.file.name), h('span', { class: 'mono faint' }, sizeText(l.file.size))) : null));
     prev = l;
   }
   const input = h('textarea', { class: 'input', rows: '1', maxlength: '2000', placeholder: 'Message everyone', 'aria-label': 'Message to the meeting' }) as HTMLTextAreaElement;
   const submit = () => { const t = input.value.trim(); if (!t) return; send({ t: 'chat', text: t }); input.value = ''; };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
-  roomEls.chat.replaceChildren(
+  const picker = h('input', { type: 'file', class: 'visually-hidden', 'aria-hidden': 'true', tabindex: '-1' }) as HTMLInputElement;
+  picker.addEventListener('change', () => { const f = picker.files?.[0]; picker.value = ''; if (f) void sendFile(f); });
+  const s = state.sending;
+  roomEls.chat.replaceChildren(...[
     h('div', { class: 'chat-head' }, h('span', { class: 'tb-label' }, 'Meeting chat'), h('button', { class: 'icon-btn', 'aria-label': 'Close the chat', onclick: () => { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } }, icon('x', 14))),
     list,
-    h('form', { class: 'compose', onsubmit: (e: Event) => { e.preventDefault(); submit(); } }, input, h('button', { class: 'btn primary sm', type: 'submit' }, 'Send')),
-  );
+    s ? h('div', { class: 'sending', role: 'status' }, icon('clip', 14), h('span', {}, `Sending ${s.name}`), h('span', { class: 'mono' }, `${Math.round((s.sent / Math.max(1, s.size)) * 100)}%`)) : null,
+    h('form', { class: 'compose', onsubmit: (e: Event) => { e.preventDefault(); submit(); } },
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Attach a file', title: 'Attach a file (the office keeps it with the meeting)', disabled: s ? '' : null, onclick: () => picker.click() }, icon('clip', 16)),
+      picker, input, h('button', { class: 'btn primary sm', type: 'submit' }, 'Send')),
+  ].filter((x) => !!x) as HTMLElement[]);
   list.scrollTop = list.scrollHeight;
 }
 
+
+const sizeText = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** Send a file to the meeting chat in chunks; the hub checks it against the office's file rules. */
+async function sendFile(f: File): Promise<void> {
+  if (state.sending) return;
+  if (f.size > GUEST_FILE_MAX) { toast(`Files can be up to ${GUEST_FILE_MAX / 1024 / 1024} MB.`); return; }
+  if (!f.size) { toast('That file is empty.'); return; }
+  const id = Math.random().toString(36).slice(2, 12);
+  state.sending = { id, name: f.name, sent: 0, size: f.size };
+  renderChat();
+  send({ t: 'file', id, name: f.name, mime: f.type || 'application/octet-stream', size: f.size });
+  const buf = new Uint8Array(await f.arrayBuffer());
+  for (let i = 0, k = 0; i < buf.length; i += GUEST_FILE_CHUNK, k++) {
+    if (state.sending?.id !== id) return; // refused, or the meeting ended
+    const part = buf.subarray(i, i + GUEST_FILE_CHUNK);
+    let bin = '';
+    for (let j = 0; j < part.length; j += 0x8000) bin += String.fromCharCode(...part.subarray(j, j + 0x8000));
+    send({ t: 'fileChunk', id, i: k, data: btoa(bin) });
+    state.sending.sent = Math.min(f.size, i + part.length);
+    // stay under the gateway's frame rate, and let the page draw the progress
+    if (k % 8 === 7) { renderChat(); await new Promise((r) => setTimeout(r, 120)); }
+  }
+}
 
 // ------------------------------------------------------------------ peer connections (as the app does them)
 function signal(to: string, data: Signal): void { send({ t: 'signal', to, data }); }

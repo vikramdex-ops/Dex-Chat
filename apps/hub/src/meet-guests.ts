@@ -5,7 +5,7 @@
 // A guest has no office account: no Directory, no conversations, no presence, and the names of
 // the people in the meeting are all they learn about the office. Guests always wait in the lobby.
 import crypto from 'node:crypto';
-import { GUEST_NAME_MAX, MEETING_ID_RE, WEB_GUEST_DEVICE_PREFIX, WEB_GUEST_PREFIX, formatMeetingId, isWebGuest, isWebGuestDevice, ulid } from '@dex/core';
+import { GUEST_FILE_CHUNK, GUEST_FILE_MAX, GUEST_NAME_MAX, MEETING_ID_RE, WEB_GUEST_DEVICE_PREFIX, WEB_GUEST_PREFIX, formatMeetingId, isWebGuest, isWebGuestDevice, ulid } from '@dex/core';
 import type { GuestDown, GuestRoomView, IceServer, PublicUser, RoomChatLine, RoomInfo, RoomVisitor, WebinarDown } from '@dex/core';
 import type { Meeting, Meetings } from './meetings.ts';
 import type { Rooms } from './rooms.ts';
@@ -31,6 +31,8 @@ interface Session {
   userId: string;
   deviceId: string;
   roomId: string | null;
+  /** A file the guest is sending for the meeting chat, chunk by chunk. */
+  upload?: { id: string; name: string; mime: string; size: number; parts: Buffer[]; got: number; next: number } | null;
 }
 
 export interface GuestHost {
@@ -52,6 +54,10 @@ export interface GuestHost {
   resolve?(ref: string): string | null;
   /** Why a guest with the right passcode cannot ask to join now (cancelled, ended, not open yet), or null. */
   joinProblem?(m: Meeting): string | null;
+  /** Why a file from a guest cannot be shared (the office's blocked types, its upload limit), or null. */
+  fileProblem?(name: string, size: number): string | null;
+  /** Store a guest's file (it is then said in the meeting chat, and saved in the meeting's thread). */
+  storeFile?(guestId: string, name: string, mime: string, data: Buffer): { id: string; name: string; size: number };
 }
 
 const cleanName = (v: unknown) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, GUEST_NAME_MAX) : '');
@@ -287,9 +293,54 @@ export class MeetGuests {
       case 'chat':
         rooms.handle('room.chat', me, s.deviceId, { roomId, text: f.text });
         return;
+      case 'file':
+        this.fileStart(s, f);
+        return;
+      case 'fileChunk':
+        this.fileChunk(s, me, f);
+        return;
       default:
         // a guest session is the meeting and nothing else
         this.host.send(s.gid, { t: 'error', message: 'Not available to guests.' });
+    }
+  }
+
+  /** A guest starts sending a file: its name, type and size are checked against the office's rules first. */
+  private fileStart(s: Session, f: Record<string, unknown>): void {
+    const id = typeof f.id === 'string' ? f.id.slice(0, 40) : '';
+    const name = typeof f.name === 'string' ? f.name.replace(/[\u0000-\u001f\u007f/\\<>:"|?*]/g, '_').trim().slice(0, 160) : '';
+    const size = typeof f.size === 'number' && Number.isFinite(f.size) ? Math.floor(f.size) : -1;
+    const mime = typeof f.mime === 'string' ? f.mime.slice(0, 100) : 'application/octet-stream';
+    if (!id) return;
+    const refuse = (reason: string) => this.host.send(s.gid, { t: 'fileDone', id, ok: false, reason });
+    if (s.upload) { refuse('Wait until your other file has gone.'); return; }
+    if (!name || size <= 0) { refuse('That file is empty.'); return; }
+    if (size > GUEST_FILE_MAX) { refuse(`Files from a browser can be up to ${GUEST_FILE_MAX / 1024 / 1024} MB.`); return; }
+    const problem = this.host.fileProblem?.(name, size) ?? (this.host.storeFile ? null : 'Files cannot be shared in this meeting.');
+    if (problem) { refuse(problem); return; }
+    s.upload = { id, name, mime, size, parts: [], got: 0, next: 0 };
+  }
+
+  private fileChunk(s: Session, me: PublicUser, f: Record<string, unknown>): void {
+    const u = s.upload;
+    if (!u || f.id !== u.id) return;
+    const fail = (reason: string) => { s.upload = null; this.host.send(s.gid, { t: 'fileDone', id: u.id, ok: false, reason }); };
+    if (f.i !== u.next || typeof f.data !== 'string') { fail('The file arrived out of order. Send it again.'); return; }
+    const part = Buffer.from(f.data, 'base64');
+    if (part.length > GUEST_FILE_CHUNK || u.got + part.length > u.size) { fail('The file is larger than it said. Send it again.'); return; }
+    u.parts.push(part);
+    u.got += part.length;
+    u.next++;
+    if (u.got < u.size) return;
+    s.upload = null;
+    try {
+      const stored = this.host.storeFile!(s.userId, u.name, u.mime, Buffer.concat(u.parts));
+      this.host.rooms.sayFile(s.roomId!, me, s.deviceId, stored);
+      this.host.audit(null, 'meeting.guestFile', s.meetingId, { name: s.name, file: u.name, size: u.size });
+      this.host.send(s.gid, { t: 'fileDone', id: u.id, ok: true });
+    } catch (err) {
+      this.host.send(s.gid, { t: 'fileDone', id: u.id, ok: false, reason: err instanceof RoomError ? err.message : 'The file could not be shared.' });
+      if (!(err instanceof RoomError)) this.host.log('warn', 'guest file failed', { error: (err as Error).message });
     }
   }
 

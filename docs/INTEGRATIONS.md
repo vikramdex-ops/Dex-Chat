@@ -83,7 +83,7 @@ X-Dex-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>.<body>" with the signin
 Reply within 8 seconds with `{ "text": "…" }` to post into the conversation as the integration, or
 `{ "text": "…", "ephemeral": true }` to show it only to the person who typed the command.
 
-The app's own commands (`/remind`, `/poll`, `/call`, `/startday`, Nib's `/got`, `/done`, `/wrap`,
+The app's own commands (`/remind`, `/poll`, `/action`, `/call`, `/startday`, Nib's `/got`, `/done`, `/wrap`,
 `/sheet`, `/leave`, `/nib` and the rest: `APP_COMMANDS` in `packages/core/src/bots.ts`) are never
 sent to the hub, so no integration or flow can take one. The slash list shows each name once: the
 app's own first, then integrations' and flows' commands; a command saved before its name became the

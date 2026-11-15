@@ -397,7 +397,7 @@ export interface Message {
    * someone in the conversation had no encryption key yet (`no-key`, naming them), or the
    * sender's app did not encrypt it (`sender`, an older version).
    */
-  plain?: { reason: 'no-key' | 'sender'; users: string[] } | null;
+  plain?: { reason: 'no-key' | 'sender' | 'meeting'; users: string[] } | null;
   /** Passed straight between PCs while the hub was off (posted to the hub once it is back). */
   via?: 'direct';
 }

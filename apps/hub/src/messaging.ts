@@ -6,7 +6,7 @@ import { addWraps, isSealed, sealsFiles } from '@dex/core/e2e';
 import { encryptionRequiredMessage } from '@dex/core/e2e-client';
 import { applyDlp, dlpBlockedMessage } from '@dex/core/dlp';
 import type { DlpRule } from '@dex/core/dlp';
-import type { Conversation, FlowEvent, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
+import type { Conversation, FileInfo, FlowEvent, FormField, FormView, Message, MessagePreview, Ops, PollView, PublicUser, ReportItem } from '@dex/core';
 import type { FileStore } from './files.ts';
 
 export class MsgError extends Error {}
@@ -126,7 +126,7 @@ const SEALED_FILES_ONLY = 'Encrypted files stay in the end-to-end encrypted Dire
 function parsePlain(raw: string): Message['plain'] {
   try {
     const v = JSON.parse(raw) as { reason?: unknown; users?: unknown };
-    if ((v.reason === 'no-key' || v.reason === 'sender') && Array.isArray(v.users)) return { reason: v.reason, users: v.users.filter((u): u is string => typeof u === 'string') };
+    if ((v.reason === 'no-key' || v.reason === 'sender' || v.reason === 'meeting') && Array.isArray(v.users)) return { reason: v.reason, users: v.users.filter((u): u is string => typeof u === 'string') };
   } catch { /* fall through */ }
   return null;
 }
@@ -1373,6 +1373,40 @@ export class Messaging {
     const view = this.messageView(row, me.id);
     this.onPosted?.(me, c.id, view);
     return view;
+  }
+
+  /**
+   * Save a line said in a meeting's chat into its thread (meet-threads.ts), as it is said. The author
+   * is a colleague or a browser guest (who has no account and is not a member). Office data-loss
+   * rules apply (throws when blocked). In a Direct thread the line is stored plain and marked as
+   * meeting chat: a browser guest holds no keys, so these lines were never end-to-end encrypted.
+   */
+  postMeetLine(author: PublicUser, convId: string, body: string, fileIds: string[], at = Date.now()): MsgRow {
+    const c = this.conv(convId);
+    if (!c) throw new MsgError('Conversation not found.');
+    const text = this.guardText(cleanBody(body).slice(0, MAX_BODY), c.id);
+    if (!text && !fileIds.length) throw new MsgError('Write something first.');
+    const id = ulid(at);
+    const plain = c.kind === 'direct' ? JSON.stringify({ reason: 'meeting', users: [] }) : null;
+    this.db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, client_id, plain) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)')
+      .run(id, c.id, author.id, text, at, `meet-${id}`, plain);
+    this.recordMentions(id, c.id, text);
+    this.index(id, c.id, text);
+    if (fileIds.length) this.files.link(id, c.id, fileIds.slice(0, 20));
+    if (this.isMember(c.id, author.id)) this.db.prepare('UPDATE conv_members SET last_read_id = ? WHERE conv_id = ? AND user_id = ?').run(id, c.id, author.id);
+    const row = this.message(id)!;
+    this.pushMessage('msg.new', row);
+    this.pushConv(c.id);
+    this.observe?.({ kind: 'message.new', messageId: id, convId: c.id, authorId: author.id });
+    return row;
+  }
+
+  /** The files on a message (meeting recaps). */
+  filesOf(messageId: string): FileInfo[] { return this.files.forMessage(messageId); }
+
+  /** Conversation kind and archived state (meeting threads). */
+  convKind(convId: string): 'space' | 'direct' | null {
+    return this.conv(convId)?.kind ?? null;
   }
 
   /** Add wrapped keys to sealed messages the caller can read (history for their new devices). */

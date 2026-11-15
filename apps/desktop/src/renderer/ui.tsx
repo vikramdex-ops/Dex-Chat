@@ -118,6 +118,10 @@ const PATHS = {
   daysheet: 'M5 3.5h14v17H5zM8 8h8M8 11.5h5M8 15l1.8 1.8L13.5 13',
   /** A reference: a sheet with a leader pointing elsewhere. */
   reference: 'M4.5 4.5h9v11h-9zM13.5 10H20M16.5 6.5 20 10l-3.5 3.5M7 8h4M7 11h4',
+  /** An action point: a register's tick box with a leader to whoever acts on it. */
+  action: 'M4 5h6v6H4zM5.4 8.1l1.3 1.3 2.1-2.5M12.5 8H20M4 15.5h10M17 12.5l3 3-3 3',
+  /** A meeting's recap: a sheet with its title block in the corner. */
+  recap: 'M4 3.5h16v17H4zM11.5 14.5h8.5M11.5 14.5v6M15.5 14.5v6M7 7.5h10M7 10.5h6',
 } as const;
 
 export type IconName = keyof typeof PATHS;

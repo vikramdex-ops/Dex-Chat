@@ -16,6 +16,7 @@ export interface CommandInfo { command: string; hint: string; description: strin
 export const BUILT_INS: CommandInfo[] = [
   { command: 'remind', hint: 'in 30m Call the client', description: 'Set a reminder (in 20m, in 2h, tomorrow, monday, at 5pm)' },
   { command: 'poll', hint: 'Lunch? | Dosa | Biryani', description: 'Ask a question with choices' },
+  { command: 'action', hint: 'Ravi to send the revised GA by Fri', description: 'Log an action point: who, what, by when' },
   { command: 'meet', hint: '', description: 'Plan a meeting with the people here' },
   { command: 'call', hint: '', description: 'Open a Room here, with voice' },
   { command: 'video', hint: '', description: 'Open a Room here, with video' },

@@ -86,7 +86,8 @@ test('offboarding signs someone out everywhere and hands their Spaces, automatio
   const p = await owner.request('admin.offboard.preview', { userId: leaverId });
   assert.equal(p.devices.length, 1);
   assert.equal(p.pairingCodes, 1);
-  assert.deepEqual(p.spacesOwned.map((s) => s.name), ['Pump skid P-12', 'Skid sizing talk · backstage'], "the webinar's backstage is hers too");
+  // the threads of the Calendar meetings she organised are hers too (each meeting has one)
+  assert.deepEqual(p.spacesOwned.map((s) => s.name), ['Design review · meeting', 'Kick-off · meeting', 'Piping weekly · meeting', 'Pump skid P-12', 'Skid sizing talk · backstage'], "the webinar's backstage is hers too");
   assert.deepEqual(p.spacesModerated.map((s) => s.name), ['Site office']);
   assert.deepEqual(p.automations.map((f) => f.where).sort(), ['direct', 'office', 'space']);
   assert.deepEqual(p.bots.map((b) => b.name), ['Hopper']);
@@ -181,7 +182,7 @@ test('offboarding signs someone out everywhere and hands their Spaces, automatio
   const actions = new Set(hub.store.auditTrail(200).map((a) => a.action));
   for (const a of ['person.offboarded', 'device.revoked', 'handover.spaces', 'handover.automations', 'handover.integrations', 'handover.scheduled', 'handover.reminders', 'handover.meetings', 'handover.tickets', 'handover.webinars']) assert.ok(actions.has(a), a);
   const list = await owner.request('admin.offboard.list');
-  assert.equal(list[0].summary.spaces, 2);
+  assert.equal(list[0].summary.spaces, 5, "her Spaces and her meetings' threads");
   assert.equal(list[0].summary.moderated, 1);
   assert.equal(list[0].summary.meetingsReassigned, 2);
   assert.equal(list[0].summary.automationsTurnedOff, 1);

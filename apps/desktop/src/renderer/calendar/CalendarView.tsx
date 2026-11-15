@@ -1,5 +1,6 @@
 // The Calendar lens: a week on a drafting grid (or an agenda list), meetings you can open,
 // answer and join, and the dialog to plan one with people, a conference room and a call.
+import { openRecap } from '../meet/threadcards.tsx';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CalEvent, Conversation, LobbyRule, MeetingInfo, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
 import { formatMeetingId, meetingLink, slugFrom } from '@dex/core';
@@ -275,7 +276,8 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
         )}
         {(venue || ev.location) && <div><Icon name="home" size={16} /><span>{venue ? `${venue.name}${venue.capacity ? ` · seats ${venue.capacity}` : ''}` : ev.location}</span></div>}
         {ev.online && <MeetingLine eventId={ev.id} />}
-        {conv && <div><Icon name={conv.kind === 'space' ? 'grid' : 'chat'} size={16} /><button className="link" onClick={() => { onClose(); openConv(conv.id); }}>{convTitle(conv, users, meId)}</button></div>}
+        {conv && <div><Icon name={conv.kind === 'space' ? 'grid' : 'chat'} size={16} /><button className="link" onClick={() => { onClose(); openConv(conv.id); }}>{convTitle(conv, users, meId)}</button><span className="faint"> · its chat, files and action points</span></div>}
+        <RecapLine eventId={ev.id} occ={occ} online={ev.online} onOpen={onClose} />
         <div><Icon name="user" size={16} /><span>Organised by {ev.organizerId === meId ? 'you' : users.get(ev.organizerId)?.displayName ?? 'a former member'}</span></div>
       </div>
       {ev.description && <div className="quote selectable">{renderBody(ev.description, users, meId)}</div>}
@@ -303,6 +305,19 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
       )}
     </Dialog>
   );
+}
+
+/** A meeting opened after it happened: its recap, or that it was not held here. */
+function RecapLine({ eventId, occ, online, onOpen }: { eventId: string; occ: Occurrence; online: boolean; onOpen: () => void }) {
+  const [id, setId] = useState<string | null | undefined>(undefined);
+  const past = occ.startAt < Date.now();
+  useEffect(() => {
+    if (!past) return;
+    void window.dex.request('meet.recapFor', { eventId, slotStart: occ.startAt }).then((r) => setId(r.occurrenceId)).catch(() => setId(null));
+  }, [eventId, occ.startAt, past]);
+  if (!past || id === undefined) return null;
+  if (!id) return online && occ.endAt < Date.now() ? <div><Icon name="recap" size={16} /><span className="faint">Not held in Dexterity Connect: no recap.</span></div> : null;
+  return <div><Icon name="recap" size={16} /><button className="link" onClick={() => { onOpen(); openRecap(id); }}>Open the recap</button><span className="faint"> · attendance, files, recording, action points</span></div>;
 }
 
 /** A meeting held as a call: its meeting ID, its page on the meeting site and the app link, to copy into an invitation or a message. */

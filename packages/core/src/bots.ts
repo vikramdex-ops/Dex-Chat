@@ -645,7 +645,7 @@ export type MiniAppFile = Pick<FileInfo, 'id' | 'name' | 'mime' | 'size' | 'crea
  * send it to the hub, so the integration's command could not start.
  */
 export const APP_COMMANDS: readonly string[] = [
-  'remind', 'poll', 'meet', 'call', 'video', 'schedule', 'status', 'here', 'headsdown', 'quiet', 'unlisted',
+  'remind', 'poll', 'action', 'meet', 'call', 'video', 'schedule', 'status', 'here', 'headsdown', 'quiet', 'unlisted',
   'startday', 'endday', 'stepout', 'got', 'done', 'wrap', 'sheet', 'leave', 'nib', 'me', 'shrug', 'help',
   // reserved since the first command list
   'available', 'busy', 'dnd', 'invisible', 'checkin', 'checkout', 'break', 'away',

@@ -72,7 +72,7 @@ const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.rep
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T12:00:00`).getTime());
 const STATUSES: NibStatus[] = ['going', 'done', 'blocked'];
 const KINDS: NibLeaveKind[] = ['annual', 'sick', 'comp', 'half'];
-const SOURCES: NibSource[] = ['start', 'words', 'offer', 'slash', 'wrap', 'carried', 'cover', 'flow'];
+const SOURCES: NibSource[] = ['start', 'words', 'offer', 'slash', 'wrap', 'carried', 'cover', 'flow', 'meeting'];
 const MAX_ITEMS_A_DAY = 60;
 /** Operations that change the person's own day (their apps are sent nib.me after each). */
 const SHEET_OPS = new Set(['nib.start', 'nib.item.save', 'nib.item.delete', 'nib.wrap', 'nib.day', 'nib.leave.cancel', 'nib.cover.take', 'nib.welcome.seen']);
@@ -404,7 +404,52 @@ export class Nib {
     if (day.state === 'sent') day.changedAt = now;
     this.saveDay(day);
     if (day.state === 'sent') this.afterSent(me, date, day);
+    if (prev && prev.source === 'meeting' && prev.status !== status) { try { this.onMeetingItem?.(prev.id, status, me.id); } catch (err) { this.d.log('warn', 'nib: meeting item hook failed', { error: (err as Error).message }); } }
     return this.item(String(input.id))!;
+  }
+
+  // ------------------------------------------------------------ action points from meetings (meet-threads.ts)
+  /** An action point's status changed on the day sheet (ticked done there): the meeting's register follows. */
+  onMeetingItem: ((itemId: string, status: NibStatus, by: string) => void) | null = null;
+
+  /**
+   * An action point from a meeting on its owner's day sheet, given by the meeting's organiser.
+   * Returns the item's id, or null when the owner keeps no day sheet (Nib off, exempt, a bot).
+   */
+  meetingItem(owner: PublicUser, a: { activity: string; giverId: string | null; due: string | null; messageId: string }): string | null {
+    const cfg = this.config();
+    if (!cfg.enabled || owner.role === 'bot' || owner.role === 'guest' || this.exempt(owner.id, cfg)) return null;
+    try {
+      // the giver must be a colleague other than the owner; the item stays the owner's own work
+      const it = this.saveItem(owner, { activity: a.activity, giverId: a.giverId && a.giverId !== owner.id ? a.giverId : null, due: a.due, messageId: a.messageId, source: 'meeting', status: 'going' });
+      this.pushMe([owner.id]);
+      return it.id;
+    } catch (err) { this.d.log('info', 'nib: action point not added to the day sheet', { error: (err as Error).message }); return null; }
+  }
+
+  /** The action point was ticked (or reopened) in the meeting: its day-sheet item follows, whatever day it is on. */
+  meetingItemStatus(itemId: string, status: NibStatus): void {
+    const it = this.item(itemId);
+    if (!it || it.status === status) return;
+    this.db.prepare('UPDATE nib_items SET status = ?, updated_at = ? WHERE id = ?').run(status, this.now(), it.id);
+    this.pushMe([it.userId]);
+  }
+
+  /** The action point went to someone else, or was dropped: its item leaves the day sheet (only if still not done). */
+  meetingItemGone(itemId: string): void {
+    const it = this.item(itemId);
+    if (!it || it.source !== 'meeting' || it.status === 'done') return;
+    this.db.prepare('DELETE FROM nib_items WHERE id = ?').run(it.id);
+    this.pushMe([it.userId]);
+  }
+
+  /** On leave on that day (overdue reminders wait until they are back). */
+  awayOn(uid: string, date: string): boolean { return !!this.leaveOn(uid, date); }
+
+  /** The working day, for reminders that should only arrive in working hours. */
+  workingDay(): { workdays: number[]; start: string; end: string } {
+    const cfg = this.config();
+    return { workdays: cfg.workdays, start: cfg.startPromptAt, end: cfg.wrapAt };
   }
 
   /** After a sheet is sent (or changed after sending): every lead it names gets their card, or sees it change. */

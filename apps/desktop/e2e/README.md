@@ -34,7 +34,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
 - `tourlib.mts`: screenshot tours and layout checks used by the meetings and gateway scripts.
 - **One script per area:**
   - messaging: `nav`, `msgacts`, `search`, `format`, `links`, `polish`
-  - meetings: `meet`, `m2-*`, `m3-webinar`, `lounge`, `pointers`
+  - meetings: `meet`, `m2-*`, `m3-webinar`, `lounge`, `pointers`, `meetrecap` (threads, action points, recaps; a browser guest through the gateway; a hub restart mid-meeting)
   - files: `files`, `pdf`, `media`, `ocr`, `dmsearch`
   - bots: `bots-*`, `botmaker`, `flows`
   - org chart: `org`, `orgscape`

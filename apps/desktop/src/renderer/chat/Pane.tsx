@@ -4,7 +4,7 @@
 import { Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
-import { STICKER_RE, uniqueCommands } from '@dex/core';
+import { STICKER_RE, apRef, uniqueCommands } from '@dex/core';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
@@ -41,6 +41,8 @@ import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeopl
 import { useMsgLayout } from './prefs.ts';
 import { LinkCards } from './linkcards.tsx';
 import { DecisionBuilder, DecisionCard } from './decisions.tsx';
+import { ActionDialog, ActionPreview, ApStrip, actionWords, logAction, ownerPool, ownerText, useActionDraft } from '../meet/actions.tsx';
+import { MeetCardView } from '../meet/threadcards.tsx';
 import { NibOffer } from '../nib/offer.tsx';
 import { nibBotId } from '../nib/store.ts';
 // Nib's cards (a lead's transmittal, the register…) load with the first one on screen
@@ -926,14 +928,17 @@ interface RunProps {
 }
 const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, size }: RunProps) {
   const u = ctx.users.get(author);
+  // a browser guest in a meeting has no account: their name comes with the line
+  const guestName = !u ? msgs.find((m) => m.meetLine)?.meetLine?.name ?? null : null;
   // only the height it had when it was first drawn here (a later measurement is not a change)
   const [room] = useState(size);
   return (
     <div className={`run${mine ? ' mine' : ''}`} style={room ? { containIntrinsicSize: `auto ${Math.round(room)}px` } : undefined}>
-      <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={presenceFor(author)} /></div>
+      <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? guestName ?? '?' }} presence={guestName ? undefined : presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
-          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
+          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? guestName ?? 'Former member'}</span>
+          {guestName && <span className="tag mono guest-tag">GUEST</span>}
           {u?.role === 'bot' && <span className="chip accent bot-chip">{isMadeBot(author) || author === nibBotId() ? 'Bot' : 'Integration'}</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
@@ -999,7 +1004,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
   const moreBtn = useRef<HTMLButtonElement>(null);
   const stampBtn = useRef<HTMLButtonElement>(null);
   const keepBtn = useRef<HTMLButtonElement>(null);
-  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | 'fork' | 'insights' | 'restyle' | 'reference' | null>(null);
+  const [dialog, setDialog] = useState<'remind' | 'forward' | 'readers' | 'report' | 'remove' | 'fork' | 'insights' | 'restyle' | 'reference' | 'action' | null>(null);
   const kept = useDesk((s) => s.saved.get(m.id));
   const saved = !!kept;
   const pending = 'pending' in m;
@@ -1071,7 +1076,8 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       )}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
-      ) : m.nib ? <Suspense fallback={<div className="nib-card loading"><span className="spinner" /></div>}><NibMessageCard m={m as Message} meId={ctx.meId} users={ctx.users} /></Suspense>
+      ) : m.meetCard ? <MeetCardView m={m as Message} />
+        : m.nib ? <Suspense fallback={<div className="nib-card loading"><span className="spinner" /></div>}><NibMessageCard m={m as Message} meId={ctx.meId} users={ctx.users} /></Suspense>
         : isBotCard(m) ? <BotCard m={m} conv={ctx.conv} meId={ctx.meId} users={ctx.users} />
         : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} />
         : m.decision ? <DecisionCard m={m as Message} meId={ctx.meId} users={ctx.users} />
@@ -1090,7 +1096,9 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
           </div>
         ) : m.plain ? <div className="msg-text"><PlainMark m={m as Message} users={ctx.users} /></div> : null
       )}
+      {m.meetLine && !m.meetCard && <span className="meet-line-tag mono" title="Said in the meeting chat, which guests from outside read">MEETING CHAT{m.meetLine.breakout ? ` · ${m.meetLine.breakout.toUpperCase()}` : ''}</span>}
       <MessageFiles files={m.files ?? []} onView={ctx.view} draggableAs={pending ? undefined : (f) => refDragProps({ kind: 'file', convId: m.convId, fileId: f.id, name: f.name }, ctx.users)} />
+      {m.actionPoint && !pending && <ApStrip ap={m.actionPoint} users={ctx.users} meId={ctx.meId} />}
       {!pending && !editing && <LinkCards m={m as Message} meId={ctx.meId} inTrack={inTrack} />}
       {!pending && <MsgFlags m={m as Message} />}
       {!pending && !editing && <NibOffer m={m as Message} conv={ctx.conv} meId={ctx.meId} users={ctx.users} />}
@@ -1195,6 +1203,9 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
                   )}
                 </>
               )}
+              {!guest && !inTrack && !m.parentId && !m.actionPoint && !m.meetCard && !m.poll && !m.form && !m.decision && m.e2e !== 'locked' && (
+                <button role="menuitem" onClick={() => close(() => setDialog('action'))}><Icon name="action" size={16} />Make an action point</button>
+              )}
               <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(`dexconnect://message/${m.convId}/${m.id}`); toast('Reference copied: paste it anywhere in Dexterity Connect'); })}><Icon name="open" size={16} />Copy reference</button>
               {m.body && !sticker && <button role="menuitem" onClick={() => close(() => { void navigator.clipboard.writeText(m.body); toast('Copied'); })}><Icon name="copy" size={16} />Copy text</button>}
               {!inTrack && !m.parentId && <>
@@ -1234,6 +1245,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       {dialog === 'insights' && <ReactionInsightsPanel messageId={m.id} onClose={() => setDialog(null)} />}
       {dialog === 'restyle' && <RestyleSheet mode="copy" text={readable(m.body, ctx.users)} style="concise" users={ctx.users} onClose={() => setDialog(null)} />}
       {dialog === 'reference' && refPayload && <ReferenceDialog payload={refPayload} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
+      {dialog === 'action' && <ActionDialog m={m as Message} conv={ctx.conv} users={ctx.users} meId={ctx.meId} onClose={() => setDialog(null)} />}
     </div>
   );
 }
@@ -1522,10 +1534,21 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
   };
 
   const clear = () => { setText(''); setDraft(key, ''); setMention(null); setHash(null); picked.current = []; };
+  // a line starting /action, AP: or → is an action point: read as it is typed, logged on Enter
+  const apWords = !parentId && !direct && ctx.users.get(ctx.meId)?.role !== 'guest' ? actionWords(text) : null;
+  const apPool = useMemo(() => ownerPool(ctx.conv, ctx.users), [ctx.conv, ctx.users]);
+  const [apDraft, apPick, apReset] = useActionDraft(apWords ?? '', apPool, ctx.meId);
   const sendRefs = async (list: RefPayload[]) => {
     for (const p of list) if (!(await shareRef(convId, p, parentId))) return;
   };
   const send = () => {
+    if (apWords !== null && live && !ready.length) {
+      const typed = text;
+      clear();
+      void logAction(convId, { ...apDraft, source: 'chat' }).then((a) => { toast(`${apRef(a.n)} logged · ${ownerText(a, ctx.users, ctx.meId)}`); apReset(); })
+        .catch((e: Error) => { toast(e.message, true); setText(typed); setDraft(key, typed); });
+      return;
+    }
     const body = wire();
     if (refs.length && live && !uploading && !direct && !text.startsWith('/')) {
       const list = refs;
@@ -1672,6 +1695,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
           ))}
         </ul>
       )}
+      {apWords !== null && <ActionPreview draft={apDraft} pool={apPool} meId={ctx.meId} onPick={apPick} />}
       <AttachmentTray items={attachments} onRemove={(k) => setAttachments((l) => l.filter((a) => a.key !== k))} />
       <RefChips items={refs} users={ctx.users} onRemove={(i) => setRefs((l) => l.filter((_, j) => j !== i))} />
       {dockDrop.valid && <span className={`ref-drop-label dock-label${dockDrop.over ? ' on' : ''}`}>{dockDrop.over ? 'Drop to reference here' : 'Drop on the Dock to add it to your message'}</span>}
@@ -2045,7 +2069,9 @@ function ReasonDialog({ kind, m, ctx, onClose }: { kind: 'report' | 'remove'; m:
 function PlainMark({ m, users }: { m: Message; users: Map<string, PublicUser> }) {
   const p = m.plain!;
   const who = p.users.map((id) => users.get(id)?.displayName ?? 'someone').join(', ');
-  const why = p.reason === 'no-key'
+  const why = p.reason === 'meeting'
+    ? 'Not end-to-end encrypted: said in the meeting chat, which guests from outside read. Your own Direct messages stay encrypted.'
+    : p.reason === 'no-key'
     ? `Not end-to-end encrypted: ${who} had no encryption key yet (an older version of Dexterity Connect). The office hub can read this message.`
     : 'Not end-to-end encrypted: sent from an older version of Dexterity Connect. The office hub can read this message.';
   return <span className="plain-mark" role="img" aria-label={why} title={why}><Icon name="unlock" size={12} /></span>;

@@ -43,6 +43,7 @@ import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 import { startMeetLive } from './meet/live.ts';
+import { RecapHost } from './meet/threadcards.tsx';
 import { joinAny, openWebinar, startWebinars } from './meet/webinar/store.ts';
 import { WebinarSeat } from './meet/webinar/Seat.tsx';
 import { openRecording } from './meet/shelf.ts';
@@ -705,6 +706,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
       <AssistHost session={session} users={users} live={live} />
       <NibHost session={session} users={users} live={live} />
+      <RecapHost users={users} meId={session.me.id} jump={(c, mid) => jump(c, mid)} />
       <WebinarSeat />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}
