@@ -9,6 +9,7 @@ import type { Meeting } from './meetings.ts';
 import { Breakouts } from './breakouts.ts';
 import { ControlError, MeetControl } from './meet-control.ts';
 import type { RoomTracker } from './meet-reports.ts';
+import { MsgError } from './messaging.ts';
 
 export class RoomError extends Error {}
 
@@ -36,6 +37,9 @@ export interface Room extends RoomInfo {
   purpose?: RoomPurpose;
   /** Only these people may see or join it (a support session); otherwise the conversation's members. */
   only?: Set<string>;
+  /** The meeting thread's occurrence this Room is part of, and its note-taker. */
+  occurrenceId?: string | null;
+  noteTaker?: string | null;
 }
 
 /** What breakout rooms (breakouts.ts) use of the Rooms. */
@@ -74,6 +78,17 @@ export interface RoomHost {
   purposeChanged?(room: RoomInfo, ended: boolean, durationMs: number): void;
   /** Webinars (webinars.ts): who may be on the stage, and the stage's Room as it changes and ends. */
   webinar?: WebinarHooks;
+  /** Meeting threads (meet-threads.ts): occurrences, the meeting chat saved as it is said, the note-taker. */
+  threads?: ThreadHooks;
+}
+
+/** What meeting threads hear from the Rooms. */
+export interface ThreadHooks {
+  opened(r: RoomInfo, m: Meeting | null): { id: string; noteTakerId: string | null } | null;
+  ended(r: RoomInfo): void;
+  said(main: RoomInfo, me: PublicUser, text: string, opts: { breakout: string | null; fileId: string | null }): { messageId: string | null; name: string; text: string };
+  log(main: RoomInfo): RoomChatLine[] | null;
+  noteTaker(mainRoomId: string, userId: string | null): void;
 }
 
 /** What a webinar needs from its Room: attendees never enter it, they watch the stage. */
@@ -137,6 +152,7 @@ export class Rooms {
       ...this.extras(r),
       ...(r.purpose ? { purpose: { ...r.purpose } } : {}),
       ...(this.control.view(r.id) ? { control: this.control.view(r.id) } : {}),
+      ...(this.breakouts.main(r).occurrenceId ? { occurrenceId: this.breakouts.main(r).occurrenceId, noteTakerId: this.breakouts.main(r).noteTaker ?? null } : {}),
     };
   }
 
@@ -234,6 +250,7 @@ export class Rooms {
     // a lounge or support session is not a call or a meeting: its own module records it
     if (r.purpose) { this.host.purposeChanged?.(view, true, durationMs); return; }
     this.host.ended?.(view, missed, durationMs);
+    if (r.occurrenceId) { try { this.host.threads?.ended(view); } catch (err) { this.host.audit?.(null, 'meeting.threadError', r.meeting?.id ?? null, { error: (err as Error).message }); } }
     // a missed call is not a meeting; anything else goes into "Recent meetings"
     if (this.host.meetings && (!missed || (r.meeting && r.meeting.kind !== 'conversation'))) {
       try { this.host.meetings.log(view, r.meeting, r.meeting?.title ?? '', [...r.everJoined], durationMs); } catch { /* the call still ended */ }
@@ -262,6 +279,14 @@ export class Rooms {
     // nobody runs it yet (the host is not here): the first member of the office in it does
     if (!this.isHost(room, me.id) && me.role !== 'guest') room.coHostSet.add(me.id);
     this.rooms.set(room.id, room);
+    // a meeting's Room belongs to an occurrence of its thread (lounges and support sessions do not)
+    if (!special && this.host.threads) {
+      try {
+        const occ = this.host.threads.opened(this.view(room), meeting);
+        room.occurrenceId = occ?.id ?? null;
+        room.noteTaker = occ?.noteTakerId ?? null;
+      } catch (err) { this.host.audit?.(null, 'meeting.threadError', meeting?.id ?? null, { error: (err as Error).message }); }
+    }
     this.host.track?.opened(room);
     this.host.track?.joined(room.id, me.id, deviceId, me.displayName);
     if (meeting) this.host.audit?.(me.id, 'meeting.started', meeting.id, { roomId: room.id, title: meeting.title, mode: room.mode });
@@ -715,22 +740,63 @@ export class Rooms {
         const r = this.mine(d.roomId, me, deviceId);
         const text = typeof d.text === 'string' ? d.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, ROOM_CHAT_MAX) : '';
         if (!text) throw new RoomError('Write something first.');
-        if (!this.limits.allow(`${r.id}:chat:${deviceId}`, 10, 10_000)) throw new RoomError('Slow down a little.');
-        const name = isWebGuest(me.id) ? this.host.visitorsOf?.([me.id])[0]?.name ?? me.displayName : me.displayName;
-        const line: RoomChatLine = { id: ulid(), roomId: this.breakouts.main(r).id, userId: me.id, name, text, at: Date.now(), guest: isWebGuest(me.id) };
-        r.chat.push(line);
-        if (r.chat.length > 200) r.chat.splice(0, r.chat.length - 200);
-        for (const x of this.breakouts.family(r)) for (const p of x.participants) this.host.deliverToDevice(p.deviceId, 'room.chat', line);
-        return line;
+        return this.say(r, me, deviceId, text, null);
       }
-      case 'room.chatLog':
-        return [...this.mine(d.roomId, me, deviceId).chat];
+      case 'room.chatLog': {
+        const r = this.mine(d.roomId, me, deviceId);
+        const main = this.breakouts.main(r);
+        let saved: RoomChatLine[] | null = null;
+        try { saved = this.host.threads?.log(this.view(main)) ?? null; } catch { saved = null; }
+        return saved ?? [...r.chat];
+      }
+      case 'meet.noteTaker': {
+        const r = this.hosted(d.roomId, me, deviceId);
+        const main = this.breakouts.main(r);
+        const who = typeof d.userId === 'string' && d.userId ? d.userId : null;
+        if (who && (isWebGuest(who) || !main.participants.some((p) => p.userId === who) && !this.host.members(main.convId).includes(who))) throw new RoomError('Choose someone in the meeting.');
+        main.noteTaker = who;
+        this.host.threads?.noteTaker(main.id, who);
+        this.publish(main);
+        return { ok: true };
+      }
 
       // ------------------------------------------------------------ breakout rooms
       case 'room.breakout.open': case 'room.breakout.note': case 'room.breakout.visit': case 'room.breakout.move': case 'room.breakout.close':
         return this.breakouts.handle(op, me, deviceId, d, this.mine(d.roomId, me, deviceId));
     }
     return undefined;
+  }
+
+  /**
+   * A line in the meeting chat: saved in the meeting's thread first (as it is said, with the
+   * office's data-loss rules), then sent to everyone in the meeting and its breakouts.
+   */
+  private say(r: Room, me: PublicUser, deviceId: string, text: string, file: { id: string; name: string; size: number } | null): RoomChatLine {
+    if (!this.limits.allow(`${r.id}:chat:${deviceId}`, 10, 10_000)) throw new RoomError('Slow down a little.');
+    const main = this.breakouts.main(r);
+    let name = isWebGuest(me.id) ? this.host.visitorsOf?.([me.id])[0]?.name ?? me.displayName : me.displayName;
+    let messageId: string | null = null;
+    if (this.host.threads && main.occurrenceId) {
+      try {
+        const s = this.host.threads.said(this.view(main), { ...me, displayName: name }, text, { breakout: r.parentId ? r.breakoutName ?? null : null, fileId: file?.id ?? null });
+        name = s.name; text = s.text; messageId = s.messageId;
+      } catch (err) {
+        if (err instanceof MsgError) throw new RoomError(err.message);
+        this.host.audit?.(null, 'meeting.chatNotSaved', main.meeting?.id ?? null, { error: (err as Error).message });
+      }
+    }
+    const line: RoomChatLine = { id: messageId ?? ulid(), roomId: main.id, userId: me.id, name, text, at: Date.now(), guest: isWebGuest(me.id), messageId, breakout: r.parentId ? r.breakoutName ?? null : null, file };
+    r.chat.push(line);
+    if (r.chat.length > 200) r.chat.splice(0, r.chat.length - 200);
+    for (const x of this.breakouts.family(r)) for (const p of x.participants) this.host.deliverToDevice(p.deviceId, 'room.chat', line);
+    return line;
+  }
+
+  /** A browser guest's file, already stored and checked, said in the meeting chat. */
+  sayFile(roomId: string, me: PublicUser, deviceId: string, file: { id: string; name: string; size: number }): RoomChatLine {
+    const r = this.rooms.get(roomId);
+    if (!r || !r.participants.some((p) => p.deviceId === deviceId)) throw new RoomError('Not in this call.');
+    return this.say(r, me, deviceId, '', file);
   }
 
   private dropWaiting(deviceId: string, meetingId?: string): void {

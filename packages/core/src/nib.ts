@@ -116,7 +116,7 @@ export interface NibQty {
   /** Normalised: "sheets", "isos", "drawings", "GAs", "MTOs", "lines", "spools", "supports", "models", "mark-ups", "hours", "%"; null for a bare count. */
   unit: string | null;
 }
-export type NibSource = 'start' | 'words' | 'offer' | 'slash' | 'wrap' | 'carried' | 'cover' | 'flow';
+export type NibSource = 'start' | 'words' | 'offer' | 'slash' | 'wrap' | 'carried' | 'cover' | 'flow' | 'meeting';
 export interface NibItem {
   id: string;
   userId: string;
@@ -328,7 +328,7 @@ export function findPerson(name: string, people: NibPerson[], meId?: string): Ni
 }
 
 /** Due dates in words: "by Friday", "kal tak", "EOD", "on 20 Nov", "20/11", "tomorrow". */
-function dueFrom(s: string, today: string): { due: string; from: number; to: number } | null {
+export function dueFrom(s: string, today: string): { due: string; from: number; to: number } | null {
   const lower = s.toLowerCase();
   const tests: Array<[RegExp, (m: RegExpExecArray) => string | null]> = [
     [/\b(?:by|till|until|before|on|due)\s+(today|tonight|eod|end of (?:the )?day)\b/, () => today],

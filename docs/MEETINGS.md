@@ -416,7 +416,7 @@ said**, line by line, as messages in the thread, never at the end. A hub that re
 loses nothing: the chat a guest or colleague sees when they come back is read from the thread.
 
 - **Authorship.** A colleague's line is their own message. A guest's line is a message from the
-  guest's meeting identity (`wg_…`, no office account) with their name kept beside it, shown as
+  guest's meeting identity (`guest:…`, no office account) with their name kept beside it, shown as
   `Mr Rao · GUEST`. Two guests with the same name in one occurrence are `Mr Rao` and `Mr Rao (2)`.
 - **What guests see** is only the meeting chat of the occurrence they are in, as before. What
   members write in the thread (the "Conversation" sheet) is never shown to guests.

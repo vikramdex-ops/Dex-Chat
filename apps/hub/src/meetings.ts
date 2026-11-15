@@ -81,6 +81,12 @@ export class Meetings {
   defaults: () => MeetingDefaults = () => ({ lobby: 'outside', joinBeforeHost: true });
   /** A meeting's page on the meeting site (meet-public.ts), shown with it everywhere. */
   pageUrl: (meetingId: string) => string | null = () => null;
+  /** A Calendar meeting's thread, made when needed (meet-threads.ts); null leaves the old behaviour. */
+  eventThread: ((eventId: string) => string | null) | null = null;
+  /** Is this conversation a meeting's own thread (attendees from outside become members)? */
+  ownThread: (convId: string) => boolean = () => false;
+  /** The occurrence a past Room was part of, for its recap. */
+  occurrenceOf: (roomId: string) => string | null = () => null;
 
   constructor(db: DatabaseSync, messaging: Messaging, userById: (id: string) => PublicUser | null) {
     this.db = db;
@@ -241,6 +247,15 @@ export class Meetings {
   /** The meeting's conversation, made the first time it is needed (a personal room, a Calendar meeting without one). */
   ensureConv(m: Meeting): string {
     if (m.convId) return m.convId;
+    // a Calendar meeting's thread: a private Space with everyone invited (meet-threads.ts)
+    if (m.kind === 'event' && m.eventId && this.eventThread) {
+      const t = this.eventThread(m.eventId);
+      if (t) {
+        this.db.prepare('UPDATE meetings SET conv_id = ? WHERE id = ?').run(t, m.id);
+        m.convId = t;
+        return t;
+      }
+    }
     const host = this.userById(m.hostId);
     if (!host) throw new MeetingError('The person who runs this meeting has left the office.');
     let convId: string;
@@ -261,6 +276,8 @@ export class Meetings {
     // guests from a browser have no account: they never join a conversation
     if (isWebGuest(userId)) return;
     if ((m.kind === 'instant' || m.kind === 'personal') && m.convId) this.messaging.ensureMember(m.convId, userId);
+    // a Calendar meeting's own thread: colleagues let in from outside the invitation can come back to it
+    else if (m.kind === 'event' && m.convId && this.ownThread(m.convId)) this.messaging.ensureMember(m.convId, userId);
   }
 
   update(m: Meeting, me: PublicUser, d: Record<string, unknown>): Meeting {
@@ -326,6 +343,7 @@ export class Meetings {
       roomId: r.room_id, meetingId: r.meeting_id, title: r.title, kind: r.kind, convId: r.conv_id, hostId: r.host_id,
       startedAt: r.started_at, endedAt: r.ended_at, durationMs: r.duration_ms,
       people: (who.all(r.room_id) as Array<{ user_id: string }>).map((p) => p.user_id),
+      occurrenceId: this.occurrenceOf(r.room_id),
     }));
   }
 }
