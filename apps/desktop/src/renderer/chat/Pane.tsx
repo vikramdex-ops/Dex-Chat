@@ -189,6 +189,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const toast = useToast();
 
   useEffect(() => { setSide(null); }, [convId]);
+  // Esc closes the side-track or side sheet of the Pane you are in, once nothing is open above it
+  useEffect(() => {
+    if (!side || !focused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('.scrim, .sheet-scrim, .popover, .lightbox, .board-stage, .reminder-card:focus-within')) return;
+      setSide(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [side, focused]);
   useEffect(() => {
     const onPlan = (e: Event) => { if ((e as CustomEvent).detail === convId) setPlanning(true); };
     window.addEventListener('dex-plan', onPlan);

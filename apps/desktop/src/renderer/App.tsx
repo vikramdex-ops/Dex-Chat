@@ -10,7 +10,7 @@ import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import type { Session } from '@dex/core';
 import type { AppState, MessageSound } from '../shared/bridge.ts';
 import logo from './app-icon.svg';
-import { Avatar, Dialog, Icon, ToastHost, presenceFor, setPresenceSource, useToast } from './ui.tsx';
+import { Avatar, Dialog, Icon, ToastHost, menuKeys, presenceFor, setPresenceSource, trapTab, useDialogFocus, useToast } from './ui.tsx';
 import type { Availability } from '@dex/core';
 import type { IconName } from './ui.tsx';
 import { RequiredUpdate, UpdatePill, WhatsNew } from './UpdateUi.tsx';
@@ -265,6 +265,17 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   const [searchInit, setSearchInit] = useState<SearchInit>({});
   const openSearch = (init: SearchInit) => { setSearchInit(init); setSheet('search'); setPalette(false); };
   const [menu, setMenu] = useState(false);
+  const meBtn = useRef<HTMLButtonElement>(null);
+  const meMenu = useRef<HTMLDivElement>(null);
+  // your own menu: the first item takes the keyboard; a click outside closes it and focus returns to your tile
+  useEffect(() => {
+    if (!menu) return;
+    meMenu.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    const down = (e: MouseEvent) => { if (!meMenu.current?.contains(e.target as Node) && !meBtn.current?.contains(e.target as Node)) setMenu(false); };
+    window.addEventListener('mousedown', down);
+    const menuEl = meMenu.current;
+    return () => { window.removeEventListener('mousedown', down); if (!document.activeElement || document.activeElement === document.body || menuEl?.contains(document.activeElement)) meBtn.current?.focus({ preventScroll: true }); };
+  }, [menu]);
   const [query, setQuery] = useState('');
   const [focusUser, setFocusUser] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -514,13 +525,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
             {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
           </span>
           <div className="me-wrap">
-            <button className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You: status, Preferences">
+            <button ref={meBtn} className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You: status, Preferences" aria-label={`${session.me.displayName}: status and Preferences`}>
               <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} size="sm" />
               {session.me.role !== 'guest' && session.me.role !== 'bot' && <DayArc size={28} />}
               {isAdmin && pendingCount > 0 && <span className="badge me-badge">{pendingCount}</span>}
             </button>
             {menu && (
-              <div className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
+              <div ref={meMenu} className="menu" role="menu" aria-label="You" onKeyDown={menuKeys}>
                 <div className="menu-head">
                   <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} />
                   <div style={{ minWidth: 0 }}>
@@ -586,7 +597,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
       {sheet && (
         <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
-          <aside className={`sheet${sheet === 'control' ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={sheet === 'control' ? 'Control room' : sheet === 'search' ? 'Search' : 'Preferences'}>
+          <SheetFrame wide={sheet === 'control'} label={sheet === 'control' ? 'Control room' : sheet === 'search' ? 'Search' : 'Preferences'}>
             <button className="sheet-close" onClick={() => setSheet(null)} aria-label="Close" title="Close (Esc)"><Icon name="x" size={18} /></button>
             <div className="sheet-body">
               {sheet === 'preferences' && <SettingsView state={state} session={session} />}
@@ -599,7 +610,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
               )}
               {sheet === 'control' && isAdmin && <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><Admin state={state} session={session} /></Suspense>}
             </div>
-          </aside>
+          </SheetFrame>
         </div>
       )}
 
@@ -634,6 +645,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <RequiredUpdate state={state} />
     </div>
   );
+}
+
+/** A control sheet from the right: it takes the keyboard while open and gives it back when it closes. */
+function SheetFrame({ wide, label, children }: { wide: boolean; label: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLElement>(null);
+  useDialogFocus(ref, false);
+  return <aside ref={ref} tabIndex={-1} onKeyDown={trapTab} className={`sheet${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={label}>{children}</aside>;
 }
 
 function OutOfOffice({ session, onClose }: { session: Session; onClose: () => void }) {

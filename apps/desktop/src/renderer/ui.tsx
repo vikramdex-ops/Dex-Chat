@@ -227,16 +227,52 @@ export function deviceCode(deviceId: string): string {
   return deviceId.slice(0, 8).toUpperCase().replace(/(.{4})/, '$1 ');
 }
 
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const visible = (el: HTMLElement) => !!(el.offsetParent || el.getClientRects().length);
+/** The keyboard stays inside a dialog: Tab from the last control goes back to the first. */
+export function trapTab(e: React.KeyboardEvent<HTMLElement>): void {
+  if (e.key !== 'Tab') return;
+  const all = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(visible);
+  if (!all.length) { e.preventDefault(); return; }
+  const first = all[0];
+  const last = all[all.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !e.currentTarget.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+/**
+ * Focus for a dialog or sheet: into it when it opens (its first field, or the dialog itself),
+ * and back to whatever had it when it closes.
+ */
+export function useDialogFocus(ref: React.RefObject<HTMLElement | null>, field = true): void {
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) {
+      const first = !field ? undefined : [...el.querySelectorAll<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea:not([disabled]), select:not([disabled])')].find(visible);
+      (first ?? el).focus({ preventScroll: true });
+    }
+    return () => {
+      const now = document.activeElement;
+      if (before?.isConnected && (!now || now === document.body || el?.contains(now))) before.focus({ preventScroll: true });
+    };
+  }, [ref, field]);
+}
+/** Is this the dialog on top (the last one opened)? Escape closes only that one. */
+const onTop = (el: HTMLElement | null) => { const all = document.querySelectorAll('.scrim'); return !!el && all[all.length - 1] === el; };
+
 /** A centred dialog over a blurred scrim, rendered at the top of the document. */
 export function Dialog({ title, children, onClose, narrow }: { title: string; children: ReactNode; onClose: () => void; narrow?: boolean }) {
+  const scrim = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && onTop(scrim.current)) onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return createPortal(
-    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={scrim} className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={box} tabIndex={-1} onKeyDown={trapTab} className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
           <h2 style={{ flex: 1 }}>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
@@ -252,6 +288,20 @@ export function Dialog({ title, children, onClose, narrow }: { title: string; ch
  * A menu or picker anchored to a button, rendered at the top of the document so a
  * scrolling or clipped container never cuts it off. Flips above the anchor near the bottom.
  */
+/** Arrow keys, Home and End move between the items of a menu (from its search field too). */
+export function menuKeys(e: React.KeyboardEvent<HTMLElement>): void {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (typing && (e.key === 'Home' || e.key === 'End')) return;
+  const items = [...e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')].filter(visible);
+  if (!items.length) return;
+  e.preventDefault();
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const down = e.key === 'ArrowDown';
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : at < 0 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
+}
+
 export function Popover({ anchor, onClose, className, children, align = 'end' }: {
   anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode;
   /** 'right': beside the anchor, for menus that open from a vertical tool column. */
@@ -298,8 +348,14 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
       window.removeEventListener('resize', onClose);
     };
   }, [anchor, onClose]);
+  // a menu takes the keyboard when it opens (unless a field in it already has it) and gives it back when it closes
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) el.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    return () => { if (el?.contains(document.activeElement) && anchor?.isConnected) anchor.focus({ preventScroll: true }); };
+  }, [anchor]);
   return createPortal(
-    <div ref={ref} className={`popover ${className}`} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
+    <div ref={ref} className={`popover ${className}`} onKeyDown={menuKeys} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
     document.body,
   );
 }
