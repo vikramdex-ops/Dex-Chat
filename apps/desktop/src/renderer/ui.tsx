@@ -1,4 +1,6 @@
 // Shared UI building blocks: icons, avatars, controls, toasts and formatting helpers.
+// the base stylesheet comes first: every screen's own styles and drawing.css load after it and win
+import './styles.css';
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';

@@ -1,5 +1,4 @@
 import '@fontsource-variable/outfit';
-import './styles.css';
 import { createRoot } from 'react-dom/client';
 import { App, PopoutApp } from './App.tsx';
 import { ShareBar } from './help/ShareBar.tsx';
