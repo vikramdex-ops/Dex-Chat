@@ -201,7 +201,7 @@ function StepEditor({ def, step, index, onChange }: { def: BotFlowDefinition; st
             : <ChosenSkill ask={step.ask} onClear={() => setRechoose(true)} />}
           <div className="bm-grid"><SkillFields def={def} ask={step.ask} upTo={index} onChange={(ask) => onChange({ ...step, ask })} /></div>
           <span className="bm-hint">The bot’s answer is used like any answer: in later questions, routes and messages.</span>
-          <button type="button" className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => { const { ask: _a, ...rest } = step; onChange(rest); }}>Ask the person instead</button>
+          <button type="button" className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => { const { ask: _a, ...rest } = step; onChange(rest); }}>Make it a plain question</button>
         </fieldset>
       )}
       <div className="field bm-wide">

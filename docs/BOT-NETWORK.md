@@ -221,7 +221,8 @@ many). `missed` is `skip` (the default) or `once`.
   Job sheet): a time ruler in office time, Today, This week or This month, each job its own lane;
   days off hatched, NOW an amber line, the next run filled with its countdown, past runs stamped.
   Hovering or focusing a run shows what it did. Pause, Skip next, Move a run, Dry run, Run now.
-- **The bot maker**: *Questions → Ask a bot* (skill blocks), *At the end → Hand to a bot* (with
+- **The bot maker**: *Questions → Ask a bot* (skill blocks; *If it cannot answer*: ask the person
+  instead, carry on without it, or stop; *Make it a plain question* takes the bot away), *At the end → Hand to a bot* (with
   what it carries across), *Afterwards → Who acts → Another bot carries it on*, *Other bots*
   (its skills, who may ask it, whether it takes handoffs, what it listens for, the bots it works
   with) and *Schedule* (jobs in plain words with the next five runs). The test run asks other
