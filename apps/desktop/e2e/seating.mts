@@ -242,6 +242,48 @@ try {
   await pair(B, '13-departments');
   await B.getByRole('button', { name: 'Departments' }).click();
 
+  // 10b. across the two sheets for one person: Lines ▸ Find on the floor, Floor ▸ See in the reporting lines
+  const findPerson = async (name: string) => {
+    await B.locator('.os-find-input').fill(name);
+    await B.locator('.os-results li', { hasText: name }).first().click();
+    await B.locator('.os-callout', { hasText: name }).waitFor();
+    await sleep(1200);
+  };
+  const raviSeat = Object.entries((await owner.request('seating.get')).holders).find(([, h]: [string, any]) => h.kind === 'person' && h.userId === id('ravi'))![0];
+  await B.getByRole('button', { name: 'Lines', exact: true }).click();
+  await sleep(1800);
+  await findPerson('Ravi Kumar');
+  await pair(B, '12a-lines-callout');
+  const across = B.locator('.os-callout').getByRole('button', { name: 'Find on the floor' });
+  await across.focus();
+  await B.keyboard.press('Enter'); // keyboard reachable
+  await B.locator('.os-sheets button[aria-pressed="true"]', { hasText: 'Floor' }).waitFor();
+  await B.locator('.os-callout', { hasText: 'Ravi Kumar' }).locator('.os-co-across').getByRole('button', { name: 'See in the reporting lines' }).waitFor({ timeout: 8000 });
+  await sleep(1400);
+  const seatAt = await at(B, raviSeat);
+  const st = await B.locator('.os-stage').boundingBox();
+  assert.ok(seatAt && st && seatAt.x > st.x && seatAt.x < st.x + st.width && seatAt.y > st.y && seatAt.y < st.y + st.height, `the camera is at Ravi's seat ${raviSeat}`);
+  await pair(B, '12b-found-on-floor');
+  await B.locator('.os-callout').getByRole('button', { name: 'See in the reporting lines' }).click();
+  await B.locator('.os-sheets button[aria-pressed="true"]', { hasText: 'Lines' }).waitFor();
+  await B.locator('.os-callout', { hasText: 'Ravi Kumar' }).getByRole('button', { name: 'Find on the floor' }).waitFor({ timeout: 8000 });
+  await sleep(800);
+  await snap(B, '12c-back-on-lines');
+  // working away today, and no seat: said in the callout instead
+  await findPerson('Sneha Kulkarni');
+  assert.match((await B.locator('.os-co-across').textContent())!, /Working from home today/);
+  assert.equal(await B.locator('.os-callout').getByRole('button', { name: 'Find on the floor' }).count(), 0);
+  const seated = new Set(Object.values((await owner.request('seating.get')).holders).filter((h: any) => h.kind === 'person').map((h: any) => h.userId));
+  const unseated = (await owner.request('directory.list')).users.find((u: any) => u.role === 'member' && !seated.has(u.id) && u.id !== id('sneha'));
+  if (unseated) {
+    await findPerson(unseated.displayName);
+    assert.match((await B.locator('.os-co-across').textContent())!, /No seat on the plan|from home today|On site today|At a client today/);
+    await snap(B, '12d-no-seat');
+  }
+  await B.locator('.os-callout').getByRole('button', { name: 'Close' }).click();
+  await B.getByRole('button', { name: 'Floor', exact: true }).click();
+  await sleep(1500);
+
   // 11. 150 seats held: frame times while panning and zooming
   const extra = bigOffice(150).slice(0, 110);
   const extraIds: string[] = [];

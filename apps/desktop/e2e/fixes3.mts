@@ -223,7 +223,7 @@ try {
 
   // ------------------------------------------------------------ 8. a hot desk booked ahead
   console.log('step 8: a hot desk booked for a working day ahead');
-  const d0 = await owner.request('seating.draft', { title: 'Hot desks', moves: [{ seatId: 'W-C42', to: { kind: 'hot' } }, { seatId: 'W-C41', to: { kind: 'hot' } }] });
+  const d0 = await owner.request('seating.draft', { title: 'Hot desks', moves: [{ seatId: 'W-C42', to: { kind: 'hot' } }, { seatId: 'W-C41', to: { kind: 'hot' } }, { seatId: 'W-A11', to: { kind: 'person', userId: id('ravi') } }] });
   await owner.request('seating.apply', { id: d0.id });
   await B.reload(); await B.locator('.frame').waitFor();
   await lens(B, 'Directory');
@@ -259,6 +259,33 @@ try {
     await B.locator('#seat-book-day').selectOption(days[0]);
   }
   await snap(B, '8-hot-desk', [[1440, 900], [390, 844]], async () => { await sleep(200); return box(B, '.seat-callout', 10); });
+
+  // ------------------------------------------------------------ 10. across the sheets for one person
+  console.log('step 10: Lines and Floor for the same person');
+  await B.locator('.seat-callout').getByRole('button', { name: 'Close' }).click().catch(() => {});
+  await B.getByRole('button', { name: 'Lines', exact: true }).click();
+  await sleep(2000);
+  await B.locator('.os-find-input').fill('Ravi Kumar');
+  await B.locator('.os-results li', { hasText: 'Ravi Kumar' }).first().click();
+  await B.locator('.os-callout', { hasText: 'Ravi Kumar' }).waitFor();
+  await sleep(1400);
+  await snap(B, '10-lines-callout', [[1440, 900], [390, 844]]);
+  if (NEW) {
+    await B.locator('.os-callout').getByRole('button', { name: 'Find on the floor' }).click();
+    await B.locator('.os-callout', { hasText: 'Ravi Kumar' }).getByRole('button', { name: 'See in the reporting lines' }).waitFor({ timeout: 8000 });
+    await sleep(1600);
+    await snap(B, '10-found-on-floor', [[1440, 900], [390, 844]]);
+    await B.evaluate(() => localStorage.setItem('dex.language', 'ta')); await B.reload(); await B.locator('.frame').waitFor();
+    await B.locator('nav.lens-bar .lens').nth(5).click();
+    await B.locator('.sheet-tab').nth(1).click();
+    await B.locator('.os-stage').waitFor();
+    await sleep(2000);
+    await B.locator('.os-find-input').fill('Ravi');
+    await B.locator('.os-results li', { hasText: 'Ravi Kumar' }).first().click();
+    await sleep(1400);
+    await B.screenshot({ path: path.join(OUT, `${TAG}-10-lines-callout-ta.png`) });
+    await B.evaluate(() => localStorage.setItem('dex.language', 'en'));
+  }
 
   console.log(`FIXES3 (${TAG}) E2E PASSED`);
 } catch (e) {

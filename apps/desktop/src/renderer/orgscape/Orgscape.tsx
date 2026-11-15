@@ -335,6 +335,8 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
   // (on the reporting lines, also to you when the office is too big to read whole)
   const touched = useRef(false);
   const followed = useRef(0);
+  /** The person to fly to on the sheet being switched to (the callout's way across). */
+  const jumpTo = useRef<{ id: string; n: number } | null>(null);
   useLayoutEffect(() => {
     cam.bounds = { x: 0, y: 0, w: sheetW, h: sheetH };
     spot.current = null;
@@ -343,13 +345,16 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     if (!introduced[sheet] && !reduced) { intro.current = performance.now(); introduced[sheet] = true; } else intro.current = null;
     invalidate();
     // a request to open at someone is followed once, not again on every change of sheet
-    const asked = focus && focus.n !== followed.current ? focus : null;
-    if (asked) followed.current = asked.n;
+    // (or someone carried across from the other sheet: Find on the floor, See in the reporting lines)
+    const jumped = jumpTo.current;
+    jumpTo.current = null;
+    const asked = jumped ?? (focus && focus.n !== followed.current ? focus : null);
+    if (asked && !jumped) followed.current = asked.n;
     const target = asked?.id ?? meId;
     const t = setTimeout(() => {
       if (touched.current) return;
       const p = posOf(target);
-      if (p && asked) { setSelected(asked.id); flyTo(asked.id, { zoom: Math.max(cam.z, sheet === 'lines' ? 0.85 : 0.9), callout: true }); }
+      if (p && asked) { setSelected(asked.id); flyTo(asked.id, { zoom: Math.max(cam.z, sheet === 'lines' ? 0.85 : 0.9), callout: true, spotlight: !!jumped }); }
       else if (p && sheet === 'lines' && cam.z < 0.5) cam.flyTo(p.x + p.w / 2, p.y + p.h / 2, 0.85, performance.now(), reduced ? 0 : 900);
       invalidate();
     }, intro.current !== null ? 1500 : 60);
@@ -1113,6 +1118,21 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                 <button type="button" className="btn sm" onClick={() => { setSpaceMenu({ person: sel.id }); loadSpaces(); }}><Icon name="chat" size={14} />Spaces</button>
                 <button type="button" className="btn sm ghost" onClick={() => onOpenCard(sel.id)}><Icon name="card" size={14} />Card</button>
               </div>
+              {(() => {
+                // across to the other sheet, the same person kept selected
+                const go = (to: 'floor' | 'lines', id: string) => { jumpTo.current = { id, n: Date.now() }; setSeatSel(null); setRoute(null); setSheet(to); if (to === 'floor') { setGrowth(false); setAsAt(null); } setAnnounce(to === 'floor' ? tr(`${sel.displayName} on the floor`) : tr(`${sel.displayName} in the reporting lines`)); };
+                if (sheet === 'floor') return <div className="os-co-across"><button type="button" className="btn sm ghost" onClick={() => go('lines', sel.id)}><Icon name="branch" size={14} />See in the reporting lines</button></div>;
+                const sp = floor.spots.get(sel.id);
+                const mode = modeOf(sel.id);
+                const away = sp?.where === 'away' || (!!mode && mode !== 'office');
+                const why = !sp || sp.where === 'unseated' ? tr('No seat on the plan') : away ? (mode === 'site' ? tr('On site today') : mode === 'client' ? tr('At a client today') : tr('Working from home today')) : null;
+                return (
+                  <div className="os-co-across">
+                    {why ? <span className="faint" role="note"><Icon name="grid" size={14} />{why}</span>
+                      : <button type="button" className="btn sm ghost" onClick={() => go('floor', sel.id)}><Icon name="grid" size={14} />Find on the floor</button>}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

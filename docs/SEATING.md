@@ -30,6 +30,10 @@ top is plan north). A plan holds:
 Validation (`validatePlan`): seat IDs unique and well formed, no two seats closer than 1′7″
 (overlap), every seat in a zone that exists and on the floor, rooms named and outlined.
 
+A person's callout carries the way across: on the reporting lines, **Find on the floor** switches
+to Floor with them still selected and flies to their seat, spotlit (or says "No seat on the plan",
+or that they work away today); on Floor, **See in the reporting lines** flies to their plate.
+
 ## Seat IDs
 
 | Zone | IDs | On the drawing |
