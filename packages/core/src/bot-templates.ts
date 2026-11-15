@@ -264,7 +264,7 @@ export const SOFTWARE_SEAT: OfficeTemplate = {
       { id: 'job', label: 'Job', prompt: 'For which job?', input: { kind: 'text', placeholder: 'P-12513', validate: JOB, suggest: 'jobs' } },
     ],
     finish: [],
-    done: 'Done.',
+    done: 'This card shows your {{software}} seat, or your place in line.',
     track: {
       ref: 'LIC', name: '{{software}} · {{job}}',
       roles: { it: { label: 'IT desk' } },

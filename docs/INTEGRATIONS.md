@@ -147,14 +147,15 @@ Flows are not only for integrations. Any member (not guests) makes a bot of thei
 **Desk → Bots → Make a bot**; administrators write integrations' flows in the same maker from
 **Control room → Bots & tools → Write a flow** (or **Change** on a flow).
 
-- **Start from something:** a template (Plot request, Leave note, Site visit, RFI log, Drawing
-  issue request), a few words ("Ask which site, which day, how many people and who hosts us, then
+- **Start from something:** a template (Plot request, Leave note, Site visit, Technical query,
+  Software seat, Late work request, Drawing check and issue; see [BOT-TEMPLATES.md](BOT-TEMPLATES.md)),
+  put into the maker's language when it is used, a few words ("Ask which site, which day, how many people and who hosts us, then
   put a task on their Desk") drafted on the PC by the same small sentence model Automations uses
   (it falls back to keyword cues when the model cannot load; nothing leaves the PC), a copy of a
   bot you can already use, or a blank bot.
 - **The maker** is one sheet: the bot's title block (mark, name, revision, who can use it,
-  status), the editor in five numbered parts (01 Identity, 02 Questions, 03 At the end, 04
-  Sharing, 05 Advanced: the definition as JSON, kept in step both ways), and on the right a
+  status), the editor in six numbered parts (01 Identity, 02 Questions, 03 At the end, 04
+  Afterwards, 05 Sharing, 06 Advanced: the definition as JSON, kept in step both ways), and on the right a
   **test run** that plays the bot in a real pane with the real cards, as a colleague sees it.
   The test run follows the draft as it changes; nothing is sent. Problems are written in plain
   words beside the question or end action that causes them.
@@ -164,7 +165,9 @@ Flows are not only for integrations. Any member (not guests) makes a bot of thei
   refusals, the Yes/No buttons when left blank, "Same as last time", the closing line; the
   author's own questions are never changed), **office hours** (outside them it says when it is
   back), and **remember answers**, which offers each person's last answers as a one-tap default.
-  Text questions can carry **quick replies**.
+  Text questions can carry **quick replies**. Defaults from the office's records: a person
+  question can offer **their lead from the directory** as one tap (`"suggest": "lead"`), and a
+  text question can offer **job numbers from the Spaces they are in** (`"suggest": "jobs"`).
 - **At the end:** a task on the Desk of a person chosen in the bot, a post (the Space it was
   started from, a Space its maker is in, or a message to a chosen person), a reminder for the
   person who answered. The integration's webhook is for administrators only.
@@ -176,6 +179,7 @@ Flows are not only for integrations. Any member (not guests) makes a bot of thei
   Slash commands are for office-wide bots only.
 - **Revisions:** every save is a revision, and a conversation keeps the revision it started on,
   so an edit never breaks a run in progress (Start over moves it to the newest).
+- **Afterwards:** each request can be carried on after it is sent (below).
 - **After it is live:** each bot has a page on the Desk: runs, finished, stopped, in progress,
   where people stop (runs that reached each question, and stopped there), recent runs and
   revisions. Answers are never shown there, and a name appears only for finished runs. Pause (no
@@ -200,6 +204,79 @@ A definition takes these optional parts besides those below: `persona` (`mark`
 `{ kind: "glyph", glyph }` or `{ kind: "monogram", letters }`, `colour`, `about`, `greeting`,
 `tone`, `hours { days, from, to }`, `remember`), `suggestions` on a text input, and a
 `{ "do": "remind", "text", "due" | "dueInDays" }` finish action.
+
+### After it is sent: tracked requests
+
+A bot with a `track` carries each request on after the last question. The request gets a number
+(`DC-0007`) and moves through **stages**; at each stage one person acts with the stage's buttons.
+
+- **Who acts:** `requester` (the person who asked), `lead` (their manager in the Directory, else
+  their department's head, else the bot's maker), a step that picked a person (a step called
+  `lead` wins over the directory), or `role:<key>`, a person the maker names once in `roles`
+  (the plot room, document control; the maker until chosen). Someone out of office with a
+  delegate is passed over to the delegate, and the card says whom they cover for.
+- **Cards:** the person acting gets a card in their conversation with the bot (and, unless the
+  stage says `"task": false`, a task on their Desk, done when they act). The person who asked keeps
+  the bot's closing card; it follows the request live: the strip of stages (done, here, returned,
+  round 2), who has it and since when, the due date, and the stamp when it closes. A newer card
+  for the same request folds the older one ("Carried on below"). When it closes, the person who
+  asked gets one line with the stamp.
+- **Buttons** (`actions`, up to five): `to` a stage, the same stage (start it again: *Still using
+  it*), or `end` with a `stamp` and an `outcome` (`done` or `stopped`). `note` (`optional` or
+  `required`) opens a note box labelled `ask`; the last note is `{{note}}` in later prompts.
+  `needsChecks` waits for every line of the stage's `checklist`. `tone` (`go`, `back`, `stop`)
+  draws the button and the main way along the strip. The person who asked can **Withdraw** while
+  it is open.
+- **Places at once** (`limit`): at most so many requests in a stage, counted per answer of `by`
+  (`seats` per answer, `otherwise` for the rest). The rest wait in order and see **In line for
+  E3D: place 2 of 3** and who holds the places; when one leaves, the next moves up and is told.
+  The longest holder is asked once, politely, when someone is waiting.
+- **Reminders** (`remind { afterHours, times, escalate }`, default a day, twice, then the lead):
+  only in the bot's hours (or Mon–Sat 09:30–18:30), never to someone out of office, and gathered
+  into **one list per person** that replaces their last one; the list can be acted on directly.
+  After the last reminder it is passed up once (`lead`: the lead of the person it waits for;
+  `role:<key>`; or `none`), and that person can **Take it over**.
+- **Register** (`register { to, at, days, columns }`): one card with the counts (open, overdue,
+  waiting, closed this week), the oldest, a bar of open requests per stage, the places of each
+  queue, and each request, opened in place to read or act on. Posted at `at` on `days` to `to`
+  (`owner`, `role:<key>` or `space:<name>`) only when something is open, replacing the one before.
+  Anyone writes "register" (or "status", "queue", "who has one now") to the bot for theirs; it
+  shows what they may see: requests they are part of, or everything for the maker, role holders,
+  the leads concerned and administrators. A register in a Space shows everything to its members.
+
+```json
+"track": {
+  "ref": "DC", "name": "{{job}} · rev {{rev}}",
+  "roles": { "doccontrol": { "label": "Document control", "person": "<user id>" } },
+  "stages": [
+    { "id": "check", "label": "Check", "who": "checker", "due": "due",
+      "prompt": "Check rev {{rev}} of {{drawings}}",
+      "checklist": ["Title block and revision", "Against the model"],
+      "actions": [
+        { "id": "pass", "label": "Checked, no comments", "to": "issue", "needsChecks": true, "tone": "go" },
+        { "id": "comments", "label": "Return with comments", "to": "correct", "note": "required", "ask": "Comments", "tone": "back" } ] },
+    { "id": "correct", "label": "Correct", "who": "requester", "prompt": "Returned: {{note}}",
+      "actions": [{ "id": "done", "label": "Corrected", "to": "check", "tone": "go" }] },
+    { "id": "issue", "label": "Issue", "who": "role:doccontrol", "prompt": "Issue it",
+      "actions": [{ "id": "issued", "label": "Issued", "to": "end", "stamp": "ISSUED", "note": "required", "ask": "Transmittal number", "tone": "go" }] }
+  ],
+  "remind": { "afterHours": 24, "times": 2, "escalate": "lead" },
+  "register": { "to": "role:doccontrol", "at": "09:20", "days": [1, 2, 3, 4, 5] }
+}
+```
+
+| Operation | Who | What |
+| --- | --- | --- |
+| `botflow.act { itemId, action, note? }` | the person acting | press a button of the stage |
+| `botflow.tick { itemId, index, on }` | the person acting | tick a checklist line |
+| `botflow.withdraw { itemId, note? }` | the person who asked | close it as withdrawn |
+| `botflow.takeover { itemId }` | the lead of the person acting, the person it was passed up to, the maker, admins | take the stage over |
+| `botflow.item { itemId }` | anyone who may see it | the request as one card shows it |
+| `botflow.register { flow, post? }` | anyone who can start the bot | the register as they may see it; `post` also puts it in their conversation with the bot |
+
+Every action is in the audit log as `botflow.item.acted`. The rules are in
+`packages/core/src/botflow-track.ts`, shared by the hub and the bot maker's test run, where the
+maker plays every part ("Trying it as: Checker") without sending anything.
 
 ### Flows run by the hub
 
