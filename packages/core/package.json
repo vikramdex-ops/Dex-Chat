@@ -36,7 +36,8 @@
     "./helpdesk": "./src/helpdesk.ts",
     "./webinar": "./src/webinar.ts",
     "./meet-control": "./src/meet-control.ts",
-    "./sharepaths": "./src/sharepaths.ts"
+    "./sharepaths": "./src/sharepaths.ts",
+    "./nib": "./src/nib.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

@@ -62,6 +62,7 @@ import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
+import { Nib, NibError } from './nib.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -169,6 +170,8 @@ export class Hub {
   readonly backups: Backups;
   readonly offboarding: Offboarding;
   readonly feeds: CalendarFeeds;
+  /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
+  readonly nib: Nib;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -406,6 +409,24 @@ export class Hub {
       active: (uid) => this.canSignIn(uid),
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
+    this.nib = new Nib({
+      db: this.store.db, store: this.store, messaging: this.messaging, desk: this.desk, calendar: this.calendar, work: this.work,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      online: (uid) => [...this.conns].some((c) => c.ready && c.userId === uid),
+      busy: (uid) => {
+        if (this.rooms.inRoomUsers().includes(uid)) return 'room';
+        if (this.inMeeting.has(uid)) return 'meeting';
+        const a = this.store.userById(uid)?.availability;
+        return a === 'dnd' ? 'dnd' : a === 'busy' ? 'busy' : null;
+      },
+      departments: () => this.org.info().departments,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
+      userAdded: (u) => this.emit('user.added', u),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    { const prev = this.messaging.onPosted; this.messaging.onPosted = (author, convId, msg) => { prev?.(author, convId, msg); try { this.nib.onPosted(author, convId, msg); } catch (err) { this.log('warn', 'nib reply failed', { error: (err as Error).message }); } }; }
+    this.botflows.away = (me, answers) => this.nib.leaveFromFlow(me, answers);
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -508,6 +529,7 @@ export class Hub {
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
       try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
+      try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -1572,6 +1594,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof CalError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('nib.') || op.startsWith('admin.nib.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.nib.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof NibError || err instanceof MsgError || err instanceof CalError) throw new OpError(err.message);
             throw err;
           }
         }

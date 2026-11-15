@@ -15,8 +15,9 @@ import { CONTINUITY_AUDIT, ContinuityAdmin } from './Continuity.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
 import { auditLine } from './audit.ts';
+import { NibAdmin } from '../nib/NibAdmin.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'continuity' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'nib' | 'continuity' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -75,6 +76,9 @@ const AUDIT_TEXT: Record<string, string> = {
   'hook.created': 'created a webhook',
   'hook.revoked': 'stopped a webhook',
   'botflow.saved': 'saved a bot flow',
+  'nib.config': 'changed Nib and day sheets',
+  'nib.leave': 'noted leave with Nib',
+  'nib.leaveCancelled': 'cancelled leave noted with Nib',
   'botflow.removed': 'removed a bot flow',
   'botflow.completed': 'finished a bot flow',
   'miniapp.added': 'added a tool to a conversation',
@@ -179,6 +183,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'integrations', label: 'Integrations', icon: 'grid' },
           { value: 'automations', label: 'Automations', icon: 'repeat' },
           { value: 'bots', label: 'Bots & tools', icon: 'branch' },
+          { value: 'nib', label: 'Nib & day sheets', icon: 'nib' },
           { value: 'continuity', label: 'Backups & leavers', icon: 'archive' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
@@ -272,6 +277,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'integrations' && <Integrations state={state} />}
       {tab === 'automations' && <AutomationsAdmin session={session} />}
       {tab === 'bots' && <BotsAdmin users={session.users} />}
+      {tab === 'nib' && <NibAdmin session={session} />}
       {tab === 'continuity' && <ContinuityAdmin session={session} live={live} />}
 
       {tab === 'audit' && (audit.length === 0 ? (

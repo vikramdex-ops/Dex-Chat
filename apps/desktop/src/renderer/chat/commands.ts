@@ -4,6 +4,12 @@ import type { Availability, SlashCommand, WorkMode } from '@dex/core';
 import { startCall } from '../rooms/engine.ts';
 import { MODE_SHORT, setWork, workOf } from '../work/store.ts';
 import { formatDateTime } from '../time.ts';
+import { NIB_WORK_INTENTS } from '@dex/core/nib';
+import { readWords } from '../nib/store.ts';
+import { openNib } from '../nib/NibHost.tsx';
+
+/** Nib's handling of words (loaded with the tray; slash commands wait for it only when used). */
+const act: typeof import('../nib/Tray.tsx').act = async (...a) => (await import('../nib/Tray.tsx')).act(...a);
 
 export interface CommandInfo { command: string; hint: string; description: string; bot?: boolean }
 
@@ -22,6 +28,12 @@ export const BUILT_INS: CommandInfo[] = [
   { command: 'startday', hint: 'site', description: 'Start my day (office, home, site or client)' },
   { command: 'endday', hint: '', description: 'Close my day' },
   { command: 'stepout', hint: '', description: 'Step out, or come back to your desk' },
+  { command: 'got', hint: '12 isos from Meera for P-12', description: 'Put work you were given on your day sheet' },
+  { command: 'done', hint: '18 of 40 sheets P-12', description: 'Record progress on your day sheet' },
+  { command: 'wrap', hint: '', description: 'Check and send your day sheet' },
+  { command: 'sheet', hint: '', description: 'Open your day sheet' },
+  { command: 'leave', hint: 'tomorrow', description: 'Going on leave: tell everyone at once' },
+  { command: 'nib', hint: 'who is in today', description: 'Ask Nib anything' },
   { command: 'me', hint: 'is reviewing the isometrics', description: 'Say what you are doing, in italics' },
   { command: 'shrug', hint: 'no idea', description: 'Add ¯\\_(ツ)_/¯' },
   { command: 'help', hint: '', description: 'List the commands' },
@@ -147,6 +159,16 @@ export async function runSlash(input: string, ctx: RunContext): Promise<boolean>
       case 'meet': ctx.open('meet'); return true;
       case 'schedule': ctx.open('schedule'); return true;
       case 'help': ctx.open('help'); return true;
+      case 'wrap': openNib({ v: 'wrap' }); return true;
+      case 'sheet': openNib({ v: 'home' }); return true;
+      case 'leave': openNib({ v: 'leave', ...(arg ? { from: readWords(`on leave ${arg}`).due ?? undefined } : {}) }); return true;
+      case 'nib': if (!arg) { openNib(); return true; } { const p = readWords(arg); if (NIB_WORK_INTENTS.includes(p.intent)) { await act(p, arg, ctx.toast, 'slash'); return true; } openNib(); await act(p, arg, ctx.toast, 'slash'); return true; }
+      case 'got': case 'done': {
+        if (!arg) { openNib({ v: 'home' }, cmd === 'got' ? 'got ' : 'done '); return true; }
+        const p = readWords(`${cmd === 'got' ? 'got' : 'done'} ${arg}`);
+        await act({ ...p, intent: p.intent === 'unknown' || !NIB_WORK_INTENTS.includes(p.intent) ? (cmd === 'got' ? 'got' : 'done') : p.intent, status: p.status ?? (cmd === 'done' ? 'done' : 'going') }, arg, ctx.toast, 'slash');
+        return true;
+      }
     }
     const bots = await loadBotCommands();
     if (bots.some((b) => b.command === cmd)) {

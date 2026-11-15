@@ -14,6 +14,7 @@ import { NextMeeting } from '../calendar/CalendarView.tsx';
 import { DayLine } from '../pulse/DayLine.tsx';
 import { MeetPulseCard } from '../meet/MeetPulse.tsx';
 import { OfficeDrawingCard } from '../orgscape/PulseCard.tsx';
+import { NibPulseCard } from '../nib/pulse.tsx';
 import { formatTime } from '../time.ts';
 
 function greeting(d = new Date()): string {
@@ -113,6 +114,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
       </section>
 
       <div className="grid cols-3 pulse-sheet">
+        {session.me.role !== 'guest' && <NibPulseCard />}
         <MeetPulseCard onOpen={() => go('meet')} />
         <DayLogCard users={session.users} meId={session.me.id} onPerson={onPerson} />
         <NextMeeting meId={session.me.id} onOpen={() => go('calendar')} />

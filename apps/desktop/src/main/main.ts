@@ -220,6 +220,7 @@ function buildTray(): void {
     tray?.setContextMenu(Menu.buildFromTemplate([
       { label: 'Open Dexterity Connect', click: showWindow },
       { label: status, enabled: false },
+      { label: 'Tell Nib…', enabled: s?.phase === 'ready', click: () => { showWindow(); routeDeepLink(`${PROTOCOL}://nib`); } },
       { label: 'Help me…', enabled: s?.phase === 'ready', click: () => { showWindow(); routeDeepLink(`${PROTOCOL}://help`); } },
       { type: 'separator' },
       {
@@ -516,6 +517,10 @@ void app.whenReady().then(async () => {
     globalShortcut.register('CommandOrControl+Alt+D', () => {
       if (win && win.isVisible() && win.isFocused()) win.hide(); else showWindow();
     });
+  } catch { /* another app owns the combination */ }
+  // Ctrl+Alt+N from anywhere: Nib's box, ready to type (docs/NIB.md)
+  try {
+    globalShortcut.register('CommandOrControl+Alt+N', () => { showWindow(); routeDeepLink(`${PROTOCOL}://nib`); });
   } catch { /* another app owns the combination */ }
   app.on('will-quit', () => globalShortcut.unregisterAll());
   handleFileScheme(() => {

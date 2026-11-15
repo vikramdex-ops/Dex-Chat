@@ -4,6 +4,7 @@ import type { FlowEvents, FlowOps } from './flows.ts';
 import type { DecisionView, MessageKindOps, MessageRef } from './message-kinds.ts';
 
 import type { BotEvents, BotOps, BotFlowCard, MiniAppView } from './bots.ts';
+import type { NibCardRef, NibEvents, NibOps } from './nib.ts';
 
 import type { HelpCategory, HelpEntry, HelpFileKind, HelpTicket, SupportSession } from './helpdesk.ts';
 
@@ -381,6 +382,8 @@ export interface Message {
   botflow?: BotFlowCard | null;
   /** A tool added to the conversation. */
   miniapp?: MiniAppView | null;
+  /** A card from Nib (a lead's transmittal, the register, a leave notice…), drawn by the app from nib.card. */
+  nib?: NibCardRef | null;
   /** A Decision: a small tree of questions each person walks on their own. */
   decision?: DecisionView | null;
   /** A reference to a message or file elsewhere, as this viewer may see it. */
@@ -810,7 +813,7 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 }
 
 // Request/response operations available in a session.
-export interface Ops extends FlowOps, BotOps, MessageKindOps {
+export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
   'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
@@ -1131,7 +1134,7 @@ export const HASHTAG_RE = /(?<![\p{L}\p{N}&/#])#([\p{L}][\p{L}\p{N}_-]{1,48})/gu
 export const hashtags = (body: string): string[] => [...new Set([...body.matchAll(HASHTAG_RE)].map((m) => m[1].toLowerCase()))].slice(0, 20);
 
 // Server-pushed events.
-export interface Events extends FlowEvents, BotEvents {
+export interface Events extends FlowEvents, BotEvents, NibEvents {
   'presence': { userId: string; online: boolean; away?: boolean };
   'user.updated': PublicUser;
   'user.added': PublicUser;

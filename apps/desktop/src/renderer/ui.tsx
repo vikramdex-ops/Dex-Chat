@@ -112,6 +112,10 @@ const PATHS = {
   grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
   /** Reaction insights: bars on an axis. */
   insight: 'M4 4v16h16M8 16V11M12 16V7M16 16v-3',
+  /** Nib: a drafting pen's nib, with its slit and breather hole. */
+  nib: 'M8.5 3.5h7v3l2.5 4L12 20.5 6 10.5l2.5-4zM8.5 6.5h7M12 20.5v-7.6M12 12.9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
+  /** A day sheet: a ruled sheet with a tick. */
+  daysheet: 'M5 3.5h14v17H5zM8 8h8M8 11.5h5M8 15l1.8 1.8L13.5 13',
   /** A reference: a sheet with a leader pointing elsewhere. */
   reference: 'M4.5 4.5h9v11h-9zM13.5 10H20M16.5 6.5 20 10l-3.5 3.5M7 8h4M7 11h4',
 } as const;

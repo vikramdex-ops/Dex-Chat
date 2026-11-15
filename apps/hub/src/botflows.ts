@@ -172,6 +172,8 @@ export class BotFlows {
   private readonly d: BotFlowsDeps;
   /** Offer "Pick up where you left off" when someone comes back after this long. */
   resumeAfterMs = 2 * 60_000;
+  /** The "Mark me away" end action: Nib's leave note (set by the hub). Returns the line for the person. */
+  away: ((me: PublicUser, answers: { kind?: string; from?: string; to?: string; cover?: string | null; note?: string | null; leads?: string[] }) => string) | null = null;
   /** Answers to cards are given one at a time per session. */
   private readonly busy = new Set<string>();
   /** The clock for tracked requests (reminders, registers, due dates); tests move it. */
@@ -718,6 +720,10 @@ export class BotFlows {
           }
           this.d.messaging.sendAs(bot, this.d.messaging.memberConv(convId, bot.id), fill(a.text).slice(0, 7900), undefined, fileIds, `flow-${ulid()}`, { skipFileCheck: true });
           notes.push(`Posted to ${where}.`);
+        } else if (a.do === 'away') {
+          if (!this.away) { notes.push('Nobody was told: Nib is not running.'); continue; }
+          const v = (k?: string) => (k ? vars[k]?.value ?? null : null);
+          notes.push(this.away(me, { kind: v(a.kind) ?? undefined, from: v(a.from) ?? undefined, to: v(a.to) ?? undefined, cover: v(a.cover), note: v(a.note), leads: v(a.lead) ? [v(a.lead)!] : [] }));
         } else if (a.do === 'webhook') {
           const reply = await this.callWebhook(bot, {
             type: 'botflow.completed', flow: def.name, sessionId: s.id, at: new Date().toISOString(),

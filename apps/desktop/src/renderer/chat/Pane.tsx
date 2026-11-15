@@ -41,6 +41,10 @@ import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeopl
 import { useMsgLayout } from './prefs.ts';
 import { LinkCards } from './linkcards.tsx';
 import { DecisionBuilder, DecisionCard } from './decisions.tsx';
+import { NibOffer } from '../nib/offer.tsx';
+import { nibBotId } from '../nib/store.ts';
+// Nib's cards (a lead's transmittal, the register…) load with the first one on screen
+const NibMessageCard = lazy(() => import('../nib/cards.tsx'));
 import { ReactionInsightsPanel } from './insights.tsx';
 import { RestyleControl, RestyleSheet, readable } from './restyle.tsx';
 import type { RestyleStyle } from '@dex/core/restyle';
@@ -930,7 +934,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
       <div className="run-body">
         <div className="run-head">
           <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
-          {u?.role === 'bot' && <span className="chip accent bot-chip">{isMadeBot(author) ? 'Bot' : 'Integration'}</span>}
+          {u?.role === 'bot' && <span className="chip accent bot-chip">{isMadeBot(author) || author === nibBotId() ? 'Bot' : 'Integration'}</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
         {msgs.map((m) => <MessageItem key={m.clientId ?? m.id} ctx={ctx} m={m} onTrack={onTrack} activeTrack={activeTrack} />)}
@@ -1067,7 +1071,8 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       )}
       {m.e2e === 'locked' ? (
         <div className="msg-text locked"><Icon name="lock" size={13} />This message was sent before this device was set up. It appears once one of your other devices is online.</div>
-      ) : isBotCard(m) ? <BotCard m={m} conv={ctx.conv} meId={ctx.meId} users={ctx.users} />
+      ) : m.nib ? <Suspense fallback={<div className="nib-card loading"><span className="spinner" /></div>}><NibMessageCard m={m as Message} meId={ctx.meId} users={ctx.users} /></Suspense>
+        : isBotCard(m) ? <BotCard m={m} conv={ctx.conv} meId={ctx.meId} users={ctx.users} />
         : m.form ? <FormCard m={m} meId={ctx.meId} users={ctx.users} /> : m.poll ? <PollCard m={m} meId={ctx.meId} users={ctx.users} />
         : m.decision ? <DecisionCard m={m as Message} meId={ctx.meId} users={ctx.users} />
         : m.ref ? <RefCard m={m as Message} users={ctx.users} meId={ctx.meId} onView={ctx.view} /> : sticker ? (
@@ -1088,6 +1093,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       <MessageFiles files={m.files ?? []} onView={ctx.view} draggableAs={pending ? undefined : (f) => refDragProps({ kind: 'file', convId: m.convId, fileId: f.id, name: f.name }, ctx.users)} />
       {!pending && !editing && <LinkCards m={m as Message} meId={ctx.meId} inTrack={inTrack} />}
       {!pending && <MsgFlags m={m as Message} />}
+      {!pending && !editing && <NibOffer m={m as Message} conv={ctx.conv} meId={ctx.meId} users={ctx.users} />}
 
       {Object.keys(m.reactions).length > 0 && (
         <div className="reactions">

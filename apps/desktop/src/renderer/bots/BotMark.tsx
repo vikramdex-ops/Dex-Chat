@@ -6,6 +6,8 @@
 import type { BotColour, BotGlyph, BotMark as Mark } from '@dex/core';
 import { BOT_COLOURS } from '@dex/core';
 import { setTileArt } from '../ui.tsx';
+import { NibGlyph } from '../nib/NibMark.tsx';
+import { nibBotId } from '../nib/store.ts';
 
 export const GLYPH_PATHS: Record<BotGlyph, string> = {
   /** A drawing sheet with its title block. */
@@ -80,6 +82,8 @@ export function startBotMarks(): void {
   if (started) return;
   started = true;
   setTileArt((id, size) => {
+    // Nib, the office's companion, carries its own drawn mark
+    if (id === nibBotId()) return { colour: '#132b2e', node: <NibGlyph size={Math.round((SIZE[size ?? ''] ?? 36) * 0.66)} />, monogram: false };
     const m = marks.get(id);
     if (!m) return null;
     const px = SIZE[size ?? ''] ?? 36;

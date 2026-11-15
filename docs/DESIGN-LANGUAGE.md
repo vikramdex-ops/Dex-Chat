@@ -72,6 +72,18 @@ other messengers. Every decision below is checked against one rule:
 | **Icons** | Drawn in `ui.tsx` on the 24 px grid: send is a transmittal (a sheet with a dimension arrow), messages are a spine with entries, voice is a Room on plan, leaving is a door. No paper planes, speech bubbles or handsets. |
 | **Empty states** | One symbol in a framed cell on the drafting grid, one line, one action. |
 
+### Nib (the office's companion)
+
+| Piece | Rule |
+| --- | --- |
+| **Mark** | A drafting pen's nib on a square bot tile in teal 900, drawn in `nib/NibMark.tsx`. When Nib wants something an ink drop forms at the tip: a hollow teal drop for something quiet, a solid amber drop when it needs you. Never a robot, a face or a speech bubble. |
+| **Where it sits** | A tile in the title bar beside your own. Its tray drops from that corner (a sheet along the bottom on a phone); its conversation is a title-block row above the Switchboard's lists. Nothing floats over the Dock. |
+| **Callout** | A small card under the tile, with an amber rule down its edge, for the start of the day and the wrap-up only. Never a modal, never takes focus, Escape closes it. |
+| **Voice** | Nib's own lines start with a short teal leader, like a note on a drawing. Brief, warm, a little dry; no exclamation marks, no emoji. |
+| **Words read** | What Nib understood is marked on your words like dimensions: an underline with a mono caption above (`FROM`, `JOB`, `QTY`, `DUE`). |
+| **Progress** | A dimension line: extension ticks at both ends, the done part in teal (amber when blocked). |
+| **Cards** | A title block (mark, mono caption, title, drawing number such as `NIB-REG-261115`) over a ruled body. The register is a sheet index: people as square cells by department, filled to how far along they are; hatched when missing, dashed when on leave, an amber corner for a blocker. |
+
 ### The office drawing (Directory ▸ Org chart)
 
 The org chart is not a tree of cards. It is the office drawn as an engineering drawing, a sheet

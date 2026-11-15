@@ -1,6 +1,8 @@
 // The Switchboard: one panel for every conversation, shared by Direct and Spaces and narrowed by
 // lens chips (People · Spaces · Projects). While a Pane is open it folds to a 56 px strip of tiles.
 // Unread = bold name + a teal tick on the left edge; only callouts to you get an (amber) count.
+import { isNibConv, useNib } from '../nib/store.ts';
+import { NibTile } from '../nib/NibMark.tsx';
 import { memo, useDeferredValue, useMemo, useRef, useState } from 'react';
 import type { Conversation, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from '../ui.tsx';
@@ -128,6 +130,8 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
 }) {
   const conversations = useChat((s) => s.conversations);
   const ready = useChat((s) => s.ready);
+  // Nib's conversation has its own row above the lists
+  const nibId = useNib((s) => s.me?.botId ?? null);
   const panes = usePanes();
   const focusId = panes.ids[panes.focus] ?? null;
   const [filter, setFilter] = useState('');
@@ -146,7 +150,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
   const all = useMemo(() => {
     const q = query.trim().toLowerCase();
     return [...conversations.values()]
-      .filter((c) => c.joined && inChip(c, chip))
+      .filter((c) => c.joined && inChip(c, chip) && !isNibConv(c.members))
       .filter((c) => !q || convTitle(c, users, meId).toLowerCase().includes(q) || (c.topic ?? '').toLowerCase().includes(q))
       .filter((c) => only === 'all' || c.unread > 0 || c.mentions > 0 || c.id === focusId)
       .sort((a, b) => {
@@ -155,7 +159,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
         if (sort === 'unread') { const d = Number(b.mentions > 0) - Number(a.mentions > 0) || Number(b.unread > 0) - Number(a.unread > 0); if (d) return d; }
         return (b.lastMessage?.createdAt ?? b.createdAt) - (a.lastMessage?.createdAt ?? a.createdAt);
       });
-  }, [conversations, chip, query, users, meId, sort, only, focusId]);
+  }, [conversations, chip, query, users, meId, sort, only, focusId, nibId]);
   const archived = all.filter((c) => c.archived);
   const live = all.filter((c) => !c.archived);
   // kept on top first, then each person's own drawers, then projects, Spaces and people
@@ -247,6 +251,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
             {!filter && only !== 'unread' && onNew && chip !== 'projects' && <button className="btn" onClick={onNew}><Icon name="plus" size={15} />{chip === 'spaces' ? 'Create a Space' : 'Write to someone'}</button>}
           </div>
         )}
+        {(chip === 'all' || chip === 'people') && !query.trim() && <NibRow folded={!!folded} focusId={focusId} />}
         {groups.map((g) => (
           <div key={g.title} className="sb-group">
             <div className="sb-group-title label">{g.title}</div>
@@ -263,6 +268,27 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
       </div>
       {menu && conversations.get(menu.id) && <ConvMenu c={conversations.get(menu.id)!} anchor={menu.anchor} drawers={myDrawers} onClose={() => setMenu(null)} />}
     </aside>
+  );
+}
+
+/** Nib's conversation, above the lists: always there, never in a drawer. */
+function NibRow({ folded, focusId }: { folded: boolean; focusId: string | null | undefined }) {
+  const me = useNib((s) => s.me);
+  const c = useChat((s) => (me?.convId ? s.conversations.get(me.convId) : undefined));
+  if (!me?.convId || !c) return null;
+  const items = me.items.length;
+  const line = me.exempt || !me.workday || !me.enabled ? 'Reminders, leave, who’s in'
+    : me.day.state === 'sent' ? 'Day sheet sent' : me.day.state === 'nothing' ? 'Nothing today'
+      : items === 1 ? 'Day sheet · 1 item' : `Day sheet · ${items} items`;
+  const ink = me.nudge && me.nudge.level >= 2 ? 'needs' : me.nudge?.level || me.welcome ? 'quiet' : 'none';
+  return (
+    <div className="sb-group sb-nib-group">
+      <button className={`sb-nib${c.id === focusId ? ' active' : ''}${c.unread ? ' unread' : ''}`} onClick={() => openInPane(c.id)} aria-current={c.id === focusId ? 'true' : undefined} title={folded ? 'Nib' : undefined}>
+        <NibTile size={folded ? 32 : 30} ink={ink} />
+        {!folded && <span className="sb-main"><span className="sb-title"><span className="sb-name" translate="no">Nib</span><span className="chip">ALWAYS HERE</span></span><span className="sb-preview">{line}</span></span>}
+        {c.unread > 0 && !folded && <span className="sb-nib-new mono">{c.unread}</span>}
+      </button>
+    </div>
   );
 }
 
