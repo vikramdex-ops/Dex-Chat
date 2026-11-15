@@ -5,6 +5,7 @@
 // line-number references. What people wrote is never translated (the plain React runtime above).
 import { EmojiImg, customEmoji } from '../emoji.tsx';
 import { highlight } from './highlight.tsx';
+import { plainSnippet } from '../localsearch/tokenize.ts';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { HASHTAG_RE, STICKER_RE } from '@dex/core';
 import type { Conversation, Message, PublicUser } from '@dex/core';
@@ -312,20 +313,15 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
 /** Plain-text preview for lists and notifications: mentions become names, markup is dropped. */
 export function plainPreview(body: string, users: Map<string, PublicUser>): string {
   if (STICKER_RE.test(body)) return 'Sticker';
-  return body
+  const text = body
     .replace(/<@all>/g, '@everyone')
     .replace(SPACE_REF_RE, (_, id: string) => `#${spaceName(id) ?? 'a Space'}`)
     .replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
-    .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message')
-    .replace(/\+\+(?=\S)([^+\n]*[^+\s])\+\+/g, '$1')
-    // escaped characters stay, markup goes
-    .replace(/\\([\\`*_~<>])/g, (_, c: string) => `\u0000${c}`)
-    .replace(/(^|[^\u0000])[*_~`>]+/g, '$1')
-    .replace(/\u0000/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message');
+  // formatting marks go; a lone * in "4 * 5", P12_GA_rev and C++ stay (the same rules as search snippets)
+  return plainSnippet(text);
 }
 
 /** Is the message only emoji (shown larger)? */
