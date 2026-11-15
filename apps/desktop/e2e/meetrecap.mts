@@ -258,6 +258,14 @@ try {
   await a.page.evaluate(() => localStorage.setItem('dex.language', 'en'));
   await a.page.reload(); await a.page.locator('.frame').waitFor();
 
+  // ------------------------------------------------------------ between meetings: an action point from the thread's Dock
+  await openThread(a.page, 'Pump skid P-12 weekly review');
+  await a.page.locator('.dock textarea').first().fill('→ Ravi to issue the line list tomorrow');
+  await a.page.locator('.ap-preview').first().waitFor({ timeout: 5000 });
+  await a.page.locator('.dock textarea').first().press('Enter');
+  await a.page.locator('.msg', { hasText: 'Issue the line list' }).locator('.ap-strip', { hasText: 'AP-04' }).waitFor({ timeout: 10000 });
+  await a.page.screenshot({ path: path.join(SHOTS, 'recap-12b-dock-action-1440-light.png') });
+
   // ------------------------------------------------------------ a week later: the next occurrence brings the open points forward
   hub.meetThreads.setClock(start + 7 * 86400_000 - 5 * 60_000);
   await joinById(a.page, m.id);
@@ -265,7 +273,7 @@ try {
   await a.page.locator('.meet-register .reg-sub', { hasText: 'BROUGHT FORWARD' }).waitFor({ timeout: 15000 });
   const forward = await a.page.locator('.meet-register .reg-ap').allInnerTexts();
   results.broughtForward = forward.map((x) => x.replace(/\s+/g, ' '));
-  assert.ok(forward.some((x) => /AP-02/.test(x)) && forward.some((x) => /AP-03/.test(x)), 'open points carried');
+  assert.ok(forward.some((x) => /AP-02/.test(x)) && forward.some((x) => /AP-03/.test(x)) && forward.some((x) => /AP-04/.test(x)), 'open points carried');
   assert.ok(!forward.some((x) => /AP-01/.test(x)), 'the done one is not');
   await snap(a.page, 'recap-13-next-occurrence');
   await a.page.getByRole('button', { name: 'Leave Room' }).click();
