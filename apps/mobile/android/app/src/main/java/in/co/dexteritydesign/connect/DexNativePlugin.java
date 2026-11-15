@@ -474,6 +474,36 @@ public class DexNativePlugin extends Plugin {
         });
     }
 
+    /** Read part of a cached file as base64 (to decrypt an end-to-end encrypted attachment). */
+    @PluginMethod
+    public void fileRead(PluginCall call) {
+        final File f = cachedFile(call.getString("path"));
+        final long offset = call.getLong("offset", 0L);
+        final int length = Math.max(1, Math.min(call.getInt("length", 512 * 1024), 2 * 1024 * 1024));
+        if (f == null || offset < 0) { call.reject("The file is missing."); return; }
+        io.execute(() -> {
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "r")) {
+                long size = raf.length();
+                byte[] buf = new byte[(int) Math.max(0, Math.min(length, size - offset))];
+                if (buf.length > 0) { raf.seek(offset); raf.readFully(buf); }
+                JSObject ret = new JSObject();
+                ret.put("data", Base64.encodeToString(buf, Base64.NO_WRAP));
+                ret.put("eof", offset + buf.length >= size);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Could not read the file" : e.getMessage());
+            }
+        });
+    }
+
+    /** Remove a cached file (the ciphertext once an attachment is decrypted, or a damaged one). */
+    @PluginMethod
+    public void fileDelete(PluginCall call) {
+        File f = cachedFile(call.getString("path"));
+        if (f != null && !f.delete()) f.deleteOnExit();
+        call.resolve();
+    }
+
     private File cachedFile(String path) {
         File f = path == null ? null : new File(path);
         File files = new File(getContext().getCacheDir(), "files");
@@ -553,81 +583,156 @@ public class DexNativePlugin extends Plugin {
     }
 
     // ---------------------------------------------------------------- notifications
-    private static final String MESSAGES = "messages";
-    private static final String MESSAGES_QUIET = "messages_quiet";
-    private int nextNotification = 100;
     private String launchLink = null;
-
-    private void ensureMessageChannels() {
-        if (Build.VERSION.SDK_INT < 26) return;
-        NotificationManager nm = getContext().getSystemService(NotificationManager.class);
-        if (nm == null) return;
-        if (nm.getNotificationChannel(MESSAGES) == null) {
-            NotificationChannel ch = new NotificationChannel(MESSAGES, "Messages and reminders", NotificationManager.IMPORTANCE_HIGH);
-            ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT).build());
-            nm.createNotificationChannel(ch);
-        }
-        if (nm.getNotificationChannel(MESSAGES_QUIET) == null) {
-            NotificationChannel ch = new NotificationChannel(MESSAGES_QUIET, "Messages without sound", NotificationManager.IMPORTANCE_HIGH);
-            ch.setSound(null, null);
-            nm.createNotificationChannel(ch);
-        }
-    }
 
     /** A message, reminder or meeting notification; tapping it opens the given dexconnect:// link. */
     @PluginMethod
     public void showNotification(PluginCall call) {
-        String title = call.getString("title", "Dexterity Connect");
-        String body = call.getString("body", "");
-        String link = call.getString("link", "dexconnect://open");
-        boolean silent = Boolean.TRUE.equals(call.getBoolean("silent", false));
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            call.resolve();
-            return;
-        }
-        ensureMessageChannels();
-        Intent open = new Intent(getContext(), MainActivity.class)
-            .setAction(Intent.ACTION_VIEW)
-            .setData(Uri.parse(link))
-            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        int id = nextNotification++;
-        PendingIntent pi = PendingIntent.getActivity(getContext(), id, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        NotificationCompat.Builder b = new NotificationCompat.Builder(getContext(), silent ? MESSAGES_QUIET : MESSAGES)
-            .setSmallIcon(R.drawable.ic_stat_dex)
-            .setColor(0xFF1C7680)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(pi)
-            .setAutoCancel(true)
-            .setGroup(link)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setPriority(NotificationCompat.PRIORITY_HIGH);
-        if (silent) b.setSilent(true);
-        try {
-            NotificationManagerCompat.from(getContext()).notify(link, id, b.build());
-        } catch (SecurityException e) {
-            // notifications were turned off for the app
-        }
+        Notifier.show(getContext(), call.getString("title", "Dexterity Connect"), call.getString("body", ""),
+            call.getString("link", "dexconnect://open"), Boolean.TRUE.equals(call.getBoolean("silent", false)));
         call.resolve();
     }
 
     /** Stay connected in the background (a quiet ongoing notification) or stop doing so. */
     @PluginMethod
     public void keepAlive(PluginCall call) {
-        Intent svc = new Intent(getContext(), HubService.class);
-        try {
-            if (Boolean.TRUE.equals(call.getBoolean("on", false))) {
-                svc.putExtra("text", call.getString("text", "Connected to the office"));
-                ContextCompat.startForegroundService(getContext(), svc);
-            } else {
-                getContext().stopService(svc);
-            }
-        } catch (Exception e) {
-            // not allowed right now (the app is in the background); the next call tries again
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        // remembered for restarts after a reboot or an update (BootReceiver)
+        HubService.prefs(getContext()).edit().putBoolean("keepAlive", on).apply();
+        if (on) HubService.start(getContext(), call.getString("text", "Connected to the office"));
+        else {
+            try { getContext().stopService(new Intent(getContext(), HubService.class)); } catch (Exception ignored) { }
         }
         call.resolve();
+    }
+
+    /**
+     * What the background service needs to wait for messages on its own: the hub's address and
+     * certificate, a per-device token (kept wrapped by the Keystore), where it left off, and the
+     * person's notification preferences. With on=false it stops waiting.
+     */
+    @PluginMethod
+    public void watchConfig(PluginCall call) {
+        android.content.SharedPreferences.Editor ed = HubService.prefs(getContext()).edit();
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        String url = call.getString("url");
+        String fp = call.getString("fingerprint");
+        String token = call.getString("token");
+        try {
+            if (on && url != null && url.startsWith("https://") && fp != null && token != null) {
+                SecureStore.set(getContext(), "notify-token", token);
+                ed.putString("url", url).putString("fp", fp);
+            } else if (!on) {
+                SecureStore.set(getContext(), "notify-token", null);
+                ed.remove("url").remove("fp");
+            }
+        } catch (Exception e) {
+            call.reject("Could not keep the background sign-in on this phone.");
+            return;
+        }
+        ed.putBoolean("on", on)
+            .putString("notifyFor", call.getString("notifyFor", "all"))
+            .putBoolean("showPreviews", !Boolean.FALSE.equals(call.getBoolean("showPreviews", true)))
+            .putBoolean("silent", Boolean.TRUE.equals(call.getBoolean("silent", false)));
+        String qf = call.getString("quietFrom");
+        String qt = call.getString("quietTo");
+        if (qf != null && qt != null) ed.putString("quietFrom", qf).putString("quietTo", qt); else ed.remove("quietFrom").remove("quietTo");
+        ed.apply();
+        HubService.poke();
+        call.resolve();
+    }
+
+    /** The app's own connection is up or down; while it is up, the service does not wait separately. */
+    @PluginMethod
+    public void setConnected(PluginCall call) {
+        HubService.appConnected = Boolean.TRUE.equals(call.getBoolean("connected", false));
+        String cursor = call.getString("cursor");
+        if (cursor != null && cursor.matches("[0-9A-Z]{26}")) {
+            android.content.SharedPreferences p = HubService.prefs(getContext());
+            // only forwards: ids sort by time
+            if (cursor.compareTo(p.getString("cursor", "")) > 0) p.edit().putString("cursor", cursor).apply();
+        }
+        HubService.poke();
+        call.resolve();
+    }
+
+    /** Where the background service left off (the newest message it has shown or skipped). */
+    @PluginMethod
+    public void watchCursor(PluginCall call) {
+        JSObject ret = new JSObject();
+        String c = HubService.prefs(getContext()).getString("cursor", null);
+        ret.put("cursor", c == null || c.isEmpty() ? null : c);
+        call.resolve(ret);
+    }
+
+    /** Everything that decides whether notifications keep arriving, for the Notifications check. */
+    @PluginMethod
+    public void notifyHealth(PluginCall call) {
+        android.content.Context ctx = getContext();
+        JSObject ret = new JSObject();
+        ret.put("notifications", Notifier.allowed(ctx) && !Notifier.messagesBlocked(ctx));
+        ret.put("batteryExempt", DeviceHealth.batteryExempt(ctx));
+        ret.put("backgroundRestricted", DeviceHealth.backgroundRestricted(ctx));
+        ret.put("maker", DeviceHealth.maker());
+        ret.put("manufacturer", Build.MANUFACTURER);
+        ret.put("model", Build.MODEL);
+        ret.put("androidVersion", Build.VERSION.RELEASE);
+        ret.put("autostartPage", DeviceHealth.autostartIntent(ctx) != null);
+        ret.put("keepAlive", HubService.prefs(ctx).getBoolean("keepAlive", false));
+        ret.put("serviceRunning", HubService.running);
+        ret.put("watching", HubService.prefs(ctx).getBoolean("on", false));
+        ret.put("lastOk", HubService.lastOk == 0 ? null : HubService.lastOk);
+        ret.put("lastError", HubService.lastError);
+        call.resolve(ret);
+    }
+
+    /** Open a settings page: notifications, battery, autostart (the maker's page) or the app's page. */
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        String target = call.getString("target", "app");
+        String opened = DeviceHealth.open(getContext(), target);
+        JSObject ret = new JSObject();
+        ret.put("opened", opened);
+        call.resolve(ret);
+    }
+
+    /** Android's own question about running in the background (asked after the app explains why). */
+    @PluginMethod
+    public void requestBatteryExemption(PluginCall call) {
+        String opened = DeviceHealth.batteryExempt(getContext()) ? "already" : DeviceHealth.open(getContext(), "battery");
+        JSObject ret = new JSObject();
+        ret.put("opened", opened);
+        call.resolve(ret);
+    }
+
+    // ---------------------------------------------------------------- device keys
+    /** A secret wrapped by the Android Keystore (rejects with code "unreadable" when it can no longer be opened). */
+    @PluginMethod
+    public void secureGet(PluginCall call) {
+        String key = call.getString("key");
+        if (!SecureStore.validName(key)) { call.reject("Invalid key name"); return; }
+        try {
+            JSObject ret = new JSObject();
+            ret.put("value", SecureStore.get(getContext(), key));
+            call.resolve(ret);
+        } catch (SecureStore.UnreadableException e) {
+            call.reject(e.getMessage(), "unreadable");
+        } catch (Exception e) {
+            call.reject("The Android Keystore is not available.", "unavailable");
+        }
+    }
+
+    @PluginMethod
+    public void secureSet(PluginCall call) {
+        String key = call.getString("key");
+        String value = call.getString("value");
+        if (!SecureStore.validName(key) || value == null || value.length() > 16_000) { call.reject("Invalid key or value"); return; }
+        try {
+            SecureStore.set(getContext(), key, value);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("The Android Keystore is not available.", "unavailable");
+        }
     }
 
     /** Ask for permission to show notifications (Android 13 and newer). */

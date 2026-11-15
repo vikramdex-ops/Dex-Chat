@@ -9,6 +9,7 @@ import { YourDevices } from './Pairing.tsx';
 import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
+import { NotificationsCheck } from './NotifyCheck.tsx';
 import { setMsgLayout, useMsgLayout } from '../chat/prefs.ts';
 import type { MsgLayout } from '../chat/prefs.ts';
 import { LANGUAGES, language, setLanguage } from '../i18n/index.ts';
@@ -23,6 +24,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
   const [status, setStatus] = useState(session.me.statusText ?? '');
   const [statusEmoji, setStatusEmoji] = useState(session.me.statusEmoji ?? '');
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [check, setCheck] = useState(false);
   const emojiBtn = useRef<HTMLButtonElement>(null);
   const dirty = name.trim() !== session.me.displayName || title.trim() !== (session.me.title ?? '') || status.trim() !== (session.me.statusText ?? '') || statusEmoji !== (session.me.statusEmoji ?? '');
 
@@ -214,7 +216,13 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="txt"><div>Stay connected in the background</div><div className="faint">So messages, reminders and calls reach you when the app is closed. Android shows a quiet notification while this is on.</div></div>
             <Toggle label="Stay connected in the background" checked={state.settings.closeToTray} onChange={(v) => set({ closeToTray: v })} />
           </div>
+          {window.dex.phone && <div className="setting">
+            <Icon name="bell" className="lead" />
+            <div className="txt"><div>Notifications check</div><div className="faint">Battery, autostart and notification settings that phone makers use to stop background apps, and how to fix each.</div></div>
+            <button className="btn" onClick={() => setCheck(true)}>Check</button>
+          </div>}
         </section>}
+        {check && <NotificationsCheck state={state} onClose={() => setCheck(false)} />}
 
         {state.platform !== 'android' && <section>
           <h3>Start-up and windows</h3>
