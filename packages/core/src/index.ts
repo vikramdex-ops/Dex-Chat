@@ -9,3 +9,4 @@ export * from './meet.ts';
 export * from './message-kinds.ts';
 export * from './webinar.ts';
 export * from './meet-control.ts';
+export * from './resilience.ts';
