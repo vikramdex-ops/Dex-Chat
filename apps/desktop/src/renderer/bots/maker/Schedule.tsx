@@ -99,12 +99,12 @@ function JobEditor({ def, job, onChange, spaces, users, me, cal }: { def: BotFlo
       <div className="field"><label htmlFor={`${id}-n`}>Name</label><input id={`${id}-n`} className="input" maxLength={80} value={job.title} onChange={(e) => onChange({ ...job, title: e.target.value })} /></div>
       <div className="field bm-wide js-when">
         <label htmlFor={`${id}-w`}>When it runs, in plain words</label>
-        <input id={`${id}-w`} className="input" maxLength={200} value={job.when} placeholder="every Monday at 10:00" aria-describedby={`${id}-wd`} onChange={(e) => onChange({ ...job, when: e.target.value })} />
+        <input id={`${id}-w`} className="input" maxLength={200} value={job.when} placeholder="every Monday at 10:00" translate="no" aria-describedby={`${id}-wd`} onChange={(e) => onChange({ ...job, when: e.target.value })} />
         {job.when && <Marked text={job.when} marks={parsed.marks} />}
         <div id={`${id}-wd`} className={`js-understood${parsed.ok ? '' : ' bad'}`} role="status">
           {parsed.ok ? <><span className="net-cap">Understood</span><b>{scheduleWords(parsed.rule)}</b>{parsed.notes.map((n, i) => <span key={i} className="faint">{trLine(n)}</span>)}</> : <><Icon name="warning" size={14} /><span>{trLine(parsed.error)}</span></>}
         </div>
-        {!job.when && <div className="bm-insert" role="group" aria-label="Examples"><span className="bm-insert-label">Like</span>{EXAMPLES.map((x) => <button key={x} type="button" className="bm-token" onClick={() => onChange({ ...job, when: x })}>{x}</button>)}</div>}
+        {!job.when && <div className="bm-insert" role="group" aria-label="Examples"><span className="bm-insert-label">Like</span>{EXAMPLES.map((x) => <button key={x} type="button" className="bm-token" translate="no" onClick={() => onChange({ ...job, when: x })}>{x}</button>)}</div>}
         {runs.length > 0 && (
           <ol className="js-next" aria-label="The next runs, office time">
             {runs.map((t, i) => <li key={t}><span className="mono faint">{pad(i + 1)}</span><span className="mono">{officeWhen(t, cal.tzOffset)}</span></li>)}

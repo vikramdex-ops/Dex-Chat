@@ -17,7 +17,6 @@ import './net.css';
 type Range = 'today' | 'week' | 'month';
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** The stretch of time a range shows, in office time. */
 function span(range: Range, now: number, tz: number): { from: number; to: number } {
@@ -298,7 +297,7 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
     return () => window.removeEventListener('keydown', k);
   }, [onClose, moving]);
   const p = officeParts(now, tz);
-  const rangeWords = range === 'today' ? officeWhen(now, tz).split(' · ')[0] : range === 'week' ? `Week of ${officeWhen(from + HOUR, tz).split(' · ')[0]}` : `${MON[p.m - 1]} ${p.y}`;
+  const rangeWords = range === 'today' ? officeWhen(now, tz).split(' · ')[0] : range === 'week' ? `Week of ${officeWhen(from + HOUR, tz).split(' · ')[0]}` : new Date(Date.UTC(p.y, p.m - 1, 1)).toLocaleDateString([], { month: 'long', year: 'numeric', timeZone: 'UTC' });
   const lanes = sheet?.lanes ?? [];
   const failed = lanes.reduce((n, l) => n + l.past.filter((r) => r.outcome === 'FAILED').length, 0);
   return createPortal(
@@ -349,7 +348,7 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
                 ))}
               </div>
             )}
-            {sheet && sheet.holidays.length > 0 && <p className="faint" style={{ fontSize: 12, margin: '8px 0 0' }}>{`Holidays: ${sheet.holidays.map((h) => `${h.name} (${h.date})`).join(', ')}`}</p>}
+            {sheet && sheet.holidays.length > 0 && <p className="faint" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>{`Holidays: ${sheet.holidays.map((h) => `${h.name} (${h.date})`).join(', ')}`}</p>}
             {detail && (
               <section className="js-detail" aria-live="polite" aria-label="What the run did">
                 <span className="net-cap"><span translate="no">{detail.title}</span>{` · ${officeWhen(detail.run.at, tz)}`}</span>

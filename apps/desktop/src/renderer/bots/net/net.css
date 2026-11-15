@@ -184,3 +184,5 @@
   .js-head { border-right: 0; border-bottom: 1px solid var(--stroke); }
 }
 @media (prefers-reduced-motion: reduce) { .net-sheet { animation: fade var(--med) linear; } }
+
+.nw-side-title { margin: 4px 0 0; font: 600 15px var(--font-display); }

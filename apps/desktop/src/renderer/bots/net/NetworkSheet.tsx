@@ -230,15 +230,15 @@ export default function NetworkSheet({ session, scope: first, onClose }: { sessi
             {!selEdge && (
               <>
                 <span className="net-cap">Along a line</span>
-                <p className="faint" style={{ margin: '6px 0 0' }}>Pick a line on the drawing, or in the list, to see what passed along it this week and what failed.</p>
-                {map && <p className="mono" style={{ margin: '12px 0 0', fontSize: 12 }}>{fails ? `${week} messages · ${fails} failed` : `${week} messages this week`}</p>}
+                <p className="faint" style={{ marginTop: 6, marginBottom: 0 }}>Pick a line on the drawing, or in the list, to see what passed along it this week and what failed.</p>
+                {map && <p className="mono" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>{fails ? `${week} messages · ${fails} failed` : `${week} messages this week`}</p>}
               </>
             )}
             {selEdge && (
               <>
                 <span className="net-cap">{KIND_WORD[kindOf(selEdge)]}</span>
-                <h3 style={{ margin: '4px 0 0', font: '600 15px var(--font-display)' }}><span translate="no">{title(selEdge.from)}</span>{' → '}<span translate="no">{title(selEdge.to)}</span></h3>
-                <p className="faint mono" style={{ margin: '4px 0 0', fontSize: 11 }}>{selEdge.lastAt ? `Last: ${formatDateTime(selEdge.lastAt, { weekday: 'short', day: 'numeric', month: 'short' })}` : 'Not used yet'}</p>
+                <h3 className="nw-side-title"><span translate="no">{title(selEdge.from)}</span>{' → '}<span translate="no">{title(selEdge.to)}</span></h3>
+                <p className="faint mono" style={{ marginTop: 4, marginBottom: 0, fontSize: 11 }}>{selEdge.lastAt ? `Last: ${formatDateTime(selEdge.lastAt, { weekday: 'short', day: 'numeric', month: 'short' })}` : 'Not used yet'}</p>
                 {!ex && <div className="tl-more"><span className="spinner" /></div>}
                 {ex && !ex.length && <p className="faint">Nothing has passed along it yet.</p>}
                 {ex && ex.length > 0 && (
