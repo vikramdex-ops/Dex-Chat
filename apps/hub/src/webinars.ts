@@ -614,7 +614,8 @@ export class Webinars {
   private schedule(w: Live): void {
     if (w.timer || (!w.dirty && !w.changed.size && !w.audienceDirty && !Object.keys(w.reactions).length)) return;
     const wait = Math.max(60, 1000 - (Date.now() - w.lastFlush));
-    w.timer = setTimeout(() => { w.timer = null; this.flush(w); }, wait);
+    if (this.stopped) return;
+    w.timer = setTimeout(() => { w.timer = null; if (!this.stopped) this.flush(w); }, wait);
     w.timer.unref?.();
   }
 
@@ -1379,6 +1380,7 @@ export class Webinars {
   }
 
   private statusTo(id: string, status: StreamStatus): void {
+    if (this.stopped) return;
     const w = this.live(id);
     w.streamStatus = status;
     if (status.state === 'live') w.retries = 0;
@@ -1386,7 +1388,7 @@ export class Webinars {
     // again a few times, with the broadcaster recording afresh
     if (status.state === 'failed' && w.streamOn && w.retries < 5) {
       w.retries++;
-      const t = setTimeout(() => { if (w.streamOn && w.stream && !w.stream.running) { w.streamEpoch++; this.sendViewers(w); } }, 3000 * w.retries);
+      const t = setTimeout(() => { if (this.stopped) return; if (w.streamOn && w.stream && !w.stream.running) { w.streamEpoch++; this.sendViewers(w); } }, 3000 * w.retries);
       t.unref?.();
     }
     const m = this.host.meetings.get(id);
@@ -1550,8 +1552,11 @@ export class Webinars {
 
   /** The hub is stopping: streams end. */
   stop(): void {
-    for (const w of this.lives.values()) { w.stream?.stop(); w.stream = null; if (w.timer) clearTimeout(w.timer); }
+    // after this nothing touches the database: an ending stream's last status and retry timers are dropped
+    this.stopped = true;
+    for (const w of this.lives.values()) { w.stream?.stop(); w.stream = null; if (w.timer) clearTimeout(w.timer); w.timer = null; }
   }
+  private stopped = false;
 
   /** For tests: the audience of a webinar now. */
   snapshot(id: string): { viewers: Array<{ name: string; route: StageRoute; web: boolean }>; broadcaster: string | null; speakers: string[] } {
