@@ -74,6 +74,8 @@ const STATUSES: NibStatus[] = ['going', 'done', 'blocked'];
 const KINDS: NibLeaveKind[] = ['annual', 'sick', 'comp', 'half'];
 const SOURCES: NibSource[] = ['start', 'words', 'offer', 'slash', 'wrap', 'carried', 'cover', 'flow'];
 const MAX_ITEMS_A_DAY = 60;
+/** Operations that change the person's own day (their apps are sent nib.me after each). */
+const SHEET_OPS = new Set(['nib.start', 'nib.item.save', 'nib.item.delete', 'nib.wrap', 'nib.day', 'nib.leave.cancel', 'nib.cover.take', 'nib.welcome.seen']);
 const DAY_MS = 86400_000;
 
 const toItem = (r: ItemRow): NibItem => ({
@@ -422,6 +424,14 @@ export class Nib {
   handle(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     if (op.startsWith('admin.nib.')) return this.admin(op, me, d);
     if (me.role === 'bot' || me.role === 'guest') throw new NibError('Nib keeps day sheets for members of the office.');
+    const out = this.op(op, me, d);
+    // the person's day changed: every app they have open (another PC, the phone, a tray left open)
+    // sees it now, whichever path changed it, not only the one that asked
+    if (SHEET_OPS.has(op)) this.pushMe([me.id]);
+    return out;
+  }
+
+  private op(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     const now = this.now();
     switch (op) {
       case 'nib.me': this.welcomeMember(me); return this.me(me);
@@ -874,7 +884,7 @@ export class Nib {
           const pd = prev ? this.dayRow(u.id, prev) : undefined;
           if (prev && pd && pd.state === 'open') { const y = this.dayOf(u.id, prev, pd); if (!y.asks.some((a) => a.kind === 'yesterday')) { y.asks.push({ at: now, level: 2, kind: 'yesterday' }); this.saveDay(y); } }
         }
-        if (r.ask === 3) this.post(u.id, 'ask', date, `Your day sheet for today is still open. Thirty seconds, before the ${cfg.digestAt} register.`);
+        if (r.ask === 3) this.post(u.id, 'ask', date, `Your day sheet for today is still open. Thirty seconds, before the register.`);
       }
       const view: NibNudgeView | null = r.kind && r.level ? { kind: r.kind, level: r.level as 1 | 2 | 3, asks: (r.ask ? day.asks.length + 1 : day.asks.length) } : null;
       const before = this.nudges.get(u.id) ?? null;
