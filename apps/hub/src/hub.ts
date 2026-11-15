@@ -273,7 +273,12 @@ export class Hub {
     this.messaging.observe = (e) => this.flows.onEvent(e);
     this.messaging.keptTags = (id) => this.flows.tagsOf(id);
     // conversations with integrations (flows, sessions) and tools in conversations
-    this.botflows = new BotFlows({ store: this.store, messaging: this.messaging, files: this.files, desk: this.desk, broadcast: (n, d) => this.emit(n, d), log: (l, m, e) => this.log(l, m, e) });
+    this.botflows = new BotFlows({
+      store: this.store, messaging: this.messaging, files: this.files, desk: this.desk, broadcast: (n, d) => this.emit(n, d), log: (l, m, e) => this.log(l, m, e),
+      deliver: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      // the office's working days are Nib's (made below; read when a job asks)
+      calendar: () => ({ workdays: this.nib ? this.nib.workingDay().workdays : [1, 2, 3, 4, 5, 6] }),
+    });
     this.miniapps = new MiniApps({ store: this.store, messaging: this.messaging, files: this.files, deliver: (u, n, d) => this.deliver(u, n, d), broadcast: (n, d) => this.emit(n, d) });
     this.messaging.extraView = (r) => ({ ...this.botflows.view(r), ...this.miniapps.view(r) });
     this.messaging.onPosted = (author, convId, msg) => this.botflows.onPosted(author, convId, msg);
@@ -447,7 +452,14 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     { const prev = this.messaging.onPosted; this.messaging.onPosted = (author, convId, msg) => { prev?.(author, convId, msg); try { this.nib.onPosted(author, convId, msg); } catch (err) { this.log('warn', 'nib reply failed', { error: (err as Error).message }); } }; }
-    this.botflows.away = (me, answers) => this.nib.leaveFromFlow(me, answers);
+    this.botflows.away = (me, answers) => {
+      const line = this.nib.leaveFromFlow(me, answers);
+      if (answers.from) this.botflows.net.emitAway(me.id, answers.from, answers.to ?? null);
+      return line;
+    };
+    // bots asking Nib about leave, and jobs leaving people on leave out
+    this.botflows.net.leave = (uid, date) => this.nib.leaveInfo(uid, date);
+    this.botflows.jobs.away = (uid, date) => this.nib.awayOn(uid, date);
     this.meetThreads = new MeetThreads({
       db: this.store.db, messaging: this.messaging,
       userById: (uid) => { const u = this.store.userById(uid); return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null; },
@@ -626,6 +638,7 @@ export class Hub {
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
+      void this.botflows.jobs.tick().catch((err: Error) => this.log('error', 'bot job timer failed', { error: err.message }));
       try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
       try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
       try { this.meetThreads.tick(); } catch (err) { this.log('error', 'meeting thread timer failed', { error: (err as Error).message }); }
@@ -1667,7 +1680,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(botflow\.|admin\.botflows\.)/.test(op)) {
+        if (typeof op === 'string' && /^(botflow\.|admin\.botflows\.|botnet\.|botjob\.|admin\.botjob\.)/.test(op)) {
           try {
             const result = await this.botflows.handle(op, this.store.userById(conn.userId!)!, d);
             if (result !== undefined) return result;
@@ -1732,6 +1745,8 @@ export class Hub {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.nib.handle(op, me, d);
+            // someone goes on leave: bots listening for it act (release their seats…)
+            if (op === 'nib.leave' && typeof d.from === 'string') this.botflows.net.emitAway(me.id, d.from, typeof d.to === 'string' ? d.to : null);
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof NibError || err instanceof MsgError || err instanceof CalError) throw new OpError(err.message);

@@ -2,11 +2,12 @@
 // in a Space, a reminder for the person who answered (and, for administrators, the integration's
 // webhook) — and the bot's closing line.
 import { useId, useRef } from 'react';
-import type { BotFlowAction, BotFlowDefinition } from '@dex/core';
+import type { BotFlowAction, BotFlowDefinition, BotHandoff } from '@dex/core';
 import { voiceOf } from '@dex/core/botflows';
 import { Icon } from '../../ui.tsx';
 import { dateSteps, personSteps, saveKeyOf } from './model.ts';
 import { InsertChips, insertAt } from './Steps.tsx';
+import { botTitle, useNet } from './netdata.ts';
 
 const WORDS: Record<BotFlowAction['do'], { tag: string; name: string }> = {
   task: { tag: 'TASK', name: 'A task on someone’s Desk' },
@@ -14,7 +15,61 @@ const WORDS: Record<BotFlowAction['do'], { tag: string; name: string }> = {
   remind: { tag: 'REMIND', name: 'A reminder for the person who answered' },
   webhook: { tag: 'WEBHOOK', name: 'Call the integration’s webhook' },
   away: { tag: 'AWAY', name: 'Nib marks the person away' },
+  handoff: { tag: 'HAND ON', name: 'Hand it to another bot' },
 };
+
+/** Hand the request to another bot: which one, and what it carries across (the same names go by themselves). */
+export function HandoffEditor({ def, h, onChange, stages }: { def: BotFlowDefinition; h: BotHandoff; onChange: (h: BotHandoff) => void; stages?: boolean }) {
+  const id = useId();
+  const net = useNet();
+  const target = h.to ? net.definition(h.to) : null;
+  const steps = (target?.steps ?? []).filter((s) => !s.ask && s.input.kind !== 'confirm');
+  const mine = new Set(def.steps.map((s) => saveKeyOf(s)));
+  const set = (k: string, v: string) => { const c = { ...(h.carry ?? {}) }; if (v) c[k] = v; else delete c[k]; onChange({ ...h, carry: Object.keys(c).length ? c : undefined }); };
+  return (
+    <>
+      <div className="field">
+        <label htmlFor={`${id}-to`}>To the bot</label>
+        <select id={`${id}-to`} className="input" value={h.to} onChange={(e) => onChange({ to: e.target.value })}>
+          {!h.to && <option value="">Choose a bot…</option>}
+          {net.bots.filter((b) => b.name !== def.name).map((b) => <option key={b.name} value={b.name}>{b.title}</option>)}
+          {h.to && !net.bots.some((b) => b.name === h.to) && <option value={h.to}>{botTitle(net, h.to)}</option>}
+        </select>
+      </div>
+      {stages && target?.track && (
+        <div className="field">
+          <label htmlFor={`${id}-st`}>It starts there at</label>
+          <select id={`${id}-st`} className="input" value={h.start ?? ''} onChange={(e) => onChange({ ...h, start: e.target.value || undefined })}>
+            <option value="">Its first stage</option>
+            {target.track.stages.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </div>
+      )}
+      {h.to && (
+        <fieldset className="bm-wide bm-carry">
+          <legend>What it carries across</legend>
+          {!target && <span className="faint">…</span>}
+          {steps.map((s) => {
+            const k = saveKeyOf(s);
+            const same = mine.has(k) && !(h.carry && k in h.carry);
+            return (
+              <div key={s.id} className="bm-carry-row">
+                <label htmlFor={`${id}-c-${k}`}>{s.label || s.id}</label>
+                <select id={`${id}-c-${k}`} className="input" value={h.carry?.[k] ?? (same ? '@same' : '')} onChange={(e) => set(k, e.target.value === '@same' ? '' : e.target.value)}>
+                  <option value="">{same ? `The same answer (“${s.label || s.id}”)` : 'Nothing: the person is asked there'}</option>
+                  {mine.has(k) && <option value="@same">{`The same answer (“${s.label || s.id}”)`}</option>}
+                  {def.steps.filter((x) => x.input.kind !== 'confirm').map((x) => <option key={x.id} value={`{{${saveKeyOf(x)}.value}}`}>{`The answer to “${x.label || x.id}”`}</option>)}
+                  {h.carry?.[k] && !h.carry[k].startsWith('{{') && <option value={h.carry[k]}>{h.carry[k]}</option>}
+                </select>
+              </div>
+            );
+          })}
+          <span className="bm-hint">The other bot checks each answer again, and asks the person what is left. A request may pass through four bots at most, and never back to one it came from.</span>
+        </fieldset>
+      )}
+    </>
+  );
+}
 
 /** "Mark me away": which answers are the first day, the day back, the cover and the lead (Nib does the rest). */
 function AwayEditor({ def, a, onChange }: { def: BotFlowDefinition; a: Extract<BotFlowAction, { do: 'away' }>; onChange: (a: BotFlowAction) => void }) {
@@ -70,6 +125,7 @@ function ActionEditor({ def, a, onChange, spaces }: { def: BotFlowDefinition; a:
   const people = personSteps(def);
   if (a.do === 'webhook') return <p className="faint bm-wide" style={{ margin: 0 }}>Every answer is sent, signed, to the integration’s webhook (Control room → Integrations).</p>;
   if (a.do === 'away') return <AwayEditor def={def} a={a} onChange={onChange} />;
+  if (a.do === 'handoff') { const { do: _d, ...h } = a; return <HandoffEditor def={def} h={h} onChange={(x) => onChange({ do: 'handoff', ...x })} />; }
   const textField = (
     <div className="field bm-wide">
       <label htmlFor={`${id}-text`}>{a.do === 'post' ? 'What it posts' : a.do === 'task' ? 'What the task says' : 'What the reminder says'}</label>
@@ -119,7 +175,7 @@ export function EndingSection({ def, setDef, problems, admin, spaces }: { def: B
     const a: BotFlowAction = kind === 'task' ? { do: 'task', assignee: people[0] ? saveKeyOf(people[0]) : '', text: `${def.title} from {{user}}`, dueInDays: 1 }
       : kind === 'post' ? { do: 'post', to: 'origin', text: `**${def.title}** from {{user}}\n\n{{summary}}` }
         : kind === 'remind' ? { do: 'remind', text: `Follow up: ${def.title}`, dueInDays: 1 }
-          : kind === 'away' ? { do: 'away', from: dateSteps(def)[0] ? saveKeyOf(dateSteps(def)[0]) : '' } : { do: 'webhook' };
+          : kind === 'away' ? { do: 'away', from: dateSteps(def)[0] ? saveKeyOf(dateSteps(def)[0]) : '' } : kind === 'handoff' ? { do: 'handoff', to: '' } : { do: 'webhook' };
     setDef({ ...def, finish: [...def.finish, a] });
   };
   return (
@@ -145,6 +201,7 @@ export function EndingSection({ def, setDef, problems, admin, spaces }: { def: B
         <button type="button" className="bm-add-btn" onClick={() => add('post')}><Icon name="plus" size={13} />Post</button>
         <button type="button" className="bm-add-btn" onClick={() => add('remind')}><Icon name="plus" size={13} />Reminder</button>
         <button type="button" className="bm-add-btn" onClick={() => add('away')}><Icon name="plus" size={13} />Mark away</button>
+        {!admin && <button type="button" className="bm-add-btn bot" onClick={() => add('handoff')}><Icon name="branch" size={13} />Hand to a bot</button>}
         {admin && <button type="button" className="bm-add-btn" onClick={() => add('webhook')}><Icon name="plus" size={13} />Webhook</button>}
       </div>
       <div className="field bm-closing">

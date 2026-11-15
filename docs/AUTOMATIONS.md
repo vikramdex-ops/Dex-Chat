@@ -8,6 +8,10 @@ Document Review group. A rule is drawn as a small schematic on a ruled sheet, re
 
 The hub runs the rules, so they work whoever is online. Every rule keeps a log of its last 50 runs.
 
+Automations react to one conversation. Bots that act when *another bot's* request is sent, moves
+or closes, or when someone goes on leave, and bots that do things on a schedule, are part of the
+bot maker instead: see [`BOT-NETWORK.md`](BOT-NETWORK.md).
+
 ## Where to find them
 
 - **In a conversation:** the header’s **More** menu → **Automations…** lists that conversation’s

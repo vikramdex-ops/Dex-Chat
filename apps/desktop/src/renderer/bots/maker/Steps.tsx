@@ -2,10 +2,27 @@
 // answer it takes, the question and where it goes next; the open row is edited in place. Problems
 // are written beside the step that causes them.
 import { useEffect, useId, useRef, useState } from 'react';
-import type { BotFlowBranch, BotFlowDefinition, BotFlowInput, BotFlowStep } from '@dex/core';
+import type { BotFlowBranch, BotFlowDefinition, BotFlowInput, BotFlowStep, BotSkill } from '@dex/core';
 import { Icon } from '../../ui.tsx';
 import { ANSWER_KINDS, KIND_TAG, KIND_WORDS, ROUTE_WORDS, conditionOf, inputOf, kindOf, newStep, routeOf, saveKeyOf } from './model.ts';
 import type { AnswerKind, RouteOp } from './model.ts';
+import { ChosenSkill, SkillBlocks, SkillFields } from './SkillBlocks.tsx';
+
+/** A step that asks another bot: its answer kind follows what the skill gives (the fallback asks the person the same). */
+export function newAskStep(def: BotFlowDefinition, skill: BotSkill): BotFlowStep {
+  const main = skill.outputs.find((o) => o.id === skill.main);
+  const kind: AnswerKind = main?.kind === 'number' ? 'number' : main?.kind === 'person' ? 'person' : main?.kind === 'date' ? 'date' : 'text';
+  let input = inputOf(kind);
+  if (kind === 'number') input = { kind: 'text', validate: { type: 'number', integer: true, min: 0 } };
+  if (main?.kind === 'yesno') input = { kind: 'choice', options: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }] };
+  const w: Record<string, string> = {};
+  for (const i of skill.inputs) {
+    if (i.kind === 'person' && !i.optional) w[i.id] = '{{user.value}}';
+    else if (i.options?.length && !i.optional) w[i.id] = i.options[0];
+  }
+  const base = newStep(def, 'text');
+  return { id: base.id, label: skill.title.replace(/\?$/, ''), prompt: skill.title, input, ask: { skill: skill.id, ...(Object.keys(w).length ? { with: w } : {}) } };
+}
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -173,10 +190,22 @@ function StepEditor({ def, step, index, onChange }: { def: BotFlowDefinition; st
   const id = useId();
   const prompt = useRef<HTMLTextAreaElement>(null);
   const kind = kindOf(step.input);
+  const [rechoose, setRechoose] = useState(false);
   return (
     <div className="bm-step-edit" id={`bm-step-${step.id}-edit`}>
+      {step.ask && (
+        <fieldset className="bm-wide bm-askbot">
+          <legend>Asks another bot</legend>
+          {rechoose
+            ? <SkillBlocks exclude={def.name} picked={step.ask.skill} onPick={(sk) => { const n = newAskStep(def, sk); onChange({ ...step, ask: n.ask, input: n.input }); setRechoose(false); }} />
+            : <ChosenSkill ask={step.ask} onClear={() => setRechoose(true)} />}
+          <div className="bm-grid"><SkillFields def={def} ask={step.ask} upTo={index} onChange={(ask) => onChange({ ...step, ask })} /></div>
+          <span className="bm-hint">The bot’s answer is used like any answer: in later questions, routes and messages.</span>
+          <button type="button" className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => { const { ask: _a, ...rest } = step; onChange(rest); }}>Ask the person instead</button>
+        </fieldset>
+      )}
       <div className="field bm-wide">
-        <label htmlFor={`${id}-prompt`}>What the bot asks</label>
+        <label htmlFor={`${id}-prompt`}>{step.ask ? 'When the bot cannot answer, the person is asked' : 'What the bot asks'}</label>
         <textarea ref={prompt} id={`${id}-prompt`} className="input bm-prompt" rows={2} maxLength={2000} value={step.prompt} onChange={(e) => onChange({ ...step, prompt: e.target.value })} />
         <InsertChips def={def} upTo={index} summary={index > 0} onInsert={(t) => onChange({ ...step, prompt: insertAt(prompt.current, step.prompt, t) })} />
       </div>
@@ -214,6 +243,7 @@ export function StepsSection({ def, setDef, problems, open, setOpen }: {
   open: string | null; setOpen: (id: string | null) => void;
 }) {
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
   useEffect(() => {
     if (!focusId) return;
     const el = document.querySelector<HTMLElement>(`#bm-step-${CSS.escape(focusId)}-edit textarea, #bm-step-${CSS.escape(focusId)} .bm-step-head`);
@@ -277,7 +307,7 @@ export function StepsSection({ def, setDef, problems, open, setOpen }: {
               <div className="bm-step-row">
                 <button type="button" className="bm-step-head" aria-expanded={isOpen} aria-controls={`bm-step-${s.id}-edit`} onClick={() => setOpen(isOpen ? null : s.id)}>
                   <span className="bm-step-no mono">{pad(i + 1)}</span>
-                  <span className="bm-kind">{KIND_TAG[kind]}</span>
+                  <span className={`bm-kind${s.ask ? ' bot' : ''}`}>{s.ask ? 'ASKS BOT' : KIND_TAG[kind]}</span>
                   <span className="bm-step-q" translate="no">{s.prompt.split('\n')[0] || '…'}</span>
                   <span className="bm-step-route mono">{routeTag(def, s, i)}</span>
                 </button>
@@ -299,7 +329,24 @@ export function StepsSection({ def, setDef, problems, open, setOpen }: {
         {(['choice', 'text', 'long', 'number', 'date', 'person', 'file', 'confirm'] as AnswerKind[]).map((k) => (
           <button key={k} type="button" className="bm-add-btn" disabled={def.steps.length >= 50} onClick={() => add(k)}><Icon name="plus" size={13} />{KIND_WORDS[k]}</button>
         ))}
+        <button type="button" className="bm-add-btn bot" aria-expanded={asking} disabled={def.steps.length >= 50} onClick={() => setAsking(!asking)}><Icon name="branch" size={13} />Ask a bot</button>
       </div>
+      {asking && (
+        <div className="bm-block" role="region" aria-label="Skills other bots answer">
+          <span className="bm-legend">Ask another bot · pick what to ask</span>
+          <SkillBlocks exclude={def.name} onPick={(sk) => {
+            const st = newAskStep(def, sk);
+            const last = def.steps[def.steps.length - 1];
+            const at = last && kindOf(last.input) === 'confirm' ? def.steps.length - 1 : def.steps.length;
+            const steps = [...def.steps];
+            steps.splice(at, 0, st);
+            setDef({ ...def, steps });
+            setAsking(false);
+            setOpen(st.id);
+            setFocusId(st.id);
+          }} />
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,8 @@
 import type { BotFlowAction, BotFlowAnswer, BotFlowBranch, BotFlowCondition, BotFlowDefinition, BotFlowInput, BotFlowOption, BotFlowStep, BotFlowValidate, BotHours, BotPersona, BotTone } from './bots.ts';
 import { BOT_COLOURS, BOT_GLYPHS, BOT_TONES } from './bots.ts';
 import { checkTrack } from './botflow-track.ts';
+import { checkAsk, checkHandoff, checkNetwork } from './botnet.ts';
+import { checkJobs } from './botjobs.ts';
 
 export class BotFlowError extends Error {}
 
@@ -185,7 +187,8 @@ function action(a: unknown, i: number, saves: Map<string, BotFlowStep>): BotFlow
     }
     return out;
   }
-  throw new BotFlowError(`${where}: "do" is post, task, remind, away or webhook.`);
+  if (r.do === 'handoff') return { do: 'handoff', ...checkHandoff(r, where) };
+  throw new BotFlowError(`${where}: "do" is post, task, remind, away, handoff or webhook.`);
 }
 
 /** Check and tidy a flow definition (from the Bot API or the Control room). */
@@ -229,6 +232,10 @@ export function validateFlow(raw: unknown, name?: string): BotFlowDefinition {
       });
     } else if (x.branches !== undefined) throw new BotFlowError(`Step "${id}": "branches" must be a list.`);
     if (x.next !== undefined) step.next = str(x.next, 40);
+    if (x.ask !== undefined && x.ask !== null) {
+      step.ask = checkAsk(x.ask, `Step "${id}"`);
+      if (step.input.kind === 'confirm' || step.input.kind === 'file') throw new BotFlowError(`Step "${id}": a step that asks a bot falls back to asking the person a question, not a confirmation or a file.`);
+    }
     return step;
   });
   for (const s of steps) {
@@ -254,6 +261,13 @@ export function validateFlow(raw: unknown, name?: string): BotFlowDefinition {
   if (typeof r.done === 'string' && r.done.trim()) def.done = str(r.done, 2000);
   if (r.persona !== undefined && r.persona !== null) def.persona = checkPersona(r.persona);
   if (r.track !== undefined && r.track !== null) def.track = checkTrack(r.track, saves);
+  if (r.network !== undefined && r.network !== null) {
+    const net = checkNetwork(r.network, n);
+    if (Object.keys(net).length) def.network = net;
+  }
+  if (Array.isArray(r.jobs) && r.jobs.length) {
+    try { def.jobs = checkJobs(r.jobs, { tracked: !!def.track }); } catch (err) { throw new BotFlowError((err as Error).message); }
+  } else if (r.jobs !== undefined && r.jobs !== null && !Array.isArray(r.jobs)) throw new BotFlowError('"jobs" is a list.');
   return def;
 }
 
@@ -553,11 +567,13 @@ export function remainingPath(def: BotFlowDefinition, from: string, vars: BotFlo
 
 /** Where a run stands: "step 3 of 5" (the total follows the answers given so far). */
 export function flowPosition(def: BotFlowDefinition, step: string | null, history: string[], known: BotFlowVars): { stepNo: number; stepCount: number } {
-  const all = remainingPath(def, def.steps[0].id, known);
+  // a step that asks another bot is not one the person answers
+  const asked = (id: string) => !stepById(def, id)?.ask;
+  const all = remainingPath(def, def.steps[0].id, known).filter(asked);
   const at = step ? all.indexOf(step) : -1;
   if (at >= 0) return { stepNo: at + 1, stepCount: all.length };
-  const ahead = step ? remainingPath(def, step, known).length : 0;
-  const done = new Set(history).size;
+  const ahead = step ? remainingPath(def, step, known).filter(asked).length : 0;
+  const done = new Set(history.filter(asked)).size;
   return { stepNo: done + 1, stepCount: done + Math.max(1, ahead) };
 }
 

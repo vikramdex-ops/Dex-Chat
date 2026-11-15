@@ -27,6 +27,12 @@ import type { Messaging, MsgRow } from './messaging.ts';
 import type { Store } from './store.ts';
 import { BUILTIN_FLOWS, FRONT_OFFICE_ACCOUNT, FRONT_OFFICE_NAME } from './botflows-builtin.ts';
 import { BotItems } from './botitems.ts';
+import { BotNet, BotNetError } from './botnet.ts';
+import type { NetBot, NetHost } from './botnet.ts';
+import { BotJobs } from './botjobs.ts';
+import { DEFAULT_CALENDAR } from '@dex/core/botjobs';
+import type { OfficeCalendar } from '@dex/core/botjobs';
+import { trailOf } from '@dex/core/botnet';
 
 export class BotFlowsError extends Error {
   readonly status: number;
@@ -142,6 +148,8 @@ type CardData = Partial<Pick<BotFlowCard, 'title' | 'stepNo' | 'stepCount' | 'pr
   itemId?: string;
   /** A register card: the bot, what it lists, and for whom. */
   flow?: string; mode?: 'all' | 'mine' | 'team'; itemIds?: string[]; space?: boolean;
+  /** A relay card: the run or request whose hops it draws. */
+  group?: string;
 };
 
 function parse<T>(raw: string | null | undefined, fallback: T): T {
@@ -165,6 +173,10 @@ export interface BotFlowsDeps {
   /** Tell every connected app (the list of flows changed). */
   broadcast: (name: string, data: unknown) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
+  /** Tell some people's apps (the network sheet's pulses, the job sheet). */
+  deliver?: (userIds: string[], name: string, data: unknown) => void;
+  /** The office's working days, holidays and hours, in its time zone (Nib's working days). */
+  calendar?: () => Pick<OfficeCalendar, 'workdays'>;
 }
 
 export class BotFlows {
@@ -180,6 +192,10 @@ export class BotFlows {
   now: () => number = () => Date.now();
   /** Requests a tracked bot carries on after they are sent. */
   readonly items: BotItems;
+  /** Bots talking to bots: skills, handoffs, events (botnet.ts). */
+  readonly net: BotNet;
+  /** Scheduled jobs (botjobs.ts). */
+  readonly jobs: BotJobs;
   private itemsTickedAt = 0;
 
   constructor(deps: BotFlowsDeps) {
@@ -203,6 +219,72 @@ export class BotFlows {
       dm: (bot, userId) => this.dm(bot, userId),
       say: (bot, convId, text) => this.say(bot, convId, text),
     });
+    const host: NetHost = {
+      live: (name) => this.netBot(name),
+      all: () => (this.db.prepare('SELECT name FROM bot_flows WHERE enabled = 1').all() as Array<{ name: string }>).map((r) => this.netBot(r.name)).filter((x): x is NetBot => !!x),
+      mayUse: (name, userId) => this.mayUse(name, userId),
+      startCarried: (person, name, carried, o) => this.startCarried(person, name, carried, o),
+      postCard: (bot, convId, body, kind, data) => this.postCard(bot, convId, body, kind, null, null, data as CardData),
+      refreshCard: (clientId) => this.refreshCard(clientId),
+      dm: (bot, userId) => this.dm(bot, userId),
+      say: (bot, convId, text) => this.say(bot, convId, text),
+      sent: (name, since) => (this.db.prepare("SELECT COUNT(*) AS n FROM bot_sessions WHERE flow = ? AND status = 'done' AND updated_at > ?").get(name, since) as { n: number }).n,
+    };
+    this.net = new BotNet({
+      db: this.db, store: deps.store, messaging: deps.messaging, items: this.items, host, log: deps.log, now: () => this.now(),
+      deliver: (u, n, d) => deps.deliver?.(u, n, d), calendar: () => this.calendar(),
+    });
+    this.items.hooks = {
+      moved: (def, before, after) => {
+        if (after.vars.__link?.value || before) this.net.targetMoved(after.id);
+        if (!before) this.net.emit(def, after, 'opened');
+        else if (after.status !== 'open' && before.status === 'open') this.net.itemClosed(def, after);
+        else if (after.status === 'open' && (before.stage !== after.stage || before.since !== after.since)) this.net.emit(def, after, 'stage');
+        const st = after.status === 'open' && (!before || before.stage !== after.stage || before.since !== after.since) ? def.track?.stages.find((x) => x.id === after.stage) : undefined;
+        if (st?.who.startsWith('bot:')) {
+          const owner = this.flowRow(def.name)?.owner_id ?? null;
+          setImmediate(() => { this.net.botStage(def, after, owner).catch((err: Error) => this.d.log('warn', 'stage handoff failed', { error: err.message })); });
+        }
+      },
+      acted: (def, item, action, by) => {
+        if (!action.handoff) return;
+        const h = action.handoff;
+        setImmediate(() => {
+          const vars = { ...item.vars, ref: { value: item.ref, label: item.ref }, title: { value: item.title, label: item.title } };
+          this.net.handoff({ from: def.name, person: by, trail: trailOf(item.vars.__trail?.value), group: item.id, key: `act:${item.id}:${item.history.length}`, originItem: item.id, card: true }, h, vars, { ref: item.ref, what: action.label })
+            .catch((err: Error) => this.d.log('warn', 'button handoff failed', { error: err.message }));
+        });
+      },
+      stageBot: (item, stageId, flow) => this.net.stageBot(item, stageId, flow),
+    };
+    this.jobs = new BotJobs({
+      db: this.db, store: deps.store, messaging: deps.messaging, desk: deps.desk, log: deps.log, now: () => this.now(), calendar: () => this.calendar(),
+      deliver: (u, n, d) => deps.deliver?.(u, n, d), host, net: this.net, items: this.items,
+      startFor: (person, name) => this.startForJob(person, name),
+      leadOf: (uid) => this.items.leadOf(uid),
+    });
+  }
+
+  /** The office's working week and holidays, in IST. */
+  calendar(): OfficeCalendar {
+    const holidays = (() => { try { return JSON.parse(this.d.store.meta('office_holidays', () => '[]')) as OfficeCalendar['holidays']; } catch { return []; } })();
+    return { ...DEFAULT_CALENDAR, workdays: this.d.calendar?.().workdays ?? DEFAULT_CALENDAR.workdays, holidays: Array.isArray(holidays) ? holidays : [] };
+  }
+
+  /** A live bot as the network sees it. */
+  private netBot(name: string): NetBot | null {
+    const u = this.usable(name);
+    if (!u) return null;
+    return { def: u.def, bot: u.bot, ownerId: u.row.owner_id ?? null, source: u.row.source, scope: u.row.scope ?? 'office', status: u.row.status ?? 'live', version: u.row.version ?? 1 };
+  }
+
+  /** May this person (null: the office itself) start that bot? */
+  mayUse(name: string, userId: string | null): boolean {
+    const u = this.usable(name);
+    if (!u) return false;
+    if (userId === null) return u.row.source !== 'member' || (u.row.scope ?? 'office') === 'office';
+    const me = this.d.store.userById(userId);
+    return !!me && me.role !== 'bot' && this.canUse(u.row, me);
   }
 
   // ------------------------------------------------------------ built-in flows
@@ -341,6 +423,9 @@ export class BotFlows {
     const c = this.db.prepare('SELECT * FROM bot_cards WHERE client_id = ? AND bot_id = ?').get(r.client_id, r.author_id) as CardRow | undefined;
     if (!c) return {};
     const data = parse<CardData>(c.data, {});
+    if (c.kind === 'relay') {
+      return { botflow: { kind: 'relay', botId: c.bot_id, sessionId: null, ownerId: data.ownerId ?? null, title: data.title ?? '', state: 'active', ...(data.persona ? { persona: data.persona } : {}), relay: data.group ? this.net.relayView(c.client_id, data.group, null) : null } };
+    }
     if (c.kind === 'track' || c.kind === 'register' || (c.kind === 'done' && data.itemId)) {
       // a tracked request's card is drawn from the request as it is now
       const live = this.items.cardView(c.client_id, data);
@@ -529,8 +614,139 @@ export class BotFlows {
       startedAt: now, updatedAt: now, expiresAt: now + (def.expiresInDays ?? BOTFLOW_DEFAULT_DAYS) * DAY, offeredAt: null, card: null, flowVersion: u.row.version ?? 1,
     };
     this.save(s);
-    this.postStep(s, def, bot, true);
+    await this.proceed(s, def, bot, true);
     return { sessionId: s.id, convId: dm, resumed: false };
+  }
+
+  /**
+   * Carry a run on from where it stands: a step that asks another bot is asked (and the answer
+   * kept) without the person; the first step that is the person's gets its card. A bot that
+   * cannot answer falls back to asking the person (or, as its maker chose, carries on or stops).
+   */
+  private async proceed(s: S, def: BotFlowDefinition, bot: PublicUser, fresh = false, retry = false): Promise<{ done: boolean }> {
+    for (let i = 0; i < 60; i++) {
+      const step = stepById(def, s.step);
+      if (!step) throw new BotFlowsError('This flow changed while you were in it. Start it again.');
+      // an answer another bot carried in for this step: given once, as if the person had written it
+      const carry = (s.vars as BotFlowVars).__carry?.value;
+      if (carry && !step.ask && step.input.kind !== 'confirm') {
+        const map = (() => { try { return JSON.parse(carry) as Record<string, string>; } catch { return {}; } })();
+        const key = saveKey(step);
+        if (key in map) {
+          const raw = map[key];
+          delete map[key];
+          (s.vars as BotFlowVars).__carry = { value: JSON.stringify(map), label: '' };
+          const who = this.d.store.userById(s.userId);
+          let given: BotFlowAnswer | null = null;
+          try { if (who) given = checkAnswer(step, raw, this.answerContext(who, def)); } catch { given = null; }
+          if (given) {
+            s.answers[key] = given;
+            s.history.push(step.id);
+            const next = nextAfter(def, step, this.effective(s));
+            for (const [k, v] of Object.entries(next.set)) (s.vars as BotFlowVars)[k] = { value: v, label: v };
+            this.touch(s, this.days(s));
+            if (next.goto === 'end') { if (!who) return { done: false }; await this.finish(who, s, def, bot); return { done: true }; }
+            s.step = next.goto;
+            this.save(s);
+            continue;
+          }
+        }
+      }
+      if (!step.ask || !s.flow) { this.postStep(s, def, bot, fresh); return { done: false }; }
+      const me = this.d.store.userById(s.userId);
+      if (!me) throw new BotFlowsError('That person is not in the office any more.');
+      const res = await this.net.ask({
+        from: def.name, person: me, trail: trailOf((s.vars as BotFlowVars).__trail?.value), group: s.id, card: true, originSession: s.id, step: step.id,
+        ...(retry ? {} : { key: `ask:${s.id}:${step.id}:${s.history.length}` }),
+      }, step.ask, this.effective(s));
+      retry = false;
+      let answer: BotFlowAnswer;
+      if (res.ok && res.answer) {
+        answer = res.answer;
+        for (const [k, v] of Object.entries(res.values)) (s.vars as BotFlowVars)[`${saveKey(step)}.${k}`] = v;
+      } else {
+        const onFail = step.ask.onFail ?? 'ask';
+        const voice = voiceOf(def.persona?.tone);
+        if (onFail === 'stop') {
+          this.end(s, 'cancelled');
+          this.say(bot, s.convId, `${res.reason ?? 'Another bot did not answer.'} It stops here; start it again later.`);
+          return { done: true };
+        }
+        if (onFail === 'ask') {
+          this.say(bot, s.convId, `${res.reason ?? 'Another bot did not answer.'} ${voice.typedHint}`);
+          this.postStep(s, def, bot, fresh);
+          return { done: false };
+        }
+        answer = { value: '', label: '—' };
+      }
+      s.answers[saveKey(step)] = answer;
+      s.history.push(step.id);
+      const next = nextAfter(def, step, this.effective(s));
+      for (const [k, v] of Object.entries(next.set)) (s.vars as BotFlowVars)[k] = { value: v, label: v };
+      this.touch(s, this.days(s));
+      if (next.goto === 'end') { await this.finish(me, s, def, bot); return { done: true }; }
+      s.step = next.goto;
+      this.save(s);
+    }
+    this.end(s, 'cancelled');
+    throw new BotFlowsError('This bot keeps asking other bots without asking you anything. Its maker should look at it.');
+  }
+
+  /**
+   * Start a bot for someone with answers another bot carried across (a handoff, or an event it
+   * listens to). Each carried answer is checked as if the person had written it; the steps they
+   * answer are passed over, and the person carries on from the first one left (a confirmation
+   * is always theirs). The run remembers the bots it came through, so it cannot loop.
+   */
+  async startCarried(person: PublicUser, name: string, carried: Record<string, string>, o: { trail: string; link: string; from: string }): Promise<{ sessionId: string; convId: string; itemId: string | null; done: boolean }> {
+    const u = this.startable(name, person);
+    if (!u) throw new BotFlowsError(`${person.displayName} cannot use that bot.`);
+    const { def, bot } = u;
+    const hours = def.persona?.hours;
+    if (hours && !withinHours(hours, Date.now())) throw new BotFlowsError(voiceOf(def.persona?.tone).closed(def.title, hoursText(hours), nextOpening(hours, Date.now())));
+    const existing = this.activeFor(bot.id, person.id);
+    if (existing) throw new BotFlowsError(`${person.displayName} is in the middle of ${this.running(existing)?.def.title ?? def.title} already.`);
+    const dm = this.dm(bot, person.id);
+    const now = Date.now();
+    const vars = startVars(def, { id: person.id, name: person.displayName, account: person.account });
+    vars.__trail = { value: o.trail, label: o.trail };
+    vars.__link = { value: o.link, label: o.link };
+    vars.__from = { value: o.from, label: o.from };
+    const s: S = {
+      id: ulid(), botId: bot.id, userId: person.id, flow: name, convId: dm, originConvId: null, step: def.steps[0].id, history: [], answers: {}, vars, prompts: {}, status: 'active',
+      startedAt: now, updatedAt: now, expiresAt: now + (def.expiresInDays ?? BOTFLOW_DEFAULT_DAYS) * DAY, offeredAt: null, card: null, flowVersion: u.row.version ?? 1,
+    };
+    // answers carried in are given as the run reaches their steps (in any order); each once
+    const usable = Object.fromEntries(Object.entries(carried).filter(([k]) => def.steps.some((st) => saveKey(st) === k && !st.ask && st.input.kind !== 'confirm')));
+    (s.vars as BotFlowVars).__carry = { value: JSON.stringify(usable), label: '' };
+    const carriedIn = Object.keys(usable).length;
+    this.save(s);
+    const fromTitle = this.usable(o.from)?.def.title ?? (o.from === 'nib' ? 'Nib' : o.from);
+    this.say(bot, dm, carriedIn === 1 ? `From ${fromTitle}: 1 answer carried across.` : carriedIn ? `From ${fromTitle}: ${carriedIn} answers carried across.` : `From ${fromTitle}.`);
+    const r = await this.proceed(s, def, bot, carriedIn === 0);
+    const after = this.row(s.id);
+    const itemId = after?.status === 'done' ? (this.db.prepare("SELECT target_item FROM bot_links WHERE id = ?").get(o.link) as { target_item: string | null } | undefined)?.target_item ?? null : null;
+    return { sessionId: s.id, convId: dm, itemId, done: r.done };
+  }
+
+  /** A scheduled job starts the bot for someone: not when they are in the middle of it already. */
+  async startForJob(person: PublicUser, name: string): Promise<'started' | 'busy' | 'cannot'> {
+    let u;
+    try { u = this.startable(name, person); } catch { return 'cannot'; }
+    if (!u) return 'cannot';
+    if (this.activeFor(u.bot.id, person.id)) return 'busy';
+    await this.start(person, name, null);
+    return 'started';
+  }
+
+  /** The person asks a bot again after it failed; the run carries on when it answers. */
+  async retryAsk(me: PublicUser, hopId: string): Promise<void> {
+    const { session, step } = this.net.retryOf(hopId, me);
+    const s = this.mine(me, session);
+    if (s.step !== step) throw new BotFlowsError('That step was already answered.');
+    const u = this.running(s);
+    if (!u) throw new BotFlowsError('This flow was switched off by an administrator.');
+    await this.proceed(s, u.def, u.bot, false, true);
   }
 
   private end(s: S, status: 'cancelled' | 'expired' | 'done'): void {
@@ -588,8 +804,7 @@ export class BotFlows {
         return { done: true };
       }
       s.step = next.goto;
-      this.postStep(s, u.def, u.bot);
-      return { done: false };
+      return await this.proceed(s, u.def, u.bot);
     } finally {
       this.busy.delete(sessionId);
     }
@@ -626,8 +841,12 @@ export class BotFlows {
     }
     const u = this.running(s);
     if (!u) { this.end(s, 'cancelled'); throw new BotFlowsError('This flow was switched off by an administrator.'); }
-    s.history.pop();
-    s.step = prev;
+    // a step another bot answered is gone back over, to the person's own step before it
+    let to = s.history.length;
+    while (to > 0 && stepById(u.def, s.history[to - 1])?.ask) to--;
+    if (to === 0) throw new BotFlowsError('This is the first step.');
+    s.step = s.history[to - 1];
+    s.history = s.history.slice(0, to - 1);
     this.touch(s, this.days(s));
     this.postStep(s, u.def, u.bot);
   }
@@ -664,7 +883,8 @@ export class BotFlows {
       s.step = u.def.steps[0].id;
     }
     this.touch(s, this.days(s));
-    this.postStep(s, u.def, u.bot, over);
+    if (over) await this.proceed(s, u.def, u.bot, true);
+    else this.postStep(s, u.def, u.bot, over);
   }
 
   /** Due date for a task: 09:00 on the chosen day (or an hour from now if that has passed). */
@@ -682,7 +902,7 @@ export class BotFlows {
     return day.getTime() > now ? day.getTime() : now + 3600_000;
   }
 
-  private async finish(me: PublicUser, s: S, def: BotFlowDefinition, bot: PublicUser): Promise<void> {
+  private async finish(me: PublicUser, s: S, def: BotFlowDefinition, bot: PublicUser): Promise<string | null> {
     const vars = this.effective(s);
     const { lines, text: summary } = this.summaryOf(def, s);
     const fileIds = def.steps.filter((st) => st.input.kind === 'file' && s.history.includes(st.id)).map((st) => vars[saveKey(st)]?.value).filter((v): v is string => !!v);
@@ -732,12 +952,15 @@ export class BotFlows {
           if (!this.away) { notes.push('Nobody was told: Nib is not running.'); continue; }
           const v = (k?: string) => (k ? vars[k]?.value ?? null : null);
           notes.push(this.away(me, { kind: v(a.kind) ?? undefined, from: v(a.from) ?? undefined, to: v(a.to) ?? undefined, cover: v(a.cover), note: v(a.note), leads: v(a.lead) ? [v(a.lead)!] : [] }));
+        } else if (a.do === 'handoff') {
+          const res = await this.net.handoff({ from: def.name, person: me, trail: trailOf(vars.__trail?.value), group: s.id, key: `fin:${s.id}:${a.to}`, originSession: s.id, card: true }, a, vars);
+          notes.push(res.line);
         } else if (a.do === 'webhook') {
           const reply = await this.callWebhook(bot, {
             type: 'botflow.completed', flow: def.name, sessionId: s.id, at: new Date().toISOString(),
             user: { id: me.id, name: me.displayName, account: me.account },
-            answers: Object.fromEntries(Object.entries(vars).filter(([k]) => !isUserVar(k)).map(([k, v]) => [k, v.value])),
-            labels: Object.fromEntries(Object.entries(vars).filter(([k]) => !isUserVar(k)).map(([k, v]) => [k, v.label])),
+            answers: Object.fromEntries(Object.entries(vars).filter(([k]) => !isUserVar(k) && !k.startsWith('__')).map(([k, v]) => [k, v.value])),
+            labels: Object.fromEntries(Object.entries(vars).filter(([k]) => !isUserVar(k) && !k.startsWith('__')).map(([k, v]) => [k, v.label])),
             files: fileIds.map((id) => this.d.files.info(id)).filter((f) => f !== null).map((f) => ({ id: f.id, name: f.name, size: f.size, type: f.mime })),
             conversation: s.originConvId ? { id: s.originConvId } : null,
           });
@@ -760,6 +983,8 @@ export class BotFlows {
         const item = this.items.create(def, s.flowVersion, bot, owner, me, vars, lines);
         itemId = item.id;
         notes.push(...this.items.notesFor(def, item));
+        // it came in from another bot: that bot's hop follows this request now
+        if (vars.__link?.value) this.net.sessionTracked(vars.__link.value, item.id, item.ref);
       } catch (err) {
         notes.push(`It could not be tracked: ${(err as Error).message}`);
         this.d.log('warn', 'tracked request not created', { flow: def.name, error: (err as Error).message });
@@ -777,10 +1002,12 @@ export class BotFlows {
       }
     }
     const done = doneLine(def, vars, summary);
+    if (!itemId && vars.__link?.value) this.net.sessionDone(vars.__link.value, done);
     const doneCard = this.postCard(bot, s.convId, done, 'done', s.id, null, { title: def.title, lines, notes, prompt: done, ...(itemId ? { itemId, ownerId: me.id } : {}), ...(def.persona ? { persona: { mark: def.persona.mark, colour: def.persona.colour } } : {}) });
     if (itemId) this.items.attachRequesterCard(doneCard, { id: itemId, flow: def.name, requesterId: me.id }, s.convId);
     this.refreshCard(s.card);
     this.d.store.audit(me.id, 'botflow.completed', s.id, { flow: def.name });
+    return itemId;
   }
 
   // ------------------------------------------------------------ integrations with their own logic
@@ -1141,6 +1368,8 @@ export class BotFlows {
       const conv = (() => { try { return this.d.messaging.memberConv(spaceId, me.id) as unknown as { id: string; kind: string }; } catch { return null; } })();
       if (!conv || conv.kind !== 'space') throw new BotFlowsError('Choose a Space you are in to share it with.');
     }
+    // what it asks of other bots, hands to them and listens for: only bots this person may use
+    try { this.net.checkSave(me, def); this.jobs.checkSave(me, def); } catch (err) { throw new BotFlowsError((err as Error).message, 403); }
     // a slash command belongs to the whole office
     if (def.command && scope !== 'office' && existing?.scope !== 'office') throw new BotFlowsError('A slash command is for office-wide bots. Share it with the office, or leave the command out.');
     if (def.command) { const why = this.commandTaken(def.command, def.name); if (why) throw new BotFlowsError(why, 409); }
@@ -1346,6 +1575,30 @@ export class BotFlows {
         admin();
         this.removeFlow(String(d.name ?? ''), me.id);
         return { ok: true } satisfies Ops['admin.botflows.remove']['res'];
+      // ---------------------------------------------------------- bots talking to bots
+      case 'botnet.skills':
+        if (me.role === 'guest' || me.role === 'bot') throw new BotFlowsError('Guests cannot make bots.', 403);
+        return this.net.skillsFor(me.id, typeof d.flow === 'string' ? d.flow : undefined) satisfies Ops['botnet.skills']['res'];
+      case 'botnet.try': {
+        if (me.role === 'guest' || me.role === 'bot') throw new BotFlowsError('Guests cannot make bots.', 403);
+        const w = d.with && typeof d.with === 'object' && !Array.isArray(d.with) ? Object.fromEntries(Object.entries(d.with as Record<string, unknown>).slice(0, 10).map(([k, v]) => [k, String(v ?? '')])) : {};
+        const r = await this.net.ask({ from: '__test', person: me, trail: [], group: `try:${me.id}`, dry: true, ownerOverride: me.id }, { skill: String(d.skill ?? ''), with: w }, {});
+        return { ok: r.ok, answer: r.answer, values: r.values, words: r.words, reason: r.reason } satisfies Ops['botnet.try']['res'];
+      }
+      case 'botnet.retry': {
+        try { await this.retryAsk(me, String(d.hopId ?? '')); } catch (err) { if (err instanceof BotNetError) throw new BotFlowsError(err.message); throw err; }
+        const hop = this.net.hop(String(d.hopId ?? ''));
+        if (!hop) throw new BotFlowsError('That was not found.', 404);
+        return { ok: true, hop } satisfies Ops['botnet.retry']['res'];
+      }
+      case 'botnet.map':
+        if (me.role === 'guest' || me.role === 'bot') throw new BotFlowsError('Guests cannot see the bot network.', 403);
+        return this.net.map(me, d.scope === 'office' ? 'office' : 'mine') satisfies Ops['botnet.map']['res'];
+      case 'botnet.edge':
+        try { return { exchanges: this.net.edge(me, String(d.from ?? ''), String(d.to ?? '')) } satisfies Ops['botnet.edge']['res']; } catch (err) { if (err instanceof BotNetError) throw new BotFlowsError(err.message, 403); throw err; }
+      case 'botjob.sheet': case 'botjob.set': case 'botjob.run': case 'botjob.history': case 'botjob.calendar': case 'admin.botjob.holidays':
+        if (me.role === 'guest' || me.role === 'bot') throw new BotFlowsError('Guests cannot schedule bots.', 403);
+        try { return await this.jobs.handle(op, me, d); } catch (err) { if (err instanceof Error && err.name === 'BotJobsError') throw new BotFlowsError(err.message, 403); throw err; }
     }
     return undefined;
   }

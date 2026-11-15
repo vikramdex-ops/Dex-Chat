@@ -6,6 +6,7 @@
 // test run (which plays every part on one screen), so both say and do exactly the same.
 import type { BotFlowAnswer, BotFlowDefinition, BotFlowRole, BotFlowStage, BotFlowStageAction, BotFlowStep, BotFlowTrack, BotItem, BotItemEvent, BotItemStatus, BotRegisterView, BotTrackView, BotWho } from './bots.ts';
 import { BotFlowError, renderTemplate } from './botflow-engine.ts';
+import { checkHandoff } from './botnet.ts';
 
 const ID_RE = /^[A-Za-z][\w-]{0,39}$/;
 const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -23,6 +24,8 @@ const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.repl
 function checkWho(v: unknown, where: string, saves: Map<string, BotFlowStep>, roles: Record<string, BotFlowRole>): BotWho {
   const w = str(v, 50);
   if (w === 'requester' || w === 'lead') return w;
+  // a stage that waits on another bot
+  if (/^bot:[a-z][a-z0-9-]{1,39}$/.test(w)) return w;
   if (w.startsWith('role:')) {
     if (!roles[w.slice(5)]) throw new BotFlowError(`${where}: "who" names the role "${w.slice(5)}", which is not in "roles".`);
     return w;
@@ -50,6 +53,7 @@ function checkAction(v: unknown, where: string): BotFlowStageAction {
   if (ask) out.ask = ask;
   if (r.needsChecks === true) out.needsChecks = true;
   if (r.tone === 'go' || r.tone === 'back' || r.tone === 'stop') out.tone = r.tone;
+  if (r.handoff !== undefined && r.handoff !== null) out.handoff = checkHandoff(r.handoff, where);
   return out;
 }
 
@@ -120,6 +124,15 @@ export function checkTrack(raw: unknown, saves: Map<string, BotFlowStep>): BotFl
       stage.limit = { ...(by ? { by } : {}), seats, otherwise };
     }
     if (typeof x.task === 'boolean') stage.task = x.task;
+    if (stage.who.startsWith('bot:')) {
+      // waiting on another bot: handed to it, and back through one of this stage's buttons
+      const h = checkHandoff({ ...(x.handoff && typeof x.handoff === 'object' ? x.handoff : {}), to: stage.who.slice(4) }, where, { stage: true });
+      const go = actions.find((a) => a.tone === 'go') ?? actions[0];
+      const stop = actions.find((a) => a.tone === 'stop') ?? go;
+      const back = { done: h.back?.done ?? go.id, stopped: h.back?.stopped ?? stop.id };
+      for (const k of ['done', 'stopped'] as const) if (!actions.some((a) => a.id === back[k])) throw new BotFlowError(`${where}: when it comes back ${k}, it presses "${back[k]}", which is not one of its buttons.`);
+      stage.handoff = { ...h, back };
+    } else if (x.handoff !== undefined && x.handoff !== null) throw new BotFlowError(`${where}: only a stage that waits on another bot ("who": "bot:<name>") hands over.`);
     return stage;
   });
   for (const s of stages) for (const a of s.actions) {
@@ -187,6 +200,7 @@ export function whoWords(def: BotFlowDefinition, who: BotWho): string {
   if (who === 'requester') return 'The person who asked';
   if (who === 'lead') return 'Their lead';
   if (who.startsWith('role:')) return def.track?.roles?.[who.slice(5)]?.label ?? who.slice(5);
+  if (who.startsWith('bot:')) return `The bot ${who.slice(4)}`;
   return def.steps.find((s) => (s.save ?? s.id) === who)?.label ?? who;
 }
 
@@ -252,6 +266,27 @@ export function trackAct(def: BotFlowDefinition, item: BotItem, actionId: string
   if (a.to === 'end') {
     const outcome = a.outcome ?? (a.tone === 'stop' ? 'stopped' : 'done');
     return close(after, outcome, a.stamp ?? (outcome === 'stopped' ? 'STOPPED' : 'DONE'), now);
+  }
+  return enterStage(def, after, a.to, now, people);
+}
+
+/**
+ * A stage waiting on another bot gets its answer: the other bot's request closed done or
+ * stopped, and this stage's button for that is pressed for it, with the other bot's stamp and
+ * last note as the note.
+ */
+export function trackHandBack(def: BotFlowDefinition, item: BotItem, flow: string, outcome: 'done' | 'stopped', words: string, now: number, people: TrackPeople): BotItem {
+  if (item.status !== 'open') throw new BotFlowError(`${item.ref} is already closed.`);
+  const stage = stageOf(def, item.stage);
+  if (!stage || stage.who !== `bot:${flow}` || !stage.handoff?.back) throw new BotFlowError(`${item.ref} is not waiting for that bot.`);
+  const a = stage.actions.find((x) => x.id === stage.handoff!.back![outcome]);
+  if (!a) throw new BotFlowError('That button is not on this stage any more.');
+  const text = str(words, 2000);
+  const history = [...item.history, ev({ at: now, by: null, stage: stage.id, action: a.id, label: a.label, ...(text ? { note: text } : {}), to: a.to })];
+  const after: BotItem = { ...item, history, updatedAt: now, vars: text ? { ...item.vars, note: { value: text, label: text } } : item.vars };
+  if (a.to === 'end') {
+    const o = a.outcome ?? (a.tone === 'stop' ? 'stopped' : 'done');
+    return close(after, o, a.stamp ?? (o === 'stopped' ? 'STOPPED' : 'DONE'), now);
   }
   return enterStage(def, after, a.to, now, people);
 }

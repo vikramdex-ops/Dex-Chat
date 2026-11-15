@@ -23,6 +23,8 @@
     "./botflows": "./src/botflow-engine.ts",
     "./botmaker": "./src/botmaker.ts",
     "./bottrack": "./src/botflow-track.ts",
+    "./botnet": "./src/botnet.ts",
+    "./botjobs": "./src/botjobs.ts",
     "./bot-describe": "./src/bot-describe.ts",
     "./miniapp": "./src/miniapp.ts",
     "./bots": "./src/bots.ts",

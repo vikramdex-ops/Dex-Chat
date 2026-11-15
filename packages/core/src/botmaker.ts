@@ -7,7 +7,7 @@ import { BotFlowError, checkAnswer, checkInput, doneLine, validateFlow, effectiv
 import type { AnswerContext, BotFlowVars, RunLike } from './botflow-engine.ts';
 import { mainWay, personAnswer, stageOf, trackAct, trackOpen, trackTick, trackView, trackWithdraw } from './botflow-track.ts';
 import type { TrackPeople } from './botflow-track.ts';
-import { DRAWING_CHECK, LATE_WORK, PLOT_REQUEST, SITE_VISIT, SOFTWARE_SEAT, TECHNICAL_QUERY } from './bot-templates.ts';
+import { DRAWING_CHECK, FRIDAY_TIMESHEET, LATE_WORK, PLOT_REQUEST, SITE_VISIT, SOFTWARE_SEAT, TECHNICAL_QUERY, TQ_CHASER } from './bot-templates.ts';
 
 // ---------------------------------------------------------------- names
 /** A short name from a title: "Plot request" → "plot-request" (2 to 40 characters, a letter first). */
@@ -65,6 +65,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
   SOFTWARE_SEAT,
   LATE_WORK,
   DRAWING_CHECK,
+  TQ_CHASER,
+  FRIDAY_TIMESHEET,
 ];
 
 /** A blank bot to build up from nothing: one question and a reminder at the end. */
@@ -99,6 +101,7 @@ export function describeAction(a: BotFlowAction, def: BotFlowDefinition): string
   if (a.do === 'remind') return `A reminder on your Desk${a.due ? ` on “${label(a.due)}”` : a.dueInDays !== undefined ? ` in ${a.dueInDays} days` : ''}`;
   if (a.do === 'post') return a.to === 'origin' ? 'A post in the Space it was started from' : a.to.startsWith('space:') ? `A post in ${a.to.slice(6)}` : `A message to the person chosen at “${label(a.to.slice(7))}”`;
   if (a.do === 'away') return `Nib marks you away from “${label(a.from)}”${a.to ? ` until “${label(a.to)}”` : ''}: out of office, calendar, leads${a.cover ? ' and the cover' : ''} told`;
+  if (a.do === 'handoff') return `Handed to the bot ${a.to}, with the answers it carries`;
   return 'The integration’s webhook is called with every answer';
 }
 
@@ -149,6 +152,7 @@ function wouldDo(def: BotFlowDefinition, vars: BotFlowVars, summary: string): st
     if (a.do === 'remind') return `Would put a reminder on your Desk: ${fill(a.text)}`;
     if (a.do === 'post') return `Would post ${a.to === 'origin' ? 'in the Space it was started from' : a.to.startsWith('space:') ? `in ${a.to.slice(6)}` : `to ${vars[a.to.slice(7)]?.label || 'no one'}`}`;
     if (a.do === 'away') return `Would mark you away from ${vars[a.from]?.label || 'that day'}${a.to ? ` until ${vars[a.to]?.label || 'you are back'}` : ''}${a.cover ? `, with ${vars[a.cover]?.label || 'no one'} covering` : ''}`;
+    if (a.do === 'handoff') return `Would hand it to the bot ${a.to}, with the answers it carries`;
     return 'Would call the webhook with the answers';
   });
 }

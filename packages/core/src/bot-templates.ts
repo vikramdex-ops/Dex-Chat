@@ -324,3 +324,44 @@ export const LATE_WORK: OfficeTemplate = {
     },
   },
 };
+
+// ---------------------------------------------------------------- bots that talk to bots, on a schedule
+/** Asks the TQ bot (Technical query) for old queries; every Monday it tells the lead when there are any. */
+export const TQ_CHASER: OfficeTemplate = {
+  id: 'tq-chaser', title: 'Weekly TQ chaser', about: 'Every Monday it asks the TQ bot which queries are older than ten days, and tells your lead when there are any.',
+  definition: {
+    name: 'tq-chaser', title: 'Weekly TQ chaser', description: 'Asks the TQ bot for old queries, and chases them with your lead every Monday.',
+    persona: persona('rfi', 'indigo', 'Every Monday it asks the TQ bot which queries are older than ten days, and tells your lead when there are any.', 'brief'),
+    keywords: ['old tqs', 'chase'],
+    steps: [
+      { id: 'days', label: 'Older than', prompt: 'Older than how many days?', input: { kind: 'text', validate: { type: 'number', integer: true, min: 1, max: 90 }, suggestions: ['5', '10', '20'] } },
+      { id: 'old', label: 'Old TQs', prompt: 'How many TQs are older than {{days}} days?', input: { kind: 'text', validate: { type: 'number', integer: true, min: 0, max: 999 } }, ask: { skill: 'rfi-log.open', with: { older: '{{days}}' } } },
+    ],
+    finish: [],
+    done: 'TQs older than {{days}} days: {{old}}. {{old.refs}}',
+    jobs: [{
+      id: 'monday', title: 'Monday chase', when: 'every Monday at 10:00', missed: 'once',
+      do: { do: 'check', ask: { skill: 'rfi-log.open', with: { older: '10' } }, if: { var: 'result.count', gt: 0 }, tell: 'lead', text: '{{result.count}} TQs are older than 10 days: {{result.refs}}. Could they be chased this week?' },
+    }],
+  },
+};
+
+/** Every Friday at 17:00 it asks the maker's team for their week's hours; each person's lead comes from the Directory. */
+export const FRIDAY_TIMESHEET: OfficeTemplate = {
+  id: 'friday-timesheet', title: 'Friday timesheet', about: 'Every Friday at 17:00 it asks your team for their hours on each job, and sends them to their lead.',
+  definition: {
+    name: 'friday-timesheet', title: 'Friday timesheet', description: 'Hours on each job this week, sent to your lead.',
+    persona: persona('clipboard', 'teal', 'Every Friday at 17:00 it asks your team for their hours on each job, and sends them to their lead.', 'warm'),
+    keywords: ['timesheet', 'hours'],
+    steps: [
+      { id: 'job', label: 'Job', prompt: 'Which job did you work on most this week?', input: { kind: 'text', placeholder: 'P-12513', validate: JOB, suggest: 'jobs' } },
+      { id: 'hours', label: 'Hours', prompt: 'How many hours on {{job}}?', input: { kind: 'text', validate: { type: 'number', min: 0, max: 80 }, suggestions: ['8', '16', '24', '40'] } },
+      { id: 'other', label: 'Other work', prompt: 'Anything else, with the hours? (optional)', input: { kind: 'text', multiline: true, optional: true } },
+      { id: 'lead', label: 'Lead', prompt: 'Who is your lead?', input: { kind: 'person' }, ask: { skill: 'directory.lead', with: { person: '{{user.value}}' } } },
+      { id: 'ok', prompt: 'Send this to {{lead}}?\n\n{{summary}}', input: { kind: 'confirm', yes: 'Send my hours', no: 'Change something' }, branches: [{ if: { equals: 'no' }, goto: 'job' }] },
+    ],
+    finish: [{ do: 'post', to: 'person:lead', text: 'Timesheet from {{user}} for this week:\n\n{{summary}}' }],
+    done: 'Sent to {{lead}}. Have a good weekend.',
+    jobs: [{ id: 'friday', title: 'Friday hours', when: 'every Friday at 17:00', missed: 'skip', do: { do: 'start', people: { from: 'team' } } }],
+  },
+};

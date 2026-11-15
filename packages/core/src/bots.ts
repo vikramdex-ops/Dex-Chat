@@ -86,6 +86,12 @@ export interface BotFlowStep {
   branches?: BotFlowBranch[];
   /** The next step when no branch applies: a step id or "end" (the following step when left out). */
   next?: string;
+  /**
+   * Ask another bot instead of the person (docs/BOT-NETWORK.md): the answer is kept under the
+   * step's variable (`{{seat}}`, and each output as `{{seat.free}}`). The step's own prompt and
+   * input are the fallback when the bot cannot answer (onFail "ask", the default).
+   */
+  ask?: BotAsk;
 }
 
 export type BotFlowAction =
@@ -101,7 +107,9 @@ export type BotFlowAction =
    * Mark the person who answered away (Nib's leave note, docs/NIB.md §6): `from` and `to` name date variables (`to` is the
    * day they are back), `cover` and `lead` person variables, `kind` and `note` any answers.
    */
-  | { do: 'away'; from: string; to?: string; cover?: string; lead?: string; kind?: string; note?: string };
+  | { do: 'away'; from: string; to?: string; cover?: string; lead?: string; kind?: string; note?: string }
+  /** Hand the request on to another bot, with answers carried across (docs/BOT-NETWORK.md). */
+  | ({ do: 'handoff' } & BotHandoff);
 
 // ---------------------------------------------------------------- a bot's own identity
 /** How a bot words the phrases it says itself (the steps' own questions are the author's). */
@@ -169,6 +177,10 @@ export interface BotFlowDefinition {
   persona?: BotPersona;
   /** After it is sent: each request is tracked through stages where other people act (see BotFlowTrack). */
   track?: BotFlowTrack;
+  /** Talking to other bots: whose bots may ask it, whether it takes handoffs, what it listens for (docs/BOT-NETWORK.md). */
+  network?: BotNetwork;
+  /** Scheduled jobs, written in plain words ("every Monday at 10:00"). */
+  jobs?: BotJob[];
 }
 
 // ---------------------------------------------------------------- after it is sent: tracked requests
@@ -199,6 +211,8 @@ export interface BotFlowStageAction {
   needsChecks?: boolean;
   /** How the button looks: go (the main way on), back (returns it), stop (ends it short). */
   tone?: 'go' | 'back' | 'stop';
+  /** Pressing it also hands the request to another bot (a site visit running late → the late work bot). */
+  handoff?: BotHandoff;
 }
 
 export interface BotFlowStage {
@@ -221,6 +235,12 @@ export interface BotFlowStage {
   limit?: { by?: string; seats: Record<string, number>; otherwise: number };
   /** A Desk task for the person acting (on unless they are the person who asked). */
   task?: boolean;
+  /**
+   * who "bot:<name>": the stage waits on another bot. The request is handed to it with `carry`;
+   * when the other bot's request closes, `back.done` (or `back.stopped`) names the button of this
+   * stage that is pressed for it, with the other bot's stamp and last note as {{note}}.
+   */
+  handoff?: BotHandoff;
 }
 
 /** A person the bot's maker names once (the plot room, document control); the maker until chosen. */
@@ -330,7 +350,7 @@ export interface BotTrackView {
   status: BotItemStatus;
   stamp: string | null;
   /** The strip across the card: each stage on the main way, and where it is. */
-  stages: Array<{ id: string; label: string; state: 'done' | 'here' | 'todo' | 'returned'; round?: number }>;
+  stages: Array<{ id: string; label: string; state: 'done' | 'here' | 'todo' | 'returned'; round?: number; bot?: BotStageBot }>;
   stage: { id: string; label: string; round: number; prompt: string; who: string | null; whoNote: string | null; since: number; due: number | null; overdue: boolean; checklist: string[]; checks: number[] } | null;
   requesterId: string;
   lines: Array<{ label: string; value: string }>;
@@ -452,7 +472,7 @@ export interface BotSession {
 
 /** What a message from an integration shows as an interactive card. */
 export interface BotFlowCard {
-  kind: 'step' | 'resume' | 'menu' | 'offer' | 'summary' | 'done' | 'track' | 'register';
+  kind: 'step' | 'resume' | 'menu' | 'offer' | 'summary' | 'done' | 'track' | 'register' | 'relay';
   botId: string;
   sessionId: string | null;
   /** Whose conversation it is: only they can answer. */
@@ -493,11 +513,217 @@ export interface BotFlowCard {
   track?: BotTrackView | null;
   /** register: the bot's requests in one card. */
   register?: BotRegisterView | null;
+  /** relay: bots asking and handing to each other for this person, as a loop diagram. */
+  relay?: BotRelayView | null;
   /** resume: when the conversation was started and last touched. */
   startedAt?: number;
   updatedAt?: number;
   expiresAt?: number;
 }
+
+// ---------------------------------------------------------------- bots talking to bots (docs/BOT-NETWORK.md)
+/** The kinds of value a skill takes and gives. */
+export type BotSkillKind = 'text' | 'number' | 'person' | 'date' | 'yesno' | 'list';
+export interface BotSkillField { id: string; label: string; kind: BotSkillKind; optional?: boolean; options?: string[] }
+
+/**
+ * A question (or, with effect "act", a small errand) a bot publishes for other bots: named inputs
+ * and outputs. Tracked bots publish theirs from their own stages (how many are open, is a seat
+ * free, release my seats); Nib, the Directory and the office calendar publish system skills.
+ */
+export interface BotSkill {
+  /** "<bot>.<skill>": licence-seat.seats, nib.away, directory.lead */
+  id: string;
+  /** The bot that answers: a flow's name, or nib, directory, calendar. */
+  bot: string;
+  botTitle: string;
+  /** The question as the maker reads it ("Is a seat free?"). */
+  title: string;
+  /** The caption on the relay line ("SEAT?"). */
+  short: string;
+  about: string;
+  inputs: BotSkillField[];
+  outputs: BotSkillField[];
+  /** The output that answers it in a word (the step's own answer). */
+  main: string;
+  /** read: asks; act: changes something, only for the person the flow runs for. */
+  effect: 'read' | 'act';
+  /** Nib, the Directory and the calendar. */
+  system?: boolean;
+  /** Any bot in the office may ask it (an office-wide bot that shares its skills). */
+  public?: boolean;
+}
+
+/** A step (or a job) asking a skill. `with` fills its inputs from {{placeholders}}. */
+export interface BotAsk {
+  skill: string;
+  with?: Record<string, string>;
+  /** When the other bot cannot answer: ask the person the step's own question (default), carry on without it, or stop. */
+  onFail?: 'ask' | 'skip' | 'stop';
+}
+
+/** Handing a request to another bot: the answers it carries, where it starts there, and what happens when it comes back. */
+export interface BotHandoff {
+  /** The other bot's flow name. */
+  to: string;
+  /** Its answers, keyed by its step variables, from this bot's {{placeholders}}. Left out: answers with the same names. */
+  carry?: Record<string, string>;
+  /** A stage of the other bot's track to start at (its earlier stages already happened here). */
+  start?: string;
+  /** A stage waiting on the bot: the button pressed when it comes back done, or stopped. */
+  back?: { done?: string; stopped?: string };
+}
+
+/** Listening to another bot ("when a DC request is issued", "when someone goes on leave"). */
+export interface BotSubscription {
+  id: string;
+  /** "<flow>.opened", "<flow>.closed", "<flow>.stage.<stage id>", or "nib.away". */
+  on: string;
+  /** closed: only with this stamp ("ISSUED"). */
+  stamp?: string;
+  /** start: this bot's flow for the person it is about; tell: a line to this bot's maker; ask: a skill of another bot. */
+  do: 'start' | 'tell' | 'ask';
+  carry?: Record<string, string>;
+  text?: string;
+  ask?: BotAsk;
+}
+
+export interface BotNetwork {
+  /**
+   * Whose bots may ask its skills: the bots of anyone who may use it (users, the default; for an
+   * office-wide bot that is every bot in the office), or only its maker's own bots (owner).
+   */
+  share?: 'owner' | 'users';
+  /** Takes requests handed over by other bots (on unless set false). */
+  accept?: boolean;
+  on?: BotSubscription[];
+}
+
+/** One stage cell that waits on another bot: its mark and how its request stands now. */
+export interface BotStageBot { flow: string; title: string; mark: BotMark | null; colour: BotColour | null; ref: string | null; label: string; status: 'pending' | 'open' | 'done' | 'stopped' | 'failed' }
+
+export type BotLinkKind = 'query' | 'handoff' | 'event';
+export type BotLinkStatus = 'pending' | 'ok' | 'returned' | 'refused' | 'failed' | 'timeout' | 'loop' | 'limited';
+
+/** One hop between bots, as a relay card or the network sheet shows it. */
+export interface BotHop {
+  id: string;
+  kind: BotLinkKind;
+  from: string;
+  to: string;
+  /** What was asked or handed over ("SEAT? CAESAR II", "PLT · ISO-1001 rev C"). */
+  ask: string;
+  /** What came back ("1 free", "PLT-0004"), or null while it waits. */
+  answer: string | null;
+  status: BotLinkStatus;
+  /** Why it was refused or failed, in plain words. */
+  reason: string | null;
+  at: number;
+  ms: number | null;
+  /** A handoff that came back: when, the stamp and the last note. */
+  back: { at: number; stamp: string | null; words: string } | null;
+  /** The other bot's request number, for a handoff. */
+  ref: string | null;
+  canRetry: boolean;
+}
+
+/** A bot as an instrument tag on a drawing. */
+export interface BotTag { key: string; title: string; mark: BotMark | null; colour: BotColour | null; tag: string; system: boolean; /** Its identity in conversations (to open its conversation). */ botId: string | null }
+
+export interface BotRelayView {
+  group: string;
+  tags: BotTag[];
+  hops: BotHop[];
+  /** A newer relay card for this run is further down this conversation. */
+  moved?: boolean;
+}
+
+/** The bot network sheet: every bot as a tag, connections as routed lines weighted by traffic. */
+export interface BotNetMap {
+  scope: 'mine' | 'office';
+  nodes: Array<BotTag & { ownerId: string | null; scopeOf: BotScope | 'system'; mine: boolean }>;
+  edges: Array<{ from: string; to: string; kinds: BotLinkKind[]; declared: boolean; count: number; failures: number; lastAt: number | null }>;
+  at: number;
+}
+
+export interface BotNetExchange { id: string; kind: BotLinkKind; at: number; ask: string; answer: string | null; status: BotLinkStatus; reason: string | null; ms: number | null; userId: string | null }
+
+// ---------------------------------------------------------------- scheduled bot jobs
+/** Who a job is for: the people of a Space, a department, named people, or the maker's own team. */
+export type BotJobPeople =
+  | { from: 'space'; space: string }
+  | { from: 'department'; department: string }
+  | { from: 'people'; people: string[] }
+  | { from: 'team' };
+
+export type BotJobAction =
+  /** Start this bot's conversation for each person ("ask the Piping team for timesheet hours"). */
+  | { do: 'start'; people: BotJobPeople }
+  /** Post the bot's register (tracked bots), where its register goes. */
+  | { do: 'register' }
+  /** Ask a skill; act only when the condition holds ("if any TQ is older than 10 days, tell the lead"). */
+  | { do: 'check'; ask: BotAsk; if: BotFlowCondition; tell: string; text: string }
+  /** Ask a skill and post the answer. */
+  | { do: 'ask'; ask: BotAsk; tell: string; text: string }
+  /** A reminder on each person's Desk. */
+  | { do: 'remind'; people: BotJobPeople; text: string };
+
+export interface BotJob {
+  id: string;
+  title: string;
+  /** The schedule in plain words ("every weekday at 9:15"); parsed the same way on every PC and the hub. */
+  when: string;
+  do: BotJobAction;
+  /** When the hub was off at the time: skip the runs it missed, or catch up once. */
+  missed?: 'skip' | 'once';
+  /** Leave people who are on leave that day out (on unless set false). */
+  leave?: boolean;
+}
+
+export type BotJobOutcome = 'RAN' | 'SKIPPED' | 'FAILED' | 'DRY';
+
+export interface BotJobRun {
+  id: string;
+  flow: string;
+  job: string;
+  /** When it was due. */
+  at: number;
+  ranAt: number;
+  outcome: BotJobOutcome;
+  /** In plain words: "Started for 6 people; 1 on leave left out", "the hub was off". */
+  note: string;
+  /** What it did or would do (a dry run lists it). */
+  lines: string[];
+  by: string | null;
+}
+
+/** A job's lane on the job sheet. */
+export interface BotJobLane {
+  flow: string;
+  job: string;
+  title: string;
+  botTitle: string;
+  mark: BotMark | null;
+  colour: BotColour | null;
+  ownerId: string | null;
+  when: string;
+  /** What was understood, in words ("Every Monday at 10:00"). */
+  words: string;
+  paused: boolean;
+  /** The next run that will be skipped (Skip next). */
+  skipAt: number | null;
+  /** Runs moved once: from → to. */
+  moved: Array<{ from: number; to: number }>;
+  next: number[];
+  /** The next run, wherever it falls (the countdown). */
+  following: number | null;
+  past: BotJobRun[];
+  /** Why it cannot run (its bot is paused, a Space is gone). */
+  problem: string | null;
+  canEdit: boolean;
+}
+
+export interface BotJobSheet { scope: 'mine' | 'office' | 'bot'; from: number; to: number; lanes: BotJobLane[]; holidays: Array<{ date: string; name: string }>; now: number; tzOffset: number }
 
 // ---------------------------------------------------------------- tools (mini-apps)
 /** What a tool may do. Every use of `post` and `files` is confirmed by the person. */
@@ -609,6 +835,28 @@ export interface BotOps {
   /** Approve or turn down a member's bot for the whole office (or a newer revision of one). */
   'admin.botflows.review': { req: { name: string; approve: boolean; note?: string }; res: BotFlowInfo };
 
+  /** Skills this person's bots may ask (the maker's blocks): the system's, their own bots', and office-wide ones. */
+  'botnet.skills': { req: { flow?: string }; res: BotSkill[] };
+  /** Ask a skill now as yourself (the bot maker's test run; an errand is described, not done). */
+  'botnet.try': { req: { skill: string; with?: Record<string, string> }; res: { ok: boolean; answer: BotFlowAnswer | null; values: Record<string, BotFlowAnswer>; words: string; reason: string | null } };
+  /** Ask a failed hop again (the person it was for). */
+  'botnet.retry': { req: { hopId: string }; res: { ok: true; hop: BotHop } };
+  /** The bot network sheet: your own bots, or (administrators) the whole office. */
+  'botnet.map': { req: { scope?: 'mine' | 'office' }; res: BotNetMap };
+  /** Recent exchanges along one line of the sheet. */
+  'botnet.edge': { req: { from: string; to: string; scope?: 'mine' | 'office' }; res: { exchanges: BotNetExchange[] } };
+  /** The job sheet: one bot's jobs, your bots' jobs, or (administrators) the office's. */
+  'botjob.sheet': { req: { scope?: 'mine' | 'office' | 'bot'; flow?: string; from?: number; to?: number }; res: BotJobSheet };
+  /** Pause or resume a job, skip its next run, or move one run once. */
+  'botjob.set': { req: { flow: string; job: string; paused?: boolean; skipNext?: boolean; unskip?: boolean; move?: { from: number; to: number } | null }; res: BotJobLane };
+  /** Run a job now, or a dry run that shows what it would do without sending anything. */
+  'botjob.run': { req: { flow: string; job: string; dry?: boolean }; res: BotJobRun };
+  /** A job's run history, newest first. */
+  'botjob.history': { req: { flow: string; job: string }; res: BotJobRun[] };
+  /** The office's holidays (jobs and reminders skip them) and its working days. */
+  'botjob.calendar': { req: void; res: { holidays: Array<{ date: string; name: string }>; workdays: number[]; tzOffset: number; hours: { from: string; to: string } } };
+  'admin.botjob.holidays': { req: { holidays: Array<{ date: string; name: string }> }; res: { holidays: Array<{ date: string; name: string }> } };
+
   /** Tools members may add (approved and switched on). */
   'miniapp.list': { req: void; res: MiniAppInfo[] };
   /** Add a tool to a conversation: a message with its card. */
@@ -633,6 +881,10 @@ export interface BotEvents {
   /** The tools on offer changed (approved, switched off). */
   'miniapp.catalog': { changed: true };
   'botflow.catalog': { changed: true };
+  /** A message passed between bots (to administrators and the makers of both bots): the network sheet pulses. */
+  'botnet.pulse': { from: string; to: string; kind: BotLinkKind; status: BotLinkStatus; at: number };
+  /** A job ran, was skipped, failed or was changed (to its maker and administrators). */
+  'botjob.changed': { flow: string; job: string };
 }
 
 /** Files a tool may be shown (a conversation's shared files). */

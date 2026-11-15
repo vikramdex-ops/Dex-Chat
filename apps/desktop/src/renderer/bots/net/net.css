@@ -1,0 +1,188 @@
+/* Bots talking to bots, drawn as instrument loops (the Meet page's readiness tags): ISA bubbles
+   with their letters above the bar and the loop number below, signal lines between them (a data
+   link: a line with small circles; a handoff: a solid line with an arrow; listening: dash-dot),
+   stamps in ruled boxes. Teal for structure; amber only while something is on its way. */
+
+/* ------------------------------------------------------------ the relay card */
+.flow-card.relay.live { box-shadow: inset 2px 0 0 var(--amber); }
+.rl { display: grid; gap: 6px; padding: 4px 12px 10px; }
+.rl-svg { display: block; max-width: 100%; height: auto; margin: 2px auto 0; overflow: visible; color: var(--accent); }
+.rl-bub { fill: var(--layer-solid); stroke: currentColor; stroke-width: 1.3; }
+.rl-tag.sys .rl-bub { stroke-dasharray: 3 2; color: var(--text-2); }
+.rl-tag.sys { color: var(--text-2); }
+.rl-tag.live .rl-bub { stroke: var(--amber); animation: rl-await 1.6s ease-in-out infinite; }
+.rl-mid { stroke: currentColor; stroke-width: 1; }
+.rl-tl { font: 700 9.5px var(--font-mono); letter-spacing: .06em; fill: var(--text); }
+.rl-tn { font: 500 7.5px var(--font-mono); fill: var(--text-3); letter-spacing: .08em; }
+.rl-swatch { stroke: var(--layer-solid); stroke-width: 1; }
+.rl-name { font: 500 10px var(--font-body); fill: var(--text-2); }
+.rl-line { fill: none; stroke: var(--accent); stroke-width: 1.2; }
+.rl-evt .rl-line { stroke-dasharray: 6 2 1.5 2; }
+.rl-hop.bad .rl-line { stroke: var(--text-3); stroke-dasharray: 2 3; }
+.rl-hop.wait .rl-line { stroke: var(--amber); }
+.rl-link { fill: var(--layer-solid); stroke: var(--accent); stroke-width: 1; }
+.rl-arrow { fill: none; stroke: var(--accent); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.rl-cap { font: 700 8.5px var(--font-mono); letter-spacing: .08em; fill: var(--accent-ink); }
+.rl-data { font-weight: 500; fill: var(--text-2); letter-spacing: .02em; }
+.rl-ans { font: 600 9px var(--font-mono); fill: var(--text); }
+.rl-pulse { fill: var(--amber); stroke: var(--layer-solid); stroke-width: 1.5; }
+.rl-stamp-box { fill: var(--layer-solid); stroke: var(--accent); stroke-width: 1; transform: rotate(-3deg); }
+.rl-stamp-t { font: 700 7.5px var(--font-mono); letter-spacing: .12em; fill: var(--accent-ink); transform: rotate(-3deg); }
+.rl-hop.bad .rl-stamp-box { stroke: var(--danger); }
+.rl-hop.bad .rl-stamp-t { fill: var(--danger); }
+.rl-hop.wait .rl-stamp-box { stroke: var(--amber); }
+.rl-hop.wait .rl-stamp-t { fill: var(--amber-ink); }
+@keyframes rl-await { 50% { stroke-width: 2.4; } }
+
+.rl-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--stroke); }
+.rl-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; align-items: baseline; gap: 2px 8px; padding: 6px 0; border-bottom: 1px solid var(--stroke); font-size: 12px; }
+.rl-no { font-size: 10px; color: var(--text-3); }
+.rl-who { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-what { grid-column: 2; font-size: 10.5px; color: var(--accent-ink); overflow-wrap: anywhere; }
+.rl-res { grid-column: 2 / 4; color: var(--text-2); overflow-wrap: anywhere; }
+.rl-mini-stamp { grid-row: 1; grid-column: 3; padding: 0 5px; border: 1px solid var(--accent); font: 700 8.5px/15px var(--font-mono); letter-spacing: .1em; color: var(--accent-ink); }
+.rl-mini-stamp.bad { border-color: var(--danger); color: var(--danger); }
+.rl-mini-stamp.wait { border-color: var(--amber); color: var(--amber-ink); }
+.rl-at { grid-row: 1; grid-column: 4; font-size: 10px; }
+.rl-back { grid-column: 2 / -1; display: flex; gap: 5px; align-items: center; font-size: 11.5px; color: var(--accent-ink); }
+.rl-back svg { transform: scaleX(-1); }
+.rl-retry, .rl-open { grid-column: 2 / -1; justify-self: start; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rl-tag.live .rl-bub { animation: none; stroke-width: 2.2; }
+  .rl-pulse { display: none; }
+}
+
+/* ------------------------------------------------------------ sheets: the bot network and the job sheet */
+.net-scrim { z-index: 17; }
+.net-sheet {
+  position: absolute; inset: 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); background: var(--layer-solid); box-shadow: var(--shadow-2);
+  animation: slide-in 260ms var(--ease);
+}
+.net-sheet:focus-visible { outline: none; }
+.net-tb { display: flex; align-items: stretch; flex: none; flex-wrap: wrap; border-bottom: 1px solid var(--stroke-strong); min-height: 60px; }
+.net-tb > * + * { border-left: 1px solid var(--stroke); }
+.net-tb-mark { display: grid; place-items: center; width: 60px; color: var(--accent); }
+.net-tb-name { flex: 1; min-width: 160px; display: grid; align-content: center; gap: 2px; padding: 8px 16px; }
+.net-cap { font: 600 9.5px/1.3 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+.net-tb-name h2 { margin: 0; font: 600 19px/1.2 var(--font-display); }
+.net-tb-cells { display: flex; margin: 0; }
+.net-tb-cells > div { display: grid; align-content: center; gap: 3px; min-width: 72px; padding: 8px 14px; }
+.net-tb-cells > div + div { border-left: 1px solid var(--stroke); }
+.net-tb-cells dd { margin: 0; font: 500 11.5px var(--font-mono); white-space: nowrap; }
+.net-tb-actions { display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+.net-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.net-body.no-side { grid-template-columns: minmax(0, 1fr); }
+.net-main { min-width: 0; min-height: 0; overflow: auto; padding: 14px 18px 30px; }
+.net-side { min-height: 0; overflow: auto; border-left: 1px solid var(--stroke-strong); background: var(--window); padding: 14px 16px 24px; }
+.net-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; padding: 0; list-style: none; font-size: 11.5px; color: var(--text-2); }
+.net-legend li { display: flex; align-items: center; gap: 6px; }
+.net-legend svg { flex: none; color: var(--accent); }
+.net-empty { display: grid; place-items: center; gap: 8px; padding: 48px 16px; text-align: center; color: var(--text-2); background-image: linear-gradient(var(--stroke) 1px, transparent 1px), linear-gradient(90deg, var(--stroke) 1px, transparent 1px); background-size: 16px 16px; border: 1px solid var(--stroke-strong); }
+
+/* the drawing */
+.nw-wrap { position: relative; border: 1px solid var(--stroke-strong); background:
+  linear-gradient(var(--stroke) 1px, transparent 1px) 0 0 / 24px 24px,
+  linear-gradient(90deg, var(--stroke) 1px, transparent 1px) 0 0 / 24px 24px, var(--layer-solid); }
+.nw-svg { display: block; width: 100%; height: auto; color: var(--accent); }
+.nw-frame { fill: none; stroke: var(--stroke-strong); stroke-width: 1; }
+.nw-frame.heavy { stroke: var(--text-3); stroke-width: 1.6; }
+.nw-ref { font: 600 8px var(--font-mono); fill: var(--text-3); letter-spacing: .1em; }
+.nw-node .rl-bub { stroke-width: 1.4; }
+.nw-node.mine .rl-bub { fill: var(--accent-soft); }
+.nw-node:focus-visible { outline: none; }
+.nw-node:focus-visible .rl-bub, .nw-node.sel .rl-bub { stroke-width: 2.6; }
+.nw-plate { fill: var(--layer-solid); stroke: var(--stroke-strong); stroke-width: 1; }
+.nw-title { font: 600 10.5px var(--font-body); fill: var(--text); }
+.nw-sub { font: 500 8.5px var(--font-mono); fill: var(--text-3); letter-spacing: .08em; }
+.nw-edge { cursor: pointer; }
+.nw-edge .nw-hit { fill: none; stroke: transparent; stroke-width: 14; }
+.nw-edge .nw-line { fill: none; stroke: var(--accent); stroke-linejoin: round; }
+.nw-edge.event .nw-line { stroke-dasharray: 7 3 1.5 3; }
+.nw-edge.query .nw-dots { fill: var(--layer-solid); stroke: var(--accent); stroke-width: 1; }
+.nw-edge.quiet .nw-line { stroke: var(--text-3); opacity: .7; }
+.nw-edge:hover .nw-line, .nw-edge.sel .nw-line, .nw-edge:focus-visible .nw-line { stroke: var(--accent-ink); }
+.nw-edge:focus-visible { outline: none; }
+.nw-edge:focus-visible .nw-hit, .nw-edge.sel .nw-hit { stroke: var(--accent-soft); }
+.nw-count { font: 700 8.5px var(--font-mono); fill: var(--accent-ink); }
+.nw-fail rect { fill: var(--amber-soft); stroke: var(--amber); }
+.nw-fail text { font: 700 8px var(--font-mono); fill: var(--amber-ink); }
+.nw-pulse { fill: var(--amber); stroke: var(--layer-solid); stroke-width: 1.5; }
+.nw-tb { font: 600 8.5px var(--font-mono); fill: var(--text-2); letter-spacing: .08em; }
+.nw-tb-box { fill: var(--layer-solid); stroke: var(--text-3); stroke-width: 1; }
+.nw-list { margin: 16px 0 0; padding: 0; list-style: none; border: 1px solid var(--stroke-strong); }
+.nw-list li + li { border-top: 1px solid var(--stroke); }
+.nw-list button { width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 10px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.nw-list button:hover, .nw-list button[aria-pressed='true'] { background: var(--accent-soft); }
+.nw-kind { font: 700 9px var(--font-mono); letter-spacing: .1em; color: var(--accent-ink); }
+.nw-ex { list-style: none; margin: 10px 0 0; padding: 0; display: grid; }
+.nw-ex li { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; padding: 7px 0; border-bottom: 1px solid var(--stroke); font-size: 12px; }
+.nw-ex .rl-mini-stamp { grid-row: 1; grid-column: 3; }
+.nw-ex-ask { grid-column: 1 / 3; font: 500 11px var(--font-mono); color: var(--accent-ink); overflow-wrap: anywhere; }
+.nw-ex-res { grid-column: 1 / -1; color: var(--text-2); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .nw-pulse { display: none; } }
+
+/* the job sheet: a time ruler, one lane per job, runs as marks on it */
+.js-range { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+.js-now { font: 600 11px var(--font-mono); color: var(--text-2); }
+.js-board { border: 1px solid var(--stroke-strong); background: var(--layer-solid); }
+.js-ruler, .js-lane { display: grid; grid-template-columns: 264px minmax(0, 1fr); }
+.js-legend { margin: 0 0 0 auto; }
+.js-ruler { position: sticky; top: -14px; z-index: 2; background: var(--layer-solid); border-bottom: 1px solid var(--stroke-strong); }
+.js-ruler-cap { padding: 6px 10px; border-right: 1px solid var(--stroke-strong); display: grid; align-content: end; }
+.js-lane + .js-lane { border-top: 1px solid var(--stroke-strong); }
+.js-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; align-content: start; padding: 9px 10px; border-right: 1px solid var(--stroke-strong); min-width: 0; }
+.js-head .bot-tile { grid-row: span 2; }
+.js-title { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.js-words { grid-column: 2; font-size: 11px; color: var(--text-2); }
+.js-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.js-tag { padding: 0 5px; border: 1px solid var(--stroke-strong); font: 700 8.5px/15px var(--font-mono); letter-spacing: .1em; color: var(--text-2); }
+.js-tag.warn { border-color: var(--amber); color: var(--amber-ink); }
+.js-acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.js-track { position: relative; min-height: 64px; overflow: hidden; }
+.js-svg { display: block; width: 100%; height: 100%; min-height: 64px; }
+.js-tick { stroke: var(--stroke); stroke-width: 1; }
+.js-tick.major { stroke: var(--stroke-strong); }
+.js-off { fill: url(#js-hatch); }
+.js-label { font: 600 8.5px var(--font-mono); fill: var(--text-3); letter-spacing: .06em; }
+.js-nowline { stroke: var(--amber); stroke-width: 1.4; }
+.js-nowtag { fill: var(--amber); }
+.js-nowt { font: 700 7.5px var(--font-mono); fill: #2b1a00; letter-spacing: .1em; }
+.js-run { cursor: pointer; }
+.js-run:focus-visible { outline: none; }
+.js-run:focus-visible .js-mk, .js-run.sel .js-mk { stroke-width: 2.4; }
+.js-mk { fill: var(--layer-solid); stroke: var(--accent); stroke-width: 1.3; }
+.js-run.next .js-mk { fill: var(--accent); }
+.js-run.skip .js-mk { stroke-dasharray: 2 2; stroke: var(--text-3); }
+.js-run.moved .js-mk { stroke-dasharray: 3 1.5; }
+.js-run.paused .js-mk { stroke: var(--text-3); }
+.js-moveline { fill: none; stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 3 2; }
+.js-stamp rect { fill: var(--layer-solid); stroke: var(--accent); stroke-width: 1; }
+.js-stamp text { font: 700 7.5px var(--font-mono); letter-spacing: .1em; fill: var(--accent-ink); }
+.js-stamp.SKIPPED rect { stroke: var(--text-3); stroke-dasharray: 2 1.5; }
+.js-stamp.SKIPPED text { fill: var(--text-2); }
+.js-stamp.FAILED rect { stroke: var(--danger); }
+.js-stamp.FAILED text { fill: var(--danger); }
+.js-stamp.DRY rect { stroke-dasharray: 3 2; }
+.js-count { font: 700 8.5px var(--font-mono); fill: var(--accent-ink); }
+.js-pop { position: absolute; z-index: 3; width: min(300px, calc(100% - 16px)); padding: 10px 12px; border: 1px solid var(--stroke-strong); background: var(--layer-solid); box-shadow: var(--shadow-2); font-size: 12px; display: grid; gap: 4px; }
+.js-pop ul { margin: 2px 0 0; padding-left: 16px; display: grid; gap: 2px; color: var(--text-2); }
+.js-detail { margin-top: 14px; border: 1px solid var(--stroke-strong); padding: 12px 14px; display: grid; gap: 6px; box-shadow: inset 3px 0 0 var(--accent); }
+.js-detail ul { margin: 0; padding-left: 16px; display: grid; gap: 2px; font-size: 12.5px; color: var(--text-2); }
+.js-hist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; }
+.js-hist li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--stroke); font-size: 12px; align-items: baseline; }
+
+@media (max-width: 760px) {
+  .net-sheet { inset: 0; border-radius: 0; border: 0; }
+  .net-body { grid-template-columns: minmax(0, 1fr); }
+  .net-side { border-left: 0; border-top: 1px solid var(--stroke-strong); }
+  .net-main { padding: 12px 12px 24px; }
+  .net-tb-cells { display: none; }
+  .js-ruler, .js-lane { grid-template-columns: minmax(0, 1fr); }
+  .js-ruler-cap { display: none; }
+  .js-head { border-right: 0; border-bottom: 1px solid var(--stroke); }
+}
+@media (prefers-reduced-motion: reduce) { .net-sheet { animation: fade var(--med) linear; } }
+
+.nw-side-title { margin: 4px 0 0; font: 600 15px var(--font-display); }

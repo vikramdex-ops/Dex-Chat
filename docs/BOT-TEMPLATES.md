@@ -132,6 +132,20 @@ Anyone writes "register" (or "who has one now") to the bot for the seats; IT get
 
 Admin and security get one list at 16:30 of who stays late, until when, and who needs a cab.
 
+### Weekly TQ chaser (bots talking to bots, on a schedule)
+
+Asks the TQ bot (`rfi-log.open`) how many technical queries are older than the days given, and
+lists the ones the person may see. Its job runs every Monday at 10:00 (caught up once if the hub
+was off) and tells the maker's lead only when there are any. It needs a Technical query bot the
+maker may use; until there is one, saving says so.
+
+### Friday timesheet (a job for a team)
+
+Every Friday at 17:00 it starts for the maker's team (from the Directory; people on leave are left
+out): the job they worked on most, the hours, anything else. Its "Who is your lead?" step asks the
+Directory instead of the person, and the hours are posted to that lead. Both are described in
+[`BOT-NETWORK.md`](BOT-NETWORK.md).
+
 ## Making more
 
 The same engine is in the bot maker for everyone (**Afterwards** part): stages, who acts, the

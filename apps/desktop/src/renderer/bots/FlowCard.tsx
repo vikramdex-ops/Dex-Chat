@@ -10,6 +10,7 @@ import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { BotMarkTile } from './BotMark.tsx';
 import { formatDateTime } from '../time.ts';
 import { RegisterBody, TrackBody } from './TrackCard.tsx';
+import { RelayBody } from './net/RelayCard.tsx';
 import type { TrackDriver } from './TrackCard.tsx';
 
 const req = <K extends OpName>(op: K, data?: Ops[K]['req']) => window.dex.request(op, data);
@@ -192,6 +193,16 @@ export function FlowCardView({ m, meId, users, driver = HUB_DRIVER }: { m: Messa
   }
 
   const track = driver.track ?? HUB_TRACK;
+  if (card.kind === 'relay') {
+    const v = card.relay;
+    const pending = v?.hops.some((h) => h.status === 'pending');
+    return (
+      <div className={`flow-card relay${v?.moved ? ' moved' : ''}${pending ? ' live' : ''}`}>
+        {head(<span className="flow-step mono"><Icon name="branch" size={12} />{v && v.tags.length > 1 ? 'Between bots' : 'Relay'}</span>)}
+        {v ? <RelayBody v={v} retry={driver.test ? undefined : (hopId) => req('botnet.retry', { hopId })} /> : <div className="flow-foot faint">This is no longer available.</div>}
+      </div>
+    );
+  }
   if (card.kind === 'track') {
     const v = card.track;
     if (!v) return <div className="flow-card track">{head(null)}<div className="flow-foot faint">This request is no longer available.</div></div>;

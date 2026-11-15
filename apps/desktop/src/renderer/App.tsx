@@ -51,6 +51,7 @@ import { parseMeetingId } from '@dex/core';
 import { AddToolHost } from './bots/AddTool.tsx';
 import { startBotMarks } from './bots/BotMark.tsx';
 import { BotMakerHost } from './bots/maker/host.tsx';
+import { NetSheetsHost } from './bots/net/host.tsx';
 import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
 import { tr } from './i18n/index.ts';
 import { NibButton, NibHost, openNib } from './nib/NibHost.tsx';
@@ -696,6 +697,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       )}
 
       <BotMakerHost session={session} />
+      <NetSheetsHost session={session} />
       <AutomationsHost session={session} />
       {shortcuts && <ShortcutsSheet lenses={LENSES} onClose={() => setShortcuts(false)} />}
       {palette && (
