@@ -1401,3 +1401,12 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .shortcuts h4 .faint { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .lang-pick { width: auto; min-width: 190px; flex: none; }
 .sheet:focus-visible, .dialog:focus-visible { box-shadow: var(--shadow-2); }
+
+/* the title bar's measured fit (App.tsx useTitlebarFit): tighter lenses, then lenses as icons */
+.titlebar.tb-tight .lens-bar .lens { padding: 0 9px; }
+.titlebar.tb-tight .goto { min-width: 0; }
+.titlebar.tb-tight .goto-hint { display: none; }
+.titlebar.tb-icons .lens-bar .lens-label { display: none; }
+.titlebar.tb-icons .lens-bar .lens { padding: 0 11px; }
+.titlebar.tb-min .brand span, .titlebar.tb-min .conn-text { display: none; }
+.titlebar.tb-min .lens-bar .lens { padding: 0 9px; }

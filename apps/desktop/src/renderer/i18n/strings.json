@@ -1043,7 +1043,7 @@
  "Review again": "bots/BotsAdmin.tsx",
  "revision {0} of an office-wide bot": "bots/BotsAdmin.tsx",
  "Runs on its own": "bots/BotsAdmin.tsx",
- "Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib).": "bots/BotsAdmin.tsx",
+ "Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib & day sheets).": "bots/BotsAdmin.tsx",
  "share with the whole office": "bots/BotsAdmin.tsx",
  "steps · rev": "bots/BotsAdmin.tsx",
  "the hub": "bots/BotsAdmin.tsx",

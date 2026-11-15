@@ -99,7 +99,11 @@ try {
   assert.equal(disk.plain, false, 'no plaintext on disk');
   const keyFile = path.join(userData, 'search-index-keys.bin');
   assert.ok(fs.existsSync(keyFile));
-  assert.ok(!fs.readFileSync(keyFile).toString('latin1').includes('{'), 'the key file is sealed by the system');
+  // sealed means not readable as the JSON it holds (random ciphertext can contain a stray '{' byte)
+  const keyText = fs.readFileSync(keyFile).toString('latin1');
+  let readable = true;
+  try { JSON.parse(keyText); } catch { readable = false; }
+  assert.ok(!readable && !keyText.includes('":"'), 'the key file is sealed by the system');
   await both(b.page, 'dm-02-after-restart-1280');
   // phone width
   const bw = await b.app.browserWindow(b.page);

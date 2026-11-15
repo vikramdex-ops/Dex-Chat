@@ -6019,7 +6019,7 @@
   "Which job did you work on most this week?": "இந்த வாரம் எந்த வேலையில் அதிகம் பணியாற்றினீர்கள்?",
   "Who is your lead?": "உங்கள் லீட் யார்?",
   "Office holidays": "அலுவலக விடுமுறைகள்",
-  "Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib).": "அட்டவணைப் பாட் பணிகள் இந்த நாட்களிலோ, வேலை நாள் அல்லாத நாட்களிலோ ஒருபோதும் ஓடாது (கட்டுப்பாட்டு அறை → நிப்).",
+  "Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib & day sheets).": "அட்டவணைப் பாட் பணிகள் இந்த நாட்களிலோ, வேலை நாள் அல்லாத நாட்களிலோ ஒருபோதும் ஓடாது (கட்டுப்பாட்டு அறை → நிப் & டே ஷீட்கள்).",
   "No holidays yet.": "இன்னும் விடுமுறைகள் இல்லை.",
   "Holiday date": "விடுமுறைத் தேதி",
   "Holiday name": "விடுமுறையின் பெயர்",

@@ -143,6 +143,46 @@ function useTheme(state: AppState | null): void {
   }, [state?.settings, state?.platform]);
 }
 
+
+/**
+ * The title bar fits whatever it holds (lenses, the Room chip, Nib's tile, the window buttons on
+ * Windows): when its parts would overlap, it first tightens the lenses, then shows them as icons, then keeps only the
+ * logo and the connection dot.
+ * Measured, not guessed from the window width, so a new lens or tile cannot push it off screen.
+ */
+function useTitlebarFit(ref: React.RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const bar = ref.current;
+    if (!bar || typeof ResizeObserver === 'undefined') return;
+    let frame = 0;
+    const fits = () => {
+      const mid = bar.querySelector('.titlebar-mid');
+      const right = bar.querySelector('.titlebar-right');
+      if (!mid || !right) return true;
+      const edge = right.getBoundingClientRect().left - 4;
+      if (bar.scrollWidth > bar.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1) return false;
+      return [...mid.children].every((c) => { const b = c.getBoundingClientRect(); return b.width === 0 || b.right <= edge; });
+    };
+    const fit = () => {
+      frame = 0;
+      bar.classList.remove('tb-tight', 'tb-icons', 'tb-min');
+      for (const step of ['tb-tight', 'tb-icons', 'tb-min']) {
+        if (fits()) return;
+        bar.classList.add(step);
+      }
+    };
+    const soon = () => { if (!frame) frame = requestAnimationFrame(fit); };
+    fit();
+    const ro = new ResizeObserver(soon);
+    ro.observe(bar);
+    for (const el of bar.querySelectorAll('.titlebar-mid, .titlebar-right')) ro.observe(el);
+    const mo = new MutationObserver(soon);
+    mo.observe(bar, { childList: true, subtree: true });
+    addEventListener('resize', soon);
+    return () => { ro.disconnect(); mo.disconnect(); removeEventListener('resize', soon); if (frame) cancelAnimationFrame(frame); };
+  }, [ref]);
+}
+
 export function App() {
   const state = useAppState();
   useTheme(state);
@@ -302,6 +342,8 @@ function showKind(kind: 'direct' | 'space'): void {
 }
 
 function Shell({ state, session }: { state: AppState; session: Session }) {
+  const titlebar = useRef<HTMLElement>(null);
+  useTitlebarFit(titlebar);
   const [lens, setLensRaw] = useState<Lens>('pulse');
   // the Switchboard's lens chip follows the Direct and Spaces lenses, and they follow it
   const [chip, setChipRaw] = useState<Chip>('all');
@@ -589,7 +631,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
   return (
     <div className="frame">
-      <header className="titlebar">
+      <header className="titlebar" ref={titlebar}>
         <div className="brand"><img src={logo} alt="" /><span>Dexterity Connect</span></div>
         <div className="titlebar-mid">
           <LensBar lens={lens} setLens={(l) => { setLens(l); setSheet(null); }} onGoTo={() => setPalette(true)} />

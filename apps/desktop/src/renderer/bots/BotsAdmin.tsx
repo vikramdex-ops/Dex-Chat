@@ -115,7 +115,7 @@ function Holidays() {
   return (
     <section className="bots-holidays" aria-labelledby="bots-hol-h">
       <h3 id="bots-hol-h" className="label">Office holidays</h3>
-      <p className="faint" style={{ margin: '0 0 8px', fontSize: 12.5 }}>Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib).</p>
+      <p className="faint" style={{ margin: '0 0 8px', fontSize: 12.5 }}>Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib & day sheets).</p>
       <div className="list">
         {list?.map((h) => (
           <div key={h.date} className="list-row">

@@ -6019,7 +6019,7 @@
   "Which job did you work on most this week?": "इस सप्ताह आपने सबसे ज़्यादा किस जॉब पर काम किया?",
   "Who is your lead?": "आपके लीड कौन हैं?",
   "Office holidays": "ऑफ़िस की छुट्टियाँ",
-  "Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib).": "निर्धारित बॉट जॉब इन दिनों कभी नहीं चलते, न ही उन दिनों जो कार्यदिवस नहीं हैं (कंट्रोल रूम → निब)।",
+  "Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib & day sheets).": "निर्धारित बॉट जॉब इन दिनों कभी नहीं चलते, न ही उन दिनों जो कार्यदिवस नहीं हैं (कंट्रोल रूम → निब और डे शीट)।",
   "No holidays yet.": "अभी कोई छुट्टी नहीं।",
   "Holiday date": "छुट्टी की तारीख",
   "Holiday name": "छुट्टी का नाम",
