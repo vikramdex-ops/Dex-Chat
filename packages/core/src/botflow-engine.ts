@@ -3,6 +3,7 @@
 // cards; the same rules can be read here by anyone writing a flow.
 import type { BotFlowAction, BotFlowAnswer, BotFlowBranch, BotFlowCondition, BotFlowDefinition, BotFlowInput, BotFlowOption, BotFlowStep, BotFlowValidate, BotHours, BotPersona, BotTone } from './bots.ts';
 import { BOT_COLOURS, BOT_GLYPHS, BOT_TONES } from './bots.ts';
+import { checkTrack } from './botflow-track.ts';
 
 export class BotFlowError extends Error {}
 
@@ -111,6 +112,7 @@ export function checkInput(v: unknown, where: string): BotFlowInput {
   }
   if (typeof r.placeholder === 'string' && r.placeholder.trim()) out.placeholder = str(r.placeholder, 120);
   if (r.optional === true && kind !== 'confirm') out.optional = true;
+  if ((kind === 'person' && r.suggest === 'lead') || (kind === 'text' && r.suggest === 'jobs')) out.suggest = r.suggest;
   if (kind === 'text' && Array.isArray(r.suggestions)) {
     const sug = [...new Set(r.suggestions.slice(0, 6).map((x) => str(String(x), 60)).filter(Boolean))];
     if (sug.length) out.suggestions = sug;
@@ -232,6 +234,7 @@ export function validateFlow(raw: unknown, name?: string): BotFlowDefinition {
   if (r.vars && typeof r.vars === 'object') def.vars = Object.fromEntries(Object.entries(r.vars as Record<string, unknown>).slice(0, 40).map(([k, v]) => [str(k, 40), str(String(v), 500)]).filter(([k]) => STEP_ID_RE.test(k)));
   if (typeof r.done === 'string' && r.done.trim()) def.done = str(r.done, 2000);
   if (r.persona !== undefined && r.persona !== null) def.persona = checkPersona(r.persona);
+  if (r.track !== undefined && r.track !== null) def.track = checkTrack(r.track, saves);
   return def;
 }
 
@@ -605,6 +608,8 @@ export interface StepCardData {
   intro?: string;
   lastTime?: BotFlowAnswer;
   lastTimeWords?: string;
+  suggested?: BotFlowAnswer;
+  suggestedWhy?: 'lead';
 }
 
 /**
@@ -612,7 +617,7 @@ export interface StepCardData {
  * question with its placeholders filled, the position, the earlier answer after Back, the
  * greeting on a fresh start, and last time's answer when the bot remembers.
  */
-export function stepCard(def: BotFlowDefinition, run: RunLike, opts: { fresh?: boolean; lastTime?: BotFlowAnswer | null } = {}): StepCardData {
+export function stepCard(def: BotFlowDefinition, run: RunLike, opts: { fresh?: boolean; lastTime?: BotFlowAnswer | null; suggested?: BotFlowAnswer | null; jobs?: string[] } = {}): StepCardData {
   const step = stepById(def, run.step);
   if (!step) throw new BotFlowError('This flow changed while you were in it. Start it again.');
   const vars = effectiveVars(def, run);
@@ -620,7 +625,9 @@ export function stepCard(def: BotFlowDefinition, run: RunLike, opts: { fresh?: b
   const { stepNo, stepCount } = flowPosition(def, step.id, run.history, { ...run.vars, ...run.answers });
   const voice = voiceOf(def.persona?.tone);
   const prompt = renderTemplate(step.prompt, vars, { summary: summaryText(lines), title: def.title });
-  const input: BotFlowInput = step.input.kind === 'confirm' ? { ...step.input, yes: step.input.yes ?? voice.yes, no: step.input.no ?? voice.no } : step.input;
+  let input: BotFlowInput = step.input.kind === 'confirm' ? { ...step.input, yes: step.input.yes ?? voice.yes, no: step.input.no ?? voice.no } : step.input;
+  // job numbers from the person's own Spaces, ahead of the author's quick replies
+  if (step.input.suggest === 'jobs' && opts.jobs?.length) input = { ...input, suggestions: [...new Set([...opts.jobs, ...(input.suggestions ?? [])])].slice(0, 6) };
   const previous = step.input.kind !== 'confirm' ? run.answers[saveKey(step)] ?? null : null;
   const out: StepCardData = { title: def.title, stepNo, stepCount, prompt, input, previous, canBack: run.history.length > 0 };
   if (def.persona) out.persona = { mark: def.persona.mark, colour: def.persona.colour };
@@ -630,6 +637,11 @@ export function stepCard(def: BotFlowDefinition, run: RunLike, opts: { fresh?: b
   if (opts.lastTime && !previous && step.input.kind !== 'confirm' && step.input.kind !== 'file') {
     out.lastTime = opts.lastTime;
     out.lastTimeWords = voice.sameAsLast(opts.lastTime.label);
+  }
+  // the lead from the directory, unless last time's answer already offers the same person
+  if (opts.suggested && step.input.suggest === 'lead' && !previous && out.lastTime?.value !== opts.suggested.value) {
+    out.suggested = opts.suggested;
+    out.suggestedWhy = 'lead';
   }
   return out;
 }
