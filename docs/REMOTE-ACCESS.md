@@ -51,6 +51,7 @@ and how to set it up.
 | Gateway `/m/<meeting ID>/ws` | Anyone with a guest link | Refused unless the hub is connected. JSON frames only, at most 64 KiB each and 400 per 10 seconds. 20 connections a minute and 5 wrong passcodes per 10 minutes per address (kept in the Durable Object's storage), 300 guests at once. The hub checks the passcode (and limits wrong ones again, 10 per 10 minutes per address); a guest only ever reaches the meeting's lobby. |
 | Gateway `/w/<webinar ID>`, `/w/<ID>/watch`, `/w/<ID>/survey` | Anyone | The webinar's registration, watch and survey pages and their script and styles: static, from the Worker, the same strict content security policy; they ask for no camera or microphone. |
 | Gateway `/w/<ID>/info`, `/register`, `/survey-info`, `/answers` | Anyone | Answered by the hub over its own connection (10 seconds at most, else a plain error). JSON of at most 16 KiB. A form with the hidden honeypot field filled is thanked and dropped. 60 requests a minute per address; 5 registrations an hour per address and 300 an hour in all (kept in the Durable Object's storage); 10 survey answers an hour per address. The hub checks everything again: the webinar's cap and whether registration is open, valid answers, one registration per email (a duplicate never learns the link), 10 registrations an hour per address. |
+| Gateway `/cal/<token>.ics` | Anyone with a person's calendar address | GET and HEAD only. Refused unless the hub is connected. 30 requests a minute per address at the gateway. The hub checks the token (43 random characters, kept only as a SHA-256 hash), turns a network away for an hour after 30 wrong addresses, and answers with that person's feed as `text/calendar` (at most 250,000 characters). A reset or an offboarding stops the old address at once. |
 | Gateway `/w/<ID>/ws` | Anyone with a personal link | A guest socket, as for meetings: the token is checked by the hub, and a link that does not work counts as a wrong passcode for the address (5 per 10 minutes at the gateway). An attendee's session can only watch that webinar: ask, vote, answer the poll, raise a hand, react, download its handouts. |
 | Hub, through a channel | A device that completed the handshake | Unknown devices can only *ask* to join (they become pending). At most 10 such requests an hour from outside, and administrators can turn new joins from outside off altogether. The Control room is office-only unless an administrator allows it. Every action is audited, and outside connections show as `internet <address> (<country>)`. |
 | Office hub on the internet | Nobody | It accepts no inbound connections from the internet. |
@@ -61,6 +62,11 @@ What the gateway (and Cloudflare) *can* see:
 - The sizes and timing of encrypted frames.
 
 They never see message text, file contents, names, keys or call media.
+
+The one exception is a calendar feed someone chose to subscribe to through the gateway
+(Preferences → Calendar → From anywhere): Outlook and phone calendars cannot open the encrypted
+channel, so the gateway passes that feed on as it is, and it can read the meeting titles, times and
+meeting links in it. On the office network the same feed comes straight from the hub.
 
 ## Guests in meetings (browser, no install)
 

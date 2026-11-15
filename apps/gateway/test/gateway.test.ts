@@ -210,6 +210,33 @@ test('webinar pages: registration, watch and survey pages; requests answered by 
   hub.close();
 });
 
+test('calendar feeds: /cal/<token>.ics asked of the hub as a cal frame, answered as text/calendar; bad paths and other methods refused', async (t) => {
+  if (skip) { t.skip(skip); return; }
+  const token = 'A'.repeat(20) + '_' + 'b'.repeat(22);
+  assert.equal((await fetch(`http://${base}/cal/short.ics`)).status, 404);
+  assert.equal((await fetch(`http://${base}/cal/${token}`)).status, 404, 'only .ics');
+  assert.equal((await fetch(`http://${base}/cal/${token}.ics`, { method: 'POST', body: 'x' })).status, 405);
+  const hub = await fakeHub('a1b2c3d4e5f60718', homeHubDir);
+  const feed = fetch(`http://${base}/cal/${token}.ics`);
+  const ask = await hub.next('cal');
+  assert.equal(ask.k, token);
+  assert.equal(typeof ask.ip, 'string');
+  hub.send({ t: 'w-res', r: ask.r, s: 200, d: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n', ct: 'text/calendar; charset=utf-8' });
+  const got = await feed;
+  assert.equal(got.status, 200);
+  assert.equal(got.headers.get('content-type'), 'text/calendar; charset=utf-8');
+  assert.equal(got.headers.get('cache-control'), 'no-store');
+  assert.equal(await got.text(), 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
+  // the hub's refusal passes through; a type the gateway does not expect becomes plain text
+  const gone = fetch(`http://${base}/cal/${token}.ics`);
+  const a2 = await hub.next('cal');
+  hub.send({ t: 'w-res', r: a2.r, s: 404, d: 'This calendar address does not work any more.', ct: 'text/html' });
+  const g2 = await gone;
+  assert.equal(g2.status, 404);
+  assert.equal(g2.headers.get('content-type'), 'text/plain; charset=utf-8');
+  hub.close();
+});
+
 test('guest frames: relayed to the hub and back; passcodes refused by the hub count per address; the hub leaving drops guests', async (t) => {
   if (skip) { t.skip(skip); return; }
   // before any hub has connected, meeting sockets have nowhere to go

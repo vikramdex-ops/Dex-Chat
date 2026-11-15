@@ -7,6 +7,10 @@
 // Guests joining a meeting from a browser (M2) are not devices: the gateway serves them a page
 // and passes their JSON frames here as "guest" control frames on the same connection, which the
 // hub hands to meet-guests.ts. They never reach the hub's local endpoint.
+//
+// Calendar feeds: a calendar app asks the gateway for /cal/<token>.ics; the gateway passes the
+// token here as a "cal" control frame and returns the feed the hub answers with. The feed (meeting
+// titles and times) is therefore readable by the gateway, unlike devices' traffic.
 import crypto, { X509Certificate } from 'node:crypto';
 import https from 'node:https';
 import WebSocket from 'ws';
@@ -36,6 +40,8 @@ interface Options {
   guests?: GuestSink;
   /** The webinar pages' requests (registration, the survey): answered as { status, body }. */
   web?: (op: string, meetingId: string, ip: string, body: Record<string, unknown>) => { status: number; body: unknown };
+  /** A calendar app fetching someone's private feed (/cal/<token>.ics on the gateway): answered as text. */
+  calendar?: (token: string, ip: string) => { status: number; body: string; type: string };
 }
 
 /** Where guest frames go (meet-guests.ts). */
@@ -174,6 +180,13 @@ export class RemoteGateway {
         res = this.opts.web ? this.opts.web(m.op, String(m.m ?? ''), `${m.ip ?? 'unknown'}${m.country ? ` (${m.country})` : ''}`, (m.b && typeof m.b === 'object' ? m.b : {}) as Record<string, unknown>) : { status: 404, body: { error: 'Webinars are not available on this hub.' } };
       } catch { res = { status: 500, body: { error: 'That did not work. Try again.' } }; }
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'w-res', r: m.r, s: res.status, d: JSON.stringify(res.body) }));
+    } else if (m.t === 'cal' && typeof m.r === 'number' && typeof m.k === 'string') {
+      // a calendar feed through the gateway: Outlook or a phone cannot speak the devices' encrypted channel
+      let res: { status: number; body: string; type: string };
+      try {
+        res = this.opts.calendar ? this.opts.calendar(m.k, `${m.ip ?? 'unknown'}${m.country ? ` (${m.country})` : ''}`) : { status: 404, body: 'Not found\n', type: 'text/plain; charset=utf-8' };
+      } catch { res = { status: 500, body: 'The calendar could not be made. Try again later.\n', type: 'text/plain; charset=utf-8' }; }
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'w-res', r: m.r, s: res.status, d: res.body, ct: res.type }));
     } else if (m.t === 'g' && typeof m.g === 'number' && typeof m.d === 'string') {
       this.opts.guests?.frame(m.g, m.d);
     } else if (m.t === 'g-closed' && typeof m.g === 'number') {

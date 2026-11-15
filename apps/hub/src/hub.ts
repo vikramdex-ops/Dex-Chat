@@ -58,6 +58,7 @@ import { ReactionInsights, InsightError } from './reactions.ts';
 import { Decisions, DecisionError } from './decisions.ts';
 import { Refs, RefError } from './refs.ts';
 import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
+import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -159,6 +160,7 @@ export class Hub {
   readonly decisions: Decisions;
   readonly refs: Refs;
   readonly backups: Backups;
+  readonly feeds: CalendarFeeds;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -344,7 +346,17 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
     this.reports.webinarFor = (meetingId) => this.webinars.reportFor(meetingId);
-    // nightly backups (backup.ts)
+    // keeping the office going: backups and calendar feeds (backup.ts, calfeed.ts)
+    this.feeds = new CalendarFeeds({
+      db: this.store.db, hubId: () => this.info.id, office: () => this.info.name,
+      userById: (uid) => this.store.userById(uid),
+      active: (uid) => this.canSignIn(uid),
+      lan: () => lanAddresses(this.port),
+      gateway: () => { const rc = this.remoteConfig(); return rc.enabled ? rc.url : null; },
+      meetingFor: (organizer, eventId) => this.meetings.forEvent(organizer, eventId).id,
+      venueName: (vid) => this.calendar.venues().find((v) => v.id === vid)?.name ?? null,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+    });
     this.backups = new Backups({
       db: this.store.db, dataDir: opts.dataDir, hubId: id, hubName: () => this.info.name, version: HUB_VERSION,
       systemId: () => this.system.id,
@@ -384,8 +396,14 @@ export class Hub {
       onStatus: () => {},
       guests: this.meetGuests,
       web: (op, meetingId, ip, body) => this.webinars.webRequest(op, meetingId, ip, body),
+      calendar: (token, ip) => this.feeds.fetch(token, ip),
     });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
+  }
+
+  /** Has an approved device: can use Dexterity Connect now. */
+  private canSignIn(userId: string): boolean {
+    return !!this.store.db.prepare(`SELECT 1 FROM devices WHERE user_id = ? AND status = 'approved' LIMIT 1`).get(userId);
   }
 
   /** An event to one device: an app's connection, or a browser guest or attendee through the gateway. */
@@ -513,6 +531,7 @@ export class Hub {
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/cal/')) { this.feeds.route(req, res); return; }
     if (/^\/api\/(flows|sessions)(\/|\?|$)/.test(req.url ?? '')) { void this.botflows.route(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
@@ -1576,7 +1595,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^admin\.backup\.(get|set|run)$/.test(op)) {
+        if (typeof op === 'string' && /^(admin\.backup\.(get|set|run)|cal\.feed\.(get|set|reset))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             if (op.startsWith('admin.backup.')) {
@@ -1588,8 +1607,10 @@ export class Hub {
               }
               return this.backups.status();
             }
+            const result = this.feeds.handle(op, me, d);
+            if (result !== undefined) return result;
           } catch (err) {
-            if (err instanceof BackupFailure) throw new OpError(err.message);
+            if (err instanceof BackupFailure || err instanceof CalFeedError) throw new OpError(err.message);
             throw err;
           }
         }
