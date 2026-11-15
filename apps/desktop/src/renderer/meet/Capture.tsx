@@ -115,7 +115,9 @@ function CatchUp({ room, meId, meDevice, actions, onTab, hidden }: { room: RoomI
   return (
     <div className="catch-up" role="status">
       <span className="cap mono">WHAT YOU MISSED</span>
-      <span>Since {since}: {said === 1 ? '1 message' : `${said} messages`} · {actions === 1 ? '1 action point' : `${actions} action points`}</span>
+      <span>{`Since ${since}`}</span>
+      <span className="mono">{said === 1 ? '1 message' : `${said} messages`}</span>
+      <span className="mono">{actions === 1 ? '1 action point' : `${actions} action points`}</span>
       <button className="btn sm" onClick={() => { onTab('chat'); setGone(true); }}>Read the chat</button>
       {actions > 0 && <button className="btn sm ghost" onClick={() => { onTab('register'); setGone(true); }}>See the register</button>}
       <button className="icon-btn" aria-label="Dismiss" onClick={() => setGone(true)}><Icon name="x" size={14} /></button>

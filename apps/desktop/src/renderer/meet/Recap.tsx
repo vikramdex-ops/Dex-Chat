@@ -80,14 +80,14 @@ export default function RecapSheet({ occurrenceId, users, meId, onClose, jump }:
             <div className="recap-body">
               {!r.viewer.member && <p className="recap-note"><Icon name="lock" size={13} />You attended this meeting from outside its conversation, so this recap shows what you could see in it.</p>}
 
-              <Section no="01" title="Attendance" meta={`${r.attendance.length} attended${r.absent.length ? ` · ${r.absent.length} invited, not there` : ''}`}>
+              <Section no="01" title="Attendance" meta={r.absent.length ? `${r.attendance.length} attended · ${r.absent.length} invited, not there` : `${r.attendance.length} attended`}>
                 <table className="recap-table">
                   <thead><tr><th>Name</th><th>In the meeting</th><th className="mono">IN</th><th className="mono">OUT</th></tr></thead>
                   <tbody>
                     {r.attendance.map((p) => (
                       <tr key={p.userId}>
                         <td><span className="rt-who"><Avatar user={{ id: p.userId, displayName: p.name }} size="sm" /><span translate="no">{p.userId === meId ? 'You' : p.name}</span>{p.guest && <span className="tag mono">GUEST</span>}</span></td>
-                        <td>{mins(p.totalMs)}{p.joins > 1 && <span className="faint"> · {p.joins} times</span>}</td>
+                        <td>{mins(p.totalMs)}{p.joins > 1 && <span className="faint">{` · joined ${p.joins} times`}</span>}</td>
                         <td className="mono">{hm(p.firstJoin)}</td><td className="mono">{hm(p.lastLeave)}</td>
                       </tr>
                     ))}
@@ -147,7 +147,7 @@ export default function RecapSheet({ occurrenceId, users, meId, onClose, jump }:
                     </li>
                   ))}
                 </ul>
-                {r.filesMore > 0 && <p className="faint">And {r.filesMore} more in the thread.</p>}
+                {r.filesMore > 0 && <p className="faint">{`And ${r.filesMore} more in the thread.`}</p>}
               </Section>
 
               {r.viewer.member && (

@@ -38,7 +38,7 @@ export default function Register({ room, users, meId }: { room: RoomInfo; users:
       <section className="reg-sec" aria-labelledby="reg-02">
         <h3 id="reg-02" className="recap-label"><span className="mono">02</span>ACTION POINTS<span className="mono faint">{own.length + carried.length}</span></h3>
         {reg.actions === null && <div className="tl-more"><span className="spinner" /></div>}
-        {carried.length > 0 && <p className="reg-sub mono">BROUGHT FORWARD · {carried.length} OPEN FROM EARLIER</p>}
+        {carried.length > 0 && <p className="reg-sub mono">{carried.length === 1 ? 'BROUGHT FORWARD · 1 OPEN FROM EARLIER' : `BROUGHT FORWARD · ${carried.length} OPEN FROM EARLIER`}</p>}
         {carried.map((a) => <div key={a.id} className="reg-ap"><div className="reg-ap-text" translate="no">{a.text || <span className="faint">Encrypted: open it in the thread</span>}</div><ApStrip ap={a} users={users} meId={meId} compact /></div>)}
         {carried.length > 0 && <p className="reg-sub mono">THIS MEETING</p>}
         {reg.actions !== null && !own.length && <p className="meet-empty">Nothing logged yet. Type below, or press A on the stage.</p>}
