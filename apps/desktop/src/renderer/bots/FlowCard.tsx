@@ -8,6 +8,7 @@ import { renderBody } from '../chat/format.tsx';
 import { chatState } from '../chat/store.ts';
 import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { BotMarkTile } from './BotMark.tsx';
+import { formatDateTime } from '../time.ts';
 
 const req = <K extends OpName>(op: K, data?: Ops[K]['req']) => window.dex.request(op, data);
 
@@ -34,7 +35,7 @@ export const HUB_DRIVER: FlowDriver = {
 };
 const open = (convId: string) => window.dispatchEvent(new CustomEvent('dex-open', { detail: convId }));
 const pad = (n: number) => String(n).padStart(2, '0');
-const when = (t?: number) => (t ? new Date(t).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+const when = (t?: number) => (t ? formatDateTime(t, { weekday: 'short', day: 'numeric', month: 'short' }) : '');
 
 /** The step as a scale bar: one tick per step, filled up to here. */
 function Scale({ n, of }: { n: number; of?: number }) {

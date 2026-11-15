@@ -3,6 +3,7 @@
 import type { Availability, SlashCommand, WorkMode } from '@dex/core';
 import { startCall } from '../rooms/engine.ts';
 import { MODE_SHORT, setWork, workOf } from '../work/store.ts';
+import { formatDateTime } from '../time.ts';
 
 export interface CommandInfo { command: string; hint: string; description: string; bot?: boolean }
 
@@ -139,7 +140,7 @@ export async function runSlash(input: string, ctx: RunContext): Promise<boolean>
         const when = parseWhen(arg);
         if (when && when.rest.trim()) {
           await req('remind.create', { text: when.rest.trim(), dueAt: when.at });
-          ctx.toast(`Reminder set for ${new Date(when.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`);
+          ctx.toast(`Reminder set for ${formatDateTime(when.at, { weekday: 'short' })}`);
         } else ctx.open('remind', arg);
         return true;
       }

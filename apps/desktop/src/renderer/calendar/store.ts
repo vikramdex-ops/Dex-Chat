@@ -5,7 +5,7 @@ import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
 import type { CalEvent, Occurrence, PublicUser, Venue } from '@dex/core';
 import { joinMeeting as joinById } from '../rooms/engine.ts';
-import { timeOpts } from '../time.ts';
+import { formatTime } from '../time.ts';
 
 interface CalState { venues: Venue[]; version: number; soon: Occurrence[] }
 let state: CalState = { venues: [], version: 0, soon: [] };
@@ -60,7 +60,7 @@ export const startOfDay = (t: number) => { const d = new Date(t); d.setHours(0, 
 export const addDays = (t: number, n: number) => { const d = new Date(t); d.setDate(d.getDate() + n); return d.getTime(); };
 /** The first day of the week holding t (Monday unless the person chose Sunday or Saturday). */
 export const startOfWeek = (t: number, firstDay: number = calPrefs().firstDay) => { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay() - firstDay + 7) % 7)); return d.getTime(); };
-export const hm = (t: number) => new Date(t).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+export const hm = (t: number) => formatTime(t);
 
 export function describeSpan(startAt: number, endAt: number, allDay: boolean): string {
   const s = new Date(startAt);

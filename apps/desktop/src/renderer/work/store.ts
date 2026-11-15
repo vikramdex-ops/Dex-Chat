@@ -3,7 +3,7 @@
 // step out and come back to your desk, and work from a place (Office, Home, Site, Client).
 import { useSyncExternalStore } from 'react';
 import type { WorkMode, WorkState } from '@dex/core';
-import { timeOpts } from '../time.ts';
+import { formatTime } from '../time.ts';
 
 /** A state plus when we received it, so the day's clock can keep ticking locally. */
 export type LiveWork = WorkState & { at: number };
@@ -62,7 +62,7 @@ export function duration(ms: number): string {
   return h ? `${h} h ${String(m % 60).padStart(2, '0')} m` : `${m} m`;
 }
 
-export const clockTime = (t: number) => new Date(t).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+export const clockTime = (t: number) => formatTime(t);
 
 /** One line for a person card or profile: "Site · since 9:12 AM", "Stepped out · since 1:05 PM". */
 export function workLine(s: WorkState | undefined): string | null {

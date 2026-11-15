@@ -8,7 +8,7 @@ import { Dialog, Icon, ToggleRow, useToast } from '../ui.tsx';
 import { KEEP_LABEL, setKeepKind, toggleSaved, useDesk } from '../desk/store.ts';
 import { StickerImg, useStickers } from '../emoji.tsx';
 import { usePolicy } from '../policy.ts';
-import { timeOpts } from '../time.ts';
+import { formatTime } from '../time.ts';
 import { addConversation, chatState, meUser, setDraft, tlKey } from './store.ts';
 import { plainPreview } from './format.tsx';
 
@@ -25,7 +25,7 @@ export const PIN_FOR: Array<{ id: string; label: string; until: () => number | n
 export function pinEnd(until: number): string {
   const d = new Date(until);
   const date = d.toLocaleDateString([], { day: 'numeric', month: 'short' });
-  return until - Date.now() < 2 * DAY ? `Till ${date}, ${d.toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}` : `Till ${date}`;
+  return until - Date.now() < 2 * DAY ? `Till ${date}, ${formatTime(d)}` : `Till ${date}`;
 }
 
 /** The small mono flags under a message: a pin that ends, and what it is kept as on your Desk. */

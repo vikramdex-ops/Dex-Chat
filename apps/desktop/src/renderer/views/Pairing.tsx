@@ -8,6 +8,7 @@ import type { Ops } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { Dialog, Icon, confirmAction, relativeTime, useToast } from '../ui.tsx';
 import { Qr } from './Remote.tsx';
+import { formatDateTime } from '../time.ts';
 
 type MyDevice = Ops['me.devices']['res'][number];
 // jsQR ships as a CommonJS bundle whose typings describe an ES default export
@@ -66,7 +67,7 @@ function AddDevice({ kind, onClose }: { kind: 'phone' | 'laptop'; onClose: () =>
   }, [kind]);
   useEffect(() => window.dex.onHubEvent((name, data) => { if (name === 'me.devicePaired') setJoined((data as { hostname: string }).hostname); }), []);
   const copy = (text: string, what: string) => { void navigator.clipboard.writeText(text).then(() => toast(`${what} copied`)); };
-  const until = made ? new Date(made.expiresAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+  const until = made ? formatDateTime(made.expiresAt, { weekday: 'short' }) : '';
   return (
     <Dialog title={kind === 'phone' ? 'Add your phone' : 'Add your laptop'} onClose={onClose}>
       {error && <div className="error-box">{error}</div>}

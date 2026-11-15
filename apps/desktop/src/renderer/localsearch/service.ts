@@ -11,7 +11,7 @@ import { isPopout } from '../alerts.ts';
 import { chatState } from '../chat/store.ts';
 import { LocalIndex } from './invindex.ts';
 import type { Filters } from './invindex.ts';
-import { snippet, terms } from './tokenize.ts';
+import { plainSnippet, snippet, terms } from './tokenize.ts';
 import { deleteVaults, openVault } from './vault.ts';
 import type { Vault } from './vault.ts';
 import './search.css';
@@ -265,7 +265,8 @@ export async function searchLocal(q: string, filters: Filters, limit = 30): Prom
     const body = dec.decode(t);
     out.push({
       local: true,
-      snippet: snippet(body, words),
+      // cut from the words people read, not from the formatting marks
+      snippet: snippet(plainSnippet(body), words),
       message: {
         id: h.meta.id, convId: h.meta.convId, authorId: h.meta.authorId, body, parentId: h.meta.parentId, createdAt: h.meta.createdAt,
         editedAt: h.meta.rev || null, deleted: false, pinned: false, reactions: {}, mentions: [], replyCount: 0, lastReplyAt: null,

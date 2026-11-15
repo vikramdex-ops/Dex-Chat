@@ -9,6 +9,7 @@ import type { ReactionInsights } from '@dex/core';
 import { Dialog, Icon, useToast } from '../ui.tsx';
 import { EmojiGlyph } from '../emoji.tsx';
 import './messages.css';
+import { formatDateTime, formatTime } from '../time.ts';
 
 /** The chart's own width, for drawing in real pixels (text stays its size on a phone). */
 function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {
@@ -40,8 +41,8 @@ export function niceTicks(max: number, count = 4): number[] {
 }
 
 const pct = (n: number) => `${Math.round(n)}%`;
-const at = (t: number) => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const shortAt = (t: number, span: number) => new Date(t).toLocaleString([], span > 36 * 3600_000 ? { day: 'numeric', month: 'short' } : { hour: '2-digit', minute: '2-digit' });
+const at = (t: number) => formatDateTime(t, { day: 'numeric', month: 'short' });
+const shortAt = (t: number, span: number) => (span > 36 * 3600_000 ? new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' }) : formatTime(t));
 
 /** A bar path: square at the baseline, a 4 px round end at the data end (r shrinks for tiny bars). */
 function barPath(x: number, y: number, w: number, h: number): string {

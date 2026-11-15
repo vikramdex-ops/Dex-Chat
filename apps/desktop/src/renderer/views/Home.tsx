@@ -14,7 +14,7 @@ import { NextMeeting } from '../calendar/CalendarView.tsx';
 import { DayLine } from '../pulse/DayLine.tsx';
 import { MeetPulseCard } from '../meet/MeetPulse.tsx';
 import { OfficeDrawingCard } from '../orgscape/PulseCard.tsx';
-import { timeOpts } from '../time.ts';
+import { formatTime } from '../time.ts';
 
 function greeting(d = new Date()): string {
   const h = d.getHours();
@@ -182,7 +182,7 @@ function Widgets({ live }: { live: boolean }) {
           <div className="eyebrow"><span translate="no">{w.title}</span><span className="widget-from mono" translate="no">{w.botName.toUpperCase()}</span></div>
           <ul className="widget-lines">{w.lines.map((l, i) => <li key={i} translate="no">{l}</li>)}</ul>
           <div className="widget-foot">
-            <span className="faint mono">UPDATED {new Date(w.updatedAt).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}</span>
+            <span className="faint mono">UPDATED {formatTime(w.updatedAt)}</span>
             {w.url && <a href={w.url} target="_blank" rel="noreferrer noopener">Open</a>}
           </div>
         </div>

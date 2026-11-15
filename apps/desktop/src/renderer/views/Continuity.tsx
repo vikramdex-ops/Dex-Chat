@@ -7,6 +7,7 @@ import type { BackupRun, BackupStatus, Departure, MeetingHandover, OffboardPrevi
 import { Avatar, Icon, Segmented, relativeTime, useToast } from '../ui.tsx';
 import { tr } from '../i18n/index.ts';
 import './continuity.css';
+import { formatDateTime, formatTime } from '../time.ts';
 
 /** Audit log wording for these actions (Control room ▸ Audit log). */
 export const CONTINUITY_AUDIT: Record<string, string> = {
@@ -58,7 +59,7 @@ function nextText(at: number | null, now = Date.now()): string {
   if (at === null) return 'No backup folder yet';
   if (at <= now + 60_000) return 'Starting now';
   const d = new Date(at);
-  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const t = formatTime(d);
   const today = new Date(now);
   const tomorrow = new Date(now + 86_400_000);
   if (d.toDateString() === today.toDateString()) return d.getHours() >= 18 || d.getHours() < 6 ? `Tonight at ${t}` : `Today at ${t}`;
@@ -131,7 +132,7 @@ function BackupsAdmin({ live }: { live: boolean }) {
         {failed && last?.error && <p className="bk-problem"><Icon name="warning" size={14} /><span>{last.error}</span></p>}
         {s.warning && !failed && <p className="bk-problem"><Icon name="warning" size={14} /><span>{s.warning}</span></p>}
         <div className="bk-block" role="list">
-          <div className="bk-cell" role="listitem"><span className="label">Last good backup</span><span className="v">{s.lastSuccess ? new Date(s.lastSuccess.finishedAt).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '–'}</span></div>
+          <div className="bk-cell" role="listitem"><span className="label">Last good backup</span><span className="v">{s.lastSuccess ? formatDateTime(s.lastSuccess.finishedAt, { day: 'numeric', month: 'short' }) : '–'}</span></div>
           <div className="bk-cell" role="listitem"><span className="label">Size</span><span className="v">{s.lastSuccess ? bytes(s.lastSuccess.dbBytes + s.lastSuccess.filesBytes) : '–'}</span>
             {s.lastSuccess && <span className="sub mono">{s.lastSuccess.filesAdded ? `+${bytes(s.lastSuccess.bytesAdded)} in new files` : 'no new files'}</span>}</div>
           <div className="bk-cell" role="listitem"><span className="label">Next backup</span><span className="v">{s.running ? 'Running now' : nextText(s.nextRunAt)}</span></div>
@@ -180,7 +181,7 @@ function BackupsAdmin({ live }: { live: boolean }) {
             {s.copies.map((c) => (
               <div key={c.name} className="bk-copy">
                 <span className="mono">{c.name}</span>
-                <span className="faint">{new Date(c.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                <span className="faint">{formatDateTime(c.at, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                 <span className="faint mono">{bytes(c.dbBytes)} database</span>
                 <span className="bk-kept">{c.kept.map((k) => <span key={k} className={`chip${k === 'latest' ? ' accent' : ''}`}>{KEPT_LABEL[k]}</span>)}</span>
               </div>
@@ -197,7 +198,7 @@ function BackupsAdmin({ live }: { live: boolean }) {
               <div key={r.startedAt} className={`bk-run ${r.ok ? 'ok' : 'bad'}`}>
                 <span className="bk-tick" aria-hidden />
                 <div className="txt">
-                  <div>{new Date(r.startedAt).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  <div>{formatDateTime(r.startedAt, { weekday: 'short', day: 'numeric', month: 'short' })}
                     <span className="faint"> · {r.manual ? 'Back up now' : 'nightly'} · {Math.max(1, Math.round((r.finishedAt - r.startedAt) / 1000))} s</span></div>
                   <div className="faint">{r.ok ? <>
                     {r.filesAdded === 1 ? `1 new file (${bytes(r.bytesAdded)})` : `${r.filesAdded.toLocaleString()} new files (${bytes(r.bytesAdded)})`}

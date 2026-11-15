@@ -7,7 +7,7 @@ import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from
 import type { IconName } from '../ui.tsx';
 import { plainPreview } from './format.tsx';
 import { useChat } from './store.ts';
-import { timeOpts, useTimeFormat } from '../time.ts';
+import { formatTime, useTimeFormat } from '../time.ts';
 import { CONV_DRAG, openBeside, openInPane, usePanes } from './panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, nextMonday, todayAt } from './officeTime.ts';
 import { LoungeSection } from '../lounges/Lounges.tsx';
@@ -62,7 +62,7 @@ export function ConvTile({ c, users, meId, size }: { c: Conversation; users: Map
 export function shortTime(ts: number, now = Date.now()): string {
   const d = new Date(ts);
   const today = new Date(now);
-  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === today.toDateString()) return formatTime(d);
   const days = Math.floor((today.setHours(0, 0, 0, 0) - new Date(ts).setHours(0, 0, 0, 0)) / 86400000);
   if (days === 1) return 'Yesterday';
   if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });

@@ -2,7 +2,7 @@
 // included), prefix search, edits and deletes, and a compact form that survives a round trip.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fold, snippet, terms, tokenize, wordSpans } from '../src/renderer/localsearch/tokenize.ts';
+import { fold, plainSnippet, snippet, terms, tokenize, wordSpans } from '../src/renderer/localsearch/tokenize.ts';
 import { LocalIndex } from '../src/renderer/localsearch/invindex.ts';
 
 const ID = (n: number) => `01J${String(n).padStart(23, '0')}`;
@@ -109,4 +109,21 @@ test('snippets mark the words that matched', () => {
   assert.ok(s.startsWith('…word ') && s.endsWith('[[valve]] at the end') && s.length <= 66, s);
   assert.equal(snippet('nothing here', ['zzz']), 'nothing here');
   assert.deepEqual(wordSpans('Hi राम', null).map((w) => [w.start, w.end]), [[0, 2], [3, 6]]);
+});
+
+test('snippets read as plain text: formatting marks go, the words and the highlights stay', () => {
+  // as the hub's search returns it (SQLite's snippet() on the message as written)
+  assert.equal(plainSnippet('**[[Area]] 4**: 37 isometrics'), '[[Area]] 4: 37 isometrics');
+  // cut from a longer message: a mark without its partner goes too
+  assert.equal(plainSnippet('…checked the **valve [[schedule]]…'), '…checked the valve [[schedule]]…');
+  assert.equal(plainSnippet('_rev B_ ~~pending~~ `P12_GA_rev3` ++new++'), 'rev B pending P12_GA_rev3 new');
+  assert.equal(plainSnippet('[the [[register]]](https://example.com/reg) and [a cut link](https://exa…'), 'the [[register]] and a cut link');
+  assert.equal(plainSnippet('# Area 4\n> [[supports]] checked\n- [x] **valves** done\n* bolts\n1. flanges'), 'Area 4 [[supports]] checked valves done bolts 1. flanges');
+  // not formatting: a lone star between numbers, underscores inside a word, C++, escaped marks
+  assert.equal(plainSnippet('4 * 5 = 20 bolts for line_40 in C++'), '4 * 5 = 20 bolts for line_40 in C++');
+  assert.equal(plainSnippet('\\*not bold\\* and \\_x\\_'), '*not bold* and _x_');
+  assert.equal(plainSnippet('<@01HZZZZZZZZZZZZZZZZZZZZZZZ> and <@all> in <#01HZZZZZZZZZZZZZZZZZZZZZZZ>'), '@… and @everyone in #…');
+  assert.equal(plainSnippet('पाइपलाइन **का** _[[नक्शा]]_'), 'पाइपलाइन का [[नक्शा]]');
+  // the device's own index cuts its snippet from the plain text
+  assert.equal(snippet(plainSnippet('**Area 4**: valve _schedule_'), terms('valve')), 'Area 4: [[valve]] schedule');
 });

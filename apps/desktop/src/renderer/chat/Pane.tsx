@@ -36,7 +36,7 @@ import { EventDialog } from '../calendar/CalendarView.tsx';
 import { BUILT_INS, loadBotCommands, runSlash } from './commands.ts';
 import type { CommandInfo } from './commands.ts';
 import { Dialog } from '../ui.tsx';
-import { timeOpts, useTimeFormat } from '../time.ts';
+import { formatTime, timeOpts, useTimeFormat } from '../time.ts';
 import { KeepMenu, MsgFlags, PIN_FOR, StartSpaceDialog, StickerSheet, namedPeople, openWithQuote, pinEnd, runAction, useActions } from './wire.tsx';
 import { useMsgLayout } from './prefs.ts';
 import { LinkCards } from './linkcards.tsx';
@@ -122,7 +122,9 @@ function dayLabel(ts: number): string {
   return `${d.toLocaleDateString([], { weekday: 'short' })} · ${date}`;
 }
 
-const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' });
+const clock = (ts: number) => formatTime(ts);
+/** The timeline's spine marks keep two-digit hours (a dimension mark, aligned in the mono column). */
+const tickClock = (ts: number) => new Date(ts).toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' });
 const fullDate = (ts: number) => new Date(ts).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** How someone else shows in the title block. */
@@ -738,7 +740,7 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
       if (m.createdAt - lastTick >= TICK) {
         const at = Math.floor(m.createdAt / TICK) * TICK;
         // a dimension mark, not a timestamp: no AM/PM
-        out.push({ kind: 'tick', label: clock(at).replace(/\s?[ap]\.?\s?m\.?$/i, ''), key: `t${at}-${m.id}` });
+        out.push({ kind: 'tick', label: tickClock(at).replace(/\s?[ap]\.?\s?m\.?$/i, ''), key: `t${at}-${m.id}` });
         lastTick = m.createdAt;
       }
       out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });

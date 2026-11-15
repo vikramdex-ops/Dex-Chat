@@ -19,6 +19,7 @@ import './people.css';
 import { LeftTheOffice } from './LeftOffice.tsx';
 import { Orgscape } from '../orgscape/Orgscape.tsx';
 import { onChartRequest, takeChartRequest } from '../orgscape/request.ts';
+import { formatDateTime } from '../time.ts';
 
 /**
  * Sheet tabs: labels sitting on a ruled line, the open one cut into it like the tab of a
@@ -321,7 +322,7 @@ function InCommon({ userId }: { userId: string }) {
         <>
           <div className="label">Rooms together</div>
           <ul className="call-history">{d.calls.slice(0, 6).map((c) => (
-            <li key={c.at}><Icon name={c.video ? 'video' : 'phone'} size={13} /><span className={c.missed ? 'missed' : ''}>{c.missed ? 'Missed' : mins(c.durationMs)}</span><span className="faint">{new Date(c.at).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span></li>
+            <li key={c.at}><Icon name={c.video ? 'video' : 'phone'} size={13} /><span className={c.missed ? 'missed' : ''}>{c.missed ? 'Missed' : mins(c.durationMs)}</span><span className="faint">{formatDateTime(c.at, { day: 'numeric', month: 'short' })}</span></li>
           ))}</ul>
         </>
       )}

@@ -230,6 +230,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .me-btn { position: relative; border: 0; background: none; padding: 4px; border-radius: var(--radius-m); display: grid; }
 .me-btn:hover { background: var(--subtle); }
 .me-badge { position: absolute; top: -3px; left: -6px; min-width: 16px; height: 16px; font-size: 10px; line-height: 16px; padding: 0 4px; }
+/* a sheet (the Control room, Preferences, Search) covers the title bar from 8px down; the badge
+   sits above that edge and would show over the sheet's corner. Approvals in the Control room carry the count. */
+.frame:has(.sheet-scrim) .me-badge { visibility: hidden; }
 .menu {
   position: absolute;
   right: 0;

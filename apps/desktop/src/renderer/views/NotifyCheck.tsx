@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AppState, NotifyHealth, SettingsPage } from '../../shared/bridge.ts';
 import { Dialog, Icon, Toggle, useToast } from '../ui.tsx';
+import { formatTime } from '../time.ts';
 
 /** Steps for the extra switches each maker adds (apps cannot read them, so people confirm them). */
 const MAKER_STEPS: Record<string, { name: string; steps: string[] }> = {
@@ -142,7 +143,7 @@ export function NotificationsCheck({ state, onClose }: { state: AppState; onClos
           )}
           <div className="faint mono check-foot">
             {h.manufacturer} {h.model} · Android {h.androidVersion}
-            {h.watching && (h.lastOk ? ` · reached the office in the background ${new Date(h.lastOk).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : h.lastError ? ` · background: ${h.lastError}` : '')}
+            {h.watching && (h.lastOk ? ` · reached the office in the background ${formatTime(h.lastOk)}` : h.lastError ? ` · background: ${h.lastError}` : '')}
           </div>
           <p className="faint" style={{ margin: 0, fontSize: 12 }}>Anything that arrives while the connection was stopped is shown as soon as the phone reconnects, so nothing is lost; at worst it is late.</p>
         </div>

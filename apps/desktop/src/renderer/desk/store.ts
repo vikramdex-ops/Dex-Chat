@@ -5,7 +5,7 @@ import { tr } from '../i18n/index.ts';
 import { useSyncExternalStore } from 'react';
 import type { KeepKind, Message, PublicUser, Reminder, SavedMessage, ScheduledMessage } from '@dex/core';
 import { plainPreview } from '../chat/format.tsx';
-import { timeOpts } from '../time.ts';
+import { formatTime } from '../time.ts';
 
 interface DeskState {
   saved: Map<string, SavedMessage>;
@@ -175,7 +175,7 @@ const AFTER_LUNCH: [number, number] = [14, 0];
 const BEFORE_LEAVING: [number, number] = [17, 15];
 const FIRST_THING: [number, number] = [9, 30];
 
-const hm = (h: number, m: number) => new Date(2000, 0, 1, h, m).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+const hm = (h: number, m: number) => formatTime(new Date(2000, 0, 1, h, m));
 
 const at = (days: number, [hour, minute]: [number, number], from = new Date()) => {
   const d = new Date(from);
@@ -249,7 +249,7 @@ export function describeWhen(ts: number, now = Date.now()): string {
   const d = new Date(ts);
   const today = new Date(now);
   const tomorrow = new Date(now); tomorrow.setDate(today.getDate() + 1);
-  const time = d.toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+  const time = formatTime(d);
   if (d.toDateString() === today.toDateString()) return `Today, ${time}`;
   if (d.toDateString() === tomorrow.toDateString()) return `Tomorrow, ${time}`;
   const sameYear = d.getFullYear() === today.getFullYear();

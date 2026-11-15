@@ -14,6 +14,7 @@ import { ItDeskAdmin } from '../help/ItDesk.tsx';
 import { CONTINUITY_AUDIT, ContinuityAdmin } from './Continuity.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
+import { auditLine } from './audit.ts';
 
 type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'continuity' | 'audit';
 
@@ -86,6 +87,7 @@ const AUDIT_TEXT: Record<string, string> = {
   'help.consent.granted': 'allowed IT to see or use their PC',
   'help.consent.revoked': 'stopped IT seeing or using their PC',
   'help.diagnostics': 'sent their PC\'s details to IT',
+  'meeting.started': 'started a meeting',
   'meeting.guestKnocked': 'asked to join a meeting from a browser',
   'meeting.guestJoined': 'let a browser guest into a meeting',
   'meeting.guestRemoved': 'took a browser guest out of a meeting',
@@ -277,7 +279,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       ) : (
         <div className="list">
           {audit.map((a) => {
-            const actor = a.actor ? byId.get(a.actor)?.displayName ?? 'An administrator' : 'Someone';
+            const line = auditLine(a.action, a.actor ? byId.get(a.actor)?.displayName ?? 'An administrator' : null, a.detail, auditWords);
             const target = devices.find((d) => d.id === a.target);
             const subject = target ? `${target.displayName} (${target.hostname})` : a.target ? byId.get(a.target)?.displayName ?? '' : '';
             const detail = a.detail as { account?: string; from?: string; to?: string } | null;
@@ -285,8 +287,8 @@ export function Admin({ state, session }: { state: AppState; session: Session })
               <div key={a.id} className="list-row audit">
                 <span className="faint" title={new Date(a.at).toLocaleString()}>{relativeTime(a.at)}</span>
                 <span>
-                  <b>{a.action === 'device.registered' && !a.actor ? detail?.account ?? 'A new device' : actor}</b>{' '}
-                  {auditWords(a.action)}
+                  <b>{a.action === 'device.registered' && !a.actor ? detail?.account ?? 'A new device' : line.who}</b>{' '}
+                  {line.what}
                   {subject && a.action !== 'device.registered' ? <> · {subject}</> : null}
                   {a.action === 'user.role' && detail ? <> · {roleWord(detail.from)} → {roleWord(detail.to)}</> : null}
                 </span>

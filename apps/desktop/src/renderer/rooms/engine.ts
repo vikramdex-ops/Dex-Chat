@@ -11,7 +11,7 @@ import { stopVoices } from './speech.ts';
 import { isProcessed, processMic, rawMic, releaseNoise, setNoisePref, suppressNoise } from './noise.ts';
 import { useSyncExternalStore } from 'react';
 import type { ControlOff, MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
-import { timeOpts } from '../time.ts';
+import { formatTime } from '../time.ts';
 import { policyNow } from '../policy.ts';
 
 export interface RemotePeer {
@@ -378,7 +378,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
 
 /** A clock time in the person's 12/24-hour preference ("4:12 PM", "16:12"). */
 export function clock(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' });
+  return formatTime(ts);
 }
 
 /** Caption form of a name, as on a drawing: "Priya Raman" -> "PRIYA R.". */

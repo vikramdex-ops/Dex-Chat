@@ -98,3 +98,36 @@ export function snippet(text: string, query: string[], width = 180, seg?: WordSe
   out += flat.slice(at, to).replace(/\[\[|\]\]/g, '');
   return to < flat.length ? `${out}…` : out;
 }
+
+/** Escaped marks (\*) stand in as these private-use characters while the real marks are removed. */
+const ESCAPED: Record<string, string> = { '\\': '', '`': '', '*': '', '_': '', '~': '', '<': '', '>': '' };
+const UNESCAPE = new Map(Object.entries(ESCAPED).map(([c, p]) => [p, c] as const));
+
+/**
+ * A search snippet as plain text, the way the Switchboard previews a message: the words stay and
+ * the formatting marks go (**bold**, _italic_, ~~struck~~, `code`, ++underlined++, [text](link),
+ * headings, quotes and list bullets). The [[ ]] around matched words stay for the highlighting.
+ * Snippets are cut from longer messages, so a mark can lose its partner ("…on **Area 4"): marks
+ * are removed one by one, not in pairs. A mark standing alone between spaces ("4 * 5") is not
+ * formatting and stays, as do underscores inside a word (P12_GA_rev). Escaped marks (\*) show the
+ * character. Mentions read "@…" and Space references "#…".
+ */
+export function plainSnippet(text: string): string {
+  return text
+    .replace(/\[\[/g, '\u0001').replace(/\]\]/g, '\u0002')
+    .replace(/\\([\\`*_~<>])/g, (_, c: string) => ESCAPED[c])
+    .replace(/<@all>/g, '@everyone')
+    .replace(/<@[0-9A-Z]{26}>/g, '@…')
+    .replace(/<#[0-9A-Z]{26}>/g, '#…')
+    .replace(/\[([^\]\n]+)\]\([^)\s]*\)?/g, '$1')
+    // block marks at the start of a line: headings, quotes, bullets and to-do boxes
+    .replace(/(^|\n)[ \t]*(?:#{1,6}[ \t]+|>+[ \t]?|[-*+][ \t]+(?:\[[ xX]\][ \t]+)?)/g, '$1')
+    .replace(/\+\+(?=\S)([^+\n]*[^+\s])\+\+/g, '$1')
+    .replace(/(\s|^)?([*~`]+)(\s|$)?/g, (m, a: string | undefined, _run: string, b: string | undefined) => (a !== undefined && b !== undefined ? m : (a ?? '') + (b ?? '')))
+    // underscores are italics only at a word's edge
+    .replace(/(^|[^\p{L}\p{M}\p{N}_])_+(?=[^\s_])|(?<=[^\s_])_+(?=$|[^\p{L}\p{M}\p{N}_])/gu, '$1')
+    .replace(/[-]/g, (c) => UNESCAPE.get(c) ?? c)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\u0001/g, '[[').replace(/\u0002/g, ']]');
+}

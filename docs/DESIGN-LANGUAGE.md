@@ -26,7 +26,7 @@ other messengers. Every decision below is checked against one rule:
 
 ## 2. Foundations
 
-**Colour.** Teal 500 `#2a8c98` (accent), teal 700 `#1e6066` (pressed), teal 900 `#132b2e` (dark surfaces), amber `#f7af44` (attention only). Neutrals have a slight teal tint so greys never look generic. Light and dark themes come from the same tokens; Windows Mica shows through the window background.
+**Colour.** Teal `#1c7680` (accent, `--accent`; `#47b0a4` in the dark theme), teal 700 `#1e6066` (hover, and teal text on light surfaces), teal 900 `#132b2e` (dark surfaces), amber `#f7af44` (attention only). Neutrals have a slight teal tint so greys never look generic. Light and dark themes come from the same tokens; Windows Mica shows through the window background.
 
 **Type.**
 - Outfit (display): view titles, names, numbers.

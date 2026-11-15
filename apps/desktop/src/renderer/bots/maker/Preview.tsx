@@ -11,6 +11,7 @@ import { FlowCardView } from '../FlowCard.tsx';
 import type { FlowDriver } from '../FlowCard.tsx';
 import { BotMarkTile } from '../BotMark.tsx';
 import { DEFAULT_PERSONA } from './Identity.tsx';
+import { formatTime } from '../../time.ts';
 
 type Given = Array<{ stepId: string; value: string }>;
 
@@ -85,7 +86,7 @@ export function Preview({ def, me, users, restartKey }: { def: BotFlowDefinition
                 <div className="run-head">
                   <span className="run-name" translate="no">{def.title || 'Your bot'}</span>
                   <span className="chip accent bot-chip">Bot</span>
-                  <span className="run-time">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="run-time">{formatTime(Date.now())}</span>
                 </div>
                 {lines.map((c) => (
                   <div key={c.id} className="msg">

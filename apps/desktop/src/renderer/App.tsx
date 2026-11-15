@@ -3,7 +3,7 @@
 // Preferences and the Control room slide in as sheets from the right. Phones get a bottom lens strip.
 import { setAlertPrefs } from './alerts.ts';
 import { Pane } from './chat/Pane.tsx';
-import { setTimeFormat } from './time.ts';
+import { formatTime, setTimeFormat } from './time.ts';
 import { startPolicy } from './policy.ts';
 import { startEmoji } from './emoji.tsx';
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -51,7 +51,6 @@ import { AddToolHost } from './bots/AddTool.tsx';
 import { startBotMarks } from './bots/BotMark.tsx';
 import { BotMakerHost } from './bots/maker/host.tsx';
 import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
-import { timeOpts } from './time.ts';
 import { tr } from './i18n/index.ts';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 // last: the drawing-office layer decides the shape of the shared controls (after every screen's own sheet)
@@ -411,7 +410,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   setPresenceSource(live ? session.online : [], session.away ?? [], session.users, session.inRoom ?? [], session.inMeeting ?? []);
   const toast = useToast();
   const setAvailability = (availability: Availability, until: number | null = null) => {
-    void window.dex.request('me.update', { availability, until }).then(() => toast(`Shown as ${AVAILABILITY.find((a) => a.id === availability)!.label}${until ? ` till ${new Date(until).toLocaleTimeString([], { ...timeOpts(), weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined, hour: 'numeric', minute: '2-digit' })}` : ''}`)).catch((e: Error) => toast(e.message, true));
+    void window.dex.request('me.update', { availability, until }).then(() => toast(`Shown as ${AVAILABILITY.find((a) => a.id === availability)!.label}${until ? ` till ${formatTime(until, { weekday: until - Date.now() > 20 * 3600_000 ? 'short' : undefined })}` : ''}`)).catch((e: Error) => toast(e.message, true));
   };
   const [ooo, setOoo] = useState(false);
 
@@ -602,7 +601,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
                 {AVAILABILITY.map((a) => (
                   <button key={a.id} role="menuitemradio" aria-checked={session.me.availability === a.id} className="avail" disabled={!live} onClick={() => { setMenu(a.id !== 'available'); setAvailability(a.id); }}>
                     <span className={`avail-ring ${a.id}`} />
-                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Till ${new Date(session.me.availabilityUntil).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric', minute: '2-digit' })}` : a.hint}</span></span>
+                    <span className="sb-main"><span>{a.label}</span><span className="sb-preview">{session.me.availability === a.id && session.me.availabilityUntil ? `Till ${formatTime(session.me.availabilityUntil)}` : a.hint}</span></span>
                   </button>
                 ))}
                 {session.me.availability !== 'available' && (

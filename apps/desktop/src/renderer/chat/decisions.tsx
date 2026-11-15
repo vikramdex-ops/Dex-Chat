@@ -6,6 +6,7 @@ import type { Conversation, DecisionResults, DecisionStep, DecisionStepInput, De
 import { Avatar, Dialog, Icon, confirmAction, useToast } from '../ui.tsx';
 import { downloadText } from '../work/store.ts';
 import './messages.css';
+import { formatDateTime } from '../time.ts';
 
 // ------------------------------------------------------------------ the builder
 interface DraftOption { key: number; label: string; then: 'close' | 'step'; note: string; next: DraftStep }
@@ -191,7 +192,7 @@ export function DecisionCard({ m, meId, users }: { m: Message; meId: string; use
           <span className="dc-stamp" translate="no">{d.outcome}</span>
           <div className="dc-end-text">
             {d.note ? <span translate="no">{d.note}</span> : <span className="faint">You reached the end of this Decision.</span>}
-            {d.finishedAt && <span className="mono faint">{new Date(d.finishedAt).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>}
+            {d.finishedAt && <span className="mono faint">{formatDateTime(d.finishedAt, { day: 'numeric', month: 'short' })}</span>}
           </div>
         </div>
       ) : d.current ? <StepAnswer m={m} step={d.current} closed={d.closed} /> : d.closed ? <p className="faint" style={{ margin: '4px 0' }}>Closed before you reached an end.</p> : null}
@@ -269,7 +270,7 @@ export function DecisionResultsSheet({ messageId, users, onClose }: { messageId:
                   <td><span className="dr-person"><Avatar user={{ id: p.userId, displayName: name(p.userId) }} size="sm" /><span translate="no">{name(p.userId)}</span></span></td>
                   <td translate="no">{p.steps.map((s, i) => <span key={s.stepId} className={s.text ? 'dr-written' : undefined}>{i ? ' › ' : ''}{s.answer}</span>)}</td>
                   <td>{p.done ? <span className="dc-stamp sm" translate="no">{p.outcome}</span> : <span className="faint">On the way</span>}</td>
-                  <td className="mono faint">{new Date(p.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                  <td className="mono faint">{formatDateTime(p.at, { day: 'numeric', month: 'short' })}</td>
                 </tr>
               ))}
               {r.people.length === 0 && <tr><td colSpan={4} className="faint">Nobody has answered yet.</td></tr>}

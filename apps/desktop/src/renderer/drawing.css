@@ -40,7 +40,8 @@
 /* a guest is not live: a dashed box, not amber */
 .chip.guest { border-style: dashed; color: var(--text-2); }
 button.chip { cursor: pointer; }
-html:is([lang='hi'], [lang='ta']) .chip { font: 600 11.5px/1 var(--font-body); letter-spacing: 0; }
+/* Hindi and Tamil tags are set in the body face, not as capitals: a time in a tag keeps the language's own am/pm */
+html:is([lang='hi'], [lang='ta']) .chip { font: 600 11.5px/1 var(--font-body); letter-spacing: 0; text-transform: none; }
 
 /* end-to-end encryption in a conversation's title block: a mono tag, teal, not a green pill */
 .e2e-chip {

@@ -9,7 +9,8 @@ import { convTitle } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { searchLocal } from '../localsearch/service.ts';
-import { timeOpts } from '../time.ts';
+import { plainSnippet } from '../localsearch/tokenize.ts';
+import { formatTime } from '../time.ts';
 import { translating } from '../i18n/index.ts';
 
 export interface SearchInit { q?: string; convId?: string | null }
@@ -29,14 +30,15 @@ function since(w: When): number | undefined {
   if (w === 'year') return Date.now() - 365 * 86400_000;
   return undefined;
 }
-function Snippet({ text }: { text: string }) {
-  const parts = text.replace(/<@[0-9A-Z]{26}>/g, '@…').split(/\[\[|\]\]/);
+/** Matched words highlighted. A message's snippet shows as plain text, its formatting marks gone. */
+function Snippet({ text, message = false }: { text: string; message?: boolean }) {
+  const parts = (message ? plainSnippet(text) : text.replace(/<@[0-9A-Z]{26}>/g, '@…')).split(/\[\[|\]\]/);
   // what people wrote is shown as written, never translated
   return <>{parts.map((p, i) => (i % 2 ? <mark key={i} translate="no">{p}</mark> : <span key={i} translate="no">{p}</span>))}</>;
 }
 const when = (t: number) => {
   const d = new Date(t);
-  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+  return d.toDateString() === new Date().toDateString() ? formatTime(d) : d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 };
 
 export function SearchView({ init, users, meId, conversations, onOpen }: {
@@ -185,7 +187,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
                 <Avatar user={a ?? { id: h.message.authorId, displayName: '?' }} size="sm" />
                 <span className="sb-main">
                   <span className="search-meta"><b translate={a ? 'no' : undefined}>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint sm-where" title={convTitle(c, byId, meId)}> in <span translate="no">{convTitle(c, byId, meId)}</span></span>}{h.message.parentId && <span className="faint"> · side-track</span>}{h.local && <span className="search-local" title="Found in this device's encrypted index: the hub cannot read end-to-end encrypted messages">from this device</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
-                  <span className="search-snippet" translate={h.snippet ? undefined : 'no'}>{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
+                  <span className="search-snippet" translate={h.snippet ? undefined : 'no'}>{h.snippet ? <Snippet text={h.snippet} message /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
                 </span>
               </button>
             );

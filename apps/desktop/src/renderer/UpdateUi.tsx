@@ -1,7 +1,7 @@
 // Update surfaces: the title-bar pill, the required-update prompt and the "what's new" card.
 import type { AppState } from '../shared/bridge.ts';
 import { Icon } from './ui.tsx';
-import { timeOpts } from './time.ts';
+import { formatTime } from './time.ts';
 
 export const formatBytes = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(0)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
 const pct = (p: { received: number; total: number } | null) => (p && p.total ? Math.floor((p.received / p.total) * 100) : 0);
@@ -71,7 +71,7 @@ export function UpdateSettings({ state }: { state: AppState }) {
   switch (u.phase) {
     case 'disabled': line = 'Updates are managed outside the app for development builds.'; break;
     case 'checking': line = 'Checking for updates…'; break;
-    case 'up-to-date': line = `You're up to date${u.lastCheck ? ` · checked ${new Date(u.lastCheck).toLocaleTimeString([], { ...timeOpts(), hour: '2-digit', minute: '2-digit' })}` : ''}.`; break;
+    case 'up-to-date': line = `You're up to date${u.lastCheck ? ` · checked ${formatTime(u.lastCheck)}` : ''}.`; break;
     case 'available': line = u.available?.source === 'hub'
       ? `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from the office hub).`
       : `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from the internet).`; break;
