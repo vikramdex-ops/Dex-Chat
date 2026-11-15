@@ -260,3 +260,6 @@ html:is([lang='hi'], [lang='ta']) .bot-details dt { font-family: var(--font-body
 .trk-bot.failed { color: var(--danger); }
 .trk-bot-live { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); animation: pulse 1.4s var(--ease) infinite; }
 @media (prefers-reduced-motion: reduce) { .trk-bot-live { animation: none; } }
+
+.bots-holidays { margin-top: 18px; }
+.bots-holidays .label { margin: 0 0 4px; }

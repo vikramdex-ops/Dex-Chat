@@ -183,10 +183,15 @@ function Lane({ lane, range, from, to, width, now, tz, workdays, holidays, onSel
                 onClick={() => { onSelect(selected === key ? null : key); if (m.runs[0]) onDetail({ title: lane.title, run: m.runs[0] }); }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(selected === key ? null : key); if (m.runs[0]) onDetail({ title: lane.title, run: m.runs[0] }); } }}>
                 {out ? (
-                  <g className={`js-stamp ${out}`} transform="rotate(-4)">
-                    <rect x={-17} y={26} width={34} height={14} />
-                    <text y={36} textAnchor="middle">{m.count > 1 ? `${m.count}×` : out}</text>
-                  </g>
+                  <>
+                    {/* past runs stand above the line on a short leader, so they never sit on a coming run */}
+                    <line x1={0} y1={20} x2={0} y2={34} className="js-tick major" />
+                    <circle cx={0} cy={34} r={2} className="js-mk" />
+                    <g className={`js-stamp ${out}`} transform="rotate(-4)">
+                      <rect x={-18} y={5} width={36} height={14} />
+                      <text y={15} textAnchor="middle">{m.count > 1 ? `${m.count}×` : out}</text>
+                    </g>
+                  </>
                 ) : (
                   <>
                     <rect x={-5} y={29} width={10} height={10} transform="rotate(45 0 34)" className="js-mk" />
