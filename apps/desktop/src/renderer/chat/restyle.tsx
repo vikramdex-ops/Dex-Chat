@@ -90,13 +90,17 @@ function pieces(src: string, r: RestyleResult, rejected: Set<number>, toggle: (i
     if (c.at > pos) result.push(<span key={`t${pos}`}>{r.text.slice(pos, c.at)}</span>);
     const no = rejected.has(c.id);
     const shown = no ? c.from : c.to;
+    // the mark sits on the words; a line break or space the change ends with stays outside it
+    const tail = /\s*$/.exec(shown)?.[0] ?? '';
+    const core = shown.slice(0, shown.length - tail.length);
     result.push(
-      <button key={`c${c.id}`} type="button" className={`rev-mark${no ? ' rejected' : ' accepted'}${!shown ? ' empty' : ''}`} disabled={readOnlyMarks}
+      <button key={`c${c.id}`} type="button" className={`rev-mark${no ? ' rejected' : ' accepted'}${!core ? ' empty' : ''}`} disabled={readOnlyMarks}
         onClick={() => toggle(c.id)} aria-pressed={!no} title={`${ruleLabel(c.rule)}: ${no ? 'rejected, click to accept' : 'accepted, click to reject'}`}
         aria-label={`Revision ${c.id + 1}, ${ruleLabel(c.rule)}, ${no ? 'rejected' : 'accepted'}`}>
-        <span className="rev-text">{shown || (no ? '' : '⁁')}</span><sup className="rev-delta" aria-hidden="true">{c.id + 1}</sup>
+        <span className="rev-text">{core || (no ? '' : '⁁')}</span><sup className="rev-delta" aria-hidden="true">{c.id + 1}</sup>
       </button>,
     );
+    if (tail) result.push(<span key={`w${c.id}`}>{tail}</span>);
     pos = c.at + c.to.length;
   }
   if (pos < r.text.length) result.push(<span key={`t${pos}`}>{r.text.slice(pos)}</span>);

@@ -165,7 +165,8 @@ function CardBody({ card, url, discuss, onRemove }: { card: LinkCard; url: strin
     setBusy(a.label);
     void runAction(a, card, toast).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(null));
   };
-  const metaLine = card.meta.filter((x) => x.key !== 'path').slice(0, 3);
+  const metas = card.meta.filter((x) => x.key !== 'path' && x.key !== 'tool');
+  const metaSpan = (list: typeof metas) => list.map((x, i) => <span key={x.key + x.label} className="lcard-meta">{i ? ' · ' : ''}<span className="faint">{x.label}</span> <span translate="no">{x.value}</span></span>);
   const thumb = card.preview?.fileId ? { id: card.preview.fileId, name: card.title ?? 'Image' } : null;
   const problem = card.status && card.status !== 'ok' ? card.reason ?? null : null;
   const excerpt = card.preview?.excerpt ?? problem;
@@ -179,10 +180,11 @@ function CardBody({ card, url, discuss, onRemove }: { card: LinkCard; url: strin
       <div className="lcard-main">
         <div className="lcard-title" translate="no" title={title}>{title}</div>
         <div className="lcard-sub">
-          {card.subtitle && card.title && <span className="lcard-subtitle" translate="no">{card.subtitle}</span>}
-          {metaLine.map((x) => <span key={x.key + x.label} className="lcard-meta mono"><span className="faint">{x.label}</span> <span translate="no">{x.value}</span></span>)}
+          {card.subtitle && card.title ? <><span translate="no">{card.subtitle}</span>{metas.length ? ' · ' : ''}{metaSpan(metas.slice(0, 1))}</> : metaSpan(metas.slice(0, 2))}
         </div>
-        <div className={`lcard-excerpt${problem && !card.preview?.excerpt ? ' faint' : ''}`} translate={problem && !card.preview?.excerpt ? undefined : 'no'}>{excerpt ?? <span className="faint mono" translate="no">{shortUrl(url)}</span>}</div>
+        {excerpt
+          ? <div className={`lcard-excerpt${problem && !card.preview?.excerpt ? ' faint' : ''}`} translate={problem && !card.preview?.excerpt ? undefined : 'no'}>{excerpt}</div>
+          : <div className="lcard-sub second">{metas.length > (card.subtitle && card.title ? 1 : 2) ? metaSpan(metas.slice(card.subtitle && card.title ? 1 : 2, 5)) : <span className="faint mono" translate="no">{shortUrl(url)}</span>}</div>}
         <div className="lcard-actions">
           {card.actions.slice(0, 3).map((a) => (
             <button key={a.kind + a.label} className={`lbtn${a.kind === 'join' ? ' live' : ''}`} disabled={!!busy} onClick={() => go(a)} title={a.kind === 'copy-path' ? a.target : undefined}>
