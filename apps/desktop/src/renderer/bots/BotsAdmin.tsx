@@ -10,6 +10,7 @@ import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { permissionWords } from './MiniAppCard.tsx';
 import { BotMarkTile } from './BotMark.tsx';
 import { openBotMaker } from './maker/open.ts';
+import { openBotNetwork, openJobSheet } from './net/open.ts';
 import { KIND_TAG, kindOf } from './maker/model.ts';
 import './bots.css';
 
@@ -75,6 +76,8 @@ function Flows({ users }: { users: PublicUser[] }) {
       </p>
       <div className="row-actions" style={{ marginBottom: 12 }}>
         <button className="btn primary" disabled={!active.length} onClick={() => openBotMaker({ admin: {} })}><Icon name="plus" size={15} />Write a flow</button>
+        <button className="btn" onClick={() => openBotNetwork('office')}><Icon name="branch" size={15} />Bot network</button>
+        <button className="btn" onClick={() => openJobSheet('office')}><Icon name="schedule" size={15} />Job sheet</button>
         {!active.length && <span className="faint">Create an integration first (Integrations).</span>}
       </div>
       {waiting.map((f) => <Review key={f.name} f={f} users={users} onDone={load} />)}

@@ -255,10 +255,10 @@ export class BotNet {
   }
 
   private tagOf(key: string): BotTag {
-    if (SYSTEM_BOTS.includes(key)) return { key, title: SYSTEM_TITLES[key], mark: null, colour: null, tag: SYSTEM_TAGS[key], system: true };
+    if (SYSTEM_BOTS.includes(key)) return { key, title: SYSTEM_TITLES[key], mark: null, colour: null, tag: SYSTEM_TAGS[key], system: true, botId: null };
     const b = this.d.host.live(key);
     const p = b?.def.persona;
-    return { key, title: b?.def.title ?? key, mark: p?.mark ?? null, colour: p?.colour ?? null, tag: tagLetters(b?.def.title ?? key, p?.mark.kind === 'monogram' ? p.mark.letters : null), system: false };
+    return { key, title: b?.def.title ?? key, mark: p?.mark ?? null, colour: p?.colour ?? null, tag: tagLetters(b?.def.title ?? key, p?.mark.kind === 'monogram' ? p.mark.letters : null), system: false, botId: b?.bot.id ?? null };
   }
 
   private hopOf(r: LinkRow): BotHop {

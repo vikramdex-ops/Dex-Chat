@@ -8,6 +8,8 @@ import type { BotFlowDefinition, BotFlowStage, BotFlowStageAction, BotFlowTrack,
 import { Icon } from '../../ui.tsx';
 import { InsertChips, insertAt } from './Steps.tsx';
 import { dateSteps, kindOf, personSteps, saveKeyOf } from './model.ts';
+import { HandoffEditor } from './Ending.tsx';
+import { botTitle, useNet } from './netdata.ts';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -38,12 +40,17 @@ function freshId(used: string[], base: string): string {
 
 function WhoSelect({ def, value, onChange, id }: { def: BotFlowDefinition; value: string; onChange: (v: string) => void; id: string }) {
   const roles = Object.entries(def.track?.roles ?? {});
+  const net = useNet();
   return (
     <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="requester">The person who asked</option>
       {!personSteps(def).some((s) => saveKeyOf(s) === 'lead') && <option value="lead">Their lead (from the directory)</option>}
       {personSteps(def).map((s) => <option key={s.id} value={saveKeyOf(s)}>{`The person chosen at “${s.label || s.id}”`}</option>)}
       {roles.map(([k, r]) => <option key={k} value={`role:${k}`}>{r.label}</option>)}
+      <optgroup label="Another bot carries it on">
+        {net.bots.filter((b) => b.name !== def.name).map((b) => <option key={b.name} value={`bot:${b.name}`}>{`The bot ${b.title}`}</option>)}
+        {value.startsWith('bot:') && !net.bots.some((b) => `bot:${b.name}` === value) && <option value={value}>{`The bot ${botTitle(net, value.slice(4))}`}</option>}
+      </optgroup>
     </select>
   );
 }
@@ -95,7 +102,17 @@ function StageEditor({ def, stage, onChange }: { def: BotFlowDefinition; stage: 
   return (
     <div className="bm-step-edit">
       <div className="field"><label htmlFor={`${id}-l`}>Stage name</label><input id={`${id}-l`} className="input" maxLength={40} value={stage.label} onChange={(e) => onChange({ ...stage, label: e.target.value })} /></div>
-      <div className="field"><label htmlFor={`${id}-w`}>Who acts</label><WhoSelect id={`${id}-w`} def={def} value={stage.who} onChange={(who) => onChange({ ...stage, who })} /></div>
+      <div className="field"><label htmlFor={`${id}-w`}>Who acts</label><WhoSelect id={`${id}-w`} def={def} value={stage.who} onChange={(who) => {
+        const { handoff: _h, ...rest } = stage;
+        onChange(who.startsWith('bot:') ? { ...rest, who, handoff: { to: who.slice(4) }, task: false } : { ...rest, who });
+      }} /></div>
+      {stage.who.startsWith('bot:') && (
+        <fieldset className="bm-wide bm-askbot">
+          <legend>Waits on another bot</legend>
+          <div className="bm-grid"><HandoffEditor def={def} h={stage.handoff ?? { to: stage.who.slice(4) }} stages onChange={(h) => onChange({ ...stage, who: `bot:${h.to}`, handoff: { ...h, ...(stage.handoff?.back ? { back: stage.handoff.back } : {}) } })} /></div>
+          <span className="bm-hint">The request is handed to that bot when it reaches this stage, and no one has it here meanwhile. When the other bot’s request closes, the main button of this stage is pressed for it (or the one that ends it short, when it was turned down), with the other bot’s stamp as the note.</span>
+        </fieldset>
+      )}
       <div className="field bm-wide">
         <label htmlFor={`${id}-p`}>What they are asked</label>
         <textarea ref={prompt} id={`${id}-p`} className="input" rows={3} maxLength={1000} value={stage.prompt} onChange={(e) => onChange({ ...stage, prompt: e.target.value })} />
@@ -199,7 +216,8 @@ export function LifecycleSection({ def, setDef, problems, users, me }: { def: Bo
   const remind = t.remind ?? { afterHours: 24, times: 2, escalate: 'lead' };
   const reg = t.register ?? {};
   const roles = Object.entries(t.roles ?? {});
-  const whoWords = (who: string) => (who === 'requester' ? 'The person who asked' : who.startsWith('role:') ? t.roles?.[who.slice(5)]?.label ?? who : personSteps(def).find((s) => saveKeyOf(s) === who)?.label ?? (who === 'lead' ? 'Their lead' : who));
+  const net = useNet();
+  const whoWords = (who: string) => (who === 'requester' ? 'The person who asked' : who.startsWith('bot:') ? `The bot ${botTitle(net, who.slice(4))}` : who.startsWith('role:') ? t.roles?.[who.slice(5)]?.label ?? who : personSteps(def).find((s) => saveKeyOf(s) === who)?.label ?? (who === 'lead' ? 'Their lead' : who));
   return (
     <div className="bm-section">
       {problems.length > 0 && <div className="bm-problem" role="note"><Icon name="warning" size={14} /><span>{problems.join(' ')}</span></div>}

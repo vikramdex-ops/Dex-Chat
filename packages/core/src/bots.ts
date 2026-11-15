@@ -628,7 +628,7 @@ export interface BotHop {
 }
 
 /** A bot as an instrument tag on a drawing. */
-export interface BotTag { key: string; title: string; mark: BotMark | null; colour: BotColour | null; tag: string; system: boolean }
+export interface BotTag { key: string; title: string; mark: BotMark | null; colour: BotColour | null; tag: string; system: boolean; /** Its identity in conversations (to open its conversation). */ botId: string | null }
 
 export interface BotRelayView {
   group: string;

@@ -19,13 +19,16 @@ import { EndingSection } from './Ending.tsx';
 import { LifecycleSection } from './Lifecycle.tsx';
 import { Preview } from './Preview.tsx';
 import { StartPanel } from './Start.tsx';
+import { NetworkSection } from './Network.tsx';
+import { ScheduleSection } from './Schedule.tsx';
+import { NetContext, useNetData } from './netdata.ts';
 import '../bots.css';
 import './maker.css';
 
 import type { MakerRequest, MakerSection as Section } from './open.ts';
 const SECTIONS: Array<{ value: Section; label: string }> = [
   { value: 'identity', label: 'Identity' }, { value: 'steps', label: 'Questions' }, { value: 'end', label: 'At the end' },
-  { value: 'track', label: 'Afterwards' }, { value: 'share', label: 'Sharing' }, { value: 'json', label: 'Advanced' },
+  { value: 'track', label: 'Afterwards' }, { value: 'net', label: 'Other bots' }, { value: 'jobs', label: 'Schedule' }, { value: 'share', label: 'Sharing' }, { value: 'json', label: 'Advanced' },
 ];
 
 
@@ -146,6 +149,7 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
   const [nameLocked, setNameLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setDef = useCallback((d: BotFlowDefinition) => setDefRaw(d), []);
+  const net = useNetData(saved?.name ?? req.name ?? null, adminMode);
 
   useEffect(() => {
     if (adminMode) {
@@ -212,6 +216,7 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
   const loading = (req.name || req.admin?.name) && !def;
 
   return createPortal(
+    <NetContext.Provider value={net}>
     <div className="sheet-scrim bm-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) void close(); }}>
       <aside ref={box} tabIndex={-1} className="bm-sheet" role="dialog" aria-modal="true" aria-label={adminMode ? 'Flow maker' : 'Bot maker'} onKeyDown={trapTab} data-phone={phone}>
         <header className="bm-tb">
@@ -250,7 +255,7 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
                       const n = s.value === 'steps' ? stepProblems : s.value === 'end' ? endProblems : s.value === 'track' ? problems?.track.length ?? 0 : s.value === 'identity' ? problems?.general.length ?? 0 : 0;
                       return (
                         <button key={s.value} type="button" role="tab" aria-selected={section === s.value} aria-pressed={section === s.value} aria-controls="bm-panel" onClick={() => setSection(s.value)}>
-                          {s.label}{s.value === 'steps' && <span className="bm-count mono">{def.steps.length}</span>}{s.value === 'track' && def.track && <span className="bm-count mono">{def.track.stages.length}</span>}
+                          {s.label}{s.value === 'steps' && <span className="bm-count mono">{def.steps.length}</span>}{s.value === 'track' && def.track && <span className="bm-count mono">{def.track.stages.length}</span>}{s.value === 'jobs' && !!def.jobs?.length && <span className="bm-count mono">{def.jobs.length}</span>}
                           {n > 0 && <span className="bm-bad mono" aria-label={`${n} to fix`}>{n}</span>}
                         </button>
                       );
@@ -269,6 +274,8 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
                   {section === 'steps' && <StepsSection def={def} setDef={setDef} problems={problems?.steps ?? {}} open={open} setOpen={setOpen} />}
                   {section === 'end' && <EndingSection def={def} setDef={setDef} problems={problems?.finish ?? {}} admin={adminMode && isAdmin} spaces={spaces.map((s) => s.name)} />}
                   {section === 'track' && <LifecycleSection def={def} setDef={setDef} problems={problems?.track ?? []} users={session.users} me={session.me} />}
+                  {section === 'net' && <NetworkSection def={def} setDef={setDef} scope={scope} />}
+                  {section === 'jobs' && <ScheduleSection def={def} setDef={setDef} spaces={spaces} users={session.users} me={session.me} saved={!!saved} />}
                   {section === 'share' && <Sharing def={def} setDef={setDef} scope={scope} setScope={setScope} spaceId={spaceId} setSpaceId={setSpaceId} spaces={spaces} saved={saved} admin={adminMode} bots={bots} botId={botId} setBotId={setBotId} />}
                   {section === 'json' && <Advanced def={def} setDef={setDef} />}
                 </div>
@@ -283,7 +290,8 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
           </div>
         </div>
       </aside>
-    </div>,
+    </div>
+    </NetContext.Provider>,
     document.body,
   );
 }

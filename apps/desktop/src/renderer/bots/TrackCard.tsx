@@ -9,6 +9,7 @@ import type { BotFlowStageAction, BotRegisterView, BotTrackView, PublicUser } fr
 import { Icon } from '../ui.tsx';
 import { renderBody } from '../chat/format.tsx';
 import { formatDateTime, formatTime } from '../time.ts';
+import { BotMarkTile } from './BotMark.tsx';
 
 /** What a request's buttons do: ask the hub, or (in the bot maker's test run) move the test request. */
 export interface TrackDriver {
@@ -45,6 +46,14 @@ function Strip({ v }: { v: BotTrackView }) {
           <span className="trk-state" aria-hidden="true">{s.state === 'done' ? <Icon name="check" size={11} /> : s.state === 'returned' ? <Icon name="back" size={11} /> : s.state === 'here' ? <i className="trk-dot" /> : null}</span>
           <span className="sr-only">{s.state === 'done' ? 'Done' : s.state === 'here' ? 'Here now' : s.state === 'returned' ? 'Returned' : 'To come'}</span>
           {s.round ? <span className="trk-round mono">{`Round ${s.round}`}</span> : null}
+          {s.bot && (
+            // a stage that waits on another bot: its mark, and how its request stands there now
+            <span className={`trk-bot ${s.bot.status}`} title={s.bot.title}>
+              {s.bot.mark && s.bot.colour ? <BotMarkTile mark={s.bot.mark} colour={s.bot.colour} size={14} /> : <span className="trk-bot-tag mono" aria-hidden="true">BOT</span>}
+              <span className="trk-bot-words mono"><span translate="no">{s.bot.ref ?? s.bot.title}</span>{s.bot.label ? <span>{` · ${s.bot.label}`}</span> : null}</span>
+              {s.bot.status === 'open' && s.state === 'here' && <i className="trk-bot-live" aria-hidden="true" />}
+            </span>
+          )}
         </li>
       ))}
     </ol>
@@ -108,6 +117,8 @@ function ActionBar({ v, driver, busy, run }: { v: BotTrackView; driver: TrackDri
 function Holder({ v, users }: { v: BotTrackView; users: Map<string, PublicUser> }) {
   const s = v.stage;
   if (!s) return null;
+  const bot = v.stages.find((x) => x.id === s.id)?.bot;
+  if (bot && !s.who) return <span className="trk-holder"><span>{bot.status === 'failed' ? `${bot.title} did not take it` : `With the bot ${bot.title}`}</span>{bot.ref ? <span className="faint mono" translate="no">{` · ${bot.ref}`}</span> : null}</span>;
   if (v.queue && v.queue.position > 0) return <span className="chip warn">{v.queue.key ? `In line for ${v.queue.key}: place ${v.queue.position} of ${v.queue.of}` : `Place ${v.queue.position} of ${v.queue.of}`}</span>;
   if (v.role === 'actor') return <span className="chip warn">{v.actingAs ? `Trying it as: ${v.actingAs}` : 'Waiting for you'}</span>;
   if (v.turnBelow) return <span className="chip warn">Your turn: the card below</span>;

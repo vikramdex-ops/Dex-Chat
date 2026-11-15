@@ -2,8 +2,9 @@
 // follows the draft as it changes (the answers given so far are given again to the new draft), and
 // Test run walks through it from the start exactly as a colleague would; nothing is sent.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { BotFlowAnswer, BotFlowDefinition, Message, PublicUser } from '@dex/core';
-import { BotFlowError, validateFlow } from '@dex/core/botflows';
+import type { BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotHop, Message, PublicUser } from '@dex/core';
+import { BotFlowError, effectiveVars, validateFlow } from '@dex/core/botflows';
+import { inputsFor, skillBot, tagLetters } from '@dex/core/botnet';
 import { testAct, testAnswer, testBack, testCancel, testStart, testTick, testWithdraw } from '@dex/core/botmaker';
 import type { TestRun } from '@dex/core/botmaker';
 import { Icon } from '../../ui.tsx';
@@ -65,6 +66,39 @@ export function Preview({ def, me, users, restartKey }: { def: BotFlowDefinition
   // when it finishes, it remembers (as the real bot would) for the next test run
   useEffect(() => { if (run?.status === 'done' && shown?.persona?.remember) setMemory((m) => ({ ...m, ...run.memory })); }, [run?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // a step that asks another bot: the test run asks it for real (as the maker; an errand is only
+  // described), and answers the step with what comes back, as the hub would
+  const [asks, setAsks] = useState<Record<string, { ok: boolean | null; words: string; reason: string | null; ask: string; at: number }>>({});
+  useEffect(() => { setAsks({}); }, [restartKey]);
+  const askStep = run?.status === 'active' && shown ? shown.steps.find((x) => x.id === run.step && x.ask) : undefined;
+  const askKey = askStep && base ? `${askStep.id}#${base.given.length}` : null;
+  useEffect(() => {
+    if (!askStep?.ask || !askKey || !base || !shown || asks[askKey]) return;
+    const a = askStep.ask;
+    const inputs = inputsFor(a, effectiveVars(shown, base.run));
+    const ask = `${a.skill}${Object.values(inputs).length ? ` · ${Object.values(inputs).slice(0, 2).join(' · ')}` : ''}`;
+    setAsks((m) => ({ ...m, [askKey]: { ok: null, words: '', reason: null, ask, at: Date.now() } }));
+    void window.dex.request('botnet.try', { skill: a.skill, with: inputs }).then((r) => {
+      setAsks((m) => ({ ...m, [askKey]: { ok: r.ok, words: r.words, reason: r.reason, ask, at: Date.now() } }));
+      if (!r.ok || !r.answer) return;
+      try { testAnswer(base.run, askStep.id, r.answer.value, ctx); } catch { return; }
+      setGiven((g) => (g.length === base.given.length ? [...g, { stepId: askStep.id, value: r.answer!.value }] : g));
+    }).catch((e: Error) => setAsks((m) => ({ ...m, [askKey]: { ok: false, words: '', reason: e.message, ask, at: Date.now() } })));
+  }, [askKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** The relay card the test run shows for the asks so far. */
+  const relayFor = (stepId: string): BotFlowCard | null => {
+    const st = shown?.steps.find((x) => x.id === stepId);
+    const hits = Object.entries(asks).filter(([k]) => k.startsWith(`${stepId}#`));
+    if (!st?.ask || !hits.length || !shown) return null;
+    const [, last] = hits[hits.length - 1];
+    const to = skillBot(st.ask.skill);
+    const hop: BotHop = { id: `${stepId}-${last.at}`, kind: 'query', from: shown.name, to, ask: last.ask, answer: last.ok ? last.words : null, status: last.ok === null ? 'pending' : last.ok ? 'ok' : 'failed', reason: last.reason, at: last.at, ms: null, back: null, ref: null, canRetry: false };
+    return {
+      kind: 'relay', botId: 'test-bot', sessionId: null, ownerId: me.id, title: shown.title, state: 'active',
+      relay: { group: 'test', tags: [{ key: shown.name, title: shown.title, mark: p.mark, colour: p.colour, tag: tagLetters(shown.title, p.mark.kind === 'monogram' ? p.mark.letters : null), system: false, botId: null }, { key: to, title: to, mark: null, colour: null, tag: tagLetters(to), system: ['nib', 'directory', 'calendar'].includes(to), botId: null }], hops: [hop] },
+    };
+  };
+
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }, [run?.cards.length]);
 
@@ -117,13 +151,23 @@ export function Preview({ def, me, users, restartKey }: { def: BotFlowDefinition
                   <span className="chip accent bot-chip">Bot</span>
                   <span className="run-time">{formatTime(Date.now())}</span>
                 </div>
-                {lines.map((c) => (
-                  <div key={c.id} className="msg">
-                    {c.card
-                      ? <FlowCardView m={fake(c.id, c.body, { ...c.card, ownerId: me.id })} meId={me.id} users={users} driver={driver} />
-                      : <div className="msg-text" translate="no">{c.body}</div>}
-                  </div>
-                ))}
+                {lines.map((c) => {
+                  const relay = c.card?.kind === 'step' && c.card.stepId ? relayFor(c.card.stepId) : null;
+                  // a step the other bot answered is not the person's: only its relay card shows
+                  const asked = !!relay && relay.relay?.hops[0]?.status !== 'failed';
+                  return (
+                    <div key={c.id}>
+                      {relay && <div className="msg"><FlowCardView m={fake(`${c.id}-relay`, '', relay)} meId={me.id} users={users} driver={driver} /></div>}
+                      {!asked && (
+                        <div className="msg">
+                          {c.card
+                            ? <FlowCardView m={fake(c.id, c.body, { ...c.card, ownerId: me.id })} meId={me.id} users={users} driver={driver} />
+                            : <div className="msg-text" translate="no">{c.body}</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 <div ref={end} />
               </div>
             </div>

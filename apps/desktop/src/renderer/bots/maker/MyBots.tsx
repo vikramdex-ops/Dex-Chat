@@ -10,6 +10,7 @@ import { confirmAction } from '../../confirm.tsx';
 import { chatState } from '../../chat/store.ts';
 import { BotMarkTile } from '../BotMark.tsx';
 import { openBotMaker } from './open.ts';
+import { openBotNetwork, openJobSheet } from '../net/open.ts';
 import '../bots.css';
 import './maker.css';
 
@@ -60,7 +61,11 @@ export function MyBots({ session }: { session: Session }) {
       <section className="desk-group">
         <div className="mybots-head">
           <h3 className="label">Your bots{mine ? ` · ${mine.length}` : ''}</h3>
-          {!guest && <button className="btn primary sm" onClick={() => openBotMaker()}><Icon name="plus" size={14} />Make a bot</button>}
+          <span className="mybots-tools">
+            {!guest && !!mine?.length && <button className="btn ghost sm" onClick={() => openBotNetwork('mine')}><Icon name="branch" size={14} />Bot network</button>}
+            {!guest && !!mine?.some((b) => b.definition.jobs?.length) && <button className="btn ghost sm" onClick={() => openJobSheet('mine')}><Icon name="schedule" size={14} />Job sheet</button>}
+            {!guest && <button className="btn primary sm" onClick={() => openBotMaker()}><Icon name="plus" size={14} />Make a bot</button>}
+          </span>
         </div>
         {mine === null && <div className="tl-more"><span className="spinner" /></div>}
         {mine?.length === 0 && (
@@ -148,6 +153,8 @@ function BotPage({ bot, session, onBack, onChanged }: { bot: BotMakerBot; sessio
         <button className="btn primary" onClick={() => openBotMaker({ name: bot.name })}><Icon name="edit" size={15} />Edit</button>
         <button className="btn" disabled={bot.status !== 'live' || !bot.openNow} onClick={() => void start(bot.name)}><Icon name="play" size={15} />Start</button>
         <button className="btn" onClick={() => openBotMaker({ name: bot.name, section: 'share' })}><Icon name="people" size={15} />Share</button>
+        {!!bot.definition.jobs?.length && <button className="btn" onClick={() => openJobSheet('bot', bot.name)}><Icon name="schedule" size={15} />Jobs</button>}
+        <button className="btn" onClick={() => openBotNetwork('mine')}><Icon name="branch" size={15} />Network</button>
         {bot.status === 'live' && <button className="btn" onClick={() => status('paused')}><Icon name="pause" size={15} />Pause</button>}
         {bot.status !== 'live' && <button className="btn" onClick={() => status('live')}><Icon name="play" size={15} />{bot.status === 'retired' ? 'Bring back' : 'Resume'}</button>}
         {bot.status !== 'retired' && <button className="btn ghost" onClick={() => status('retired')}><Icon name="archive" size={15} />Retire</button>}

@@ -45,8 +45,8 @@ const stressCheck = (extra: Partial<BotFlowDefinition> = {}): BotFlowDefinition 
   steps: [
     { id: 'line', label: 'Line', prompt: 'Which line?', input: { kind: 'text' } },
     { id: 'seat', label: 'CAESAR II seat', prompt: 'Is a CAESAR II seat free?', input: { kind: 'text' }, ask: { skill: 'licence-seat.seats', with: { key: 'CAESAR II' } }, branches: [{ if: { equals: '0' }, goto: 'wait' }] },
-    { id: 'go', label: 'Start', prompt: 'A seat is free ({{seat}}). Start now?', input: { kind: 'choice', options: ['Now', 'Later'] }, next: 'end' },
-    { id: 'wait', label: 'Wait', prompt: 'No seat is free. Wait in line?', input: { kind: 'choice', options: ['Yes', 'No'] } },
+    { id: 'go', label: 'Start', prompt: 'A seat is free ({{seat}}). Start now?', input: { kind: 'choice', options: [{ value: 'Now', label: 'Now' }, { value: 'Later', label: 'Later' }] }, next: 'end' },
+    { id: 'wait', label: 'Wait', prompt: 'No seat is free. Wait in line?', input: { kind: 'choice', options: [{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }] } },
   ],
   finish: [{ do: 'remind', text: 'Stress check {{line}}', dueInDays: 1 }],
   ...extra,
@@ -213,7 +213,7 @@ test('a bot listens for another bot’s requests; a bot it cannot use is refused
   await owner.request('admin.org.setProfile', { userId: me(priya), managerId: me(owner) });
   await seats(owner);
   // Vikram hears whenever a seat is borrowed
-  const watch = await owner.request('botflow.make', { scope: 'private', definition: { name: 'seat-watch', title: 'Seat watch', steps: [{ id: 'q', prompt: 'Q?', input: { kind: 'text' } }], finish: [], network: { on: [{ on: 'licence-seat.opened', do: 'tell', text: '{{user}} has {{ref}}: {{software}}' }] } } });
+  const watch = await owner.request('botflow.make', { scope: 'private', definition: { name: 'seat-watch', title: 'Seat watch', steps: [{ id: 'q', prompt: 'Q?', input: { kind: 'text' } }], finish: [], network: { on: [{ id: 'seat', on: 'licence-seat.opened', do: 'tell', text: '{{user}} has {{ref}}: {{software}}' }] } } });
   const rs = await priya.request('botflow.start', { flow: 'licence-seat' });
   await step(priya, rs.convId, 'software');
   await priya.request('botflow.answer', { sessionId: rs.sessionId, stepId: 'software', value: 'E3D' });
@@ -223,7 +223,7 @@ test('a bot listens for another bot’s requests; a bot it cannot use is refused
   const vdm = await dmWith(owner, watch.botId);
   assert.ok((await texts(owner, vdm)).includes('Priya has LIC-0001: E3D'));
   // and when Priya goes on leave, the seat bot's listener releases her seats
-  await owner.request('botflow.make', { scope: 'private', definition: { name: 'leave-seats', title: 'Seats on leave', steps: [{ id: 'q', prompt: 'Q?', input: { kind: 'text' } }], finish: [], network: { on: [{ on: 'nib.away', do: 'ask', ask: { skill: 'licence-seat.release', with: { person: '{{user.value}}' } }, text: '{{user}} is away: {{result}} released' }] } } });
+  await owner.request('botflow.make', { scope: 'private', definition: { name: 'leave-seats', title: 'Seats on leave', steps: [{ id: 'q', prompt: 'Q?', input: { kind: 'text' } }], finish: [], network: { on: [{ id: 'away', on: 'nib.away', do: 'ask', ask: { skill: 'licence-seat.release', with: { person: '{{user.value}}' } }, text: '{{user}} is away: {{result}} released' }] } } });
   hub.botflows.net.emitAway(me(priya), '2026-11-20', '2026-11-22');
   await hub.botflows.net.settle();
   const seat = (await priya.request('botflow.register', { flow: 'licence-seat' })).register;
