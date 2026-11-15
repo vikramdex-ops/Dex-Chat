@@ -40,6 +40,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
   - org chart: `org`, `orgscape`
   - devices: `pair`, `phone`, `phone-sec`
   - Control room: `admin2`, `m2-admin`, `policy`, `dlp`
+  - notice board: `notices` (desks, scheduled issue, acknowledgement and its register, Rev B, PDF search, urgent banner, expiry; screenshots in `NOTICES_OUT`)
   - plus others.
 
 ## Timing

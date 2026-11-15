@@ -54,6 +54,11 @@ when it needs you (amber only means "you"). It is not a robot, a face or a speec
   there as to anyone. Nib reads only its own conversation with you; Direct messages between people
   are end-to-end encrypted and the hub never sees them.
 
+The notice board ([`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md)) speaks through Nib too, as plain lines
+in the same conversation (`Nib.note`, once per key): one grouped reminder a day at most about
+notices waiting for your acknowledgement, the issuing desk's afternoon digest, and a line when the
+desk answers your question. With Nib turned off these come from the system bot.
+
 Nib is one permanent identity on the hub (`system\nib`, role `bot`, no token), made the first
 time anyone in the office opens the app. The older system bot ("Dexterity Connect") keeps sending
 account notices (devices, roles), so security notices stay in their own plain channel.

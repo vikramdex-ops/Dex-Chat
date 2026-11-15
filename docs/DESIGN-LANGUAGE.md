@@ -84,6 +84,23 @@ other messengers. Every decision below is checked against one rule:
 | **Progress** | A dimension line: extension ticks at both ends, the done part in teal (amber when blocked). |
 | **Cards** | A title block (mark, mono caption, title, drawing number such as `NIB-REG-261115`) over a ruled body. The register is a sheet index: people as square cells by department, filled to how far along they are; hatched when missing, dashed when on leave, an amber corner for a blocker. |
 
+### The notice board (Notices lens)
+
+Official notices are a register, not a feed and not a news page. Code: `renderer/notices/`; the
+whole design is in [`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md).
+
+| Piece | Rule |
+| --- | --- |
+| **Register** | One ruled sheet: number and revision in mono (`HR-POL-0012 · Rev B`), title, desk and kind, dates, a status tag. An amber tick on the left edge for "needs your acknowledgement", a teal one for "not opened yet". Never cards with cover images, never a feed. |
+| **In force shelf** | Standing policies as pinned sheet stacks: a teal drawing pin, one sheet behind for each earlier revision. |
+| **Title block** | A notice opens with a drawing's title block in ruled cells: ISSUED BY, NUMBER, REV, DATE, EFFECTIVE, EXPIRES, ADDRESSED TO, STATUS. WITHDRAWN and SUPERSEDED are stamps across it. |
+| **Revision cloud** | A changed paragraph sits in a scalloped cloud drawn in code, with a revision triangle carrying the letter, as on a revised drawing. |
+| **Acknowledgement** | A deliberate act (a statement and check questions in ruled cells), then a rubber stamp in teal ink: READ AND UNDERSTOOD, the name, the date and the number. |
+| **Acknowledgement register** | A transmittal's acknowledgement register: a row per department, each person a square cell, teal when done, hatched while waiting. |
+| **This week** | On Pulse, seven day cells as a scale with ticks; holidays and events on their day. |
+| **Urgent** | One banner under the title bar with an amber rule, for administrators' urgent notices only; dismissed once for every device. Amber is otherwise kept for "needs you". |
+| **Motion** | A new notice's row plots in once; the stamp lands once; cells fill as acknowledgements arrive. Reduced motion: all of it appears in place. |
+
 ### The office drawing (Directory ▸ Org chart)
 
 The org chart is not a tree of cards. It is the office drawn as an engineering drawing, a sheet
