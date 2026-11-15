@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pdfAssets } from './pdf-assets.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -124,7 +125,7 @@ export default defineConfig({
   root: 'src/renderer',
   base: './',
   // the interface's JSX runtime translates literal text into the chosen language (src/renderer/i18n)
-  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets(), flowModelAssets(), noiseAssets()],
+  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets(), flowModelAssets(), noiseAssets(), pdfAssets()],
   resolve: {
     alias: {
       '@dex/i18n/jsx-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-runtime.ts'),
