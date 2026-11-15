@@ -92,6 +92,9 @@ test('drawing check: drafter → checker → back to the drafter → back-check 
   assert.match(pc.botflow.track?.stage?.prompt ?? '', /Tag 101-P-02 is missing/);
   t = (await newest(priya, convId, 'done')).botflow.track!;
   assert.equal(t.stage?.id, 'correct', 'the original card follows it');
+  assert.equal(t.moved, true, 'and folds: one live card per request in her conversation');
+  const live = (await cards(priya, convId)).filter((m) => (m.botflow.kind === 'done' || m.botflow.kind === 'track') && m.botflow.track && !m.botflow.track.moved);
+  assert.equal(live.length, 1);
   assert.equal(t.stages.find((s) => s.id === 'check')?.state, 'returned');
   clock += H;
   await priya.request('botflow.act', { itemId: t.itemId, action: 'done', note: 'Tag added.' });
@@ -99,6 +102,7 @@ test('drawing check: drafter → checker → back to the drafter → back-check 
   // round two of the check: a fresh card for Ravi, his first folded
   const rc2 = await waitFor(async () => { const list = (await cards(ravi, raviDm)).filter((m) => m.botflow.kind === 'track'); return list.length === 2 ? list : null; });
   assert.equal(rc2[0].botflow.track?.moved, true);
+  assert.equal(rc2.filter((m) => !m.botflow.track?.moved).length, 1, 'one live card for Ravi too');
   assert.equal(rc2[1].botflow.track?.stage?.round, 2);
   for (let i = 0; i < 4; i++) await ravi.request('botflow.tick', { itemId: t.itemId, index: i, on: true });
   await ravi.request('botflow.act', { itemId: t.itemId, action: 'pass' });

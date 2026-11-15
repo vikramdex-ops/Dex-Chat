@@ -195,7 +195,7 @@ export function FlowCardView({ m, meId, users, driver = HUB_DRIVER }: { m: Messa
   if (card.kind === 'track') {
     const v = card.track;
     if (!v) return <div className="flow-card track">{head(null)}<div className="flow-foot faint">This request is no longer available.</div></div>;
-    if (v.moved) return <div className="flow-card track moved">{head(<span className="flow-step mono" translate="no">{v.ref}</span>)}<div className="flow-foot faint">Carried on below.</div></div>;
+    if (v.moved) return <div className="flow-card track moved">{head(<span className="flow-step mono" translate="no">{v.ref}</span>)}<div className="flow-foot faint"><span className="mono" translate="no">{v.ref}</span><span>{' · '}</span><span>See the latest card below.</span></div></div>;
     return (
       <div className={`flow-card track${v.role === 'actor' ? ' acting' : ''}`}>
         {head(<span className="flow-step mono">{v.role === 'actor' ? 'For you' : v.status === 'open' ? 'Following' : 'Closed'}</span>)}
@@ -213,6 +213,9 @@ export function FlowCardView({ m, meId, users, driver = HUB_DRIVER }: { m: Messa
     );
   }
   if (card.kind === 'done' && card.track) {
+    if (card.track.moved) {
+      return <div className="flow-card done track moved">{head(<span className="flow-step mono"><Icon name="check" size={12} />Sent</span>)}<div className="flow-foot faint"><span className="mono" translate="no">{card.track.ref}</span><span>{' · '}</span><span>See the latest card below.</span></div></div>;
+    }
     return (
       <div className={`flow-card done track${card.track.role === 'actor' ? ' acting' : ''}`}>
         {head(<span className="flow-step mono"><Icon name="check" size={12} />Sent</span>)}

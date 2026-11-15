@@ -297,6 +297,25 @@ export interface BotItem {
   rounds: Record<string, number>;
 }
 
+/** A bot as its conversation's header shows it. */
+export interface BotAbout {
+  botId: string;
+  title: string;
+  about: string | null;
+  /** The member who made it; null for the office's own bots and integrations. */
+  ownerId: string | null;
+  source: BotFlowInfo['source'] | null;
+  persona: BotPersona | null;
+  hours: BotHours | null;
+  openNow: boolean;
+  /** What it can do here (its flows this person may start). */
+  flows: Array<{ name: string; title: string }>;
+  /** Tracked bots: requests open that this person may see, and those waiting for them. */
+  tracked: boolean;
+  open: number;
+  yours: number;
+}
+
 /** A tracked request as one card shows it to one person. */
 export interface BotTrackView {
   itemId: string;
@@ -574,6 +593,8 @@ export interface BotOps {
   'botflow.takeover': { req: { itemId: string }; res: { ok: true; track: BotTrackView } };
   /** A tracked bot's register as this person may see it; with `post`, also as a card in their conversation with the bot. */
   'botflow.register': { req: { flow: string; post?: boolean }; res: { register: BotRegisterView; convId?: string } };
+  /** What a bot's conversation header shows: who made it, what it is for, its hours, and its requests. */
+  'botflow.about': { req: { botId: string }; res: BotAbout };
   /** One request, as this person may see it. */
   'botflow.item': { req: { itemId: string }; res: { track: BotTrackView } };
   /** Forget the answers a bot remembers for you. */
