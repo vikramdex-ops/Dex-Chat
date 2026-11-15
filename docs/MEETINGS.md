@@ -36,7 +36,7 @@ the rest of the app.
 | | Mute one or all, remove, lower hands | ✅ **M1**: in the People tab and each tile's menu; muting is enforced on the PC, unmuting is "Ask to unmute" (never forced on); removed people wait in the lobby to come back; end for everyone | |
 | | Raise hand, emoji reactions | ✅ **M1**: hands queued in order (people table and tile); six reactions float up the sender's tile, rate-limited on the hub | |
 | | Gallery, speaker view, pin, spotlight | ✅ **M1**: gallery (numbered sheets past 25 tiles), speaker with a strip, presentation; pin for yourself, spotlight for everyone (host) | |
-| | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation | |
+| | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation; ✅ **threads and recaps**: every meeting has a thread (one per series), the meeting chat with guests saved as said, a Register tab (agenda, action points, decisions), action points from a chat line, the `A` key or any message, and a recap after every meeting (see *Meeting threads, action points and recaps* below) | |
 | | Breakout rooms | ✅ **M2**: the host splits people into rooms (drag between columns, pick from a list, or deal out at random) with a timer; a note to every room; visit or move anyone; call everyone back after a 60-second countdown | |
 | | Annotation on a shared screen | ✅ **M2**: live pointers on a shared screen: everyone's labelled pointer, highlights that fade after 4 s unless kept, numbered markers with a note, ink that fades; the presenter clears all or turns pointers off, and sees them on their own screen in a click-through window. Also on pictures looked at together and on whiteboards | |
 | | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time; ✅ **meetings and webinar stages**: the presenter gives control of a shared screen to one person at a time ("Give control" in their person menu, or "Ask for control" answered by the presenter), with the same consent, banner, stop keys, rate limit and blocked chords; the hub passes input only from the person granted, and audits it | |
@@ -375,11 +375,11 @@ performance targets above are measured in CI-like runs on the e2e harness.
 
 ## Meeting threads, action points and recaps
 
-*Design (November 2026).* After any meeting, everyone who was invited or attended finds everything
-from it in one place, and during the meeting an action point takes one line or one key. Code: the
+*Delivered (November 2026): designed first, described here as built.* After any meeting, everyone
+who was invited or attended finds everything from it in one place, and during the meeting an action point takes one line or one key. Code: the
 hub's `apps/hub/src/meet-threads.ts`, the shared rules in `packages/core/src/meet-threads.ts`, the
-app's `apps/desktop/src/renderer/meet/` (`Register.tsx`, `Capture.tsx`, `Recap.tsx`,
-`ThreadCards.tsx`) and the guest page `apps/gateway/meet/room.ts`.
+app's `apps/desktop/src/renderer/meet/` (`actions.tsx`, `Register.tsx`, `Capture.tsx`, `Recap.tsx`,
+`threadcards.tsx`) and the guest page `apps/gateway/meet/room.ts`.
 
 ### 1. Every meeting has a thread
 
@@ -443,8 +443,9 @@ loses nothing: the chat a guest or colleague sees when they come back is read fr
   adds later.
 - **Attendees who are not members** (let in from outside to a meeting held in a Space they are not
   in) do not get the Space. They can open the **recap** of the occurrence they attended, which
-  then shows only what they could see in the meeting: the meeting chat, its files, the action
-  points, decisions and polls from the meeting, attendance and recordings shared with them.
+  then shows only what they could see in the meeting: the meeting chat and its files, the action
+  points, attendance, and recordings shared with them (the Space's own messages, polls, Decisions
+  and notes stay with its members). The files said in the meeting chat open for them.
 - **Removed from the invitation:** before the meeting, they leave the meeting's own thread; after
   attending an occurrence, they keep it (they were there; records rules decide what stays). In a
   thread that is an existing conversation, membership of that conversation decides.
@@ -488,7 +489,8 @@ Then:
   between the day's start prompt and the wrap-up), one grouped message per person listing all
   theirs, never one ping each, and not while they are on leave.
 - **Recurring meetings** carry open points forward: the next occurrence's register and recap list
-  them at the top, *Brought forward*, until they are done or dropped.
+  them at the top, *Brought forward*, until they are done or dropped. (Any meeting held again in
+  the same thread does the same: an instant meeting's Space, a conversation's Room.)
 
 ### 5. The recap
 
@@ -546,3 +548,29 @@ action points and files) and the addresses typed.
 | Encrypted Direct | See §2. |
 | Hindi and Tamil | Every string translated; the parser reads English words and the Hindi words Nib already reads. |
 | Phone | The register, capture strip and recap sheet fit 390 px. |
+
+### 8. Where it lives, and how it was tested
+
+- **Hub** (`apps/hub/src/meet-threads.ts`): tables `meet_threads`, `meet_occurrences` (with
+  `meet_occ_rooms`), `meet_lines` (who said a saved meeting-chat line: a guest's name, the
+  breakout), `meet_cards`, `action_points` and `meet_agenda`. The Rooms call it as a Room opens,
+  as each meeting-chat line is said (`room.chat` saves before it sends, so a line the office's
+  data-loss rules block is refused) and as a Room ends; `room.chatLog` reads the occurrence's chat
+  from the thread. Messages carry `meetCard`, `actionPoint` and `meetLine` (Messaging's view
+  extras); retention's purge removes them with their messages. Ops: `meet.thread`, `meet.recap`,
+  `meet.recapChat`, `meet.recapFor`, `meet.noteTaker`, `ap.create`, `ap.update`, `ap.list`,
+  `agenda.get`, `agenda.set`, `agenda.tick`; events `ap.assigned`, `ap.updated`,
+  `meet.occurrence`, `agenda.updated`. Guest files: `file` and `fileChunk` frames from the guest
+  page (36 KB chunks under the gateway's 64 KB frame limit), `fileDone` back.
+- **Calendar**: saving a meeting makes its thread and keeps its members in step with the
+  invitations (`eventSaved`); cancelling posts the card (`eventCancelled`). Nib: items with
+  `source: meeting`, and ticking one done ticks the action point. Desk: the card filed as To-do and
+  a reminder on the due date at the start of the working day.
+- **Tests**: `apps/hub/test/meet-threads.test.ts` (an injected clock: the thread and pre-meeting
+  chat, guests' lines and files with blocked types, name collisions, the cards and the recap, who
+  may read it and removed invitees, recurring occurrences and points brought forward, the action
+  point lifecycle with Desk and Nib, overdue reminders only in working hours and once a day, a hub
+  restart mid-meeting and an occurrence nobody returns to, retention) and
+  `packages/core/test/meet-threads.test.ts` (the words that start an action point, owner, task and
+  due from words, working hours, the recap as text and as an email draft). End to end:
+  `apps/desktop/e2e/meetrecap.mts` with the real gateway (`wrangler dev`) and a browser guest.

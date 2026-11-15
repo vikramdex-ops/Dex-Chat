@@ -311,7 +311,7 @@ Light and dark follow the system or the page's switch. The page works at 390 px 
 | Open, or in progress | "The room is open", or an amber "In progress since 10:02". Name and Join; "Open in Dexterity Connect" for staff |
 | Device check | Camera preview with its zone caption; the mic level as a ruled scale; Mic and Camera on or off; Test speakers (two notes, through the speakers chosen where the browser allows); Choose devices (camera, microphone, speakers) |
 | Lobby | "The host will let you in", with an amber timer for how long they have waited, "your place is held while this page is open", a small preview, Mic, and Leave the lobby. The plan shows them at the door |
-| In the meeting | The meeting itself (tiles in zones, shared screen, chat, hand, reactions), loaded on Join |
+| In the meeting | The meeting itself (tiles in zones, shared screen, chat, hand, reactions), loaded on Join. The chat says that the office keeps it with the meeting; Attach sends a file to it (up to 25 MB, and the office's blocked types and upload limit apply, checked by the hub before it is stored). Guests cannot come back to the chat after leaving; the organiser may email them the recap ([MEETINGS.md](MEETINGS.md), *Meeting threads, action points and recaps*) |
 | Reconnecting | "Reconnecting…" over the meeting; up to six tries. The host may need to let them in again |
 | Refused, removed, passcode, too many tries | Plain words for each, and what to do |
 | Closing page | "Thanks for joining", time in the meeting, when they left, the host's note ("Afterwards"), the next time of a repeating meeting with Add the next one, and Join again while the meeting runs |
