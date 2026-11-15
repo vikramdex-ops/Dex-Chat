@@ -18,6 +18,9 @@ function fakeGateway(hub: Hub) {
   const waiters: Array<() => void> = [];
   hub.gateway.sendGuest = (gid: number, f: unknown) => { (frames.get(gid) ?? frames.set(gid, []).get(gid)!).push(f as GuestDown); for (const w of waiters.splice(0)) w(); };
   hub.gateway.closeGuest = (gid: number, code: number, reason: string) => { closed.set(gid, { code, reason }); for (const w of waiters.splice(0)) w(); };
+  // the hub keeps trying to reach the example gateway, and drops every guest each time it fails:
+  // for these tests the guests stay connected (on a busy machine the attempt can fail mid-test)
+  hub.meetGuests.dropAll = () => {};
   let next = 100;
   const open = (meetingId: string, ip = '203.0.113.7') => {
     const gid = next++;

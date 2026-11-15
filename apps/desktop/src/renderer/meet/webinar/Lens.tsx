@@ -38,7 +38,11 @@ export function WebinarsBlock({ session, busy, onOpen, onReport }: { session: Se
   const [list, setList] = useState<WebinarCard[] | null>(null);
   const [planning, setPlanning] = useState(false);
   const canHost = session.me.role !== 'guest';
-  useEffect(() => { void window.dex.request('web.list').then(setList).catch(() => setList([])); }, [version]);
+  // the register follows a webinar going live or ending (and looks again every half minute)
+  const watchingState = useWeb((s) => s.watching?.live.state);
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 30_000); return () => clearInterval(t); }, []);
+  useEffect(() => { void window.dex.request('web.list').then(setList).catch(() => setList([])); }, [version, watchingState, tick]);
   const users = useMemo(() => new Map(session.users.map((u) => [u.id, u] as const)), [session.users]);
   const go = (id: string) => void joinAny(id, false).catch((e: Error) => toast(e.message, true));
   return (
