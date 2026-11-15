@@ -473,7 +473,7 @@ export class BotNet {
    * steps those answer are passed over (each answer is checked again there); with `start`, its
    * request opens at that stage. Returns the hop and a line for the person.
    */
-  async handoff(ctx: NetContext, h: BotHandoff, vars: BotFlowVars, o: { ref?: string | null } = {}): Promise<{ ok: boolean; hop: BotHop | null; line: string; itemId: string | null; convId: string | null }> {
+  async handoff(ctx: NetContext, h: BotHandoff, vars: BotFlowVars, o: { ref?: string | null; what?: string; stage?: string } = {}): Promise<{ ok: boolean; hop: BotHop | null; line: string; itemId: string | null; convId: string | null }> {
     const now = this.d.now();
     const from = this.d.host.live(ctx.from);
     const ownerId = from?.ownerId ?? null;
@@ -483,9 +483,10 @@ export class BotNet {
     }
     const target = this.d.host.live(h.to);
     const base = { key: ctx.key ?? null, kind: 'handoff' as const, from_bot: ctx.from, to_bot: h.to, user_id: ctx.person.id, owner_id: ownerId, grp: ctx.group, at: now, origin_item: ctx.originItem ?? null, origin_session: ctx.originSession ?? null };
-    const what = `HANDED · ${o.ref ?? from?.def.title ?? ctx.from}`;
+    // what was handed over: the stage it is for (PLOT), and the request's number
+    const what = `${(o.what ?? 'HAND ON').toUpperCase().slice(0, 16)} · ${o.ref ?? from?.def.title ?? ctx.from}`;
     const fail = (status: BotLinkStatus, reason: string) => {
-      const row = this.record({ ...base, ask: what, answer: null, status, reason, ms: null, data: { ref: null } });
+      const row = this.record({ ...base, ask: what, answer: null, status, reason, ms: null, data: { ref: null, ...(o.stage ? { stage: o.stage } : {}) } });
       if (ctx.card !== false && from) this.relayCard(ctx.group, from.bot, ctx.person.id, from.def);
       return { ok: false, hop: this.hopOf(row), line: reason, itemId: null, convId: null };
     };
@@ -500,7 +501,7 @@ export class BotNet {
     }
     const carried = carryFor(h, vars, target.def, { title: from?.def.title });
     const trail = extendTrail(ctx.trail, ctx.from);
-    const row = this.record({ ...base, ask: what, answer: null, status: 'pending', reason: null, ms: null, data: { ref: null, carried: Object.keys(carried) } });
+    const row = this.record({ ...base, ask: what, answer: null, status: 'pending', reason: null, ms: null, data: { ref: null, carried: Object.keys(carried), ...(o.stage ? { stage: o.stage } : {}) } });
     if (ctx.card !== false && from) this.relayCard(ctx.group, from.bot, ctx.person.id, from.def);
     const t0 = Date.now();
     try {
@@ -570,6 +571,14 @@ export class BotNet {
     this.update(linkId, { status: 'returned', back: JSON.stringify({ at: this.d.now(), stamp: 'SENT', words: words.slice(0, 300) }) });
   }
 
+  /** A request that came from another bot moved on: that bot's cards (its stage cell, the relay card) follow. */
+  targetMoved(itemId: string): void {
+    const r = this.db.prepare("SELECT origin_item, grp FROM bot_links WHERE target_item = ? AND kind = 'handoff' LIMIT 1").get(itemId) as { origin_item: string | null; grp: string | null } | undefined;
+    if (!r) return;
+    if (r.origin_item) this.d.items.refresh(r.origin_item);
+    if (r.grp) this.refreshGroup(r.grp);
+  }
+
   /** A request of any bot closed: hand it back to the bot that handed it over, and tell the bots listening. */
   itemClosed(def: BotFlowDefinition, item: BotItem): void {
     const r = this.db.prepare("SELECT * FROM bot_links WHERE target_item = ? AND kind = 'handoff' AND status = 'ok' LIMIT 1").get(item.id) as LinkRow | undefined;
@@ -615,8 +624,8 @@ export class BotNet {
     if (!person) return;
     const round = item.rounds[stage.id] ?? 1;
     const vars: BotFlowVars = { ...item.vars, ref: { value: item.ref, label: item.ref }, title: { value: item.title, label: item.title } };
-    const res = await this.handoff({ from: def.name, person, trail: trailOf(item.vars.__trail?.value), group: item.id, key: `stage:${item.id}:${stage.id}:${round}`, originItem: item.id, card: true }, stage.handoff, vars, { ref: item.ref });
-    if (res.hop) this.setData(res.hop.id, { stage: stage.id });
+    const res = await this.handoff({ from: def.name, person, trail: trailOf(item.vars.__trail?.value), group: item.id, key: `stage:${item.id}:${stage.id}:${round}`, originItem: item.id, card: true }, stage.handoff, vars, { ref: item.ref, what: stage.label, stage: stage.id });
+    this.d.items.refresh(item.id);
     if (!res.ok) {
       // a person carries it on by hand: the bot's maker, else the person who asked
       const to = ownerId && this.active(ownerId) ? ownerId : item.requesterId;

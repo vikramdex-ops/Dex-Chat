@@ -257,7 +257,10 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
   const admin = session.me.role === 'owner' || session.me.role === 'admin';
   const [scope, setScope] = useState<BotJobSheet['scope']>(first === 'office' && !admin ? 'mine' : first);
   const [range, setRange] = useState<Range>('week');
-  const [now, setNow] = useState(Date.now());
+  // the sheet follows the office's clock, as the hub keeps it
+  const [skew, setSkew] = useState(0);
+  const [tick, setTick] = useState(Date.now());
+  const now = tick + skew;
   const [sheet, setSheet] = useState<BotJobSheet | null>(null);
   const [cal, setCal] = useState<{ workdays: number[]; tzOffset: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -269,11 +272,16 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
   const tz = cal?.tzOffset ?? 330;
   const { from, to } = span(range, now, tz);
   const load = useCallback(() => {
-    void window.dex.request('botjob.sheet', { scope, ...(scope === 'bot' && flow ? { flow } : {}), from: from - DAY, to }).then((s) => { setSheet(s); setError(null); }).catch((e: Error) => setError(e.message));
+    const asked = Date.now();
+    void window.dex.request('botjob.sheet', { scope, ...(scope === 'bot' && flow ? { flow } : {}), from: from - DAY, to }).then((s) => {
+      setSheet(s); setError(null);
+      const off = s.now - asked;
+      setSkew((cur) => (Math.abs(off - cur) > 60_000 ? off : cur));
+    }).catch((e: Error) => setError(e.message));
   }, [scope, flow, from, to]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { void window.dex.request('botjob.calendar').then(setCal).catch(() => {}); }, []);
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setTick(Date.now()), 30_000); return () => clearInterval(t); }, []);
   useEffect(() => window.dex.onHubEvent((n) => { if (n === 'botjob.changed') load(); }), [load]);
   useLayoutEffect(() => {
     const el = board.current;

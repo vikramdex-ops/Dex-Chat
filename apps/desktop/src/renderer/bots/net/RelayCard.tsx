@@ -42,7 +42,7 @@ export function Tag({ t, x, y, n, r = 18, live }: { t: BotTag; x: number; y: num
   const fill = t.colour ? BOT_COLOURS[t.colour] : null;
   return (
     <g className={`rl-tag${t.system ? ' sys' : ''}${live ? ' live' : ''}`} transform={`translate(${x} ${y})`}>
-      {fill && <rect x={-r - 4} y={-r - 4} width={8} height={8} fill={fill} className="rl-swatch" />}
+      {fill && <rect x={-r - 2} y={-r - 2} width={6} height={6} fill={fill} className="rl-swatch" />}
       <circle r={r} className="rl-bub" />
       <line x1={-r} y1={0} x2={r} y2={0} className="rl-mid" />
       <text y={-5} className="rl-tl" textAnchor="middle" {...NOTR}>{t.tag}</text>
@@ -51,7 +51,7 @@ export function Tag({ t, x, y, n, r = 18, live }: { t: BotTag; x: number; y: num
   );
 }
 
-const W = 104; // room for one bot
+const W = 156; // room for one bot
 const H = 116;
 
 export function RelayDiagram({ v, compact }: { v: BotRelayView; compact?: boolean }) {
@@ -73,7 +73,7 @@ export function RelayDiagram({ v, compact }: { v: BotRelayView; compact?: boolea
   const lines = [...last.values()];
   const words = v.hops.map((h) => `${v.tags.find((t) => t.key === h.from)?.title ?? h.from} to ${v.tags.find((t) => t.key === h.to)?.title ?? h.to}: ${h.ask}${h.answer ? `, ${h.answer}` : ''}, ${hopStamp(h)}`).join('. ');
   return (
-    <svg className={`rl-svg${compact ? ' compact' : ''}`} viewBox={`0 0 ${width} ${H}`} role="img" aria-label={words}>
+    <svg className={`rl-svg${compact ? ' compact' : ''}`} viewBox={`0 0 ${width} ${H}`} width={Math.round(width * 1.25)} height={Math.round(H * 1.25)} role="img" aria-label={words}>
       {lines.map((h) => {
         const a = x(h.from); const b = x(h.to);
         const apart = Math.abs((pos.get(h.from) ?? 0) - (pos.get(h.to) ?? 0));
@@ -106,7 +106,7 @@ export function RelayDiagram({ v, compact }: { v: BotRelayView; compact?: boolea
         );
       })}
       {v.tags.map((t, i) => <Tag key={t.key} t={t} x={x(t.key)} y={cy} n={i + 1} live={v.hops.some((h) => h.status === 'pending' && (h.to === t.key))} />)}
-      {v.tags.map((t) => <text key={`n-${t.key}`} x={x(t.key)} y={H - 6} textAnchor="middle" className="rl-name" {...NOTR}>{t.title.length > 16 ? `${t.title.slice(0, 15)}…` : t.title}</text>)}
+      {v.tags.map((t) => <text key={`n-${t.key}`} x={x(t.key)} y={H - 6} textAnchor="middle" className="rl-name" {...NOTR}>{t.title.length > 24 ? `${t.title.slice(0, 23)}…` : t.title}</text>)}
     </svg>
   );
 }

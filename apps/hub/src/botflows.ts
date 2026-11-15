@@ -236,6 +236,7 @@ export class BotFlows {
     });
     this.items.hooks = {
       moved: (def, before, after) => {
+        if (after.vars.__link?.value || before) this.net.targetMoved(after.id);
         if (!before) this.net.emit(def, after, 'opened');
         else if (after.status !== 'open' && before.status === 'open') this.net.itemClosed(def, after);
         else if (after.status === 'open' && (before.stage !== after.stage || before.since !== after.since)) this.net.emit(def, after, 'stage');
@@ -250,7 +251,7 @@ export class BotFlows {
         const h = action.handoff;
         setImmediate(() => {
           const vars = { ...item.vars, ref: { value: item.ref, label: item.ref }, title: { value: item.title, label: item.title } };
-          this.net.handoff({ from: def.name, person: by, trail: trailOf(item.vars.__trail?.value), group: item.id, key: `act:${item.id}:${item.history.length}`, originItem: item.id, card: true }, h, vars, { ref: item.ref })
+          this.net.handoff({ from: def.name, person: by, trail: trailOf(item.vars.__trail?.value), group: item.id, key: `act:${item.id}:${item.history.length}`, originItem: item.id, card: true }, h, vars, { ref: item.ref, what: action.label })
             .catch((err: Error) => this.d.log('warn', 'button handoff failed', { error: err.message }));
         });
       },

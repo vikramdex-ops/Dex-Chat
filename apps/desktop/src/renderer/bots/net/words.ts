@@ -58,7 +58,7 @@ export const HUB_WORDS = [
   'Would start {0} for {1}', 'Would remind {0}: {1}', 'Started for {0}', '{0} is already answering it', '{0} cannot use it', 'Reminded {0}', '{0} is on leave: left out',
   'Asked: {0}', 'Would say: {0}', 'Said: {0}',
   '{0} free', '{0} open', '{0} released', '{0} sent', '{0} away', 'on leave, back {0}', 'on leave', 'in the office', 'working day', 'day off: {0}', 'would {0}',
-  'SEAT?', 'OPEN?', 'WHERE?', 'RELEASE', 'SENT?', 'LEAD?', 'AWAY?', 'WHO IS AWAY?', 'WORKDAY?', 'HANDED', 'OPENED', 'CLOSED', 'AWAY',
+  'SEAT?', 'OPEN?', 'WHERE?', 'RELEASE', 'SENT?', 'LEAD?', 'AWAY?', 'WHO IS AWAY?', 'WORKDAY?', 'HAND ON', 'OPENED', 'CLOSED', 'AWAY',
   'Is a place free?', 'How many are open?', 'Where is a request?', 'Release their places', 'How many were sent?', 'Who is their lead?', 'Are they on leave?', 'Who is on leave?', 'Is it a working day?',
   '{0} has it: {1}.', '{0} has it.', '{0} carries on in its own conversation: a few more questions there.', '{0} could not take it: {1}',
   'From {0}: 1 answer carried across.', 'From {0}: {1} answers carried across.', 'From {0}.',
@@ -67,5 +67,5 @@ export const HUB_WORDS = [
   '{0} does not take requests from other bots.', '{0} is not one this person can use.', 'Stopped a loop: {0} already had this request ({1}).', 'Stopped: a request may pass through {0} bots at most.',
   'There is no bot called {0} that {1} can ask.', 'There is no bot called {0} to hand it to.', '{0} is {1} by the person who made it.', '{0} needs “{1}”.',
   'It stops here; start it again later.', '{0} handed back {1}', '{0} could not run at {1}: {2}', 'Its job sheet has the details.',
-  'Directory', 'Office calendar',
+  'Directory', 'Office calendar', 'Done before it was handed over', 'Handed over', 'Passed to a person',
 ];

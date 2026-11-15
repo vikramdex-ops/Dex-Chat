@@ -8,7 +8,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
 import type { BotFlowCard, BotFlowDefinition, BotFlowStageAction, BotItem, BotRegisterView, BotStageBot, BotTrackView, PublicUser } from '@dex/core';
 import { BotFlowError, localDate, withinHours } from '@dex/core/botflows';
-import { OFFICE_WEEK, enterStage, nudgeDue, personAnswer, queueOf, registerView, seatKey, seatLimit, stageOf, trackAct, trackHandBack, trackNoted, trackOpen, trackTakeOver, trackTick, trackView, trackWithdraw } from '@dex/core/bottrack';
+import { OFFICE_WEEK, enterStage, mainWay, nudgeDue, personAnswer, queueOf, registerView, seatKey, seatLimit, stageOf, trackAct, trackHandBack, trackNoted, trackOpen, trackTakeOver, trackTick, trackView, trackWithdraw } from '@dex/core/bottrack';
 import type { TrackPeople } from '@dex/core/bottrack';
 import type { Desk } from './desk.ts';
 import type { Messaging } from './messaging.ts';
@@ -410,6 +410,8 @@ export class BotItems {
     try { return r ? JSON.parse(r.data) as BotItem : null; } catch { return null; }
   }
   refOf(itemId: string): string | null { return this.load(itemId)?.item.ref ?? null; }
+  /** Draw a request's cards again (the bot it waits on moved its own request on). */
+  refresh(itemId: string): void { const got = this.load(itemId); if (got) this.refreshItem(got.item); }
   peek(itemId: string): BotItem | null { return this.load(itemId)?.item ?? null; }
 
   /** A request handed over by another bot, opened straight at a stage (its earlier stages happened there). */
@@ -417,7 +419,13 @@ export class BotItems {
     const num = ((this.db.prepare('SELECT MAX(num) AS n FROM bot_items WHERE flow = ?').get(def.name) as { n: number | null }).n ?? 0) + 1;
     const now = this.d.now();
     let item = trackOpen(def, { id: ulid(), num, requesterId: requester.id, vars, lines, now, people: this.people(def, ownerId) }) as Kept;
-    if (stageId !== item.stage) item = { ...enterStage(def, item, stageId, now, this.people(def, ownerId)), history: [...item.history.slice(0, 1).map((e) => ({ ...e, to: stageId }))] } as Kept;
+    if (stageId !== item.stage) {
+      // the stages before it on the main way happened in the bot that handed it over
+      const way = mainWay(def);
+      const before = way.slice(0, Math.max(0, way.indexOf(stageId)));
+      const done = before.map((sid) => ({ at: now, by: null, stage: sid, action: 'before', label: 'Done before it was handed over', to: stageId }));
+      item = { ...enterStage(def, item, stageId, now, this.people(def, ownerId)), history: [{ ...item.history[0], to: stageId }, ...done] } as Kept;
+    }
     item.history[0] = { ...item.history[0], label: 'Handed over' };
     return this.moved(def, bot, null, item, { flow_version: version, bot_id: bot.id, num }, { fresh: true, by: requester.id });
   }
