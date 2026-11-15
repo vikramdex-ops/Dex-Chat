@@ -187,8 +187,8 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <button key={h.message.id} role="listitem" className="search-hit" onClick={() => onOpen(h.message.convId, h.message.id, h.message.parentId)}>
                 <Avatar user={a ?? { id: h.message.authorId, displayName: '?' }} size="sm" />
                 <span className="sb-main">
-                  <span className="search-meta"><b>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint"> in {convTitle(c, byId, meId)}</span>}{h.message.parentId && <span className="faint"> · side-track</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
-                  <span className="search-snippet">{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
+                  <span className="search-meta"><b translate={a ? 'no' : undefined}>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint sm-where" title={convTitle(c, byId, meId)}> in <span translate="no">{convTitle(c, byId, meId)}</span></span>}{h.message.parentId && <span className="faint"> · side-track</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
+                  <span className="search-snippet" translate={h.snippet ? undefined : 'no'}>{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
                 </span>
               </button>
             );
@@ -204,7 +204,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <button key={`${f.id}-${f.messageId}`} role="listitem" className="search-hit" onClick={() => onOpen(f.convId, f.messageId, null)}>
                 <span className="file-ico"><Icon name="paperclip" size={18} /></span>
                 <span className="sb-main">
-                  <span className="search-meta"><b>{f.name}</b><span className="mono faint">{when(f.createdAt)}</span></span>
+                  <span className="search-meta"><b translate="no" className="sm-where" title={f.name}>{f.name}</b><span className="mono faint">{when(f.createdAt)}</span></span>
                   <span className="search-snippet faint">{formatSize(f.size)} · {byId.get(f.uploaderId)?.displayName ?? 'Someone'}{c ? ` · ${convTitle(c, byId, meId)}` : ''}</span>
                   {f.textMatch && <span className="search-snippet"><span className="faint">Text in the image: </span><Snippet text={f.textMatch.replace(/\n/g, ' · ')} /></span>}
                 </span>

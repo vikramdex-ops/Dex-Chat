@@ -264,7 +264,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
     : one
       ? [['Status', STATUS_WORD[presenceFor(others[0])]], ['Last on', lastOn(one, online.has(others[0]))]]
       : [['People', String(conv.members.length)], ['On now', String(others.filter((id) => online.has(id)).length)]];
-  const placeholder = conv.kind === 'space' ? `Write in ${title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
+  // a long Space name is cut short so the hint never runs out of the Dock
+  const placeholder = conv.kind === 'space' ? `Write in ${title.length > 28 ? `${title.slice(0, 26).trimEnd()}…` : title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
   const toggleSheet = (kind: SheetKind) => setSide(side?.kind === kind ? null : openSheet(kind));
   const canPlan = live && !!session && session.me.role !== 'guest';
 
@@ -279,7 +280,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           {onBack && <button className="icon-btn only-narrow" onClick={onBack} aria-label="Back to the Switchboard"><Icon name="back" size={18} /></button>}
           <ConvTile c={conv} users={users} meId={meId} />
           <div className="pane-title">
-            <h2 translate="no">{title}{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
+            <h2 translate="no" title={title}><span className="pane-name">{title}</span>{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
             <p className="faint">
               {e2e && conv.kind === 'direct' && (
                 <button className={`e2e-chip${e2e.encrypted ? '' : ' off'}`} onClick={() => setVerify(true)} title={e2e.encrypted ? 'Messages here are end-to-end encrypted' : 'Not end-to-end encrypted yet'}>
@@ -641,7 +642,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack }:
       <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? '?' }} presence={presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
-          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
+          <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
           {u?.role === 'bot' && <span className="chip accent bot-chip">Integration</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
@@ -1459,7 +1460,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
           <div className="track-parent">
             <div className="run-head">
               <Avatar user={{ id: parent.authorId, displayName: author?.displayName ?? '?' }} size="sm" />
-              <span className="run-name" translate={parent.authorId === ctx.meId ? undefined : 'no'}>{parent.authorId === ctx.meId ? 'You' : author?.displayName}</span>
+              <span className="run-name" translate={parent.authorId === ctx.meId ? undefined : 'no'} title={parent.authorId === ctx.meId ? undefined : author?.displayName}>{parent.authorId === ctx.meId ? 'You' : author?.displayName}</span>
               <span className="run-time">{clock(parent.createdAt)}</span>
             </div>
             <div className="msg-text selectable">{parent.deleted ? <span className="faint">Message deleted</span> : renderBody(parent.body, ctx.users, ctx.meId)}</div>
@@ -1472,7 +1473,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
               <div key={m.clientId ?? m.id} className={`track-reply${m.authorId === ctx.meId ? ' mine' : ''}`}>
                 <div className="run-head">
                   <Avatar user={{ id: m.authorId, displayName: u?.displayName ?? '?' }} size="sm" />
-                  <span className="run-name" translate={m.authorId === ctx.meId ? undefined : 'no'}>{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
+                  <span className="run-name" translate={m.authorId === ctx.meId ? undefined : 'no'} title={m.authorId === ctx.meId ? undefined : u?.displayName}>{m.authorId === ctx.meId ? 'You' : u?.displayName}</span>
                   <span className="run-time">{clock(m.createdAt)}</span>
                 </div>
                 <MessageItem ctx={ctx} m={m} inTrack />
@@ -1483,7 +1484,7 @@ function SideTrack({ ctx, parentId, live, onClose }: { ctx: Ctx; parentId: strin
         </div>
       </div>
       <WritingLine k={tlKey(convId, parentId)} users={ctx.users} />
-      <Dock convId={convId} parentId={parentId} ctx={ctx} live={live} placeholder="Write in this side-track" />
+      <Dock convId={convId} parentId={parentId} ctx={ctx} live={live} placeholder="Write a reply" />
     </aside>
   );
 }
@@ -1500,7 +1501,7 @@ function PinsPanel({ ctx, onClose, onJump }: { ctx: Ctx; onClose: () => void; on
         {pins?.length === 0 && <div className="empty"><Icon name="pin" size={28} /><span>Pin what everyone here needs to find again.</span></div>}
         {pins?.map((m) => (
           <button key={m.id} className="pin-card" onClick={() => onJump(m.id)}>
-            <div className="run-head"><span className="run-name" translate="no">{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}{m.pinnedUntil ? ` · ${pinEnd(m.pinnedUntil)}` : ''}</span></div>
+            <div className="run-head"><span className="run-name" translate="no" title={ctx.users.get(m.authorId)?.displayName}>{ctx.users.get(m.authorId)?.displayName}</span><span className="run-time">{dayLabel(m.createdAt)} · {clock(m.createdAt)}{m.pinnedUntil ? ` · ${pinEnd(m.pinnedUntil)}` : ''}</span></div>
             <div className="msg-text">{renderBody(m.body, ctx.users, ctx.meId)}</div>
           </button>
         ))}

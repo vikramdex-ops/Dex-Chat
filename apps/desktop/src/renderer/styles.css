@@ -317,7 +317,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .palette-list li { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius-m); cursor: default; }
 .palette-list li[aria-selected='true'] { background: var(--accent-soft); }
 .pal-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pal-meta { color: var(--text-3); font-size: 12px; }
+.pal-meta { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
+.pal-icon, .palette-list .avatar { flex: none; }
 .pal-icon { width: 28px; height: 28px; border-radius: 30%; display: grid; place-items: center; background: var(--subtle-2); color: var(--accent-ink); }
 .palette-empty { color: var(--text-3); justify-content: center; padding: 18px !important; }
 
@@ -479,6 +480,7 @@ select.input { padding-right: 6px; }
 
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .toolbar .input { width: 280px; }
+.toolbar > .input:first-child { flex: 1 1 280px; max-width: 440px; }
 
 /* -------------------------------------------------------------- lists */
 .list { display: grid; gap: 1px; background: var(--stroke); border: 1px solid var(--stroke); border-radius: var(--radius-l); overflow: hidden; }
@@ -661,14 +663,15 @@ select.input { padding-right: 6px; }
   .view, .sheet .view { padding: 20px 16px 28px; }
   .sheet { top: 0; right: 0; bottom: 0; width: 100vw; border-radius: 0; }
   h1 { font-size: 24px; }
-  .grid.cols-3, .grid.cols-people { grid-template-columns: 1fr; }
+  .grid.cols-3, .grid.cols-people { grid-template-columns: minmax(0, 1fr); }
   .toolbar .input { width: 100%; }
   .list-row.devices, .list-row.roles { grid-template-columns: auto 1fr; }
   .list-row.devices > :nth-child(n+3):not(:last-child), .list-row.roles > :nth-child(3) { display: none; }
   .list-row.approvals { grid-template-columns: auto 1fr; }
   .list-row.approvals .code, .list-row.approvals .row-actions { grid-column: 1 / -1; }
   .list-row.audit { grid-template-columns: 1fr; gap: 2px; }
-  .setting { flex-wrap: wrap; }
+  .setting { flex-wrap: wrap; row-gap: 10px; }
+  .setting .txt { flex: 1 1 200px; }
   .form-grid { grid-template-columns: 1fr; }
   .onboard-card { padding: 26px 20px; border-radius: 14px; }
   .toasts { left: 12px; right: 12px; bottom: 76px; }

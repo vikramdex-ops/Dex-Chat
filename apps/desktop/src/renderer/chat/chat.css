@@ -112,6 +112,7 @@ body.resizing { user-select: none; cursor: col-resize; }
 .pane-title { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .pane-title h2 { font-size: 17px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pane-title h2 svg { color: var(--text-3); flex: none; }
+.pane-title h2 > .pane-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pane-title p { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; white-space: nowrap; }
 .pane-sub { overflow: hidden; text-overflow: ellipsis; }
 .pane-title .e2e-chip { margin-right: 0; flex: none; }
@@ -205,9 +206,10 @@ body.resizing { user-select: none; cursor: col-resize; }
 .run-tile { display: flex; justify-content: center; padding-top: 2px; position: relative; z-index: 1; }
 .run-body { min-width: 0; padding-right: 8px; }
 .run-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
-.run-name { font-weight: 600; font-size: 13.5px; }
+.run-head { min-width: 0; }
+.run-name { font-weight: 600; font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run.mine .run-name { color: var(--text); }
-.run-time { font: 10.5px/1 var(--font-mono); color: var(--text-3); }
+.run-time { flex: none; white-space: nowrap; font: 10.5px/1 var(--font-mono); color: var(--text-3); }
 .notice-line { display: flex; justify-content: center; align-items: baseline; gap: 8px; margin: 6px 0 6px 76px; padding: 2px 0; font-size: 12px; color: var(--text-3); }
 .notice-line .mono { font-size: 10.5px; }
 

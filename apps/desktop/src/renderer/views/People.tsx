@@ -113,16 +113,16 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
                     <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
                     <div className="who">
                       <div className="name">
-                        <span className="line">{u.displayName}</span>
+                        <span className="line" translate="no" title={u.displayName}>{u.displayName}</span>
                         {u.id === session.me.id && <span className="chip accent">You</span>}
                         {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
                         {u.role === 'guest' && <span className="chip warn">Guest</span>}
                       </div>
-                      <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
-                      <div className="line faint">{departments.get(u.profile.departmentId ?? '')?.name ?? u.account}</div>
+                      <div className="line muted" translate={u.title ? 'no' : undefined} title={u.title || undefined}>{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
+                      <div className="line faint" translate="no">{departments.get(u.profile.departmentId ?? '')?.name ?? u.account}</div>
                       {workLine(work.get(u.id)) && <div className={`work-line ${work.get(u.id)?.status}`}><span className="work-dot" />{workLine(work.get(u.id))}</div>}
                       {u.ooo && u.ooo.until > Date.now() && <div className="work-line leave"><span className="work-dot" />On leave until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}</div>}
-                      {u.statusText && <div className="status">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
+                      {u.statusText && <div className="status" translate="no">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
                     </div>
                   </button>
                 ))}

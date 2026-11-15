@@ -97,18 +97,18 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
                 <>
                   <span className="pal-icon"><Icon name="doc" size={16} /></span>
                   <span className="pal-main pal-snippet"><Snippet text={r.hit.snippet} /></span>
-                  <span className="pal-meta">{users.find((u) => u.id === r.hit.message.authorId)?.displayName.split(' ')[0]} · {convName?.(r.hit.message.convId) ?? ''}</span>
+                  <PalWhere author={users.find((u) => u.id === r.hit.message.authorId)?.displayName ?? ''} where={convName?.(r.hit.message.convId) ?? ''} />
                 </>
               ) : r.kind === 'person' ? (
                 <>
                   <Avatar user={r.user} presence={presenceFor(r.id)} size="sm" />
-                  <span className="pal-main" translate="no">{r.user.displayName}</span>
+                  <span className="pal-main" translate="no" title={r.user.displayName}>{r.user.displayName}</span>
                   <span className="pal-meta mono">{r.user.account}</span>
                 </>
               ) : (
                 <>
                   <span className="pal-icon"><Icon name={r.command.icon} size={16} /></span>
-                  <span className="pal-main" translate={r.command.id.startsWith('conv-') ? 'no' : undefined}>{r.command.label}</span>
+                  <span className="pal-main" translate={r.command.id.startsWith('conv-') ? 'no' : undefined} title={r.command.id.startsWith('conv-') ? r.command.label : undefined}>{r.command.label}</span>
                   <span className="pal-meta">{r.command.hint ?? 'Command'}</span>
                 </>
               )}
@@ -118,4 +118,10 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
       </div>
     </div>
   );
+}
+
+/** Who wrote a message and where: "Ravi · Site team", or just "Ravi Kulkarni" in a Direct with him. */
+function PalWhere({ author, where }: { author: string; where: string }) {
+  const text = !where || where === author ? author : `${author.split(' ')[0]} · ${where}`;
+  return <span className="pal-meta" translate="no" title={text}>{text}</span>;
 }
