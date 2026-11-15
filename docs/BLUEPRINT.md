@@ -176,7 +176,7 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 | 14 | Chat tabs & chat actions (pin files, forms, links, widgets to a chat) | Full | 100% | M | — |
 | 15 | Presence: available, away, busy, invisible, DND (timed / scheduled), on-call / in-meeting auto, custom status, OOO with delegate | Full | 100% | M | Windows Focus Assist sync without a native addon |
 | 16 | Notifications: global, per-chat, mute 1 h from the toast, sound sets, admin defaults | Full | 100% | M | Native Windows toasts with inline reply; taskbar badge (Cliq lacks it) |
-| 17 | Files: drag/paste, multi-preview, 1 GB, P2P transfer, media tab, pan/zoom viewer, image annotation, PDF/Office preview | Full | 95% | M | Office preview limited to PDF/images/text/video; Office docs open in the local app |
+| 17 | Files: drag/paste, multi-preview, 1 GB, P2P transfer, media tab, pan/zoom viewer, image annotation, PDF/Office preview | Full | 95% | M | PDFs in an in-app viewer (tiled for A0/A1 sheets, search, copy, rotate, password prompt); Office docs show a card and open in the local app |
 | 18 | Search: Ctrl+K, filters (person, chat, date, type), jump to date; DMs searched locally | Full | 100% | M | Results as you type in under 50 ms from the local FTS index |
 | 19 | OCR of text in images | Full (local engine) | 90% | M | Tesseract on the hub for channel images and locally for DMs |
 | 20 | 1:1 voice/video, screen share (with system audio), promote to group, ringtone | Full | 100% | L | P2P on the LAN gives near-zero latency |
@@ -224,7 +224,7 @@ Live Events (deferred), Office-document inline preview, and Deluge scripting (re
 | --- | --- |
 | P0 Foundation | ✅ Done |
 | P1 Messaging core | ✅ Done, including end-to-end encrypted Direct messages and the hub-off PC-to-PC mode |
-| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, Files panel, full-text search with filters, OCR of images, voice notes, video messages and screen recordings, files on phones |
+| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, a PDF viewer for drawing sheets, Files panel, full-text search with filters, on-device search of encrypted Direct messages, OCR of images, voice notes, video messages and screen recordings, files on phones |
 | P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8, the hub's relay above that), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks, background blur and backgrounds, noise suppression; the meeting suite (meetings, guests, recordings, breakouts, webinars) is in [`MEETINGS.md`](MEETINGS.md) |
 | P4 Productivity | ✅ Saved messages, reminders, scheduled messages, polls, forms, notes (with Slate), calendar and conference rooms, remote work, organisation and org chart |
 | P5 Platform & governance | ✅ Bot API, slash commands with signed webhooks, share links for office tools, whiteboards, guests, retention, legal hold, exports, Control room, audit |

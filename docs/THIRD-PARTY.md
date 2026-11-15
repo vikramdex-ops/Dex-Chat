@@ -27,9 +27,18 @@ beside the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`).
 | all-MiniLM-L6-v2 sentence model (sentence-transformers; ONNX, quantized, from Xenova/all-MiniLM-L6-v2 revision 751bff3) | Drafting automations from plain words | Apache-2.0 |
 | RNNoise (Xiph.Org, via the WebAssembly build in @sapphi-red/web-noise-suppressor) | Strong noise suppression for the microphone in Rooms, on the PC | BSD-3-Clause (RNNoise); the WebAssembly build comes from @shiguredo/rnnoise-wasm, Apache-2.0 |
 | @sapphi-red/web-noise-suppressor | The audio worklet that runs RNNoise (`rnnoiseWorklet.js`, `rnnoise.wasm`, `rnnoise_simd.wasm`, bundled beside the app) | MIT |
+| PDF.js (pdfjs-dist), with its parser and page-drawing workers (`pdf.worker.min.mjs`, `pdf.renderer.min.mjs`, bundled beside the app) | Showing PDFs, their first pages in messages, searching and copying their text | Apache-2.0 |
+| Image decoders inside pdfjs-dist (WebAssembly): OpenJPEG, PDFium's JBIG2 decoder, qcms | Pictures and colour profiles inside PDFs | BSD-2-Clause (OpenJPEG), BSD-3-Clause (PDFium), MIT (qcms); Mozilla's wrappers Apache-2.0, BSD-2-Clause and MIT |
+| Standard PDF fonts from PDFium (Foxit fonts, in pdfjs-dist) | Symbols and text in PDFs that do not embed their fonts | BSD-3-Clause |
+| Adobe character maps (CMaps, in pdfjs-dist) | Chinese, Japanese and Korean text in PDFs | BSD-3-Clause |
+| ICC profile CGATS001Compat-v2-micro (in pdfjs-dist) | Colours of CMYK drawings in PDFs | CC0-1.0 |
 | Wrangler (build tool only) | Deploying the gateway to Cloudflare | MIT OR Apache-2.0 |
 | esbuild (build tool only) | Building the gateway's guest meeting page into the Worker | MIT |
 | WinSW | Running the hub as a Windows service | MIT |
+
+pdfjs-dist also contains Liberation Sans (GPL-2.0 with a font exception), QuickJS and the
+@napi-rs/canvas binding for Node; none of them is copied into the app (PDF.js uses the PC's own
+Arial or Helvetica, JavaScript in PDFs is never run, and pages are drawn by the browser engine).
 
 Everything else (the design language, icons, sounds, illustrations and the 3D landing page) is
 original work for Dexterity. Notification sounds and the call ringtone are generated in code; no

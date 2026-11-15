@@ -19,6 +19,8 @@ import { signWith } from '@dex/core';
 import type { HubAccess, UploadSource } from './files.ts';
 import { appLog } from './applog.ts';
 import { wireAssist } from './assist/index.ts';
+import { dropIndexKey, indexKey } from './localindex.ts';
+import { openTempCopy, pruneTempCopies, saveBytes } from './viewer.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -28,6 +30,8 @@ const devUrl = process.env.VITE_DEV_SERVER_URL;
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let controller: Controller | null = null;
+/** The office signed in to last (its search index key is dropped on sign-out or removal). */
+let lastHubId: string | null = null;
 let updater: Updater | null = null;
 let quitting = false;
 let pendingDeepLink: string | null = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`)) ?? null;
@@ -228,10 +232,11 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('app:getState', () => c.state());
   ipcMain.handle('app:join', (_e, req: JoinRequest) => c.join(req));
   ipcMain.handle('app:clipboard', async () => String(await clipboard.readText()).slice(0, 4000));
-  ipcMain.handle('app:forgetHub', () => c.forgetHub());
+  // signing out of an office drops its search index key (the window deletes the index too)
+  ipcMain.handle('app:forgetHub', async () => { await dropIndexKey(c.state().session?.hub.id ?? lastHubId).catch(() => {}); c.forgetHub(); });
   ipcMain.handle('app:addOffice', () => c.addOffice());
   ipcMain.handle('app:switchOffice', (_e, id: string) => c.switchOffice(String(id)));
-  ipcMain.handle('app:removeOffice', (_e, id: string) => c.removeOffice(String(id)));
+  ipcMain.handle('app:removeOffice', async (_e, id: string) => { await dropIndexKey(String(id)).catch(() => {}); c.removeOffice(String(id)); });
   ipcMain.handle('app:rescan', () => c.rescan());
   ipcMain.handle('app:setSettings', (_e, patch: Partial<Settings>) => {
     const safe: Partial<Settings> = {};
@@ -285,6 +290,17 @@ function wireIpc(c: Controller): void {
   // saving reports progress as "save:<id>" on the upload progress channel
   ipcMain.handle('file:save', (e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name), (got, total) => e.sender.send('file:progress', `save:${String(id)}`, got, total))));
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
+  // the file viewer: open a temporary copy in the default app, or save, from bytes or a hub file
+  const viewerSource = async (name: string, src: { id?: unknown; data?: unknown }) => {
+    if (src?.data instanceof ArrayBuffer || ArrayBuffer.isView(src?.data)) return { data: src.data as ArrayBuffer };
+    if (typeof src?.id === 'string' && /^[0-9A-Z]{26}$/.test(src.id)) return { path: await cachedFile(access(), src.id, name) };
+    throw new Error('There is nothing to open.');
+  };
+  ipcMain.handle('file:openCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => openTempCopy(String(name), await viewerSource(String(name), src))));
+  ipcMain.handle('file:saveCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => saveBytes(String(name), await viewerSource(String(name), src))));
+  // the key of this office's on-device search index (sealed by the system's secure storage)
+  ipcMain.handle('search:key', (_e, scope: string) => wrap(() => indexKey(String(scope))));
+  ipcMain.handle('search:dropKey', (_e, scope: string) => wrap(() => dropIndexKey(String(scope))));
   ipcMain.handle('tools:installed', () => installedTools());
   ipcMain.handle('window:popout', (_e, convId: string, title: string) => { popOut(String(convId), String(title ?? '')); });
   ipcMain.handle('window:main', (_e, convId: string) => { showWindow(); if (typeof convId === 'string') win?.webContents.send('app:deeplink', `${PROTOCOL}://conversation/${convId}`); });
@@ -436,7 +452,10 @@ void app.whenReady().then(async () => {
   // what happened on this PC, for "Send diagnostics" (no message content is ever logged)
   appLog.info('main', 'app started', { version, platform: process.platform, packaged: app.isPackaged });
   let lastPhase = '';
-  controller.on('state', (s: { phase: string; via?: string; error: string | null }) => {
+  controller.on('state', (s: { phase: string; via?: string; error: string | null; session?: { hub: { id: string } } | null }) => {
+    if (s.session?.hub.id) lastHubId = s.session.hub.id;
+    // removed (or declined) by an administrator: this device's search index goes with it
+    if (s.phase === 'rejected' && lastPhase !== 'rejected' && lastHubId) void dropIndexKey(lastHubId).catch(() => {});
     if (s.phase === lastPhase) return;
     const was = lastPhase;
     lastPhase = s.phase;
@@ -484,6 +503,7 @@ void app.whenReady().then(async () => {
   });
   handleMiniAppScheme((op, data) => controller!.request(op, data));
   void pruneCache();
+  void pruneTempCopies();
   applyLogin(config.settings);
   nativeTheme.themeSource = config.settings.theme;
   nativeTheme.on('updated', () => applyTheme(controller!.settings));

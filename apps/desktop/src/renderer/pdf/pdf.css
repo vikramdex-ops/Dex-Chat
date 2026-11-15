@@ -1,0 +1,91 @@
+/* The PDF viewer: white sheets on a drafting-table ground, a title block for the file, toolbar
+   groups ruled off with hairlines. Follows the light and dark themes (the paper stays white). */
+.lightbox.pdfv { --pdfv-desk: #d3dddf; --pdfv-paper-edge: rgba(19, 43, 46, .2); background: var(--pdfv-desk); color: var(--text); }
+:root[data-theme='dark'] .lightbox.pdfv { --pdfv-desk: #0a1517; --pdfv-paper-edge: rgba(0, 0, 0, .6); }
+.lightbox.pdfv header.pdfv-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: var(--text); background: var(--layer-solid); border-bottom: 1px solid var(--stroke-strong); min-width: 0; }
+.lightbox.pdfv header .icon-btn { color: var(--text-2); border-radius: 4px; }
+.lightbox.pdfv header .icon-btn:hover { background: var(--subtle); color: var(--text); }
+.lightbox.pdfv header .icon-btn:disabled { opacity: .4; }
+.lightbox.pdfv header .icon-btn.on { background: var(--accent-soft); color: var(--accent-ink); }
+.lightbox.pdfv .btn.ghost { color: var(--text-2); }
+.lightbox.pdfv .btn.ghost:hover { background: var(--subtle); color: var(--text); }
+.pdfv-title { display: grid; gap: 2px; min-width: 0; flex: 1 1 160px; padding-left: 10px; border-left: 2px solid var(--accent); }
+.pdfv-title .sb-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdfv-meta { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.pdfv-tools { display: flex; align-items: center; min-width: 0; }
+.pdfv-group { display: flex; align-items: center; gap: 2px; padding: 0 6px; border-left: 1px solid var(--stroke); }
+.pdfv-group:first-child { border-left: 0; }
+.pdfv-pageno { display: inline-flex; align-items: center; gap: 4px; padding: 0 2px; font-size: 12px; }
+.pdfv-pageno input { width: 3.4em; height: 28px; padding: 0 4px; text-align: center; border: 1px solid var(--stroke-strong); border-radius: 4px; background: var(--layer-solid); color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pdfv-pageno input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pdfv-zoom { min-width: 60px; height: 28px; padding: 0 8px; border: 1px solid var(--stroke); border-radius: 4px; background: none; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.pdfv-zoom:hover { background: var(--subtle); }
+.pdfv-ext { white-space: nowrap; }
+.pdfv-zoom-menu { min-width: 190px; }
+
+.pdfv-body { position: relative; display: flex; min-height: 0; min-width: 0; }
+.pdfv-stage { position: relative; flex: 1; min-width: 0; overflow: auto; outline: none; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.pdfv-stage:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.pdfv.tool-hand .pdfv-stage { cursor: grab; }
+.pdfv.dragging .pdfv-stage { cursor: grabbing; }
+.pdfv-sheet { position: relative; }
+.pdfv-page { position: absolute; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px var(--pdfv-paper-edge), 0 6px 20px rgba(8, 22, 24, .14); contain: strict; }
+.pdfv-layer { position: absolute; inset: 0; }
+.pdfv-layer canvas { display: block; }
+.pdfv-raw { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: 3; }
+.pdfv-hit { position: absolute; z-index: 2; border-radius: 2px; background: rgba(42, 140, 152, .28); pointer-events: none; }
+.pdfv-hit.on { background: rgba(42, 140, 152, .5); box-shadow: 0 0 0 2px #1c7680; }
+.pdfv-wait { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--text-2); font-size: 13px; }
+
+/* the page strip */
+.pdfv-strip { flex: none; width: 140px; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 8px; background: var(--layer-solid); border-right: 1px solid var(--stroke-strong); }
+.pdfv-thumb { display: grid; justify-items: center; gap: 4px; padding: 5px; border: 0; border-radius: 6px; background: none; color: var(--text-3); cursor: pointer; }
+.pdfv-thumb:hover { background: var(--subtle); }
+.pdfv-thumb .mono { font-size: 10.5px; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.pdfv-thumb.on .mono { color: var(--accent-ink); font-weight: 700; }
+.pdfv-thumb-img { display: block; width: 104px; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px var(--pdfv-paper-edge); }
+.pdfv-thumb.on .pdfv-thumb-img { box-shadow: 0 0 0 2px var(--accent); }
+.pdfv-thumb-img img { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+/* find */
+.pdfv-find { position: absolute; top: 12px; right: 18px; z-index: 6; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 10px; border: 1px solid var(--stroke-strong); border-radius: 8px; background: var(--layer-solid); box-shadow: 0 10px 28px rgba(8, 22, 24, .2); color: var(--text-2); }
+.pdfv-find .input { width: 220px; height: 28px; }
+.pdfv-count { min-width: 76px; font-size: 11px; text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pdfv-find .icon-btn { color: var(--text-2); border-radius: 4px; }
+
+/* password and problems */
+.pdfv-card-wrap { position: absolute; inset: 0; z-index: 7; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--pdfv-desk) 75%, transparent); }
+.pdfv-card { display: grid; justify-items: start; gap: 10px; width: min(440px, 100%); padding: 22px; border: 1px solid var(--stroke); border-radius: var(--radius-l); background: var(--layer-solid); box-shadow: 0 18px 50px rgba(8, 22, 24, .25); }
+.pdfv-card h3 { margin: 4px 0 0; font: 600 17px/1.3 var(--font-display); }
+.pdfv-card p { margin: 0; font-size: 13.5px; line-height: 1.5; }
+.pdfv-card .input { width: 100%; }
+.pdfv-card-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-self: end; margin-top: 4px; }
+.pdfv-bad { color: var(--danger); }
+.file-ico.bad { background: var(--danger-soft); color: var(--danger); }
+
+/* PDF.js's text layer (its rules, cut down): transparent text over the drawing, to select and copy */
+.pdfv .textLayer { position: absolute; inset: 0; z-index: 1; overflow: clip; opacity: 1; line-height: 1; text-align: initial; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; color-scheme: only light;
+  --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.pdfv .textLayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; }
+.pdfv .textLayer > :not(.markedContent), .pdfv .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.pdfv .textLayer .markedContent { display: contents; }
+.pdfv .textLayer ::selection { background: rgba(42, 140, 152, .35); color: transparent; }
+.pdfv .textLayer br::selection { background: transparent; }
+.pdfv .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.pdfv.tool-hand .textLayer, .pdfv.tool-hand .textLayer :is(span, br) { pointer-events: none; user-select: none; cursor: inherit; }
+
+@media (max-width: 640px) {
+  .lightbox.pdfv header.pdfv-head { flex-wrap: wrap; row-gap: 6px; padding: 8px 8px 6px; }
+  .pdfv-title { order: 1; flex: 1 1 0; }
+  .lightbox.pdfv header.pdfv-head > .icon-btn { order: 2; }
+  .pdfv-tools { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .pdfv-group { flex: none; padding: 0 4px; }
+  .pdfv-ext span { display: none; }
+  .pdfv-strip { position: absolute; left: 0; top: 0; bottom: 0; z-index: 6; width: 128px; box-shadow: 8px 0 24px rgba(8, 22, 24, .25); }
+  .pdfv-thumb-img { width: 92px; }
+  .pdfv-find { left: 8px; right: 8px; top: 8px; }
+  .pdfv-find .input { flex: 1; width: auto; min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .lightbox.pdfv { animation: none; } }
