@@ -513,8 +513,8 @@ select.input { padding-right: 6px; }
 .empty svg { color: var(--accent); opacity: .7; }
 
 /* -------------------------------------------------------------- settings */
-.settings { display: grid; gap: 24px; max-width: 760px; }
-.settings section { display: grid; gap: 4px; }
+.settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; max-width: 760px; }
+.settings section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .settings h3 { margin: 0 0 8px 2px; }
 .setting { display: flex; align-items: center; gap: 16px; padding: 14px 16px; background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius-m); }
 .setting + .setting { margin-top: 2px; }
