@@ -49,6 +49,7 @@ const bridge: DexBridge = {
   statFile: (p) => unwrap(ipcRenderer.invoke('file:stat', p)),
   installedTools: () => ipcRenderer.invoke('tools:installed'),
   openLink: (url) => unwrap(ipcRenderer.invoke('tools:open', url)),
+  openFolder: (p) => unwrap(ipcRenderer.invoke('shell:openFolder', p)),
   listScreens: () => ipcRenderer.invoke('screen:list'),
   chooseScreen: (id) => ipcRenderer.invoke('screen:choose', id),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

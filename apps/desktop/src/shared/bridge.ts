@@ -145,6 +145,8 @@ export interface DexBridge {
   /** Which office tools are installed (by their link schemes), and opening links for them. */
   installedTools?(): Promise<Record<'projectopener' | 'dexterity' | 'sleuth' | 'datum', boolean>>;
   openLink?(url: string): Promise<void>;
+  /** Desktop: show a folder on the office share or a drive (Open folder on a link card). */
+  openFolder?(path: string): Promise<void>;
   /** Edit a note in Slate (or the default editor); saves there come back through onSlateChange. */
   editInSlate?(noteId: string, title: string, body: string): Promise<'slate' | 'default'>;
   onSlateChange?(cb: (noteId: string, text: string) => void): () => void;
