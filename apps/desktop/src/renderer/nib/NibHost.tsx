@@ -5,7 +5,7 @@ import type { PublicUser, Session, WorkState } from '@dex/core';
 import { Avatar, Icon, useToast } from '../ui.tsx';
 import { NibTile } from './NibMark.tsx';
 import type { Ink } from './NibMark.tsx';
-import { closeTray, dismissCallout, nibDay, nibMeId, nibStart, openTray, promptStart, refreshNib, startNib, toggleTray, useNib } from './store.ts';
+import { closeTray, dismissCallout, nibDay, nibMeId, nibStart, openTray, promptStart, rankGivers, refreshNib, startNib, toggleTray, useNib } from './store.ts';
 import type { TrayView } from './store.ts';
 import { firstName, wrapTimeText } from './words.ts';
 import './nib.css';
@@ -54,7 +54,7 @@ function Callout({ kind }: { kind: 'start' | 'wrap' }) {
   };
   const name = firstName(users.get(nibMeId())?.displayName ?? '');
   if (kind === 'start') {
-    const order = [...new Set([...me.usual.filter((id) => me.givers.some((g) => g.userId === id)), ...me.givers.map((g) => g.userId), ...me.usual])].slice(0, 6);
+    const order = rankGivers(me, users, nibMeId()).slice(0, 6);
     return (
       <section className="nib-callout" aria-label="Nib: who gave you work today">
         <div className="nib-callout-head">

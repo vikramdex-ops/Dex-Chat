@@ -146,6 +146,26 @@ export function setCard(kind: NibCardKind, ref: string, card: NibCard): void {
 }
 export function forgetCard(kind: NibCardKind): void { bump(kind); }
 
+/** Givers in the order someone is most likely to pick them: their usual ones, their own manager,
+ *  the leads of their department, area leads, then everyone else. */
+export function rankGivers(me: NibMe, users: Map<string, PublicUser>, selfId: string): string[] {
+  const self = users.get(selfId);
+  const score = (id: string): number => {
+    const u = users.get(id);
+    const g = me.givers.find((x) => x.userId === id);
+    let s = 0;
+    const usual = me.usual.indexOf(id);
+    if (usual >= 0) s += 100 - usual;
+    if (self?.profile.managerId === id) s += 60;
+    if (u && self?.profile.departmentId && u.profile.departmentId === self.profile.departmentId) s += 40;
+    if (g?.kind === 'area') s += 20;
+    if (g?.kind === 'team') s += 10;
+    return s;
+  };
+  const ids = [...new Set([...me.usual, ...me.givers.map((g) => g.userId)])].filter((id) => id !== selfId && users.has(id));
+  return ids.map((id, i) => ({ id, s: score(id), i })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.id);
+}
+
 // ------------------------------------------------------------------ reading words
 export function nibPeople(me = state.me): NibPerson[] {
   const givers = new Set(me?.givers.map((g) => g.userId) ?? []);

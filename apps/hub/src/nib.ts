@@ -143,7 +143,8 @@ export class Nib {
   get id(): string {
     if (!this.nibId) {
       const had = this.d.store.userByAccount(NIB_ACCOUNT);
-      const u = had ?? this.d.store.createUser(NIB_ACCOUNT, NIB_NAME, 'bot');
+      let u = had ?? this.d.store.createUser(NIB_ACCOUNT, NIB_NAME, 'bot');
+      if (!had) u = this.d.store.updateUser(u.id, { title: 'Day sheets, leave and reminders' });
       this.nibId = u.id;
       if (!had) this.d.userAdded(u);
     }
@@ -644,7 +645,7 @@ export class Nib {
     const out: string[] = [];
     if (me.profile.managerId) out.push(me.profile.managerId);
     const dept = this.d.departments().find((x) => x.id === me.profile.departmentId);
-    if (dept?.headId && dept.headId !== me.id) out.push(dept.headId);
+    if (dept?.headId && dept.headId !== me.id && !out.includes(dept.headId)) out.push(dept.headId);
     for (const u of all) if (u.profile.departmentId && u.profile.departmentId === me.profile.departmentId && !out.includes(u.id) && out.length < 5) out.push(u.id);
     for (const u of all) if (out.length < 3 && !out.includes(u.id)) out.push(u.id);
     return out.filter((id) => all.some((u) => u.id === id)).slice(0, 5);

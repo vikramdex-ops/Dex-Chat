@@ -406,6 +406,14 @@ export function parseWork(input: string, ctx: NibParseContext): NibParse {
   };
   const free = (from: number, to: number) => !taken.some(([a, b]) => from < b && to > a);
 
+  // ---- a greeting to the person writing ("Karthik, please check…") is not part of the work
+  const self = ctx.meId ? ctx.people.find((x) => x.id === ctx.meId) : undefined;
+  if (self) {
+    const first = self.name.split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const g = new RegExp(`^\\s*(?:hi |hey |dear )?${first}\\b\\s*[,:!]\\s*`, 'i').exec(text);
+    if (g) take(0, g[0].length, null);
+  }
+
   // ---- mentions inserted by the app (<@id>)
   for (const m of text.matchAll(/<@([\w-]{6,})>/g)) {
     const p = ctx.people.find((x) => x.id === m[1]);

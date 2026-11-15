@@ -52,6 +52,7 @@ import { startBotMarks } from './bots/BotMark.tsx';
 import { BotMakerHost } from './bots/maker/host.tsx';
 import { AssistHost, HelpMenuItems, helpCommands, openHelp } from './help/AssistHost.tsx';
 import { tr } from './i18n/index.ts';
+import { NibButton, NibHost, openNib } from './nib/NibHost.tsx';
 import { G_KEYS, keyFor, keyHint, keyText, lensFallback, pressed, typingIn, useKeys } from './chat/keys.ts';
 // last: the drawing-office layer decides the shape of the shared controls (after every screen's own sheet)
 import './drawing.css';
@@ -516,6 +517,8 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       else if (target === 'calendar') { setLens('calendar'); setSheet(null); if (m[2] === 'event' && m[3]) requestOpen({ kind: 'event', id: m[3] }); }
       else if (target === 'recording' && m[2]) { setLens('meet'); setSheet(null); openRecording({ token: m[2] }); }
       else if (target === 'help') { setSheet(null); openHelp(m[2] === 'desk' ? { view: 'desk' } : { view: 'me' }); }
+      else if (target === 'nib') { setSheet(null); openNib(m[2] === 'wrap' ? { v: 'wrap' } : m[2] === 'leave' ? { v: 'leave' } : { v: 'home' }); }
+      else if (target === 'pulse') { setLens('pulse'); setSheet(null); }
       else if (target === 'meet') {
         setLens('meet'); setSheet(null);
         const id = parseMeetingId(m[2] ?? '');
@@ -560,6 +563,11 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     { id: 'go-calendar', label: 'Go to Calendar', icon: 'calendar' as IconName, run: () => setLens('calendar') },
     { id: 'go-directory', label: 'Go to Directory', icon: 'card' as IconName, run: () => setLens('directory') },
     { id: 'go-meet', label: 'Go to Meet: start or join a meeting', icon: 'video' as IconName, run: () => setLens('meet') },
+    ...(session.me.role !== 'guest' ? [
+      { id: 'nib', label: 'Tell Nib: work in plain words, reminders, who’s in', icon: 'nib' as IconName, hint: 'Ctrl+Alt+N', run: () => openNib() },
+      { id: 'nib-wrap', label: 'Wrap up my day: send my day sheet', icon: 'daysheet' as IconName, run: () => openNib({ v: 'wrap' }) },
+      { id: 'nib-leave', label: 'Going on leave: tell everyone at once', icon: 'calendar' as IconName, run: () => openNib({ v: 'leave' }) },
+    ] : []),
     ...helpCommands(),
     { id: 'prefs', label: 'Open Preferences', icon: 'settings' as IconName, run: () => setSheet('preferences') },
     ...(isAdmin ? [{ id: 'control', label: 'Open Control room', icon: 'shield' as IconName, run: () => setSheet('control') }] : []),
@@ -581,6 +589,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
             title={state.via === 'remote' ? 'Outside the office: connected through the internet gateway, encrypted to the hub' : state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
             {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
           </span>
+          {session.me.role !== 'guest' && session.me.role !== 'bot' && live && <NibButton />}
           <div className="me-wrap">
             <button ref={meBtn} className="me-btn" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="You: status, Preferences" aria-label={`${session.me.displayName}: status and Preferences`}>
               <Avatar user={session.me} presence={live ? (session.me.availability === 'invisible' ? 'off' : presenceFor(session.me.id)) : 'off'} size="sm" />
@@ -695,6 +704,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
       <AssistHost session={session} users={users} live={live} />
+      <NibHost session={session} users={users} live={live} />
       <WebinarSeat />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}

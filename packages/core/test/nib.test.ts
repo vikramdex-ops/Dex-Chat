@@ -72,6 +72,9 @@ test('who gave it: colon, from, side, @, for, typos', () => {
   assert.equal(p('nozzle orientation for Ravi').giver?.id, 'ravi');
   assert.equal(p('check the GA from the client').giver, null, 'no colleague called "the"');
   assert.equal(p('Priya: my own note').giver, null, 'never yourself');
+  const greet = p('Priya, please check the MTO for P-14 by Friday');
+  assert.equal(greet.activity, 'Check MTO');
+  assert.equal(greet.giver, null, 'the greeting names you, not who gave it');
   const m = parseWork('<@meera> needs 3 isos', ctx);
   assert.equal(m.giver?.id, 'meera');
 });

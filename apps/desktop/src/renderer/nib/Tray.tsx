@@ -8,7 +8,7 @@ import { useChat } from '../chat/store.ts';
 import { Avatar, Icon, trapTab, useToast } from '../ui.tsx';
 import { NibTile } from './NibMark.tsx';
 import { DimBar, GiverTile, ItemQty, PersonPick, ProjectTag, Stepper } from './parts.tsx';
-import { nibDay, nibDelete, nibMeId, nibSave, nibStart, nibWelcomeSeen, nibWrap, readWords, readWordsSmart, setView, useNib } from './store.ts';
+import { nibDay, nibDelete, nibMeId, nibNow, nibSave, nibStart, nibWelcomeSeen, nibWrap, openTray, rankGivers, readWords, readWordsSmart, setView, useNib } from './store.ts';
 import type { SkillId, TrayView } from './store.ts';
 import { STATUS_WORD, dayLabel, digestTimeText, firstName, greetingLine, qtyWords, wrapTimeText } from './words.ts';
 
@@ -189,13 +189,26 @@ const INTENT_WORD: Record<string, string> = {
 /** What Enter in Nib's box does, by the kind of line. Returns true when the words were used up. */
 export async function act(p: NibParse, text: string, toast: (t: string, bad?: boolean) => void, source: 'words' | 'slash' = 'words'): Promise<boolean> {
   switch (p.intent) {
-    case 'leave': setView({ v: 'leave', from: p.due ?? undefined }); return true;
-    case 'wrap': setView({ v: 'wrap' }); return true;
-    case 'brief': setView({ v: 'brief' }); return true;
+    case 'leave': openTray({ v: 'leave', from: p.due ?? undefined }); return true;
+    case 'wrap': openTray({ v: 'wrap' }); return true;
+    case 'brief': openTray({ v: 'brief' }); return true;
     case 'nothing': await nibDay({ nothing: true }); toast('Nothing today. Fair enough.'); return true;
-    case 'remind': case 'where': case 'who': case 'meeting': case 'help': setView({ v: 'skill', skill: p.intent, query: text }); return true;
+    case 'remind': case 'where': case 'who': case 'meeting': case 'help': openTray({ v: 'skill', skill: p.intent, query: text }); return true;
   }
   if (!p.activity && !p.project && !p.giver) { toast('Say what the work is, and who it’s from.', true); return false; }
+  // progress on something already on the sheet updates it rather than adding a second line
+  if (p.intent === 'done' || p.intent === 'progress') {
+    const first = p.activity.toLowerCase().split(/\s+/)[0] ?? '';
+    const match = nibNow().me?.items.find((x) => x.status !== 'done' && (!p.project || x.project === p.project)
+      && ((!!p.qty?.unit && x.qty?.unit === p.qty.unit) || (first.length > 2 && x.activity.toLowerCase().includes(first))));
+    if (match) {
+      const total = p.qty?.total ?? match.qty?.total ?? null;
+      const done = p.intent === 'done' ? (p.qty?.done ?? total) : p.qty?.done ?? null;
+      await nibSave({ id: match.id, qty: total !== null || done !== null ? { done, total, unit: match.qty?.unit ?? p.qty?.unit ?? null } : match.qty, status: p.status ?? (p.intent === 'done' ? 'done' : match.status), ...(p.note ? { note: p.note } : {}) });
+      toast(`Updated: ${match.activity}${total ? ` · ${qtyWords({ done, total, unit: match.qty?.unit ?? p.qty?.unit ?? null })}` : ''}`);
+      return true;
+    }
+  }
   await nibSave({ giverId: p.giver?.id ?? null, project: p.project, activity: p.activity, qty: p.qty, note: p.note, status: p.status ?? 'going', due: p.due, source });
   const what = [p.activity, p.project, qtyWords(p.qty)].filter(Boolean).join(' · ');
   toast(p.giver ? `Noted for ${firstName(p.giver.name)}: ${what}` : `Noted: ${what}`);
@@ -279,7 +292,8 @@ function StartView({ users }: { users: Map<string, PublicUser> }) {
   const [what, setWhat] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const all = useMemo(() => [...users.values()], [users]);
-  const kinds = (['area', 'discipline', 'team'] as const).map((k) => ({ k, list: me.givers.filter((g) => g.kind === k && users.has(g.userId)) })).filter((x) => x.list.length);
+  const rank = rankGivers(me, users, nibMeId());
+  const kinds = (['area', 'discipline', 'team'] as const).map((k) => ({ k, list: me.givers.filter((g) => g.kind === k && users.has(g.userId)).sort((a, b) => rank.indexOf(a.userId) - rank.indexOf(b.userId)) })).filter((x) => x.list.length);
   const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
   const jobChoices = [...new Set([...me.recentProjects, ...me.projects.map((p) => p.code)])].slice(0, 6);
   const others = picked.filter((id) => !me.givers.some((g) => g.userId === id));
