@@ -381,7 +381,7 @@ function farPlates(ctx: CanvasRenderingContext2D, ga: GA, s: Scene, v: { x: numb
       if (pr !== 'off') (pr === 'room' ? room : ticks).rect(p.x, p.y + 3, Math.max(3, 2 * px), PLATE_H - 6);
       const c = pr === 'off' ? ink.strokeStrong : colorFor(id);
       (tiles.get(c) ?? tiles.set(c, new Path2D()).get(c)!).rect(p.x + 9, p.y + 9, 30, PLATE_H - 18);
-      if (s.marks.get(id)?.isNew) cloud(clouds, p.x - 8, p.y - 8, PLATE_W + 16, PLATE_H + 16, 22);
+      if (s.marks.get(id)?.isNew) cloud(clouds, p.x - 7, p.y - 7, PLATE_W + 14, PLATE_H + 14, 14);
     }
     if (!any) continue;
     ctx.globalAlpha = pass ? 0.28 : 1;
@@ -427,14 +427,14 @@ function plate(ctx: CanvasRenderingContext2D, s: Scene, u: PublicUser, x: number
     // a tile and nothing else
     ctx.beginPath(); rrect(ctx, x + 9, y + 9, 30, PLATE_H - 18, 6);
     ctx.fillStyle = ghost ? ink.stroke : colorFor(u.id); ctx.fill();
-    if (m?.isNew && !ghost) { ctx.beginPath(); cloud(ctx, x - 8, y - 8, PLATE_W + 16, PLATE_H + 16, 22); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.5, 1.5 * px); ctx.stroke(); }
+    if (m?.isNew && !ghost) { ctx.beginPath(); cloud(ctx, x - 7, y - 7, PLATE_W + 14, PLATE_H + 14, 14); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.5, 1.5 * px); ctx.stroke(); }
   } else {
     tile(ctx, s, u, x + RISER, y + 24, 30, { ghost });
     ctx.fillStyle = ghost ? ink.text3 : ink.text;
     if (lod === 'mid') {
       ctx.font = `600 19px ${ink.display}`;
       ctx.fillText(fit(ctx, u.displayName, PLATE_W - 52), x + 46, y + 31);
-      if (m?.isNew && !ghost) { ctx.beginPath(); cloud(ctx, x - 8, y - 8, PLATE_W + 16, PLATE_H + 16, 22); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.4, 1.4 * px); ctx.stroke(); }
+      if (m?.isNew && !ghost) { ctx.beginPath(); cloud(ctx, x - 7, y - 7, PLATE_W + 14, PLATE_H + 14, 14); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.4, 1.4 * px); ctx.stroke(); }
     } else {
       const teamW = team > 0 ? 26 : 0;
       ctx.font = `600 13px ${ink.display}`;
@@ -479,7 +479,7 @@ function plate(ctx: CanvasRenderingContext2D, s: Scene, u: PublicUser, x: number
           ctx.fillStyle = ink.accentInk; ctx.fillText(word, mx - ww + 3, y + 59);
         }
       }
-      if (!ghost && m?.isNew) { ctx.beginPath(); cloud(ctx, x - 8, y - 8, PLATE_W + 16, PLATE_H + 16, 16); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.3, 1.3 * px); ctx.stroke(); }
+      if (!ghost && m?.isNew) { ctx.beginPath(); cloud(ctx, x - 7, y - 7, PLATE_W + 14, PLATE_H + 14, 14); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.3, 1.3 * px); ctx.stroke(); }
     }
   }
   if (u.id === s.me && !ghost) {
@@ -674,8 +674,14 @@ export function drawFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene, cam
       ctx.textAlign = 'left';
     }
     const m = s.marks.get(sp.id);
-    if (m?.isNew) { ctx.beginPath(); cloud(ctx, sp.x - sz / 2 - 9, ty - sz / 2 - 9, sz + 18, sz + 18, 9); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.2, 1.2 * px); ctx.stroke(); }
-    if (m?.birthday) pennant(ctx, sp.x + sz / 2 + 2, ty - sz / 2 - 12, ink.accent);
+    if (m?.isNew) {
+      // the cloud goes round the tile and its name together, so no scallop runs through the name
+      ctx.font = `600 10.5px ${ink.body}`;
+      const nameW = z > 0.55 ? Math.min(80, ctx.measureText(u.displayName.split(/\s+/)[0]).width) : 0;
+      const cw = Math.max(sz, nameW) + 18, chh = sz + (z > 0.55 ? 17 : 0) + 18;
+      ctx.beginPath(); cloud(ctx, sp.x - cw / 2, ty - sz / 2 - 9, cw, chh, 9); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(1.2, 1.2 * px); ctx.stroke();
+    }
+    if (m?.birthday) pennant(ctx, sp.x + sz / 2 + (m.isNew ? 16 : 2), ty - sz / 2 - 12, ink.accent);
     if (sp.id === s.me) youAreHere(ctx, s, sp.x, ty - sz / 2 - 4, z, true);
     if (s.focus === sp.id) { ctx.beginPath(); rrect(ctx, sp.x - sz / 2 - 7, ty - sz / 2 - 7, sz + 14, sz + 14, 9); ctx.strokeStyle = ink.accent; ctx.lineWidth = Math.max(2.5, 2.5 * px); ctx.stroke(); }
   }

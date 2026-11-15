@@ -12,7 +12,7 @@ import type { Presence } from '../ui.tsx';
 import { useWork } from '../work/store.ts';
 import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
-import { Camera } from './camera.ts';
+import { Camera, MAX_Z, MIN_Z } from './camera.ts';
 import { PLATE_H, PLATE_W, gridRef, layoutGA, marksFor, neighbour, routeBetween, routeLines } from './layout.ts';
 import type { GA, Pt } from './layout.ts';
 import { layoutFloor, nearestSpot } from './floor.ts';
@@ -31,6 +31,9 @@ const perf = { frames: [] as Array<{ dt: number; draw: number }>, reset() { this
 /** The plot-in plays once per sheet in a session; after that the sheet is simply there. */
 const introduced: Record<Sheet, boolean> = { lines: false, floor: false };
 
+/** The callout's size on a wide screen, for choosing its side before it is drawn. */
+const CALLOUT_W = 300;
+const CALLOUT_H = 330;
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const monthLabel = (t: number) => new Date(t).toLocaleDateString([], { month: 'short', year: 'numeric' });
 
@@ -125,6 +128,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
 
   // ---------------------------------------------------------------- the frame loop
   const raf = useRef(0);
+  const calloutSide = useRef<{ id: string; side: 'left' | 'right' } | null>(null);
   const lastFrame = useRef(0);
   const posOf = useCallback((id: string): { x: number; y: number; w: number; h: number } | null => {
     const s = scene.current;
@@ -186,8 +190,9 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
         const narrow = cam.vw < 560;
         if (!narrow) {
           const w = co.offsetWidth, h = co.offsetHeight;
-          const left = sx + 14 + w > cam.vw - 8 ? Math.max(24, cam.toScreen(p.x, p.y)[0] - w - 14) : sx + 14;
-          co.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(26, Math.min(cam.vh - h - 118, sy)))}px)`;
+          const side = calloutSide.current?.id === s.selected ? calloutSide.current.side : sx + 14 + w > cam.vw - 8 ? 'left' : 'right';
+          const left = side === 'left' ? Math.max(24, cam.toScreen(p.x, p.y)[0] - w - 14) : Math.min(sx + 14, cam.vw - w - 8);
+          co.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(26, Math.min(cam.vh - h - 118, sy - 10)))}px)`;
         } else co.style.transform = '';
       }
     }
@@ -232,34 +237,73 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     return () => ro.disconnect();
   }, [cam, invalidate]);
 
-  // a new sheet: fit it, plot it in the first time, then go to whoever was asked for (or to you)
+  /**
+   * Show a whole rectangle of the sheet, centred in the part of the stage that is free: inside the
+   * rulers (top and left) and above the key plan and title block (bottom).
+   */
+  const frameRect = useCallback((r: { x: number; y: number; w: number; h: number }, dur: number, maxZ = MAX_Z) => {
+    const narrow = cam.vw < 560;
+    const left = 18 + 16, top = 18 + 16, right = 16, bottom = narrow ? 64 : 124;
+    const aw = Math.max(40, cam.vw - left - right), ah = Math.max(40, cam.vh - top - bottom);
+    const z = Math.min(maxZ, Math.max(MIN_Z, Math.min(aw / r.w, ah / r.h)));
+    // the world point that must sit at the middle of the stage so the rectangle sits in the free part
+    const wx = r.x + r.w / 2 - (left + aw / 2 - cam.vw / 2) / z;
+    const wy = r.y + r.h / 2 - (top + ah / 2 - cam.vh / 2) / z;
+    if (dur <= 0) { cam.stop(); cam.centreOn(wx, wy, z); } else cam.flyTo(wx, wy, z, performance.now(), dur);
+    invalidate();
+  }, [cam, invalidate]);
+
+  // a new sheet: frame all of it, plot it in the first time, then go to whoever was asked for
+  // (on the reporting lines, also to you when the office is too big to read whole)
   const touched = useRef(false);
+  const followed = useRef(0);
   useLayoutEffect(() => {
     cam.bounds = { x: 0, y: 0, w: sheetW, h: sheetH };
     spot.current = null;
-    cam.fit(cam.bounds, 24);
+    frameRect(cam.bounds, 0);
     touched.current = false;
     if (!introduced[sheet] && !reduced) { intro.current = performance.now(); introduced[sheet] = true; } else intro.current = null;
     invalidate();
-    const target = focus?.id ?? meId;
+    // a request to open at someone is followed once, not again on every change of sheet
+    const asked = focus && focus.n !== followed.current ? focus : null;
+    if (asked) followed.current = asked.n;
+    const target = asked?.id ?? meId;
     const t = setTimeout(() => {
       if (touched.current) return;
       const p = posOf(target);
-      if (p && (focus || cam.z < 0.5)) cam.flyTo(p.x + p.w / 2, p.y + p.h / 2, Math.max(cam.z, sheet === 'lines' ? 0.85 : 0.9), performance.now(), reduced ? 0 : 900);
-      if (focus) setSelected(focus.id);
+      if (p && asked) { setSelected(asked.id); flyTo(asked.id, { zoom: Math.max(cam.z, sheet === 'lines' ? 0.85 : 0.9), callout: true }); }
+      else if (p && sheet === 'lines' && cam.z < 0.5) cam.flyTo(p.x + p.w / 2, p.y + p.h / 2, 0.85, performance.now(), reduced ? 0 : 900);
       invalidate();
     }, intro.current !== null ? 1500 : 60);
     return () => clearTimeout(t);
   }, [sheet, sheetW, sheetH, focus?.n]);
 
-  const flyTo = useCallback((id: string, opts: { zoom?: number; spotlight?: boolean } = {}) => {
+  const flyTo = useCallback((id: string, opts: { zoom?: number; spotlight?: boolean; callout?: boolean } = {}) => {
     const p = posOf(id);
     if (!p) return;
     touched.current = true;
-    const z = opts.zoom ?? Math.max(cam.z, 0.9);
-    // on a phone the callout covers the lower half: keep the person in the upper part
-    const lift = cam.vw < 560 ? (cam.vh * 0.22) / z : 0;
-    cam.flyTo(p.x + p.w / 2, p.y + p.h / 2 + lift, z, performance.now(), reduced ? 0 : 750);
+    const z = opts.zoom ?? Math.min(Math.max(cam.z, 0.9), 1.2);
+    if (opts.callout && cam.vw >= 560) {
+      // the callout goes on the side that covers fewer people; the person and the callout are
+      // framed together, the person's plate and lines left in view beside it
+      const cw = (CALLOUT_W + 14) / z, ch = CALLOUT_H / z, top = p.y - 10 / z;
+      const s = scene.current;
+      const rects: Array<{ x: number; y: number; w: number; h: number }> = !s ? [] : s.sheet === 'lines'
+        ? [...s.ga.plates.values()].filter((q) => q.id !== id).map((q) => ({ x: q.x, y: q.y, w: PLATE_W, h: PLATE_H }))
+        : [...s.floor.spots.values()].filter((q) => q.id !== id).map((q) => ({ x: q.x - 24, y: q.y - 24, w: 48, h: 48 }));
+      const covered = (x: number) => rects.filter((q) => q.x < x + cw && q.x + q.w > x && q.y < top + ch && q.y + q.h > top).length;
+      const side = covered(p.x + p.w) <= covered(p.x - cw) ? 'right' : 'left';
+      calloutSide.current = { id, side };
+      const pairX = side === 'right' ? p.x : p.x - cw, pairW = p.w + cw;
+      const left = 34, right = 16, bottom = 124, topIn = 34;
+      const wx = pairX + pairW / 2 - ((left + (cam.vw - left - right) / 2) - cam.vw / 2) / z;
+      const wy = top + Math.min(ch, (cam.vh - topIn - bottom) / z) / 2 - ((topIn + (cam.vh - topIn - bottom) / 2) - cam.vh / 2) / z;
+      cam.flyTo(wx, wy, z, performance.now(), reduced ? 0 : 750);
+    } else {
+      // on a phone the callout covers the lower half: keep the person in the upper part
+      const lift = cam.vw < 560 ? (cam.vh * 0.22) / z : 0;
+      cam.flyTo(p.x + p.w / 2, p.y + p.h / 2 + lift, z, performance.now(), reduced ? 0 : 750);
+    }
     if (opts.spotlight) spot.current = { id, t0: performance.now() + (reduced ? 0 : 500) };
     invalidate();
   }, [cam, posOf, reduced, invalidate]);
@@ -352,7 +396,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
   const pick = (id: string, opts: { spotlight?: boolean } = {}) => {
     setSelected(id);
     setKbFocus(id);
-    flyTo(id, opts);
+    flyTo(id, { ...opts, callout: true });
     setAnnounce(describe(id));
   };
 
@@ -416,7 +460,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
       const [wx, wy] = cam.toWorld(p.x, p.y);
       const id = s.sheet === 'lines' ? hitGA(s.ga, wx, wy) : hitFloor(s.floor, wx, wy);
       spot.current = null;
-      if (id) { setSelected(id); setKbFocus(id); setAnnounce(describe(id)); } else setSelected(null);
+      if (id) { setSelected(id); setKbFocus(id); setAnnounce(describe(id)); flyTo(id, { zoom: Math.max(cam.z, s.sheet === 'lines' ? 0.85 : 0.9), callout: true }); } else setSelected(null);
       invalidate();
       return;
     }
@@ -470,7 +514,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
       const id = kbFocus ?? selected;
       if (!id) return;
       e.preventDefault();
-      if (selected === id) onOpenCard(id); else { setSelected(id); setAnnounce(describe(id)); }
+      if (selected === id) onOpenCard(id); else { setSelected(id); setAnnounce(describe(id)); flyTo(id, { zoom: Math.max(cam.z, 0.85), callout: true }); }
       return;
     }
     if (e.key === 'Escape') {
@@ -484,12 +528,13 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     }
     if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomBy(1.4); }
     else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomBy(1 / 1.4); }
-    else if (e.key === '0') { e.preventDefault(); touched.current = true; cam.stop(); cam.fit(cam.bounds, 24); invalidate(); }
+    else if (e.key === '0') { e.preventDefault(); touched.current = true; frameRect(cam.bounds, reduced ? 0 : 400); }
     else if (e.key === 'Home') { e.preventDefault(); pick(meId); }
     else if (e.key === '/') { e.preventDefault(); searchBox.current?.focus(); }
   };
 
-  const fitAll = () => { touched.current = true; cam.stop(); const z = cam.fitZoom(cam.bounds, 24); cam.flyTo(cam.bounds.w / 2, cam.bounds.h / 2, z, performance.now(), reduced ? 0 : 500); invalidate(); };
+  // the whole sheet is for looking over: the callout steps aside so it covers no one
+  const fitAll = () => { touched.current = true; cam.stop(); setSelected(null); frameRect(cam.bounds, reduced ? 0 : 500); };
   const zoomBtn = (f: number) => { touched.current = true; const [wx, wy] = cam.toWorld(cam.vw / 2, cam.vh / 2); cam.flyTo(wx, wy, cam.z * f, performance.now(), reduced ? 0 : 240); invalidate(); };
   const keyPlanGo = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.type === 'pointermove' && !(e.buttons & 1)) return;
@@ -515,7 +560,10 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     if (boxes.length) {
       const x0 = Math.min(...boxes.map((q) => q.x)), y0 = Math.min(...boxes.map((q) => q.y));
       const x1 = Math.max(...boxes.map((q) => q.x + q.w)), y1 = Math.max(...boxes.map((q) => q.y + q.h));
-      cam.flyTo((x0 + x1) / 2, (y0 + y1) / 2, Math.min(1, cam.fitZoom({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, 90)), performance.now(), reduced ? 0 : 800);
+      // the whole route in the free part of the stage, beside the route card, never closer than 1:1
+      const pad = 80, card = cam.vw >= 560 ? 330 / Math.max(cam.z, 0.3) : 0;
+      const r = { x: x0 - pad - card, y: y0 - pad, w: x1 - x0 + pad * 2 + card, h: y1 - y0 + pad * 2 };
+      frameRect(r, reduced ? 0 : 800, 1);
     }
     invalidate();
   };
@@ -539,8 +587,8 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     <div className={`orgscape sheet-${sheet}${schedule ? ' with-schedule' : ''}`}>
       <div className="os-bar" role="toolbar" aria-label="Office drawing">
         <div className="seg os-sheets" role="group" aria-label="Sheet">
-          <button type="button" aria-pressed={sheet === 'lines'} onClick={() => { setSheet('lines'); }}><Icon name="branch" size={15} />Lines</button>
-          <button type="button" aria-pressed={sheet === 'floor'} onClick={() => { setSheet('floor'); setGrowth(false); setAsAt(null); }}><Icon name="grid" size={15} />Floor</button>
+          <button type="button" aria-pressed={sheet === 'lines'} onClick={() => { if (sheet !== 'lines') { setSelected(null); setSheet('lines'); } }}><Icon name="branch" size={15} />Lines</button>
+          <button type="button" aria-pressed={sheet === 'floor'} onClick={() => { if (sheet !== 'floor') { setSelected(null); setSheet('floor'); setGrowth(false); setAsAt(null); } }}><Icon name="grid" size={15} />Floor</button>
         </div>
         <div className="os-find" role="combobox" aria-expanded={searching && results.length > 0} aria-haspopup="listbox" aria-owns="os-results">
           <Icon name="search" size={15} />
