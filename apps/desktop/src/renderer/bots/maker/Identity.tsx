@@ -42,7 +42,7 @@ export function IdentitySection({ def, setDef, nameLocked, me }: { def: BotFlowD
               const autoLetters = p.mark.kind === 'monogram' && (!p.mark.letters || p.mark.letters === monogram(def.title));
               setDef({ ...def, title, ...(nameLocked ? {} : { name: slugify(title || 'my-bot') }), persona: { ...p, ...(autoLetters ? { mark: { kind: 'monogram', letters: monogram(title || 'B') } } : {}) } });
             }} />
-          <span className="bm-hint mono" translate="no">{nameLocked ? `/${def.name}` : `${def.name}`}{nameLocked ? ' · short name kept once saved' : ''}</span>
+          <span className="bm-hint mono"><span translate="no">/{def.name}</span>{nameLocked && <span> · short name kept once saved</span>}</span>
         </div>
         <div className="field">
           <label htmlFor={`${id}-about`}>What it is for (one line)</label>
@@ -94,7 +94,7 @@ export function IdentitySection({ def, setDef, nameLocked, me }: { def: BotFlowD
         </div>
         <figure className="bm-sample" aria-label="How it sounds">
           <figcaption className="bm-legend">How it sounds</figcaption>
-          <ul translate="no">{sample.map((line, i) => <li key={i}>{line}</li>)}</ul>
+          <ul>{sample.map((line, i) => <li key={i} translate="no">{line}</li>)}</ul>
         </figure>
         <div className="field">
           <label htmlFor={`${id}-greet`}>Greeting (the first thing it says)</label>

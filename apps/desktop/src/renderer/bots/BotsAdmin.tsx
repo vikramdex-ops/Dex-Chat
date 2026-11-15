@@ -10,6 +10,7 @@ import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { permissionWords } from './MiniAppCard.tsx';
 import { BotMarkTile } from './BotMark.tsx';
 import { openBotMaker } from './maker/open.ts';
+import { KIND_TAG, kindOf } from './maker/model.ts';
 import './bots.css';
 
 type AdminFlow = Ops['admin.botflows.list']['res'][number];
@@ -40,7 +41,7 @@ function Review({ f, users, onDone }: { f: AdminFlow; users: PublicUser[]; onDon
       </div>
       {def.persona?.about && <p className="muted" style={{ margin: 0 }} translate="no">{def.persona.about}</p>}
       <ol className="bm-review-steps">
-        {def.steps.map((s) => <li key={s.id}><span className="bm-kind">{s.input.kind.toUpperCase()}</span><span translate="no">{s.prompt.split('\n')[0]}</span></li>)}
+        {def.steps.map((s) => <li key={s.id}><span className="bm-kind">{KIND_TAG[kindOf(s.input)]}</span><span translate="no">{s.prompt.split('\n')[0]}</span></li>)}
       </ol>
       <ul className="flow-notes">{def.finish.map((a, i) => <li key={i}>{describeAction(a, def)}</li>)}</ul>
       <div className="field"><label htmlFor={`note-${f.name}`}>Note for {maker} and the audit log (optional)</label><input id={`note-${f.name}`} className="input" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} /></div>

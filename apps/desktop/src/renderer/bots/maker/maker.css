@@ -302,7 +302,8 @@ html:is([lang='hi'], [lang='ta']) :is(.bm-kind, .bm-tb-cap, .bm-tb-cells dt, .bm
   .bm-step.open .bm-step-tools { display: flex; flex: 1 0 100%; justify-content: flex-end; gap: 4px; padding: 2px 8px; border-left: 0; border-top: 1px dashed var(--stroke); }
   .bm-step-tools .icon-btn.sm { width: 36px; height: 36px; }
   .bm-step-edit { padding: 4px 10px 14px; }
-  .bm-mark-row { flex-direction: column; }
+  .bm-mark-row { flex-direction: column; align-items: stretch; }
+  .bm-mark-row > .bot-tile { align-self: flex-start; }
   .bm-hours { padding-left: 0; }
   .bm-add-btn { height: 36px; }
   .bm-preview .run { grid-template-columns: 52px 1fr; }

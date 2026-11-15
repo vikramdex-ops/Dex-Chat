@@ -81,7 +81,7 @@ export function MyBots({ session }: { session: Session }) {
                     <span className="mono faint">REV {pad(b.pendingVersion ?? b.version)} · {b.steps} Q · {b.runs} {b.runs === 1 ? 'RUN' : 'RUNS'}</span>
                   </span>
                 </button>
-                <span className="bm-reg-scope mono" translate="no">{scopeTag(b)}</span>
+                <span className="bm-reg-scope mono" translate={b.scope === 'space' ? 'no' : undefined}>{scopeTag(b)}</span>
                 <StatusTag b={b} />
                 <span className="bm-reg-actions">
                   <button className="btn ghost sm" onClick={() => openBotMaker({ name: b.name })}><Icon name="edit" size={14} />Edit</button>
@@ -192,7 +192,7 @@ function BotPage({ bot, session, onBack, onChanged }: { bot: BotMakerBot; sessio
                 {stats.recent.map((r, i) => (
                   <li key={i}>
                     <span className="mono faint">{relativeTime(r.at)}</span>
-                    <span translate="no">
+                    <span>
                       {r.status === 'done' ? `${users.get(r.userId ?? '')?.displayName ?? 'Someone'} finished it`
                         : r.status === 'active' ? `Someone is at question ${r.reached + 1}`
                           : r.status === 'expired' ? `Someone left it at question ${r.reached + 1}; it expired`

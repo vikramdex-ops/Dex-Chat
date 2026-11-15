@@ -217,7 +217,7 @@ export default function BotMaker({ req, session, onClose }: { req: MakerRequest;
           <div className="bm-tb-mark">{p ? <BotMarkTile mark={p.mark} colour={p.colour} size={44} /> : <span className="bot-tile bm-blank-tile" style={{ width: 44, height: 44 }}><Icon name="plus" size={20} /></span>}</div>
           <div className="bm-tb-name">
             <span className="bm-tb-cap">{adminMode ? 'Flow' : 'Bot'}</span>
-            <h2 translate="no">{def?.title || (loading ? '…' : 'New bot')}</h2>
+            <h2 translate={def?.title ? 'no' : undefined}>{def?.title || (loading ? '…' : 'New bot')}</h2>
           </div>
           {def && (
             <dl className="bm-tb-cells">
