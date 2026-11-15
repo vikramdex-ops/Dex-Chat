@@ -32,6 +32,7 @@ const clock = (h: number, m = 0) => { const t = at(h, m); hub.nib.setClock(t); h
 const seeded = await seedOffice(hub, owner, OFFICE, ['vikram', 'karthik', 'priya', 'bhavna']);
 const apps: any[] = [];
 let K: any, P: any, B: any;
+const extraClients: any[] = [];
 try {
   // ---------------------------------------------------------------- three people in the app
   const k = await launch('karthik', 'Karthik Subramanian', { width: 1440, height: 900 });
@@ -47,6 +48,7 @@ try {
   await owner.request('admin.setRole', { userId: ids.bhavna, role: 'admin' });
   // Kiran never reports; Deepa reports late; both are online
   const [kiran, deepa] = await bringOnline(hub.port, hub.fingerprint, [{ u: 'kiran', name: 'Kiran Desai', mode: 'office' }, { u: 'deepa', name: 'Deepa Krishnan', mode: 'office' }]);
+  extraClients.push(kiran, deepa);
   for (const c of [kiran, deepa]) await c.request('nib.me');
 
   // ---------------------------------------------------------------- 1. the administrator sets Nib up
@@ -139,13 +141,12 @@ try {
 
   // ---------------------------------------------------------------- 5. slash commands, anywhere
   const dock = K.locator('.dock textarea').first();
+  // two commands typed back to back: the second must survive the first finishing (it once wiped the Dock)
   await dock.fill('/got 6 GAs from Anand for P-14');
-  await sleep(200);
   await dock.press('Enter');
-  await K.getByText(/Noted for Anand: /).waitFor();
   await dock.fill('/done 9 of 12 isos P-12');
-  await sleep(200);
   await dock.press('Enter');
+  await K.getByText(/Noted for Anand: GAs/).waitFor();
   const seenToasts = new Set<string>();
   for (let i = 0; i < 60; i++) {
     for (const t of await K.locator('.toast').allInnerTexts()) seenToasts.add(t);
@@ -387,6 +388,7 @@ try {
 } finally {
   hub.nib.setClock(null);
   for (const a of apps) await a.close().catch(() => {});
+  for (const c of extraClients) c.disconnect();
   owner.disconnect();
   await hub.stop();
 }
