@@ -72,7 +72,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
       void Promise.all([hub, onDevice()])
         .then(([r, mine]) => { setHits(merge(r?.messages ?? [], mine)); setFiles(r?.files ?? []); setMore((r?.messages.length ?? 0) === 30 || mine.length === 30); })
         .finally(() => setBusy(false));
-    }, 200);
+    }, 120); // a pause in the typing (the hub answers in a few milliseconds)
     return () => clearTimeout(t);
   }, [key]);
   /**
