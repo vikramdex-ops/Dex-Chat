@@ -100,6 +100,8 @@ test('offboarding signs someone out everywhere and hands their Spaces, automatio
   assert.ok(p.messages >= 2);
   assert.equal(p.onHold, true);
 
+  await priya.request('notify.token'); // her phone's background service could still wait for messages
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM notify_tokens WHERE user_id = ?').get(leaverId) as { n: number }).n, 1);
   const rejected = until(priya, (s) => s.kind === 'rejected');
   const told = nextEvent<Message>(owner, 'msg.new', (m) => /Design review/.test(m.body) && /now organised by/.test(m.body));
   const leftEvent = nextEvent<{ userId: string; contactId: string }>(ravi, 'user.left');
@@ -107,6 +109,7 @@ test('offboarding signs someone out everywhere and hands their Spaces, automatio
   const dep: Departure = await owner.request('admin.offboard.run', { userId: leaverId, toUserId: me(ravi), meetings: 'reassign', note: 'Moved to the Pune office' });
   assert.equal(dep.user.leftAt, dep.leftAt);
   assert.equal(dep.toId, me(ravi));
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM notify_tokens WHERE user_id = ?').get(leaverId) as { n: number }).n, 0, 'background-notification tokens are forgotten');
 
   // signed out everywhere, and nothing lets them back in
   await rejected;

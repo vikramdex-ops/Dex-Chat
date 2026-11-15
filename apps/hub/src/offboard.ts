@@ -33,6 +33,8 @@ export interface OffboardHost {
   signOut: (userId: string, reason: string) => void;
   /** An event to everyone signed in, or to administrators only. */
   broadcast: (name: string, data: unknown, adminsOnly?: boolean) => void;
+  /** Forget a device's background-notification token (the phone's service stops being answered). */
+  forgetNotify: (deviceId: string) => void;
   /** Can this person use the office now (an approved device)? */
   active: (userId: string) => boolean;
 }
@@ -160,6 +162,7 @@ export class Offboarding {
     for (const dev of this.h.store.devices().filter((x) => x.userId === u.id && (x.status === 'approved' || x.status === 'pending'))) {
       const updated = this.h.store.setDeviceStatus(dev.id, dev.status === 'approved' ? 'revoked' : 'rejected', me.id);
       if (dev.status === 'approved') revoked.push(dev.id);
+      this.h.forgetNotify(dev.id);
       audit('device.revoked', dev.id, { account: dev.account, hostname: dev.hostname, offboarding: true });
       this.h.broadcast('device.updated', updated, true);
     }

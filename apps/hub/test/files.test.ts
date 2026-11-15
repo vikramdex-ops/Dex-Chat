@@ -197,3 +197,43 @@ test('text read from images is searchable, never for Direct conversations', asyn
   await owner.request('msg.send', { convId: dm.id, body: '', clientId: 'o2', files: [d.id] });
   await assert.rejects(owner.request('file.setText', { fileId: d.id, text: 'secret' }), /stay private/);
 });
+
+test('an encrypted Direct attachment is stored as the ciphertext it arrived as, under a neutral name', async () => {
+  const { hub, dir, owner, priya } = await office();
+  const { encryptBytes, decryptBytes, newFileSecret } = await import('@dex/core/e2e-files');
+  const plain = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from('Tender BOQ: 4.2 crore\n'.repeat(500))]);
+  const secret = newFileSecret();
+  const sealed = Buffer.from(await encryptBytes(plain, secret));
+  const r = await req(hub, 'POST', '/files?name=sealed&sealed=1', owner.session!.fileToken, sealed);
+  assert.equal(r.status, 200);
+  const info = JSON.parse(r.body.toString()) as FileInfo;
+  assert.equal(info.sealed, true);
+  assert.equal(info.name, 'Encrypted file');
+  assert.equal(info.mime, 'application/octet-stream');
+  assert.equal(info.size, sealed.length);
+  // on the hub's disk: exactly the ciphertext, nothing of the file
+  const sha = crypto.createHash('sha256').update(sealed).digest('hex');
+  const blob = fs.readFileSync(path.join(dir, 'files', sha.slice(0, 2), sha));
+  assert.deepEqual(blob, sealed);
+  assert.notDeepEqual(blob, plain);
+  assert.equal(blob.indexOf('crore'), -1);
+  assert.equal(blob.indexOf('%PDF'), -1);
+  const anyBlob = fs.readdirSync(path.join(dir, 'files')).filter((d) => d !== 'tmp').flatMap((d) => fs.readdirSync(path.join(dir, 'files', d)).map((f) => fs.readFileSync(path.join(dir, 'files', d, f))));
+  assert.ok(anyBlob.every((b) => b.indexOf('crore') === -1), 'no stored file holds the text');
+  // never read by the hub: no previews, no text, no tools
+  assert.equal(hub.files.read(info.id, 10_000_000), null);
+  await assert.rejects(owner.request('file.setText', { fileId: info.id, text: 'x' }), /stay private/);
+  // only an encrypted Direct message can carry it
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Tenders', members: [priya.session!.me.id] });
+  await assert.rejects(owner.request('msg.send', { convId: space.id, body: 'here', clientId: 's1', files: [info.id] }), /stay in the end-to-end encrypted Direct conversation/);
+  const dm = await owner.request('conv.create', { kind: 'direct', members: [priya.session!.me.id] });
+  await assert.rejects(owner.request('msg.send', { convId: dm.id, body: 'plain text', clientId: 's2', files: [info.id] }), /stay in the end-to-end encrypted Direct conversation/);
+  // served as an attachment, never inline; a recipient decrypts it back
+  const got = await req(hub, 'GET', `/files/${info.id}`, owner.session!.fileToken);
+  assert.equal(got.headers['content-type'], 'application/octet-stream');
+  assert.match(String(got.headers['content-disposition']), /^attachment; filename\*=UTF-8''Encrypted%20file/);
+  assert.deepEqual(Buffer.from(await decryptBytes(got.body, secret)), plain);
+  // the type check for encrypted files happens on the sender's device; plain uploads are still checked here
+  await owner.request('admin.policy.set', { blockedFileTypes: ['exe'] });
+  assert.equal((await upload(hub, owner, 'setup.exe', Buffer.from('MZ'))).status, 403);
+});

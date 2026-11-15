@@ -60,6 +60,7 @@ export class Policies {
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
       cameraConsent: this.meta('policy_camera_consent') === '1',
+      requireE2E: this.meta('policy_require_e2e') === '1',
       personalDevices: this.meta('policy_personal_devices') !== '0',
       memberEmoji: this.meta('policy_member_emoji') !== '0',
       dlp: this.json('policy_dlp', []),
@@ -189,6 +190,7 @@ export class Policies {
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
         if (typeof d.cameraConsent === 'boolean') this.setMeta('policy_camera_consent', d.cameraConsent ? '1' : '0');
+        if (typeof d.requireE2E === 'boolean') this.setMeta('policy_require_e2e', d.requireE2E ? '1' : '0');
         if (typeof d.personalDevices === 'boolean') this.setMeta('policy_personal_devices', d.personalDevices ? '1' : '0');
         if (typeof d.memberEmoji === 'boolean') this.setMeta('policy_member_emoji', d.memberEmoji ? '1' : '0');
         if (d.meetingLobby !== undefined) {

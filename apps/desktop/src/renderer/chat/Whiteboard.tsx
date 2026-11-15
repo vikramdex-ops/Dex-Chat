@@ -271,7 +271,7 @@ export function WhiteboardStage({ board, convId, onClose }: { board: Board; conv
     if (!blob || !window.dex.uploadFile) return;
     try {
       const name = `${title.replace(/[^\w -]/g, '').trim() || 'Whiteboard'}.png`;
-      const info = await window.dex.uploadFile(newId(), { data: await blob.arrayBuffer(), name, mime: 'image/png' });
+      const info = await window.dex.uploadFile(newId(), { data: await blob.arrayBuffer(), name, mime: 'image/png', convId });
       await sendMessage(convId, '', null, [info]);
       toast('Posted to the conversation');
     } catch (e) { toast((e as Error).message, true); }

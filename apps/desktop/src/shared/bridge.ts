@@ -178,6 +178,31 @@ export interface OverlayBridge {
   action(a: 'stop-control' | 'stop-screen' | 'end'): void;
 }
 
+/** Android: what decides whether notifications keep arriving without Google push. */
+export interface NotifyHealth {
+  /** Notifications are allowed (permission, and the messages channel not switched off). */
+  notifications: boolean;
+  /** Battery optimisation does not apply to the app ("Unrestricted"). */
+  batteryExempt: boolean;
+  /** Background use is "Restricted" for the app, which stops it whatever else is set. */
+  backgroundRestricted: boolean;
+  /** The maker family with extra switches: xiaomi, vivo, oppo (also Realme), oneplus, samsung, huawei, or ''. */
+  maker: string;
+  manufacturer: string;
+  model: string;
+  androidVersion: string;
+  /** This phone has the maker's autostart / background page (apps cannot read its switch). */
+  autostartPage: boolean;
+  keepAlive: boolean;
+  serviceRunning: boolean;
+  /** The background service can wait for messages on its own, and when it last reached the hub. */
+  watching: boolean;
+  lastOk: number | null;
+  lastError: string | null;
+}
+
+export type SettingsPage = 'notifications' | 'battery' | 'autostart' | 'app';
+
 export interface DexBridge {
   getState(): Promise<AppState>;
   /** Desktop: open a conversation in a window of its own, or bring the main window forward. */
@@ -201,7 +226,8 @@ export interface DexBridge {
   /** Unread attention count for the taskbar / dock badge. */
   setBadge?(count: number): void;
   /** Files (desktop only; absent on phones for now). */
-  uploadFile?(uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string }): Promise<import('@dex/core').FileInfo>;
+  /** With `convId`, a file for an end-to-end encrypted Direct conversation is encrypted on this device before it leaves. */
+  uploadFile?(uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string; convId?: string }): Promise<import('@dex/core').FileInfo>;
   onUploadProgress?(cb: (uploadId: string, sent: number, total: number) => void): () => void;
   pathForFile?(file: File): string;
   openFile?(id: string, name: string): Promise<void>;
@@ -222,7 +248,16 @@ export interface DexBridge {
   openInSlate?(id: string, name: string): Promise<void>;
   hasSlate?: boolean;
   /** Whether a Direct conversation is end-to-end encrypted, and the code to compare in person. */
-  e2eStatus?(convId: string): Promise<{ encrypted: boolean; code: string | null; missing: string[] }>;
+  e2eStatus?(convId: string): Promise<{ encrypted: boolean; code: string | null; missing: string[]; /** the office requires encryption here */ required?: boolean }>;
+  /** Android: the Notifications check (Preferences) and the settings pages it opens. */
+  phone?: {
+    notifyHealth(): Promise<NotifyHealth>;
+    /** Opens a settings page; resolves with what opened ('maker' for the maker's own page, 'app' for the app's page) or null. */
+    openSettings(page: SettingsPage): Promise<string | null>;
+    /** Android's own "always run in the background?" question, asked after the app explains why. */
+    requestBatteryExemption(): Promise<void>;
+    askNotifications(): Promise<void>;
+  };
   /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
   listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
   chooseScreen?(id: string): Promise<void>;

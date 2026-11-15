@@ -1104,6 +1104,24 @@ select[multiple].input { height: auto; padding: 4px; }
 .unverified { margin-left: 6px; color: var(--amber-ink); vertical-align: -1px; }
 .direct-banner { display: flex; align-items: center; gap: 10px; margin: 8px 16px 0; padding: 8px 12px; border-radius: var(--radius-m); background: var(--amber-soft); color: var(--amber-ink); font-size: 12.5px; }
 .via-direct { margin-left: 6px; font-size: 11px; color: var(--amber-ink); }
+/* a Direct message sent without end-to-end encryption: informational, so neutral, never amber */
+.plain-mark { display: inline-flex; float: right; margin: 3px 0 0 8px; color: var(--text-3); cursor: help; }
+.msg-text > .plain-mark:only-child { float: none; margin: 0; }
+.e2e-notice { display: flex; align-items: center; gap: 6px; margin: 0 16px 6px; padding: 5px 12px; border-top: 1px solid var(--stroke); color: var(--text-3); font-size: 12px; }
+.e2e-notice > span { flex: 1; min-width: 0; }
+.e2e-notice .link { font-size: 12px; }
+/* phone Preferences ▸ Notifications check */
+.notify-check { display: grid; gap: 10px; width: 100%; }
+.check-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--stroke); }
+.check-row .txt { flex: 1; min-width: 0; font-size: 13.5px; }
+.check-row .txt .faint { font-size: 12.5px; }
+.check-state { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 8px; }
+.check-row.ok .check-state { background: var(--ok-soft); color: var(--ok); }
+/* amber: something the person must do */
+.check-row.todo .check-state, .check-row.unknown .check-state { background: var(--amber-soft); color: var(--amber-ink); }
+.maker-steps { margin: -4px 0 0 34px; padding-left: 18px; font-size: 12.5px; color: var(--text-2); display: grid; gap: 4px; }
+.confirm-line { display: flex; align-items: center; gap: 8px; margin-left: 34px; font-size: 13px; }
+.check-foot { font-size: 11px; padding-top: 6px; border-top: 1px solid var(--stroke); }
 .img-loading { display: grid; place-items: center; width: 100%; height: 100%; min-height: 120px; background: var(--subtle); }
 /* phones and narrow windows */
 @media (max-width: 720px) {

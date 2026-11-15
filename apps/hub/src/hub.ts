@@ -60,6 +60,7 @@ import { Refs, RefError } from './refs.ts';
 import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
 import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
+import { MissedNotices } from './missed.ts';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -131,6 +132,8 @@ export class Hub {
   readonly mirror: UpdateMirror | null;
   readonly messaging: Messaging;
   readonly files: FileStore;
+  /** What a phone missed while disconnected, and its background service's long poll. */
+  readonly missed: MissedNotices;
   readonly rooms: Rooms;
   readonly meetings: Meetings;
   readonly meetGuests: MeetGuests;
@@ -209,8 +212,16 @@ export class Hub {
     this.policies.linesChanged = (list) => this.emit('lines.updated', list);
     this.pairing = new Pairing(this.store);
     this.system = new SystemBot(this.store, this.messaging);
+    this.missed = new MissedNotices(this.store.db, () => this.store.activeUsers(), (id) => this.files.forMessage(id).map((f) => f.name));
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
     this.messaging.dlpRules = () => this.policies.get().dlp ?? [];
+    this.messaging.requireE2E = () => this.policies.get().requireE2E === true;
+    this.messaging.keyless = (userIds) => {
+      if (!userIds.length) return [];
+      const rows = this.store.db.prepare(`SELECT DISTINCT user_id FROM devices WHERE status = 'approved' AND enc_key IS NOT NULL AND user_id IN (${userIds.map(() => '?').join(',')})`).all(...userIds) as Array<{ user_id: string }>;
+      const have = new Set(rows.map((r) => r.user_id));
+      return userIds.filter((u) => !have.has(u));
+    };
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
     this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
@@ -372,6 +383,7 @@ export class Hub {
       store: this.store, messaging: this.messaging, calendar: this.calendar, helpdesk: this.helpdesk, feeds: this.feeds, system: this.system,
       signOut: (uid, reason) => this.signOut(uid, reason),
       broadcast: (name, data, adminsOnly) => this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined),
+      forgetNotify: (deviceId) => this.missed.revoke(deviceId),
       active: (uid) => this.canSignIn(uid),
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
@@ -531,6 +543,7 @@ export class Hub {
     this.announcer?.stop();
     this.gateway.stop();
     this.webinars.stop();
+    this.missed.close();
     await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
     // let automations that are running finish before the database closes
@@ -547,6 +560,7 @@ export class Hub {
   private http(req: IncomingMessage, res: ServerResponse): void {
     if (this.mirror?.handle(req, res)) return;
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/notify/')) { this.missed.route(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/cal/')) { this.feeds.route(req, res); return; }
@@ -683,10 +697,12 @@ export class Hub {
 
     if (req.method === 'POST' && url.pathname === '/files') {
       if (user.role === 'guest') { req.resume(); sendJson(403, { error: 'Guests cannot upload files.' }); return; }
+      // an encrypted file's type is checked on the sender's device, before it is encrypted
+      const sealed = url.searchParams.get('sealed') === '1';
       const ext = (url.searchParams.get('name') ?? '').toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
-      if (ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) { req.resume(); sendJson(403, { error: `Your office doesn't allow .${ext} files to be shared.` }); return; }
+      if (!sealed && ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) { req.resume(); sendJson(403, { error: `Your office doesn't allow .${ext} files to be shared.` }); return; }
       try {
-        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined);
+        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined, sealed);
         this.log('info', 'file uploaded', { user: user.account, size: info.size });
         sendJson(200, info);
       } catch (err) {
@@ -758,6 +774,8 @@ export class Hub {
   /** Send an event to every connected device of the given people. */
   private deliver(userIds: string[], name: string, data: (userId: string) => unknown): void {
     const wanted = new Set(userIds);
+    // phones waiting in the background hear about new messages too
+    if (name === 'msg.new') this.missed.wake(wanted);
     const cache = new Map<string, unknown>();
     for (const c of this.conns) {
       if (!c.ready || !c.userId || !wanted.has(c.userId)) continue;
@@ -1159,6 +1177,7 @@ export class Hub {
         if (!device) throw new OpError('Device not found.');
         if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
         const updated = this.store.setDeviceStatus(device.id, 'revoked', me.id);
+        this.missed.revoke(device.id);
         this.store.audit(me.id, 'device.revoked', device.id, { account: device.account });
         if (device.status === 'approved') this.system.tell(device.userId, `An administrator removed **${device.hostname}** from your account. It is signed out and can't be used to sign in again.`, `revoked-${device.id}`);
         for (const c of [...this.conns]) {
@@ -1216,6 +1235,14 @@ export class Hub {
         const rows = this.store.db.prepare(`SELECT id, user_id, public_key, enc_key, enc_sig FROM devices WHERE status = 'approved' AND enc_key IS NOT NULL AND user_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as Array<{ id: string; user_id: string; public_key: string; enc_key: string; enc_sig: string }>;
         return rows.map((r) => ({ userId: r.user_id, deviceId: r.id, signKey: r.public_key, encKey: r.enc_key, sig: r.enc_sig })) satisfies Ops['e2e.keys']['res'];
       }
+
+      case 'notify.missed': {
+        const limit = typeof d.limit === 'number' && Number.isFinite(d.limit) ? d.limit : 50;
+        return this.missed.list(conn.userId!, d.after, limit) satisfies Ops['notify.missed']['res'];
+      }
+
+      case 'notify.token':
+        return { token: this.missed.token(conn.deviceId!, conn.userId!) } satisfies Ops['notify.token']['res'];
 
       case 'e2e.addKeys': {
         const me = this.store.userById(conn.userId!)!;

@@ -14,6 +14,7 @@ import { Avatar, Dialog, Icon, ToastHost, menuKeys, presenceFor, setPresenceSour
 import type { Availability } from '@dex/core';
 import type { IconName } from './ui.tsx';
 import { RequiredUpdate, UpdatePill, WhatsNew } from './UpdateUi.tsx';
+import { BatteryPrompt } from './views/NotifyCheck.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { Onboarding } from './views/Onboarding.tsx';
 import { Home } from './views/Home.tsx';
@@ -584,6 +585,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
 
       <main className={`stage${isTalk(lens) ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
+        <BatteryPrompt state={state} />
         {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} onPerson={(id) => { setLens('directory'); setFocusUser(id); }} />}
         {isTalk(lens) && <ChatView chip={chip} setChip={setChip} state={state} session={session} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}

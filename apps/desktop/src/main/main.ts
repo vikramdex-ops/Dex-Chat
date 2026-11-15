@@ -2,14 +2,14 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron';
 import type { OpName } from '@dex/core';
 import type { JoinRequest, Settings } from '../shared/bridge.ts';
 import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
 import { loadConfig, loadEncKeys, loadIdentity, saveConfig } from './persist.ts';
 import { Updater } from './updater.ts';
-import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile } from './files.ts';
+import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile, useEncryption } from './files.ts';
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
@@ -279,6 +279,7 @@ function wireIpc(c: Controller): void {
     data: src?.data instanceof ArrayBuffer ? src.data : undefined,
     name: String(src?.name ?? 'file').slice(0, 200),
     mime: typeof src?.mime === 'string' ? src.mime : undefined,
+    convId: typeof src?.convId === 'string' ? src.convId : undefined,
   }, (sent, total) => e.sender.send('file:progress', uploadId, sent, total))));
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   // saving reports progress as "save:<id>" on the upload progress channel
@@ -371,7 +372,18 @@ void app.whenReady().then(async () => {
   appLog.toFile(path.join(app.getPath('userData'), 'logs', 'connect.log'));
   process.on('uncaughtExceptionMonitor', (err) => appLog.error('main', err.message, { name: err.name }));
   const config = loadConfig();
-  const identity = loadIdentity();
+  let identity: ReturnType<typeof loadIdentity>;
+  let encKeys: ReturnType<typeof loadEncKeys>;
+  try {
+    identity = loadIdentity();
+    encKeys = loadEncKeys();
+  } catch (err) {
+    // the keys exist but the system cannot unseal them right now: never replace them with new ones
+    dialog.showErrorBox('Dexterity Connect cannot start yet', (err as Error).message);
+    quitting = true;
+    app.quit();
+    return;
+  }
   const account = await detectAccount();
   // Development only: simulate several colleagues on one machine ("username|Display Name").
   const devAccount = !app.isPackaged ? process.env.DEXCONNECT_DEV_ACCOUNT : undefined;
@@ -405,7 +417,9 @@ void app.whenReady().then(async () => {
     quit: () => { quitting = true; app.quit(); },
   }, justUpdated ?? null);
 
-  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state }, loadEncKeys());
+  controller = new Controller(account, identity, config, { platform: process.platform, version, update: () => updater!.state }, encKeys);
+  // files in end-to-end encrypted Direct messages: encrypted before upload, decrypted after download
+  useEncryption({ plan: (convId, file) => controller!.e2e.planUpload(convId, file), decrypt: (id) => controller!.e2e.downloadTransform(id) });
   // hub-off fallback: Direct messages straight between PCs on the office network
   const peers = new PeerNet({ e2e: controller.e2e, deviceId: identity.deviceId, sign: (p) => signWith(identity, p), dataDir: app.getPath('userData') });
   void peers.start().then(() => controller!.usePeers(peers)).catch(() => { /* no network: the hub path still works */ });

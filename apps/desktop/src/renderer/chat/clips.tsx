@@ -97,7 +97,7 @@ export function ClipRecorder({ mode, convId, parentId, onClose }: { mode: 'camer
     setBusy(true);
     try {
       const name = `${mode === 'camera' ? 'Video message' : 'Screen recording'} ${tag(clip.ms)}.webm`;
-      const info = await window.dex.uploadFile!(`clip-${Date.now().toString(36)}`, { data: await clip.blob.arrayBuffer(), name, mime: 'video/webm' });
+      const info = await window.dex.uploadFile!(`clip-${Date.now().toString(36)}`, { data: await clip.blob.arrayBuffer(), name, mime: 'video/webm', convId });
       await sendMessage(convId, '', parentId, [info]);
       onClose();
     } catch (e) { toast((e as Error).message, true); setBusy(false); }

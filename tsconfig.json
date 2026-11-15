@@ -14,5 +14,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["packages/*/src", "packages/*/test", "apps/hub/src", "apps/hub/test", "apps/desktop/src", "apps/mobile/src"]
+  "include": ["packages/*/src", "packages/*/test", "apps/hub/src", "apps/hub/test", "apps/desktop/src", "apps/mobile/src", "apps/mobile/test"]
 }

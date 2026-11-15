@@ -174,14 +174,15 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const [headMenu, setHeadMenu] = useState(false);
   const moreBtn = useRef<HTMLButtonElement>(null);
   const [board, setBoard] = useState<Board | null>(null);
-  const [e2e, setE2e] = useState<{ encrypted: boolean; code: string | null; missing: string[] } | null>(null);
+  const [e2e, setE2e] = useState<{ encrypted: boolean; code: string | null; missing: string[]; required?: boolean } | null>(null);
   const [verify, setVerify] = useState(false);
+  const missingNames = (ids: string[]) => ids.map((id) => (id === meId ? 'You' : users.get(id)?.displayName ?? 'Someone')).join(', ');
   useEffect(() => {
     setE2e(null);
     if (!window.dex.e2eStatus || convKind(convId) !== 'direct') return;
     const load = () => void window.dex.e2eStatus!(convId).then(setE2e).catch(() => setE2e(null));
     load();
-    return window.dex.onHubEvent((name) => { if (name === 'e2e.keysChanged') load(); });
+    return window.dex.onHubEvent((name) => { if (name === 'e2e.keysChanged' || name === 'policy.updated') load(); });
   }, [convId, live]);
   useEffect(() => {
     const onSide = (e: Event) => {
@@ -300,7 +301,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <p className="faint">
               {e2e && conv.kind === 'direct' && (
                 <button className={`e2e-chip${e2e.encrypted ? '' : ' off'}`} onClick={() => setVerify(true)} title={e2e.encrypted ? 'Messages here are end-to-end encrypted' : 'Not end-to-end encrypted yet'}>
-                  <Icon name="lock" size={11} />{e2e.encrypted ? 'Encrypted' : 'Not encrypted'}
+                  <Icon name={e2e.encrypted ? 'lock' : 'unlock'} size={11} />{e2e.encrypted ? 'Encrypted' : 'Not encrypted'}
                 </button>
               )}
               {sheetNo && sheetNo.of > 1 && <span className="sheet-no mono">Sheet {sheetNo.n}/{sheetNo.of}</span>}
@@ -385,7 +386,13 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
         )}
         {fwdMany && picked().length > 0 && <ForwardDialog message={picked()[0] as never} more={picked().slice(1) as never} users={users} meId={meId} online={online} onClose={() => { setFwdMany(false); setSelected(null); }} />}
         <WritingLine k={tlKey(convId)} users={users} />
-        {conv.archived ? null : conv.postPolicy === 'moderators' && !(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) ? (
+        {/* before sending: say plainly when a Direct conversation is not end-to-end encrypted, and why */}
+        {e2e && conv.kind === 'direct' && !e2e.encrypted && e2e.missing.length > 0 && !e2e.required && (
+          <div className="e2e-notice" role="status"><Icon name="unlock" size={13} /><span>Not end-to-end encrypted: {missingNames(e2e.missing)} {e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect.</span><button className="link" onClick={() => setVerify(true)}>Why</button></div>
+        )}
+        {conv.archived ? null : e2e && conv.kind === 'direct' && e2e.required && !e2e.encrypted && e2e.missing.length > 0 ? (
+          <div className="dock-locked faint e2e-required" role="status"><Icon name="lock" size={14} />Your office requires Direct messages to be end-to-end encrypted. You can write here once {missingNames(e2e.missing)} {e2e.missing.length === 1 ? 'updates' : 'update'} Dexterity Connect.</div>
+        ) : conv.postPolicy === 'moderators' && !(isAdmin || conv.createdBy === meId || conv.moderators.includes(meId)) ? (
           <div className="dock-locked faint"><Icon name="lock" size={14} />Only moderators post here. You can answer a message in its side-track.</div>
         ) : <Dock convId={convId} parentId={null} ctx={ctx} live={live} direct={direct} placeholder={placeholder} />}
       </section>
@@ -426,14 +433,16 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
         <Dialog title={e2e.encrypted ? 'End-to-end encrypted' : 'Not encrypted yet'} onClose={() => setVerify(false)} narrow>
           {e2e.encrypted ? (
             <>
-              <p className="muted" style={{ margin: 0 }}>Messages you write here are locked on your device and can only be read on the devices of the people in this conversation. The office hub stores and passes them on but cannot read them. Files are protected in transit and on the hub, but are not end-to-end encrypted.</p>
+              <p className="muted" style={{ margin: 0 }}>Messages, files, photos and voice notes you send here are locked on your device and can only be opened on the devices of the people in this conversation. The office hub stores and passes them on but cannot read them.</p>
               <div className="label">Safety code</div>
               <div className="code big safety selectable">{e2e.code?.split(' ').map((g, i) => <span key={i}>{g}</span>)}</div>
               <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>To be sure nobody is listening in, compare this code with {others.length === 1 ? users.get(others[0])?.displayName.split(' ')[0] : 'the others'} in person. It is the same on both screens. It changes when anyone here adds or replaces a device.</p>
             </>
           ) : (
             <p className="muted" style={{ margin: 0 }}>{e2e.missing.length
-              ? `${e2e.missing.map((id) => users.get(id)?.displayName ?? 'Someone').join(', ')} ${e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect. Messages here stay readable to them and are protected on the office network, and will be end-to-end encrypted once they update.`
+              ? e2e.required
+                ? `${missingNames(e2e.missing)} ${e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect, which cannot encrypt messages. Your office requires Direct messages to be end-to-end encrypted, so nothing can be sent here until ${e2e.missing.length === 1 ? 'they update' : 'everyone updates'}. Opening the updated app once is enough.`
+                : `${missingNames(e2e.missing)} ${e2e.missing.length === 1 ? 'is' : 'are'} on an older version of Dexterity Connect. Messages here stay readable to them and are protected on the office network, but the office hub can read them. Each one shows an open lock. They will be end-to-end encrypted once ${e2e.missing.length === 1 ? 'they update' : 'everyone updates'}.`
               : 'Conversations that include an integration are not end-to-end encrypted.'}</p>
           )}
         </Dialog>
@@ -873,12 +882,13 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
       ) : (
         m.body ? (
           <div className={`msg-text selectable${isEmojiOnly(m.body) ? ' big' : ''}`}>
+            {m.plain && <PlainMark m={m as Message} users={ctx.users} />}
             {renderBody(m.body, ctx.users, ctx.meId)}
             {m.editedAt && <span className="edited"> (edited)</span>}
             {m.via === 'direct' && <span className="via-direct" title="Passed straight between PCs while the hub was off">sent directly</span>}
             {m.e2e === 'unverified' && <span className="unverified" title="Encrypted, but this device could not confirm which device sent it"><Icon name="warning" size={12} /></span>}
           </div>
-        ) : null
+        ) : m.plain ? <div className="msg-text"><PlainMark m={m as Message} users={ctx.users} /></div> : null
       )}
       <MessageFiles files={m.files ?? []} onView={ctx.view} draggableAs={pending ? undefined : (f) => refDragProps({ kind: 'file', convId: m.convId, fileId: f.id, name: f.name }, ctx.users)} />
       {!pending && !editing && <LinkCards m={m as Message} meId={ctx.meId} inTrack={inTrack} />}
@@ -1147,7 +1157,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     if (!files.length) return;
     const room = 20 - attachments.length;
     const fresh = startUploads(files.slice(0, room), (k, patch) =>
-      setAttachments((list) => (patch === null ? list.filter((a) => a.key !== k) : list.map((a) => (a.key === k ? { ...a, ...patch } : a)))));
+      setAttachments((list) => (patch === null ? list.filter((a) => a.key !== k) : list.map((a) => (a.key === k ? { ...a, ...patch } : a)))), convId);
     setAttachments((list) => [...list, ...fresh]);
     ref.current?.focus();
   };
@@ -1804,4 +1814,14 @@ function ReasonDialog({ kind, m, ctx, onClose }: { kind: 'report' | 'remove'; m:
       </div>
     </Dialog>
   );
+}
+
+/** A Direct message that went out without end-to-end encryption: a small open lock, and why. */
+function PlainMark({ m, users }: { m: Message; users: Map<string, PublicUser> }) {
+  const p = m.plain!;
+  const who = p.users.map((id) => users.get(id)?.displayName ?? 'someone').join(', ');
+  const why = p.reason === 'no-key'
+    ? `Not end-to-end encrypted: ${who} had no encryption key yet (an older version of Dexterity Connect). The office hub can read this message.`
+    : 'Not end-to-end encrypted: sent from an older version of Dexterity Connect. The office hub can read this message.';
+  return <span className="plain-mark" role="img" aria-label={why} title={why}><Icon name="unlock" size={12} /></span>;
 }

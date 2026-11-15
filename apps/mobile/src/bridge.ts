@@ -5,8 +5,11 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
-import { createEncKeys } from '@dex/core/e2e';
+import { b64 as b64Chunked, createEncKeys } from '@dex/core/e2e';
 import type { EncKeyPair } from '@dex/core/e2e';
+import { DAMAGED_FILE } from '@dex/core/e2e-files';
+import { loadSecret } from './keys.ts';
+import type { MissedNotice } from '@dex/core/protocol';
 import { E2EClient } from '@dex/core/e2e-client';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -18,7 +21,7 @@ import { chooseUpdate, feedUrl, parseFeed } from '@dex/core/feed';
 import type { Channel, UpdateChoice } from '@dex/core/feed';
 import { openRemoteSocket, parsePairCode, parseSetupCode } from '@dex/core/remote';
 import type { RawHandlers } from '@dex/core/remote';
-import { SETTINGS_EXTRA_DEFAULTS, type AppState, type DexBridge, type DiscoveredHub, type JoinRequest, type Phase, type Settings, type UpdateState } from '../../desktop/src/shared/bridge.ts';
+import { SETTINGS_EXTRA_DEFAULTS, type AppState, type DexBridge, type DiscoveredHub, type JoinRequest, type NotifyHealth, type Phase, type Settings, type SettingsPage, type UpdateState } from '../../desktop/src/shared/bridge.ts';
 
 interface DexNativePlugin {
   discover(o: { port: number; timeoutMs: number; probe: string }): Promise<{ hubs: Array<{ address: string; data: string }> }>;
@@ -48,9 +51,23 @@ interface DexNativePlugin {
   addListener(event: 'gwBinary', fn: (e: { id: string; data: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'deepLink', fn: (e: { url: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: 'downloadProgress', fn: (e: { received: number; total: number }) => void): Promise<PluginListenerHandle>;
+  /** Secrets wrapped by an AES key in the Android Keystore (rejects with code "unreadable" or "unavailable"). */
+  secureGet(o: { key: string }): Promise<{ value: string | null }>;
+  secureSet(o: { key: string; value: string }): Promise<void>;
+  /** Part of a cached file, base64 (to decrypt an encrypted attachment), and removing one. */
+  fileRead(o: { path: string; offset: number; length: number }): Promise<{ data: string; eof: boolean }>;
+  fileDelete(o: { path: string }): Promise<void>;
+  notifyHealth(): Promise<NotifyHealth>;
+  openSettings(o: { target: SettingsPage }): Promise<{ opened: string | null }>;
+  requestBatteryExemption(): Promise<{ opened: string | null }>;
+  /** What the background service needs to wait for messages on its own when the app is not connected. */
+  watchConfig(o: { on: boolean; url?: string; fingerprint?: string; token?: string; notifyFor?: string; showPreviews?: boolean; quietFrom?: string | null; quietTo?: string | null; silent?: boolean }): Promise<void>;
+  setConnected(o: { connected: boolean; cursor?: string }): Promise<void>;
+  watchCursor(): Promise<{ cursor: string | null }>;
 }
 
 const Native = registerPlugin<DexNativePlugin>('DexNative');
+const isSealedText = (s: string) => s.startsWith('e2e1:');
 
 // ------------------------------------------------------------------ helpers
 const b64 = (u: Uint8Array) => btoa(String.fromCharCode(...u));
@@ -61,27 +78,46 @@ const SPKI_PREFIX = Uint8Array.from([0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0
 
 interface MobileIdentity { deviceId: string; publicKey: string; secret: string }
 
-async function loadIdentity(): Promise<MobileIdentity> {
-  const { value } = await Preferences.get({ key: 'device-key' });
-  if (value) {
-    try { return JSON.parse(value) as MobileIdentity; } catch { /* regenerate */ }
-  }
-  const secret = ed25519.utils.randomSecretKey();
-  const spki = new Uint8Array([...SPKI_PREFIX, ...ed25519.getPublicKey(secret)]);
-  const id: MobileIdentity = { deviceId: hex(sha256(spki)).slice(0, 32), publicKey: b64(spki), secret: b64(secret) };
-  await Preferences.set({ key: 'device-key', value: JSON.stringify(id) });
-  return id;
+// the device keys are wrapped by the Android Keystore; older versions' plain copies move there on first start
+const secure = { secureGet: (o: { key: string }) => Native.secureGet(o), secureSet: (o: { key: string; value: string }) => Native.secureSet(o) };
+const keyLog = (msg: string) => console.warn(`[keys] ${msg}`);
+
+function loadIdentity(): Promise<MobileIdentity> {
+  const valid = (v: unknown): v is MobileIdentity => !!v && typeof (v as MobileIdentity).deviceId === 'string' && /^[0-9a-f]{32}$/.test((v as MobileIdentity).deviceId)
+    && typeof (v as MobileIdentity).publicKey === 'string' && typeof (v as MobileIdentity).secret === 'string';
+  const create = (): MobileIdentity => {
+    const secret = ed25519.utils.randomSecretKey();
+    const spki = new Uint8Array([...SPKI_PREFIX, ...ed25519.getPublicKey(secret)]);
+    return { deviceId: hex(sha256(spki)).slice(0, 32), publicKey: b64(spki), secret: b64(secret) };
+  };
+  return loadSecret({ key: 'device-key', valid, create, secure, plain: Preferences, log: keyLog });
 }
 
 /** End-to-end encryption keys for Direct messages (kept with the device key). */
-async function loadEncKeys(): Promise<EncKeyPair> {
-  const { value } = await Preferences.get({ key: 'device-enc' });
-  if (value) {
-    try { const k = JSON.parse(value) as EncKeyPair; if (k.secret && k.public) return k; } catch { /* regenerate */ }
+function loadEncKeys(): Promise<EncKeyPair> {
+  const valid = (v: unknown): v is EncKeyPair => !!v && typeof (v as EncKeyPair).secret === 'string' && !!(v as EncKeyPair).secret && typeof (v as EncKeyPair).public === 'string' && !!(v as EncKeyPair).public;
+  return loadSecret({ key: 'device-enc', valid, create: createEncKeys, secure, plain: Preferences, log: keyLog });
+}
+
+/** A cached file read back through the plugin, in pieces. */
+async function* readCached(path: string): AsyncIterable<Uint8Array> {
+  for (let offset = 0; ;) {
+    const r = await Native.fileRead({ path, offset, length: 512 * 1024 });
+    const data = unb64(r.data);
+    offset += data.length;
+    if (data.length) yield data;
+    if (r.eof || !data.length) return;
   }
-  const k = createEncKeys();
-  await Preferences.set({ key: 'device-enc', value: JSON.stringify(k) });
-  return k;
+}
+
+async function collect(src: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
+  const parts: Uint8Array[] = [];
+  let n = 0;
+  for await (const p of src) { parts.push(p); n += p.length; }
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
 }
 
 const MIME: Record<string, string> = {
@@ -146,6 +182,7 @@ class MobileApp {
       deviceId: this.identity.deviceId, encSecret: encKeys.secret, encPublic: encKeys.public,
       sign: (p) => b64(ed25519.sign(p, signSecret)),
       request: (op, data) => this.session.request(op as OpName, data as never),
+      nameOf: (id) => (this.session.state.kind === 'ready' ? this.session.state.session.users.find((u) => u.id === id)?.displayName : undefined),
     });
     this.config = await loadConfig();
     const info = await Native.deviceInfo().catch(() => ({ model: 'Phone', manufacturer: '', androidVersion: '', appVersion: '0.0.0' }));
@@ -224,8 +261,44 @@ class MobileApp {
     return { path: done.path! };
   }
 
+  /**
+   * An end-to-end encrypted attachment: the ciphertext is downloaded (into the cache, or streamed
+   * through the gateway), decrypted here chunk by chunk, and only the decrypted file is kept.
+   * Images and previews are then shown from that file: the hub never sees them.
+   */
+  private async fetchSealed(id: string, name: string, decrypt: (src: AsyncIterable<Uint8Array>) => AsyncIterable<Uint8Array>): Promise<{ path: string }> {
+    let cipher: string | null = null;
+    let source: AsyncIterable<Uint8Array>;
+    if (this.session.viaGateway) {
+      const session = this.session.state.kind === 'ready' ? this.session.state.session : null;
+      if (!session) throw new Error('The office hub is not connected.');
+      const r = await this.session.http({ method: 'GET', path: `/files/${id}?download=1`, headers: { authorization: `Bearer ${session.fileToken}` } });
+      if (r.status !== 200) { for await (const _ of r.body) { /* drain */ } throw new Error(r.status === 404 ? 'This file is no longer available.' : `Download failed (${r.status})`); }
+      source = r.body;
+    } else {
+      const hub = this.hubAccess();
+      cipher = (await Native.fileGet({ url: `${hub.base}/files/${id}?download=1`, fingerprint: hub.fp, token: hub.token, id, name: 'encrypted.part' })).path;
+      source = readCached(cipher);
+    }
+    try {
+      let first = true;
+      for await (const part of decrypt(source)) { await Native.fileWrite({ id, name, data: b64Chunked(part), first }); first = false; }
+      return { path: (await Native.fileWrite({ id, name, data: '', first, done: true })).path! };
+    } catch (e) {
+      throw new Error((e as Error).message === DAMAGED_FILE ? DAMAGED_FILE : `Download interrupted: ${(e as Error).message}`);
+    } finally {
+      if (cipher) await Native.fileDelete({ path: cipher }).catch(() => {});
+    }
+  }
+
   private fetchFile(id: string, name: string): Promise<{ path: string }> {
     let p = this.fileCache.get(id);
+    const decrypt = this.e2e.downloadTransform(id);
+    if (!p && decrypt) {
+      p = this.fetchSealed(id, name, decrypt);
+      p.catch(() => this.fileCache.delete(id));
+      this.fileCache.set(id, p);
+    }
     if (!p && this.session.viaGateway) {
       p = this.fetchViaGateway(id, name);
       p.catch(() => this.fileCache.delete(id));
@@ -282,14 +355,22 @@ class MobileApp {
       if (st.kind === 'ready' || st.kind === 'rejected') s.setPair('');
       if (st.kind === 'ready') {
         void this.checkForUpdates(false, true);
-        void this.e2e.ready(st.session.me.id, st.session.users.filter((u) => u.role === 'bot').map((u) => u.id)).catch(() => {});
+        const e2eReady = this.e2e.ready(st.session.me.id, st.session.users.filter((u) => u.role === 'bot').map((u) => u.id)).catch(() => {});
+        // what arrived while the phone was not connected, shown now (after the keys, to open encrypted ones)
+        void e2eReady.then(() => this.catchUp()).catch(() => {});
+        void this.configureWatch().catch(() => {});
       }
-      if (st.kind === 'offline') this.e2e.reset();
+      if (st.kind === 'offline') {
+        this.e2e.reset();
+        // the background service waits for messages itself until the app is back
+        void Native.setConnected({ connected: false }).catch(() => {});
+      }
       this.push();
     });
     s.on('pinned', (t: HubTarget) => { this.config.hub = { ...t }; void this.save(); });
     s.on('session', () => this.push());
     s.on('event', (name: string, data: unknown) => {
+      if (name === 'msg.new' && typeof (data as { id?: unknown }).id === 'string') this.heard((data as { id: string }).id);
       this.events = this.events.then(async () => {
         await this.e2e.onEvent(name, data).catch(() => {});
         const opened = await this.e2e.incoming(data).catch(() => data);
@@ -297,6 +378,89 @@ class MobileApp {
       });
     });
     return s;
+  }
+
+  // ---------------------------------------------------------- notifications that keep working
+  private heardTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastHeard: string | null = null;
+
+  /** The app's own connection heard about this message: the background service starts after it. */
+  private heard(id: string): void {
+    if (!/^[0-9A-Z]{26}$/.test(id) || (this.lastHeard && id <= this.lastHeard)) return;
+    this.lastHeard = id;
+    if (this.heardTimer) return;
+    this.heardTimer = setTimeout(() => {
+      this.heardTimer = null;
+      void Native.setConnected({ connected: this.session.state.kind === 'ready', cursor: this.lastHeard ?? undefined }).catch(() => {});
+    }, 1500);
+  }
+
+  /**
+   * After every reconnect: fetch the messages that arrived while the phone was not connected
+   * (Android may have stopped the app, or the network dropped) and show them as notifications,
+   * with the same preferences as live ones. Starts where the background service left off, so
+   * nothing is shown twice.
+   */
+  private async catchUp(): Promise<void> {
+    await Native.setConnected({ connected: true }).catch(() => {});
+    let after = (await Native.watchCursor().catch(() => ({ cursor: null }))).cursor;
+    for (let page = 0; page < 4; page++) {
+      const r = await this.session.request('notify.missed', { after });
+      if (!after) { after = r.cursor; break; }
+      await this.showMissed(r.items);
+      after = r.cursor ?? after;
+      if (!r.more) break;
+    }
+    if (after) await Native.setConnected({ connected: true, cursor: after }).catch(() => {});
+  }
+
+  private inQuietHours(): boolean {
+    const { quietFrom, quietTo } = this.config.settings;
+    if (!quietFrom || !quietTo) return false;
+    const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const now = new Date();
+    const t = now.getHours() * 60 + now.getMinutes();
+    const a = m(quietFrom), b = m(quietTo);
+    return a <= b ? t >= a && t < b : t >= a || t < b;
+  }
+
+  private async showMissed(items: MissedNotice[]): Promise<void> {
+    const s = this.config.settings;
+    // someone looking at the app sees it there; nothing to interrupt them with
+    if (!items.length || !document.hidden || s.notifyFor === 'none' || this.inQuietHours()) return;
+    const users = this.session.state.kind === 'ready' ? this.session.state.session.users : [];
+    const meId = this.session.state.kind === 'ready' ? this.session.state.session.me.id : '';
+    if (users.find((u) => u.id === meId)?.availability === 'dnd') return;
+    const names = new Map(users.map((u) => [u.id, u.displayName]));
+    const wanted = items.filter((i) => !(i.muted && !i.mentioned) && (s.notifyFor !== 'mentions' || i.personal));
+    // one notification per conversation, with how many arrived
+    const byConv = new Map<string, MissedNotice[]>();
+    for (const i of wanted) byConv.set(i.convId, [...(byConv.get(i.convId) ?? []), i]);
+    for (const list of byConv.values()) {
+      const last = list[list.length - 1];
+      let text = last.text;
+      if (last.sealed) {
+        const opened = await this.e2e.incoming({ id: last.id, convId: last.convId, body: last.body }).catch(() => null);
+        text = opened && opened.body && !isSealedText(opened.body) ? opened.body.replace(/<@([0-9A-Z]{26}|all)>/g, (_m, id: string) => `@${id === 'all' ? 'all' : names.get(id) ?? 'someone'}`).slice(0, 200) : 'New encrypted message';
+      }
+      if (!s.showPreviews) text = 'New message';
+      const body = list.length > 1 ? `${list.length} new messages · ${text}` : text || 'New message';
+      await Native.showNotification({ title: last.title, body, link: last.link, silent: s.sound === 'none' }).catch(() => {});
+    }
+  }
+
+  /** Give the background service what it needs to wait for messages on its own (office network). */
+  private async configureWatch(): Promise<void> {
+    const hub = this.config.hub;
+    const s = this.config.settings;
+    const ready = this.session.state.kind === 'ready';
+    if (!ready || !hub?.fp || !hub.host || !s.closeToTray) { await Native.watchConfig({ on: false }); return; }
+    const { token } = await this.session.request('notify.token');
+    const host = hub.host.includes(':') ? `[${hub.host}]` : hub.host;
+    await Native.watchConfig({
+      on: true, url: `https://${host}:${hub.port}`, fingerprint: hub.fp, token,
+      notifyFor: s.notifyFor, showPreviews: s.showPreviews, quietFrom: s.quietFrom ?? null, quietTo: s.quietTo ?? null, silent: s.sound === 'none',
+    });
   }
 
   private async discoverLoop(): Promise<void> {
@@ -523,24 +687,27 @@ class MobileApp {
       },
       e2eStatus: (convId: string) => this.e2e.status(convId),
       // files: downloaded once into the app's cache through the pinned connection
-      uploadFile: async (_uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string }) => {
+      uploadFile: async (_uploadId: string, src: { path?: string; data?: ArrayBuffer; name: string; mime?: string; convId?: string }) => {
         if (!src.data) throw new Error('Choose the file again.');
         if (src.data.byteLength > 100 * 1024 * 1024) throw new Error('Files from a phone can be up to 100 MB.');
-        const q = `/files?name=${encodeURIComponent(src.name)}${src.mime ? `&type=${encodeURIComponent(src.mime)}` : ''}`;
+        // for an end-to-end encrypted Direct conversation the file is encrypted here, chunk by chunk
+        const plan = await this.e2e.planUpload(src.convId, { name: src.name, mime: src.mime, size: src.data.byteLength });
+        const body = await collect(plan.transform([new Uint8Array(src.data)]));
+        const q = plan.path;
         if (this.session.viaGateway) {
           const session = this.session.state.kind === 'ready' ? this.session.state.session : null;
-          const r = await this.session.http({ method: 'POST', path: q, headers: { authorization: `Bearer ${session?.fileToken ?? ''}`, 'content-length': String(src.data.byteLength), 'content-type': 'application/octet-stream' }, body: new Uint8Array(src.data) });
+          const r = await this.session.http({ method: 'POST', path: q, headers: { authorization: `Bearer ${session?.fileToken ?? ''}`, 'content-length': String(body.byteLength), 'content-type': 'application/octet-stream' }, body });
           let text = '';
           for await (const part of r.body) text += new TextDecoder().decode(part, { stream: true });
           const json = JSON.parse(text || '{}') as FileInfo & { error?: string };
           if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
-          return json;
+          return plan.done(json);
         }
         const hub = this.hubAccess();
-        const r = await Native.fileUpload({ url: `${hub.base}${q}`, fingerprint: hub.fp, token: hub.token, data: b64(new Uint8Array(src.data)) });
+        const r = await Native.fileUpload({ url: `${hub.base}${q}`, fingerprint: hub.fp, token: hub.token, data: b64Chunked(body) });
         const json = JSON.parse(r.body || '{}') as FileInfo & { error?: string };
         if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
-        return json;
+        return plan.done(json);
       },
       fileUrl: async (id: string, name: string) => Capacitor.convertFileSrc((await this.fetchFile(id, name)).path),
       openFile: async (id: string, name: string) => { const f = await this.fetchFile(id, name); await Native.openFile({ path: f.path, mime: mimeOf(name) }); },
@@ -550,7 +717,15 @@ class MobileApp {
         await this.save();
         this.push();
         if (patch.updateChannel) void this.checkForUpdates(false);
+        // the background service follows the notification preferences too
+        if ('closeToTray' in patch || 'notifyFor' in patch || 'showPreviews' in patch || 'quietFrom' in patch || 'sound' in patch) void this.configureWatch().catch(() => {});
         return this.config.settings;
+      },
+      phone: {
+        notifyHealth: () => Native.notifyHealth(),
+        openSettings: async (page) => (await Native.openSettings({ target: page })).opened,
+        requestBatteryExemption: async () => { await Native.requestBatteryExemption(); },
+        askNotifications: () => Native.askNotifications(),
       },
       notify: (title: string, body: string, link?: string) => {
         void Native.showNotification({ title, body, link, silent: this.config.settings.sound === 'none' }).catch(() => {});

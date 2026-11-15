@@ -60,6 +60,7 @@ export class Controller extends EventEmitter {
       sign: (p) => signWith(identity, p),
       request: (op, data) => { if (!this.client) return Promise.reject(new Error('Not connected to the hub.')); return this.client.request(op as OpName, data as never); },
       log: (msg, extra) => this.emit('warning', Object.assign(new Error(msg), { extra })),
+      nameOf: (id) => this.client?.session?.users.find((u) => u.id === id)?.displayName,
     });
     this.config = config;
     this.meta = meta;

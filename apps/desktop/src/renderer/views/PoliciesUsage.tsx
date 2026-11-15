@@ -43,6 +43,13 @@ export function PoliciesAdmin() {
       </section>
       <LinkPreviewSettings />
       <section className="card">
+        <div className="eyebrow">Direct messages</div>
+        <div className="setting" style={{ marginTop: 6 }}>
+          <div className="txt"><div>Require end-to-end encryption</div><div className="faint">Nothing is sent in a Direct conversation until everyone in it has an app that encrypts. People on an older version are asked to update; until then, the conversation shows why it is waiting. Conversations with an integration are not affected.</div></div>
+          <Toggle label="Require end-to-end encryption for Direct messages" checked={p.requireE2E === true} onChange={(v) => save({ requireE2E: v })} />
+        </div>
+      </section>
+      <section className="card">
         <div className="eyebrow">When the hub is off</div>
         <div className="setting" style={{ marginTop: 6 }}>
           <div className="txt"><div>Direct messages pass straight between PCs</div><div className="faint">Encrypted, signed and limited to the office network. Messages written then are posted to the hub when it is back.</div></div>

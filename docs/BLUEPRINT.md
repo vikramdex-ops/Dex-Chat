@@ -74,7 +74,7 @@ building, why, and in what order.
 | Hub | Node 22 TypeScript service, `ws`, SQLite, packaged as a Windows service | Single installer on the hub PC; no admin skills needed. |
 | Group media | PC to PC (mesh) up to 8; above that the hub's mediasoup relay (ISC licence, bundled worker) with `mediasoup-client`; TURN for people outside | Runs offline on the hub; about 50 in a Room on the office network, webinars up to 500 watching. |
 | 1:1 media | Plain WebRTC P2P (no TURN needed on a LAN) | Lowest latency; works with the hub off. |
-| Crypto | `@noble/curves` and `@noble/hashes` (X25519, Ed25519, HKDF) with AES-256-GCM; keys held with Windows DPAPI via Electron `safeStorage` | Device-bound identity; E2E Direct messages. |
+| Crypto | X25519, Ed25519 and HKDF (`@noble/curves`, `@noble/hashes`) with AES-256-GCM from WebCrypto; keys held with Windows DPAPI via Electron `safeStorage`, and in the Android Keystore on phones | Device-bound identity; E2E DMs and their files. |
 | Discovery | UDP broadcast beacon + mDNS (`_dexconnect._tcp`) | Finds the hub and peers with zero configuration. |
 | Installer | electron-builder NSIS (client) + NSIS (hub, registers the service and firewall rules) | One click; the installer creates its own firewall rules, so no manual PowerShell. |
 | Releases | `scripts/release/Build-Release.cmd` on an office PC: tests → Windows installer, hub package, Android APK → release page and update feed ([`RELEASING.md`](RELEASING.md)) | One double-click; the GitHub workflow remains for manual runs. |
@@ -107,8 +107,51 @@ building, why, and in what order.
   X25519 key and HKDF, and signed with the sender device's Ed25519 key. The hub only ever sees the sealed
   envelope; a user's existing device re-wraps history for a new device. People can compare a safety code.
   *(As built; hub-side search excludes DMs.)*
+- DM files, photos, voice notes and recordings: encrypted on the sending device before upload, each with its own
+  random AES-256-GCM key and nonce prefix, in 128 KB chunks (so large files stream in both directions; the chunk
+  number and a last-chunk flag are in each nonce, so chunks cannot be reordered, dropped or cut off). The key, the
+  real name, type and size travel inside the sealed message body, covered by the sender's signature. The hub stores
+  ciphertext as "Encrypted file", never shows it inline, never reads it (no previews, no text extraction, no tools)
+  and refuses to attach it anywhere but an encrypted DM. Devices decrypt on download, so images, previews and
+  thumbnails are made on the device. The office's blocked file types are checked on the device before encryption.
+  Older, unencrypted DM files keep working. *(As built.)*
+- A DM that cannot be sealed (someone's app has no encryption key yet, or the sender's app is older) is never sent
+  silently: the hub marks it with the reason, everyone sees a small open lock on it, and the sender sees a notice
+  above the Dock before sending. Control room ▸ Policies ▸ *Require end-to-end encryption* stops such messages on the
+  device and on the hub, with an explanation, until the person updates. Conversations with an integration are exempt.
+- Device keys: on Windows and macOS sealed with Electron `safeStorage` (DPAPI, Keychain). A key made while sealing was
+  unavailable is sealed on the next start; a sealed key that cannot be unsealed *right now* is never replaced. On
+  Android the keys are wrapped by an AES-256 key held in the Android Keystore (`DexNative.secureGet/secureSet`);
+  older versions' plain copies move there on first start.
 - Channels and groups: encrypted at rest on the hub; readable by compliance admins (retention, eDiscovery, export).
 - Planned hardening after v1: a double-ratchet layer for forward secrecy on DMs.
+
+### 3.5 Phone notifications without Google push
+The Android app does not use Firebase Cloud Messaging: the office network has no Google account, and messages should
+not leave it. Notifications instead depend on the app staying connected, which Android and several makers (Xiaomi,
+Vivo, Oppo, Realme, OnePlus, Samsung, Huawei) restrict to save battery. *(As built.)*
+- **Foreground service** (`HubService`, type `remoteMessaging`) with a quiet, low-importance "Connected to the office"
+  notification while *Stay connected in the background* is on. Restarted after a reboot and after an app update
+  (`BootReceiver`), and by Android (`START_STICKY`) if it stops it.
+- **Its own wait for messages.** When the app's WebView is gone or disconnected, the service long-polls the hub's
+  `GET /notify/wait` (pinned to the hub's certificate, with a per-device token kept in the Keystore and revoked with
+  the device) and shows what arrives with the person's preferences. This works on the office network; outside it the
+  app's own connection through the gateway carries notifications while it runs.
+- **Nothing lost.** On every reconnect the app asks the hub (`notify.missed`) for what arrived since the last message
+  it or the service heard about, and shows it (encrypted DMs are opened on the phone first).
+- **Battery exemption** (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), asked only after a sheet explains why.
+- **Preferences ▸ Notifications check** shows each requirement (notification permission, background connection,
+  battery exemption, restricted background use, the maker's autostart switches) and opens the right settings page,
+  with step-by-step instructions for each maker (apps cannot read autostart switches, so people tick them off).
+
+**Google push as an option later.** If the office creates a Firebase project, FCM could wake the phone instead of the
+always-on service. It would need: a Firebase project and its `google-services.json` in the Android build (the Gradle
+file already applies the plugin when that file exists); the Firebase Messaging library and a service that receives
+messages; each phone registering its FCM token with the hub; the hub holding a Firebase service-account key and
+calling the FCM HTTP v1 API through the internet (so the hub needs outbound internet access to Google). Payloads
+would carry only a "something new" ping and a conversation id, never message text, so encrypted DMs stay private and
+the app fetches the content itself. It would not help phones on networks that block Google, and Chinese-market phones
+without Google services would still need the current approach.
 
 ## 4. Feature matrix with ratings
 
@@ -153,7 +196,7 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 | 34 | Admin: user approval, roles, defaults, policies (edit window, uploads, P2P files, mention limits), usage reports | Full | 100% | M | Admin console inside the app |
 | 35 | Compliance: retention (90-day minimum), audit trail, legal hold, eDiscovery, DLP alerts, export (JSON/PDF) | Full (channels) | 90% | L | DMs excluded by design (E2E) |
 | 36 | Multi-account, tray, start at sign-in, deep links, downloads manager, update check | Full | 100% | S | Updates pushed from the hub, so no internet is needed |
-| 37 | Mobile | Office Wi-Fi only | 70% | M | Installable PWA served by the hub: chat, files, notifications while open. Native apps later. |
+| 37 | Mobile | Office Wi-Fi only | 70% | M | Android app: chat, files, notifications through its own background connection (no Google push; see §3.5). |
 | — | **Not possible offline / out of scope**: Zia & all AI · Google Drive/WorkDrive attachments · Jira/GitHub/Zoho integrations (cloud) · PSTN phone calls · mobile push via Apple/Google · external cross-company channels | — | — | — | — |
 
 **Overall fidelity for the requested scope: about 97%** of Cliq's non-AI, non-cloud capability. The only shortfalls are
