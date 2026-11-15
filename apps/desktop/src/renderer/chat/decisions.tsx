@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DECISION_LIMITS, DECISION_MAX_DEPTH, DECISION_MAX_OPTIONS, DECISION_MAX_STEPS, toCsv } from '@dex/core';
 import type { Conversation, DecisionResults, DecisionStep, DecisionStepInput, DecisionStepView, Message, PublicUser } from '@dex/core';
-import { Avatar, Dialog, Icon, useToast } from '../ui.tsx';
+import { Avatar, Dialog, Icon, confirmAction, useToast } from '../ui.tsx';
 import { downloadText } from '../work/store.ts';
 import './messages.css';
 
@@ -198,7 +198,7 @@ export function DecisionCard({ m, meId, users }: { m: Message; meId: string; use
       <div className="row-actions dc-foot">
         {!d.closed && (d.done || d.trail.length > 0) && <button className="btn ghost sm" onClick={() => act('decision.reset')}><Icon name="history" size={13} />Start again</button>}
         {isAuthorTree && <button className="btn ghost sm" onClick={() => setResults(true)}><Icon name="list" size={13} />Results · {d.finished}/{d.started}</button>}
-        {mine && !d.closed && <button className="btn ghost sm" onClick={() => { if (confirm('Close this Decision? Nobody can answer after that.')) act('decision.close', 'Decision closed'); }}>Close</button>}
+        {mine && !d.closed && <button className="btn ghost sm" onClick={() => void confirmAction({ title: 'Close this Decision? Nobody can answer after that.', confirm: 'Close the Decision' }).then((ok) => { if (ok) void act('decision.close', 'Decision closed'); })}>Close</button>}
       </div>
       {results && <DecisionResultsSheet messageId={m.id} users={users} onClose={() => setResults(false)} />}
     </div>

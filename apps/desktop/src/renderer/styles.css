@@ -598,6 +598,14 @@ select.input { padding-right: 6px; }
 }
 .toast svg { color: var(--accent); flex: none; }
 .toast.bad svg { color: var(--danger); }
+.toast-text { flex: 1; min-width: 0; }
+.toast-action { flex: none; margin: -4px 0; font-weight: 600; color: var(--accent-ink); }
+.toast-x { flex: none; width: 24px; height: 24px; margin: -4px -6px -4px 0; color: var(--text-3); }
+.toast-x svg { color: inherit; }
+.btn.danger-solid { background: var(--danger); border-color: transparent; color: #fff; font-weight: 600; }
+.btn.danger-solid:hover { filter: brightness(1.08); }
+:root[data-theme='dark'] .btn.danger-solid { color: #1a0d0b; }
+.confirm-body { margin: 0; overflow-wrap: anywhere; }
 
 /* -------------------------------------------------------------- motion */
 @keyframes fade { from { opacity: 0; } }

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import jsQRModule from 'jsqr';
 import type { Ops } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
-import { Dialog, Icon, relativeTime, useToast } from '../ui.tsx';
+import { Dialog, Icon, confirmAction, relativeTime, useToast } from '../ui.tsx';
 import { Qr } from './Remote.tsx';
 
 type MyDevice = Ops['me.devices']['res'][number];
@@ -26,6 +26,8 @@ export function YourDevices({ state }: { state: AppState }) {
   useEffect(() => { if (live) load(); }, [live]);
   useEffect(() => window.dex.onHubEvent((name) => { if (name === 'me.devicePaired' || name === 'device.updated') load(); }), []);
   const remove = async (d: MyDevice) => {
+    // it signs that device out at once, and only a new pairing code brings it back
+    if (!await confirmAction({ title: `Remove ${d.hostname}?`, body: 'It is signed out at once. To use it again, add it with a new pairing code.', confirm: 'Remove', danger: true })) return;
     try { await window.dex.request('me.devices.remove', { deviceId: d.id }); toast(`${d.hostname} was signed out and removed`); load(); }
     catch (e) { toast((e as Error).message, true); }
   };
@@ -45,8 +47,8 @@ export function YourDevices({ state }: { state: AppState }) {
         ))}
       </div>
       <div className="row-actions">
-        <button className="btn" disabled={!live} onClick={() => setAdding('phone')}><Icon name="mobile" size={16} />Add my phone</button>
-        <button className="btn" disabled={!live} onClick={() => setAdding('laptop')}><Icon name="laptop" size={16} />Add my laptop</button>
+        <button className="btn" disabled={!live} title={live ? undefined : 'Waiting for the office hub…'} onClick={() => setAdding('phone')}><Icon name="mobile" size={16} />Add my phone</button>
+        <button className="btn" disabled={!live} title={live ? undefined : 'Waiting for the office hub…'} onClick={() => setAdding('laptop')}><Icon name="laptop" size={16} />Add my laptop</button>
       </div>
       <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>Your phone or home laptop joins as you, with no approval needed. It works at home and on mobile data once your office has turned on access from outside.</p>
       {adding && <AddDevice kind={adding} onClose={() => setAdding(null)} />}

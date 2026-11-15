@@ -7,7 +7,7 @@ import { STICKER_RE } from '@dex/core';
 import type { Conversation, FileInfo, Message, PublicUser, Session } from '@dex/core';
 import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, startUploads } from './files.tsx';
 import type { Attachment } from './files.tsx';
-import { Avatar, Icon, Popover, colorFor, relativeTime, useToast, presenceFor } from '../ui.tsx';
+import { Avatar, Icon, Popover, colorFor, confirmAction, relativeTime, useToast, presenceFor } from '../ui.tsx';
 import type { IconName, Presence } from '../ui.tsx';
 import { SPACE_REF_RE, isEmojiOnly, openSpaces, renderBody, spaceName } from './format.tsx';
 import {
@@ -361,7 +361,7 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
             <button className="btn sm" disabled={!selected.size} onClick={() => { void navigator.clipboard.writeText(picked().map((m) => `${users.get(m.authorId)?.displayName ?? ''} (${new Date(m.createdAt).toLocaleString()}):\n${m.body}`).join('\n\n')); toast('Copied'); }}><Icon name="copy" size={14} />Copy</button>
             <button className="btn sm" disabled={!selected.size} onClick={() => void Promise.all(picked().filter((m) => !deskState().saved.has(m.id)).map((m) => toggleSaved(m as never).catch(() => null))).then(() => toast('Kept on your Desk'))}><Icon name="drawer" size={14} />Keep</button>
             {picked().length > 0 && picked().every((m) => m.authorId === meId || (isAdmin && conv.kind === 'space')) && (
-              <button className="btn sm danger" onClick={() => { if (confirm(`Delete ${selected.size} messages for everyone?`)) void Promise.all(picked().map((m) => window.dex.request('msg.delete', { messageId: m.id }).catch(() => null))).then(() => { toast('Deleted'); setSelected(null); }); }}><Icon name="trash" size={14} />Delete</button>
+              <button className="btn sm danger" onClick={() => void confirmAction({ title: `Delete ${selected.size} messages for everyone?`, confirm: 'Delete', danger: true }).then((ok) => { if (ok) void Promise.all(picked().map((m) => window.dex.request('msg.delete', { messageId: m.id }).catch(() => null))).then(() => { toast('Deleted'); setSelected(null); }); })}><Icon name="trash" size={14} />Delete</button>
             )}
             <span style={{ flex: 1 }} />
             <button className="btn ghost sm" onClick={() => setSelected(null)}>Done</button>
@@ -896,7 +896,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
               {!mine && author?.role !== 'bot' && <button role="menuitem" onClick={() => close(() => setDialog('report'))}><Icon name="warning" size={16} />Report to administrators…</button>}
               {canDelete && <><div className="menu-sep" /><button role="menuitem" className="danger" onClick={() => close(() => {
                 if (!mine) { setDialog('remove'); return; }
-                if (confirm('Delete this message for everyone?')) void act(window.dex.request('msg.delete', { messageId: m.id }));
+                void confirmAction({ title: 'Delete this message for everyone?', confirm: 'Delete', danger: true }).then((ok) => { if (ok) void act(window.dex.request('msg.delete', { messageId: m.id })); });
               })}><Icon name="trash" size={16} />{mine ? 'Delete' : 'Remove…'}</button></>}
             </Popover>
           )}
@@ -1535,7 +1535,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
             <Avatar user={u} presence={presenceFor(u.id)} size="sm" />
             <span className="sb-main"><span className="sb-name" translate="no">{u.id === ctx.meId ? `${u.displayName} (you)` : u.displayName}</span><span className="sb-preview">{u.statusText ? `${u.statusEmoji ? `${u.statusEmoji} ` : ''}${u.statusText}` : ctx.online.has(u.id) ? u.title ?? u.account : u.lastSeen ? `Last on ${relativeTime(u.lastSeen)}` : u.title ?? u.account}</span></span>
             {canModerate && c.kind === 'space' && !c.everyone && u.id !== ctx.meId && (
-              <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => { if (confirm(`Remove ${u.displayName} from ${c.name}?`)) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); }}><Icon name="x" size={14} /></button>
+              <button className="icon-btn" title={`Remove ${u.displayName} from this Space`} onClick={() => void confirmAction({ title: `Remove ${u.displayName} from ${c.name}?`, confirm: 'Remove', danger: true }).then((ok) => { if (ok) void window.dex.request('conv.removeMember', { convId: c.id, userId: u.id }).then(() => toast('Removed')).catch((e: Error) => toast(e.message, true)); })}><Icon name="x" size={14} /></button>
             )}
           </div>
         ))}
@@ -1557,7 +1557,7 @@ function MembersPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
             )
         )}
         {c.kind === 'space' && !c.everyone && (
-          <button className="btn ghost danger" style={{ marginTop: 16 }} onClick={() => { if (confirm(`Leave ${c.name}?`)) void window.dex.request('conv.leave', { convId: c.id }).catch((e: Error) => toast(e.message, true)); }}>Leave this Space</button>
+          <button className="btn ghost danger" style={{ marginTop: 16 }} onClick={() => void confirmAction({ title: `Leave ${c.name}?`, confirm: 'Leave', danger: true }).then((ok) => { if (ok) void window.dex.request('conv.leave', { convId: c.id }).catch((e: Error) => toast(e.message, true)); })}>Leave this Space</button>
         )}
       </div>
     </aside>
@@ -1581,7 +1581,7 @@ function SpaceSettings({ c, users }: { c: Conversation; users: PublicUser[] }) {
           </label>
         ))}
       </div>
-      {!c.everyone && <button className="btn" onClick={() => { if (confirm(`Archive ${c.name}? It becomes read-only for everyone until it is restored.`)) act(window.dex.request('conv.archive', { convId: c.id, archived: true }), 'Space archived'); }}><Icon name="archive" size={15} />Archive this Space</button>}
+      {!c.everyone && <button className="btn" onClick={() => void confirmAction({ title: `Archive ${c.name}? It becomes read-only for everyone until it is restored.`, confirm: 'Archive this Space' }).then((ok) => { if (ok) void act(window.dex.request('conv.archive', { convId: c.id, archived: true }), 'Space archived'); })}><Icon name="archive" size={15} />Archive this Space</button>}
     </div>
   );
 }

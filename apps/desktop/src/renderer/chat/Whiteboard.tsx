@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Board, BoardOp } from '@dex/core';
-import { Icon, useToast } from '../ui.tsx';
+import { Icon, confirmAction, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { sendMessage } from './store.ts';
 import { BoardPointers } from '../pointers/surfaces.tsx';
@@ -286,7 +286,7 @@ export function WhiteboardStage({ board, convId, onClose }: { board: Board; conv
         <span className="faint board-live"><span className="work-dot" />Live for everyone in this conversation</span>
         <span style={{ flex: 1 }} />
         <button className="btn ghost" onClick={undo} title="Undo your last mark (Ctrl+Z)">Undo</button>
-        <button className="btn ghost danger" onClick={() => { if (confirm('Clear the whole whiteboard for everyone?')) send({ t: 'clear' }); }}>Clear</button>
+        <button className="btn ghost danger" onClick={() => void confirmAction({ title: 'Clear the whole whiteboard for everyone?', confirm: 'Clear', danger: true }).then((ok) => { if (ok) send({ t: 'clear' }); })}>Clear</button>
         <button className="btn primary" onClick={() => void postImage()}><Icon name="send" size={15} />Post as image</button>
       </header>
       <div className="board-tools" role="toolbar" aria-label="Drawing tools">

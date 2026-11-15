@@ -7,7 +7,7 @@ import { playSound } from '../sounds.ts';
 import { RemoteSettings } from './Remote.tsx';
 import { YourDevices } from './Pairing.tsx';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
+import { Avatar, Icon, Popover, Segmented, Toggle, confirmAction, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
 import { setMsgLayout, useMsgLayout } from '../chat/prefs.ts';
 import type { MsgLayout } from '../chat/prefs.ts';
@@ -253,7 +253,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           <div className="setting">
             <Icon name="laptop" className="lead" />
             <div className="txt"><div>{state.platform === 'android' ? 'This phone' : 'This PC'}</div><div className="faint">{state.platform === 'android' ? '' : `${state.account.domain}\\${state.account.username} · `}{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
-            <button className="btn" onClick={() => { if (confirm('Disconnect from this hub? You can join it or another hub again from the welcome screen.')) void window.dex.forgetHub(); }}>Disconnect</button>
+            <button className="btn" onClick={() => void confirmAction({ title: 'Disconnect from this hub? You can join it or another hub again from the welcome screen.', confirm: 'Disconnect', danger: true }).then((ok) => { if (ok) void window.dex.forgetHub(); })}>Disconnect</button>
           </div>
         </section>
 

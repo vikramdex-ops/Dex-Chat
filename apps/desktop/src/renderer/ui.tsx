@@ -305,9 +305,14 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
 }
 
 // ------------------------------------------------------------------ toasts
-interface Toast { id: number; text: string; bad?: boolean }
-const ToastCtx = createContext<(text: string, bad?: boolean) => void>(() => {});
+/** A button in a toast, such as Undo. */
+export interface ToastAction { label: string; run: () => void }
+interface Toast { id: number; text: string; bad?: boolean; action?: ToastAction }
+type Push = (text: string, bad?: boolean, action?: ToastAction) => void;
+const ToastCtx = createContext<Push>(() => {});
 export const useToast = () => useContext(ToastCtx);
+/** Long enough to read: longer for long text, for problems and for toasts with a button. */
+const toastTime = (t: Toast) => Math.max(t.action ? 7000 : 4200, 1800 + t.text.length * 55) + (t.bad ? 1800 : 0);
 
 export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -318,11 +323,14 @@ export function ToastHost({ children }: { children: ReactNode }) {
     window.addEventListener('dex-redraw', on);
     return () => window.removeEventListener('dex-redraw', on);
   }, []);
-  const push = useCallback((text: string, bad?: boolean) => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-3), { id, text, bad }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
-  }, []);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const drop = useCallback((id: number) => { clearTimeout(timers.current.get(id)); timers.current.delete(id); setToasts((t) => t.filter((x) => x.id !== id)); }, []);
+  const later = useCallback((id: number, ms: number) => { clearTimeout(timers.current.get(id)); timers.current.set(id, setTimeout(() => drop(id), ms)); }, [drop]);
+  const push = useCallback<Push>((text, bad, action) => {
+    const t: Toast = { id: Date.now() + Math.random(), text, bad, action };
+    setToasts((all) => [...all.slice(-3), t]);
+    later(t.id, toastTime(t));
+  }, [later]);
   // parts of the app without access to the toast context (message formatting) raise errors this way
   useEffect(() => {
     // a plain string is a problem; { text, ok: true } is good news (a reference posted from a drag)
@@ -335,12 +343,50 @@ export function ToastHost({ children }: { children: ReactNode }) {
       <Fragment key={epoch}>{children}</Fragment>
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`}>
+          <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`} role={t.bad ? 'alert' : undefined}
+            onMouseEnter={() => clearTimeout(timers.current.get(t.id))} onMouseLeave={() => later(t.id, 2500)}>
             <Icon name={t.bad ? 'warning' : 'check'} />
-            <span>{t.text}</span>
+            <span className="toast-text">{t.text}</span>
+            {t.action && <button className="btn sm toast-action" onClick={() => { drop(t.id); t.action!.run(); }}>{t.action.label}</button>}
+            <button className="icon-btn toast-x" aria-label="Dismiss" title="Dismiss" onClick={() => drop(t.id)}><Icon name="x" size={14} /></button>
           </div>
         ))}
       </div>
+      <ConfirmHost />
     </ToastCtx.Provider>
+  );
+}
+
+// ------------------------------------------------------------------ asking before something that cannot be taken back
+interface Ask { title: string; body?: string; confirm: string; danger?: boolean; resolve: (ok: boolean) => void }
+let ask: ((a: Ask) => void) | null = null;
+
+/**
+ * Ask before a step that is hard to undo, in the app's own dialog (a verb on the button, never "OK").
+ * Resolves true when the person confirms.
+ */
+export function confirmAction(o: { title: string; body?: string; confirm: string; danger?: boolean }): Promise<boolean> {
+  if (!ask) return Promise.resolve(window.confirm(o.body ? `${o.title}\n\n${o.body}` : o.title));
+  const show = ask;
+  return new Promise((resolve) => show({ ...o, resolve }));
+}
+
+function ConfirmHost() {
+  const [cur, setCur] = useState<Ask | null>(null);
+  useEffect(() => {
+    ask = (a) => setCur((prev) => { prev?.resolve(false); return a; });
+    return () => { ask = null; };
+  }, []);
+  if (!cur) return null;
+  const done = (ok: boolean) => { cur.resolve(ok); setCur(null); };
+  return (
+    <Dialog title={cur.title} onClose={() => done(false)} narrow>
+      {cur.body && <p className="muted confirm-body">{cur.body}</p>}
+      <div className="dialog-actions confirm-actions">
+        <span />
+        <button className="btn ghost" onClick={() => done(false)}>Cancel</button>
+        <button className={`btn ${cur.danger ? 'danger-solid' : 'primary'}`} autoFocus onClick={() => done(true)}>{cur.confirm}</button>
+      </div>
+    </Dialog>
   );
 }

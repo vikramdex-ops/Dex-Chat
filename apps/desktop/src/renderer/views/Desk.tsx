@@ -21,6 +21,8 @@ const TABS: Tab[] = ['callouts', 'tracks', 'reminders', 'kept', 'scheduled', 'no
 type Jump = (convId: string, messageId?: string, parentId?: string | null) => void;
 
 const snooze = (r: Reminder, p: WhenPreset) => window.dex.request('remind.update', { id: r.id, dueAt: p.at() });
+/** Put a deleted reminder back as it was (a new one, the same text, time, repeat and message). */
+const restore = (r: Reminder) => window.dex.request('remind.create', { text: r.text, messageId: r.message?.id, dueAt: r.dueAt, repeat: r.repeat, forUserId: r.userId !== r.createdBy ? r.userId : undefined });
 const snoozedLine = (p: WhenPreset) => (p.id === '15m' ? 'Snoozed for 15 min' : `Snoozed until ${describeWhen(p.at())}`);
 
 export function Desk({ session, jump }: { session: Session; jump: Jump }) {
@@ -136,18 +138,18 @@ function ReminderRow({ r, users, meId, jump }: { r: Reminder; users: Map<string,
   const toast = useToast();
   const [menu, setMenu] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
-  const act = (p: Promise<unknown>, ok?: string) => void p.then(() => ok && toast(ok)).catch((e: Error) => toast(e.message, true));
+  const act = (p: Promise<unknown>, ok?: string, undo?: () => Promise<unknown>) => void p.then(() => ok && toast(ok, false, undo && { label: 'Undo', run: () => void undo().catch((e: Error) => toast(e.message, true)) })).catch((e: Error) => toast(e.message, true));
   const overdue = !r.done && r.dueAt <= Date.now();
   const forOther = r.userId !== meId;
   const by = r.createdBy !== meId ? users.get(r.createdBy)?.displayName : null;
   return (
     <div className={`desk-row${r.done ? ' done' : ''}${overdue ? ' overdue' : ''}`} data-rid={r.id}>
       <button className={`check-ring${r.done ? ' on' : ''}`} aria-label={r.done ? 'Mark as not done' : 'Mark as done'} disabled={forOther}
-        onClick={() => act(window.dex.request('remind.update', { id: r.id, done: !r.done }), r.done ? undefined : 'Done')}>
+        onClick={() => act(window.dex.request('remind.update', { id: r.id, done: !r.done }), r.done ? undefined : 'Done', r.done ? undefined : () => window.dex.request('remind.update', { id: r.id, done: false }))}>
         {r.done && <Icon name="check" size={13} />}
       </button>
       <div className="desk-main">
-        <div className="desk-text">{r.text}</div>
+        <div className="desk-text" translate="no">{r.text}</div>
         {r.message && (
           <button className="desk-quote" onClick={() => jump(r.message!.convId, r.message!.id, r.message!.parentId)}>
             <QuoteLine m={r.message} users={users} meId={meId} />
@@ -163,7 +165,7 @@ function ReminderRow({ r, users, meId, jump }: { r: Reminder; users: Map<string,
       {!r.done && (
         <div className="desk-actions">
           {!forOther && <button className="btn ghost sm" onClick={() => { const p = snoozePresets()[0]; act(snooze(r, p), snoozedLine(p)); }}>Snooze 15 min</button>}
-          <button ref={menuBtn} className="icon-btn" aria-label="More" onClick={() => setMenu(!menu)}><Icon name="more" size={16} /></button>
+          <button ref={menuBtn} className="icon-btn" aria-label="More for this reminder" title="Snooze until… or delete" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="more" size={16} /></button>
           {menu && (
             <Popover anchor={menuBtn.current} onClose={() => setMenu(false)} className="menu desk-menu">
               {!forOther && <>
@@ -175,12 +177,12 @@ function ReminderRow({ r, users, meId, jump }: { r: Reminder; users: Map<string,
                 ))}
                 <div className="menu-sep" />
               </>}
-              <button role="menuitem" className="danger" onClick={() => { setMenu(false); act(window.dex.request('remind.delete', { id: r.id }), 'Reminder deleted'); }}><Icon name="trash" size={16} />Delete</button>
+              <button role="menuitem" className="danger" onClick={() => { setMenu(false); act(window.dex.request('remind.delete', { id: r.id }), 'Reminder deleted', () => restore(r)); }}><Icon name="trash" size={16} />Delete</button>
             </Popover>
           )}
         </div>
       )}
-      {r.done && <button className="icon-btn" aria-label="Delete" onClick={() => act(window.dex.request('remind.delete', { id: r.id }))}><Icon name="trash" size={15} /></button>}
+      {r.done && <button className="icon-btn" aria-label="Delete" title="Delete" onClick={() => act(window.dex.request('remind.delete', { id: r.id }), 'Reminder deleted', () => restore(r).then((n) => window.dex.request('remind.update', { id: n.id, done: true })))}><Icon name="trash" size={15} /></button>}
     </div>
   );
 }
@@ -190,7 +192,7 @@ function QuoteLine({ m, users, meId }: { m: Message; users: Map<string, PublicUs
   const who = m.authorId === meId ? 'You' : users.get(m.authorId)?.displayName ?? 'Someone';
   const where = conv ? convTitle(conv, users, meId) : '';
   const text = m.poll ? `📊 ${m.poll.question}` : plainPreview(m.body, users) || (m.files.length ? `📎 ${m.files.length === 1 ? m.files[0].name : `${m.files.length} files`}` : '');
-  return <><span><b>{who}</b>{where && <span className="faint"> in {where}</span>}</span><span className="desk-quote-text">{text}</span></>;
+  return <><span><b translate={m.authorId === meId ? undefined : 'no'}>{who}</b>{where && <span className="faint"> in <span translate="no">{where}</span></span>}</span><span className="desk-quote-text" translate="no">{text}</span></>;
 }
 
 // ------------------------------------------------------------------ kept on my Desk
@@ -224,7 +226,7 @@ function Kept({ list: all, users, meId, jump }: { list: SavedMessage[]; users: M
               {KEEP_KINDS.map((x) => <option key={x} value={x}>{KEEP_LABEL[x]}</option>)}
             </select>
             <button className="btn ghost sm" title="Take it off your Desk"
-              onClick={() => void toggleSaved(m).then(() => toast('Taken off your Desk')).catch((e: Error) => toast(e.message, true))}><Icon name="tray" size={15} />Take off Desk</button>
+              onClick={() => void toggleSaved(m).then(() => toast('Taken off your Desk', false, { label: 'Undo', run: () => void toggleSaved(m).then(() => (k && k !== 'keep' ? setKeepKind(m, k) : undefined)).catch((e: Error) => toast(e.message, true)) })).catch((e: Error) => toast(e.message, true))}><Icon name="tray" size={15} />Take off Desk</button>
           </div>
         );
       })}
@@ -261,7 +263,7 @@ function ScheduledRow({ s, users, meId, jump }: { s: ScheduledMessage; users: Ma
               }} />
             <div className="edit-hint faint">Enter to save · Esc to cancel</div>
           </div>
-        ) : <div className="desk-text">{plainPreview(s.body, users) || <span className="faint">{s.files.length} {s.files.length === 1 ? 'file' : 'files'}</span>}</div>}
+        ) : <div className="desk-text" translate={s.body ? 'no' : undefined}>{plainPreview(s.body, users) || <span className="faint">{s.files.length} {s.files.length === 1 ? 'file' : 'files'}</span>}</div>}
         <div className="desk-meta">
           <span className={`chip${s.status === 'failed' ? ' bad' : ' accent'}`}><Icon name="schedule" size={12} />{s.status === 'failed' ? 'Not sent' : describeWhen(s.sendAt)}</span>
           {s.files.length > 0 && s.body && <span className="faint">+ {s.files.length} {s.files.length === 1 ? 'file' : 'files'}</span>}
@@ -272,7 +274,9 @@ function ScheduledRow({ s, users, meId, jump }: { s: ScheduledMessage; users: Ma
         <button className="btn ghost sm" onClick={() => void act(window.dex.request('sched.sendNow', { id: s.id }), 'Sent')}>Send now</button>
         <button className="icon-btn" title="Change time" aria-label="Change time" onClick={() => setMoving(true)}><Icon name="clock" size={16} /></button>
         <button className="icon-btn" title="Edit text" aria-label="Edit text" onClick={() => setEditing(true)}><Icon name="edit" size={16} /></button>
-        <button className="icon-btn danger" title="Cancel" aria-label="Cancel scheduled message" onClick={() => void act(window.dex.request('sched.cancel', { id: s.id }), 'Cancelled')}><Icon name="trash" size={16} /></button>
+        <button className="icon-btn danger" title="Cancel this send" aria-label="Cancel scheduled message" onClick={() => void window.dex.request('sched.cancel', { id: s.id })
+          .then(() => toast('Cancelled', false, s.sendAt > Date.now() + 60_000 ? { label: 'Undo', run: () => void window.dex.request('sched.create', { convId: s.convId, body: s.body, parentId: s.parentId ?? undefined, files: s.files.map((f) => f.id), sendAt: s.sendAt }).catch((e: Error) => toast(e.message, true)) } : undefined))
+          .catch((e: Error) => toast(e.message, true))}><Icon name="trash" size={16} /></button>
       </div>
       {moving && <ScheduleDialog preview={s.body} users={users} meId={meId} onClose={() => setMoving(false)}
         onPick={(at) => act(window.dex.request('sched.update', { id: s.id, sendAt: at }), `Moved to ${describeWhen(at)}`).then(() => setMoving(false))} />}
@@ -296,7 +300,7 @@ export function ReminderCards({ users, meId, jump }: { users: Map<string, Public
             <span className="reminder-icon"><Icon name="alarm" size={18} /></span>
             <div className="desk-main">
               <span className="label">Reminder{r.createdBy !== meId ? ` from ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : ''}</span>
-              <div className="desk-text">{r.text}</div>
+              <div className="desk-text" translate="no">{r.text}</div>
               {r.message && <button className="desk-quote" onClick={() => { dismissRinging(r.id); jump(r.message!.convId, r.message!.id, r.message!.parentId); }}><QuoteLine m={r.message} users={users} meId={meId} /></button>}
             </div>
             <button className="icon-btn" aria-label="Dismiss" onClick={() => dismissRinging(r.id)}><Icon name="x" size={15} /></button>
