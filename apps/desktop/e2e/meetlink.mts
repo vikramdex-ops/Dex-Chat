@@ -55,6 +55,9 @@ for (let i = 0; i < 100 && !(await owner.request('admin.remote.get')).status.con
 assert.ok((await owner.request('admin.remote.get')).status.connected, 'hub reached the gateway');
 await sleep(500);
 
+// the drives test hook (development builds only) records what the app would open instead of opening it:
+// here, the email draft for "Send by email"
+process.env.DEXCONNECT_TEST_DRIVES = '{"drives":[]}';
 const a = await launch('priya', 'Priya Raman', { audio: voices().a, width: 1440, height: 900 });
 const browser = await pw.chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${voices().b}`, '--autoplay-policy=no-user-gesture-required'] });
 const results: Record<string, unknown> = {};
@@ -146,6 +149,26 @@ try {
   assert.ok(ics.includes(`\r\nURL:${guestUrl}\r\n`), 'URL: the one-click link');
   assert.ok(ics.includes(`\r\nLOCATION:${site}/p12-design-review\r\n`), 'LOCATION: the page without the passcode');
   results.ics = ics.split('\r\n').filter((l) => /^(UID|URL|LOCATION|SUMMARY)/.test(l));
+  // Send by email: an .eml draft written and opened in the mail program, with the .ics attached
+  await a.page.getByRole('button', { name: 'Send by email' }).click();
+  await a.page.getByText(/Email draft opened in your mail program/).waitFor({ timeout: 10000 });
+  const opened = await a.app.evaluate(() => (globalThis as unknown as { __dexTestShell: Array<{ kind: string; path: string }> }).__dexTestShell.slice());
+  const draftPath = opened.map((x: { path: string }) => x.path).filter((x: string) => x.endsWith('.eml')).pop()!;
+  assert.ok(draftPath && /dexterity-connect-mail/.test(draftPath), JSON.stringify(opened));
+  const eml = fs.readFileSync(draftPath, 'utf8');
+  const [emlHead] = eml.split('\r\n\r\n');
+  assert.ok(!/[^\r]\n/.test(eml), 'CRLF line ends');
+  assert.match(emlHead, /\r\nX-Unsent: 1\r\n/);
+  const subject = /\r\nSubject: ([^]*?)\r\n(?=\S)/.exec(`\r\n${emlHead}`)![1].split('\r\n ').map((w) => { const x = /^=\?UTF-8\?B\?(.*)\?=$/.exec(w); return x ? Buffer.from(x[1], 'base64').toString('utf8') : w; }).join('');
+  assert.match(subject, /^Invitation: P-12 design review · \w{3} \d+ \w{3}, \d+:\d{2} [AP]M /);
+  const emlParts = eml.split(/\r\n--=_dex_(?:mixed|alt)_[a-z0-9]+(?:--)?\r\n/).slice(1).map((pt) => { const [hd, ...b] = pt.split('\r\n\r\n'); return { hd, body: /base64/.test(hd) ? Buffer.from(b.join('').replace(/\r\n/g, '').replace(/--=_dex.*$/, ''), 'base64').toString('utf8') : '' }; });
+  const plain = emlParts.find((x) => /text\/plain/.test(x.hd))!;
+  const htmlPart = emlParts.find((x) => /text\/html/.test(x.hd))!;
+  const att = emlParts.find((x) => /text\/calendar; method=PUBLISH/.test(x.hd))!;
+  assert.ok(plain.body.includes(guestUrl) && plain.body.includes(`Passcode: ${pass}`));
+  assert.ok(htmlPart.body.includes(`href="${guestUrl}"`) && /Join from your browser/.test(htmlPart.body));
+  assert.ok(/attachment; filename="P-12 design review\.ics"/.test(att.hd) && att.body.includes(`UID:meeting-${meetingId}@dexconnect`));
+  results.emailDraft = { file: path.basename(draftPath), subject, parts: emlParts.map((x) => /Content-Type: ([^;\r\n]+)/.exec(x.hd)?.[1]) };
   await a.page.keyboard.press('Escape');
 
   // ------------------------------------------------------------ Dana opens the clean link without the passcode: the title hidden first
@@ -199,6 +222,14 @@ try {
   await g.getByLabel('Camera', { exact: true }).waitFor();
   results.devices = await g.locator('.devices select').evaluateAll((s) => s.map((x) => (x as HTMLSelectElement).id));
   await sleep(600);
+  // the living drawing: the visitor's own readiness, filled in as they check
+  const caption = () => g.locator('.living figcaption').textContent();
+  await g.waitForFunction(() => /network \d+ milliseconds/.test(document.querySelector('.living figcaption')?.textContent ?? ''), null, { timeout: 15000 });
+  await g.waitForFunction(() => /camera working; microphone heard; speakers tested/.test(document.querySelector('.living figcaption')?.textContent ?? ''), null, { timeout: 20000 });
+  assert.match((await caption())!, /Checked and ready/);
+  assert.match((await caption())!, /your time .*office time|the same as the office/);
+  assert.equal(await g.locator('.plate .tag.ok').count(), 4, 'all four tags checked');
+  results.readiness = await caption();
   await snap(g, 'ml-06-device-check', { full: true });
 
   // ------------------------------------------------------------ Priya reschedules: the page moves by itself, and the room opens
@@ -226,6 +257,7 @@ try {
   await g.getByRole('button', { name: /Join the meeting|Ask to join/ }).click();
   await g.getByRole('heading', { name: 'The host will let you in' }).waitFor({ timeout: 20000 });
   await sleep(500);
+  assert.match((await g.locator('.living figcaption').textContent())!, /Awaiting approval from the host/);
   await snap(g, 'ml-08-lobby');
   const row = a.page.locator('.room-lobby li', { hasText: 'Dana Wright' });
   await row.waitFor({ timeout: 15000 });
@@ -270,6 +302,7 @@ try {
   assert.match(closing, /The minutes and the marked-up isometrics follow by Friday/);
   assert.match(closing, /Next: /);
   await g.getByRole('group', { name: 'Add the next one' }).waitFor();
+  assert.match((await g.locator('.living figcaption').textContent())!, /Approved for entry at .*Issued: \d+ minutes? in the meeting/);
   await snap(g, 'ml-11-closing');
   await a.page.getByRole('button', { name: 'Leave Room' }).click();
 

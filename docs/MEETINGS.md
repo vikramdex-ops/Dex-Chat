@@ -126,7 +126,7 @@ suppression, and per-meeting reports.
   meeting's breakout rooms share it, and it is gone when the meeting ends. Members see it as
   "Everyone here" beside the conversation in the panel's Chat tab whenever such people are in the
   Room. The conversation's own chat is unchanged (and stays end-to-end encrypted where it was).
-- **Invitations.** "Copy invitation" and "Download invitation (.ics)" in the Calendar's meeting dialog and the
+- **Invitations.** "Copy invitation", "Download invitation (.ics)" and "Send by email" (a draft in the PC's mail program with the formatted invitation and the .ics attached, `packages/core/src/eml.ts`; `mailto:` where that cannot open) in the Calendar's meeting dialog and the
   Room's host controls: one VEVENT with a stable UID, DTSTART/DTEND in UTC, the organiser (their
   email when the Directory has one), and the guest link with its passcode when it is on
   (`packages/core/src/ics.ts`).

@@ -104,7 +104,11 @@ function connect(): void {
     send({ t: 'join', name: state.name, passcode });
     pingTimer = setInterval(() => send({ t: 'ping' }), 25_000);
   };
-  ws.onmessage = (e) => { try { onFrame(JSON.parse(String(e.data)) as GuestDown); } catch { /* not ours */ } };
+  ws.onmessage = (e) => {
+    let f: GuestDown;
+    try { f = JSON.parse(String(e.data)) as GuestDown; } catch { return; /* not ours */ }
+    try { onFrame(f); } catch (err) { console.error('meeting frame', f.t, err); }
+  };
   ws.onclose = (e) => {
     if (pingTimer) clearInterval(pingTimer);
     pingTimer = null;

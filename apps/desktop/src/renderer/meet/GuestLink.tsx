@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { formatMeetingId, meetingLink, normalizeSlug } from '@dex/core';
 import type { CalEvent, LobbyRule, MeetPublicView, MeetingInfo, Ops, PublicUser } from '@dex/core';
 import { buildIcs, invitationText } from '@dex/core/ics';
+import { buildEml, invitationEmail, mailtoLink } from '@dex/core/eml';
 import type { Invitation } from '@dex/core/ics';
 import { Icon, Toggle, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
@@ -44,6 +45,26 @@ export function saveText(name: string, text: string, type: string): void {
   const a = document.createElement('a');
   a.href = url; a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * Send by email: the invitation as a draft in the PC's mail program (an .eml with the text, a
+ * formatted version and the .ics attached); where that cannot open (phones, no mail program), a
+ * plain email through mailto: without the attachment, and the toast says so.
+ */
+export async function emailDraft(m: { subject: string; text: string; html: string; to?: Array<{ name?: string; email: string }>; ics?: string | null; file: string }, toast: (t: string, bad?: boolean) => void): Promise<void> {
+  const to = m.to ?? [];
+  if (window.dex.openMailDraft) {
+    try {
+      const eml = buildEml({ to, subject: m.subject, text: m.text, html: m.html, attachments: m.ics ? [{ name: `${m.file}.ics`, type: 'text/calendar; method=PUBLISH; charset=UTF-8', data: m.ics }] : [] });
+      await window.dex.openMailDraft(m.file, eml);
+      toast(m.ics ? 'Email draft opened in your mail program, with the calendar invitation attached' : 'Email draft opened in your mail program');
+      return;
+    } catch (e) { toast(`${(e as Error).message} A plain email opens instead, without the calendar file.`, true); }
+  }
+  const url = mailtoLink(to.map((r) => r.email), m.subject, m.text);
+  if (window.dex.openMailto) await window.dex.openMailto(url).catch((e: Error) => toast(e.message, true));
+  else window.location.href = url;
 }
 
 const safeFile = (s: string) => s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Meeting';
@@ -186,6 +207,9 @@ export function MeetingInvite({ meeting, title, startAt, endAt, description, org
         </button>
         <button className="btn sm" onClick={() => { saveText(`${safeFile(inv.title)}.ics`, buildIcs(inv, when), 'text/calendar;charset=utf-8'); toast('Invitation saved as an .ics file'); }}>
           <Icon name="download" size={14} />Download invitation (.ics)
+        </button>
+        <button className="btn sm primary" onClick={() => { const z = zone || Intl.DateTimeFormat().resolvedOptions().timeZone; void emailDraft({ ...invitationEmail(inv, { when, zone: z, office }), ics: buildIcs(inv, when), file: safeFile(inv.title) }, toast); }}>
+          <Icon name="send" size={14} />Send by email
         </button>
       </div>
     </section>

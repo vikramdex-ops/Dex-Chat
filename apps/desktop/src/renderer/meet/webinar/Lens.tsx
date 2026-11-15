@@ -11,7 +11,7 @@ import type { PublicUser, RecordingInfo, Registrant, Session, WebinarCard, Webin
 import { Avatar, Dialog, Icon, presenceFor, useToast } from '../../ui.tsx';
 import { Glyph } from '../../rooms/parts.tsx';
 import { hm } from '../../calendar/store.ts';
-import { SlugField, saveText, whenText } from '../GuestLink.tsx';
+import { SlugField, emailDraft, saveText, whenText } from '../GuestLink.tsx';
 import { bumpWebinars, joinAny, useWeb } from './store.ts';
 import { streamLine } from './StageTabs.tsx';
 import './webinar.css';
@@ -295,6 +295,14 @@ function RegistrantsTab({ info, onDecided }: { info: WebinarInfo; onDecided: () 
   const decide = (registrantIds: string[], approve: boolean) => void window.dex.request('web.decide', { id: info.meetingId, registrantIds, approve }).then((l) => { setList(l); setPicked(new Set()); onDecided(); toast(approve ? `${registrantIds.length} approved` : `${registrantIds.length} turned away`); }).catch((e: Error) => toast(e.message, true));
   const mails = (kind: 'invite' | 'reminder', registrantIds?: string[]) => window.dex.request('web.mail', { id: info.meetingId, kind, registrantIds, when: when(info) });
   const copyOne = (r: Registrant, kind: 'invite' | 'reminder') => void mails(kind, [r.id]).then((m) => { if (!m[0]) throw new Error('Approve them first.'); return navigator.clipboard.writeText(`To: ${m[0].email}\nSubject: ${m[0].subject}\n\n${m[0].text}`); }).then(() => toast(kind === 'invite' ? `Invitation for ${r.name} copied` : `Reminder for ${r.name} copied`)).catch((e: Error) => toast(e.message, true));
+  // the invitation to one registrant as an email draft, addressed to them, their calendar file attached
+  const emailOne = (r: Registrant) => void mails('invite', [r.id]).then((m) => {
+    const x = m[0];
+    if (!x) throw new Error('Approve them first.');
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#eef3f3"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #9fb3b5"><tr><td style="padding:22px 24px;font:15px/1.6 'Segoe UI',Arial,sans-serif;color:#132b2e;white-space:pre-wrap">${esc(x.text).replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" style="color:#1c7680">$1</a>')}</td></tr></table></body></html>`;
+    return emailDraft({ subject: x.subject, text: x.text, html, to: [{ name: x.name, email: x.email }], ics: x.ics, file: `${safeFile(info.title)} - ${safeFile(r.name)}` }, toast);
+  }).catch((e: Error) => toast(e.message, true));
   const icsOne = (r: Registrant) => void mails('invite', [r.id]).then((m) => { if (!m[0]?.ics) throw new Error('Approve them first.'); saveText(`${safeFile(info.title)} - ${safeFile(r.name)}.ics`, m[0].ics, 'text/calendar;charset=utf-8'); }).catch((e: Error) => toast(e.message, true));
   const bulk = (kind: 'invite' | 'reminder', how: 'copy' | 'csv') => void mails(kind, ids.length ? ids : undefined).then((m: WebinarMail[]) => {
     if (!m.length) throw new Error('No approved registrants to write to.');
@@ -348,6 +356,7 @@ function RegistrantsTab({ info, onDecided }: { info: WebinarInfo; onDecided: () 
                     {r.status === 'approved' && <>
                       <button className="btn sm ghost" onClick={() => copyOne(r, 'invite')} title="The invitation with their personal link, to paste into an email">Invitation</button>
                       <button className="btn sm ghost" onClick={() => icsOne(r)} title="A calendar file with their personal link">.ics</button>
+                      <button className="btn sm ghost" onClick={() => emailOne(r)} title="An email draft to them in your mail program, with their personal link and calendar file">Send by email</button>
                       <button className="btn sm ghost" onClick={() => copyOne(r, 'reminder')}>Reminder</button>
                     </>}
                   </td>

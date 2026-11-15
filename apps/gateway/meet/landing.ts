@@ -16,6 +16,8 @@ import type { MeetPageDetails, MeetPagePublic } from '@dex/core/meetlink';
 import { buildIcs } from '@dex/core/ics';
 import { clock, dayText, elapsed, h, icon, initials, lengthText, localZone, pad, svg, tintFor, toast, zoneCity, zoneOffset } from './shared.ts';
 import type { EndKind, RoomEvents, RoomStart } from './room.ts';
+import { READY, REV, markCamera, markNoMic, markSpeakers, plate, pushLevel } from './plate.ts';
+import type { PlateMode, PlateTime } from './plate.ts';
 
 type View = 'loading' | 'home' | 'none' | 'locked' | 'ready' | 'speaker' | 'connecting' | 'lobby' | 'room' | 'end' | 'limit' | 'offline';
 interface EndInfo { kind: EndKind; reason: string; joinedAt: number | null; at: number }
@@ -203,54 +205,18 @@ function say(text: string): void { const el = document.getElementById('say'); if
 
 // ------------------------------------------------------------------ the drawing: the room on plan
 /**
- * A meeting room drawn on plan, in our own hand: walls, a door with its swing, a table with
- * chairs, a dimension line and a north point. Its state is the meeting's: drawing itself while
- * we wait, chairs taken while live, someone at the door in the lobby, a revision cloud when
- * cancelled, a dashed outline when there is nothing here.
+ * The living drawing about this meeting and this visitor (plate.ts): the slot dimensioned on a
+ * two-scale day ruler with a moving NOW, the visitor's readiness as instrument tags, and a
+ * revision block that fills itself.
  */
-let drawnOnce = false;
 function drawing(kind: string): HTMLElement {
-  // plotted in on the first sheet of a visit; later states show the room at once (the waiting loop and the lobby ring still move)
-  setTimeout(() => { drawnOnce = true; }, 2000);
-  const p = (d: string, cls = 'ln', extra: Record<string, string | number> = {}) => svg('path', { d, class: cls, pathLength: 1, ...extra });
-  const chairs: SVGElement[] = [];
-  const seat = (x: number, y: number, i: number) => chairs.push(svg('rect', { x: x - 9, y: y - 7, width: 18, height: 14, rx: 2, class: `chair c${i}` }));
-  [96, 136, 176, 216].forEach((x, i) => { seat(x, 70, i); seat(x, 150, i + 4); });
-  const g = svg('g', { class: 'room-plan' },
-    // walls: a double line, with the door opening on the south wall
-    p('M20 20H300V200H178M142 200H20Z', 'ln wall'),
-    p('M28 28H292V192H178M142 192H28Z', 'ln wall in'),
-    // windows on the north wall
-    p('M70 20V28M110 20V28M210 20V28M250 20V28', 'ln thin'),
-    // the door and its swing
-    p('M142 200L142 236', 'ln door'),
-    p('M142 236A36 36 0 0 0 178 200', 'ln swing'),
-    // the table
-    svg('rect', { x: 76, y: 84, width: 160, height: 52, rx: 4, class: 'ln table', pathLength: 1 }),
-    ...chairs,
-    // dimension line under the plan
-    p('M20 262H300M20 256V268M300 256V268', 'ln dim'),
-    // north point
-    p('M282 236L290 256L282 251L274 256Z', 'ln north'),
-  );
-  const dimText = svg('text', { x: 160, y: 258, class: 'dimtext', 'text-anchor': 'middle' });
-  dimText.textContent = '4 800';
-  const nText = svg('text', { x: 282, y: 232, class: 'dimtext', 'text-anchor': 'middle' });
-  nText.textContent = 'N';
-  g.append(dimText, nText);
-  if (kind === 'lobby') {
-    g.append(svg('circle', { cx: 160, cy: 222, r: 9, class: 'you' }), svg('circle', { cx: 160, cy: 222, r: 16, class: 'you-ring' }));
-  }
-  if (kind === 'cancelled') {
-    g.append(p('M60 60q10-16 26-6q12-14 26 0q14-12 26 2q16-8 22 10q14 6 6 22q10 12-4 22q4 16-14 16q-6 14-22 6q-12 12-26 2q-16 8-24-6q-16 0-14-16q-12-10-2-22q-8-16 8-20q2-16 14-10z', 'ln cloud'));
-    const tag = svg('g', { class: 'void' }, svg('rect', { x: 196, y: 40, width: 84, height: 22, rx: 1 }));
-    const t = svg('text', { x: 238, y: 55.5, 'text-anchor': 'middle' });
-    t.textContent = 'CANCELLED';
-    tag.append(t);
-    g.append(tag);
-  }
-  const box = svg('svg', { viewBox: '0 0 320 276', class: `dwg k-${kind}${drawnOnce ? ' still' : ''}`, role: 'img', 'aria-label': kind === 'live' ? 'The meeting room, with people at the table' : kind === 'lobby' ? 'The meeting room, with you waiting at the door' : kind === 'cancelled' ? 'The meeting room, marked cancelled' : 'The meeting room on plan' }, g);
-  return h('figure', { class: 'drawing' }, box);
+  const m = S.det ?? S.pub;
+  const time: PlateTime | null = m ? {
+    startAt: m.startAt, endAt: m.endAt, opensAt: m.opensAt, liveSince: m.liveSince, zone: m.zone, repeats: m.repeats,
+    state: S.det?.state ?? S.pub?.state ?? 'open', next: S.det?.next ?? null,
+  } : null;
+  const mode: PlateMode = kind === 'cancelled' ? 'cancelled' : kind === 'lobby' ? 'lobby' : kind === 'over' ? 'end' : kind === 'none' ? (REF ? 'none' : 'home') : S.det || SPEAKER ? 'ready' : 'locked';
+  return plate({ time, mode, name: () => S.name.trim(), devices: (mode === 'ready' || mode === 'lobby') && (!!S.det || SPEAKER) });
 }
 
 // ------------------------------------------------------------------ the state line
@@ -334,6 +300,8 @@ async function startCheck(): Promise<void> {
   S.camOn = !!S.local?.getVideoTracks().length && S.camOn;
   S.micOn = !!S.local?.getAudioTracks().length && S.micOn;
   for (const t of S.local?.getAudioTracks() ?? []) t.enabled = S.micOn;
+  markCamera(!!S.local?.getVideoTracks().length);
+  if (!S.local?.getAudioTracks().length) markNoMic();
   render();
 }
 
@@ -369,6 +337,7 @@ function meter(): HTMLElement {
     for (const b of buf) { const x = (b - 128) / 128; sum += x * x; }
     const lit = S.micOn ? Math.min(20, Math.round(Math.sqrt(sum / buf.length) * 90)) : 0;
     if (Math.abs(lit - lastSaid) >= 2) { el.setAttribute('aria-valuenow', String(lit)); lastSaid = lit; }
+    pushLevel(lit);
     ticks.forEach((tk, i) => tk.classList.toggle('on', i < lit));
   }, 100);
   meterStop = () => { clearInterval(t); void ctx.close().catch(() => {}); meterStop = null; };
@@ -396,6 +365,7 @@ async function testSpeakers(btn: HTMLButtonElement): Promise<void> {
     o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + 0.55);
   }
   void a.play().catch(() => {});
+  markSpeakers();
   btn.setAttribute('aria-pressed', 'true');
   btn.querySelector('span')!.textContent = 'Playing…';
   setTimeout(() => { void ctx.close().catch(() => {}); btn.setAttribute('aria-pressed', 'false'); btn.querySelector('span')!.textContent = 'Test speakers'; toast('Heard two notes? Your speakers work.'); }, 1100);
@@ -702,11 +672,28 @@ async function join(): Promise<void> {
   try { api = await loadRoom(); } catch (e) { S.problem = (e as Error).message; render(); return; }
   const events: RoomEvents = {
     connecting: (again) => { if (S.view !== 'room') renderConnecting(again); },
-    lobby: (info) => { S.lobby = { host: info.host, since: S.lobby.since || Date.now() }; S.view = 'lobby'; S.reconnecting = 0; renderLobby(); say(`You are in the lobby. ${info.host} sees that you are waiting.`); },
-    admitted: () => { S.view = 'room'; S.reconnecting = 0; document.getElementById('reconnect')?.remove(); document.body.classList.add('in-room'); document.title = `${f?.title ?? 'Meeting'} · Dexterity Meet`; },
+    lobby: (info) => { REV.awaiting = true; REV.approvedAt = null; S.lobby = { host: info.host, since: S.lobby.since || Date.now() }; S.view = 'lobby'; S.reconnecting = 0; renderLobby(); say(`You are in the lobby. ${info.host} sees that you are waiting.`); },
+    admitted: () => {
+      // the revision block is stamped: approved for entry; the meeting opens once the stamp is drawn
+      REV.awaiting = false; REV.approvedAt = Date.now();
+      // the stamp, plotted over the opening meeting for a moment (the revision block keeps it)
+      if (S.view === 'lobby' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const st = svg('svg', { viewBox: '0 0 240 80', class: 'entry-stamp', 'aria-hidden': 'true' },
+          svg('rect', { x: 4, y: 4, width: 232, height: 72, rx: 3, class: 'st', pathLength: 1 }), svg('rect', { x: 10, y: 10, width: 220, height: 60, rx: 2, class: 'st in', pathLength: 1 }));
+        const t1 = svg('text', { x: 120, y: 40, 'text-anchor': 'middle', class: 'stt' }); t1.textContent = 'APPROVED';
+        const t2 = svg('text', { x: 120, y: 58, 'text-anchor': 'middle', class: 'sts' }); t2.textContent = `FOR ENTRY · ${new Date(REV.approvedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+        st.append(t1, t2);
+        const ov = h('div', { class: 'entry-overlay', role: 'status' }, st, h('span', { class: 'vh' }, 'Approved for entry'));
+        document.body.append(ov);
+        REV.stampShown = true;
+        setTimeout(() => ov.classList.add('out'), 1300);
+        setTimeout(() => ov.remove(), 1800);
+      }
+      S.view = 'room'; S.reconnecting = 0; document.getElementById('reconnect')?.remove(); document.body.classList.add('in-room'); document.title = `${f?.title ?? 'Meeting'} · Dexterity Meet`;
+    },
     problem: (message) => { S.problem = message; S.view = 'ready'; render(); },
     reconnecting: (n) => { S.reconnecting = n; showReconnecting(n); },
-    ended: (e) => { S.end = e; S.view = 'end'; room = null; document.getElementById('reconnect')?.remove(); document.body.classList.remove('in-room'); for (const t of S.local?.getTracks() ?? []) t.stop(); S.local = null; S.checking = false; void afterMeeting(); },
+    ended: (e) => { REV.awaiting = false; if (e.joinedAt) REV.issued = { at: e.at, spentMs: e.at - e.joinedAt }; S.end = e; S.view = 'end'; room = null; document.getElementById('reconnect')?.remove(); document.body.classList.remove('in-room'); for (const t of S.local?.getTracks() ?? []) t.stop(); S.local = null; S.checking = false; void afterMeeting(); },
     demoted: (to) => { store.del(`dex.webinar.speak.${meetingId}`); store.del(passKey(REF)); location.replace(to); },
   };
   room = api.start({ mount: root, meetingId, passcode: pass, name: S.name, local: S.local, micOn: S.micOn, camOn: S.camOn, speaker: S.devices.out, on: events });
