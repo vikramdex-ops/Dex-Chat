@@ -1,11 +1,12 @@
 // Waiting to be let into a meeting: your own preview on the left, the meeting's title block on the
 // right (title, ID, who runs it, what happens next), on the same drafting sheet as the Room.
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatMeetingId } from '@dex/core';
 import type { PublicUser } from '@dex/core';
 import { Avatar, Icon } from '../ui.tsx';
 import { leaveLobby, toggleCamera, toggleMute, useCall } from '../rooms/engine.ts';
-import { Video } from '../rooms/parts.tsx';
+import { Clock, Video } from '../rooms/parts.tsx';
 import { usePolicy } from '../policy.ts';
 
 export function LobbySheet({ users, meId }: { users: Map<string, PublicUser>; meId: string }) {
@@ -14,6 +15,8 @@ export function LobbySheet({ users, meId }: { users: Map<string, PublicUser>; me
   const muted = useCall((s) => s.muted);
   const camera = useCall((s) => s.camera);
   const policy = usePolicy();
+  // how long you have waited: the sheet opens when the wait starts
+  const [since] = useState(() => Date.now());
   if (!lobby) return null;
   const { meeting, reason } = lobby;
   const host = users.get(meeting.hostId)?.displayName ?? 'the host';
@@ -57,7 +60,7 @@ export function LobbySheet({ users, meId }: { users: Map<string, PublicUser>; me
             {policy.cameraConsent && <span className="faint">Your office starts meetings with cameras off.</span>}
           </div>
           <div className="tb-foot">
-            <span className="mono faint lobby-since">WAITING</span>
+            <span className="mono faint lobby-since" title="How long you have been waiting">WAITING<Clock since={since} className="lobby-clock" /></span>
             <button className="room-leave" onClick={() => leaveLobby()}>Leave the lobby</button>
           </div>
         </div>

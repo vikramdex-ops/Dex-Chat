@@ -19,6 +19,7 @@ import { OFFICE_BACKGROUNDS, backgroundThumb, setCustomBackground } from './back
 import type { BackgroundId } from './backgrounds.ts';
 import { AudioOut, Clock, Glyph, Video } from './parts.tsx';
 import { ScreenPicker } from './RoomUi.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { addConversation, chatState, useChat } from '../chat/store.ts';
 import { recordSupported, startRecording, stopRecording, useRecorder } from './recorder.ts';
 import { usePolicy } from '../policy.ts';
@@ -270,7 +271,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   const mainSeat = layout === 'speaker' ? seats.find((s) => s.deviceId === mainId) ?? null : null;
   const listed = layout === 'speaker' ? seats.filter((s) => s !== mainSeat) : layout === 'presentation' && spotlight ? [...seats.filter((s) => s.deviceId === spotlight), ...seats.filter((s) => s.deviceId !== spotlight)] : seats;
   const stripMode = layout !== 'gallery';
-  const perPage = stripMode ? Math.max(2, Math.min(8, Math.floor((field.w - 96) / 196) || 4)) : GALLERY_PAGE;
+  const perPage = stripMode ? Math.max(2, Math.min(8, Math.floor((field.w - 56 + 16) / (176 + 16)) || 4)) : GALLERY_PAGE;
   const pages = Math.max(1, Math.ceil(listed.length / perPage));
   const at = Math.min(page, pages - 1);
   useEffect(() => { if (page !== at) setPage(at); }, [page, at]);
@@ -314,6 +315,20 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   const cameraClick = () => {
     if (!camera && policy.cameraConsent) setConsent(true);
     else void toggleCamera();
+  };
+  const ringable = adding ? [...users.values()].filter((u) => u.role !== 'bot' && u.id !== meId && !room.participants.some((p) => p.userId === u.id) && !room.ringing.includes(u.id)
+    && (convMembers.includes(u.id) || convKind === 'direct') && u.displayName.toLowerCase().includes(who.trim().toLowerCase())) : [];
+  // arrow keys move between the panel's tabs (and open the one reached), as in any tab list
+  const tabKeys = (e: React.KeyboardEvent<HTMLElement>) => {
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    const list = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    if (at < 0) return;
+    e.preventDefault();
+    const next = list[(at + step + list.length) % list.length];
+    next.focus();
+    next.click();
   };
   const copyLink = () => { if (room.meetingId) void navigator.clipboard.writeText(meetingLink(room.meetingId)).then(() => toast('Meeting link copied')); };
 
@@ -375,9 +390,9 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
 
         <aside className="room-side">
           <div className="room-panel">
-            <nav className="room-tabs" role="tablist" aria-label="Meeting panel">
+            <nav className="room-tabs" role="tablist" aria-label="Meeting panel" aria-orientation="vertical" onKeyDown={tabKeys}>
               {(room.meetingKind === 'webinar' ? WEBINAR_TAB_LIST : TABS).map((t) => (
-                <button key={t.id} role="tab" id={`room-tab-${t.id}`} aria-selected={tab === t.id} aria-controls="room-panel-body" onClick={() => setTab(t.id)}>
+                <button key={t.id} role="tab" id={`room-tab-${t.id}`} aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} aria-controls="room-panel-body" onClick={() => setTab(t.id)}>
                   <span>{t.label}{t.id === 'people' ? ` · ${room.participants.length}` : ''}</span>
                   {t.id === 'people' && isHost && waiting.length > 0 && <i className="room-tab-badge" aria-label={`${waiting.length} waiting`}>{waiting.length}</i>}
                   {t.id === 'people' && hands.length > 0 && !(isHost && waiting.length) && <i className="room-tab-badge hand" aria-label={`${hands.length} hands raised`}>{hands.length}</i>}
@@ -460,7 +475,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
                 <Glyph name="fold" size={16} />
               </button>
               {canFloat && <button className="tb-link square" title="Float the video in a small window on top of everything" aria-label="Float" onClick={() => void float()}><Glyph name="float" size={16} /></button>}
-              <button className="room-leave" onClick={leave} title="Leave the Room">Leave Room<Glyph name="door" size={16} /></button>
+              <button className="room-leave" onClick={leave} title={isHost && others.length ? 'Leave the Room: it carries on for everyone else' : 'Leave the Room'}>Leave Room<Glyph name="door" size={16} /></button>
             </div>
           </div>
         </aside>
@@ -471,11 +486,11 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
       {adding && (
         <Popover anchor={addBtn.current} onClose={() => setAdding(false)} className="menu add-people" align="start">
           <div className="menu-label label">Ring into the Room</div>
-          <input className="input" autoFocus placeholder="Find someone" value={who} onChange={(e) => setWho(e.target.value)} />
-          {[...users.values()].filter((u) => u.role !== 'bot' && u.id !== meId && !room.participants.some((p) => p.userId === u.id) && !room.ringing.includes(u.id)
-            && (convMembers.includes(u.id) || convKind === 'direct') && u.displayName.toLowerCase().includes(who.toLowerCase())).slice(0, 8).map((u) => (
+          <input className="input" autoFocus placeholder="Find someone" aria-label="Find someone to ring in" value={who} onChange={(e) => setWho(e.target.value)} />
+          {ringable.slice(0, 8).map((u) => (
             <button key={u.id} role="menuitem" onClick={() => { setAdding(false); void addToCall(u.id); }}><Avatar user={u} presence={presenceFor(u.id)} size="sm" />{u.displayName}</button>
           ))}
+          {!ringable.length && <p className="room-menu-empty faint">{who.trim() ? 'No one by that name can be rung in here.' : 'Everyone who can be rung in is already here or being rung.'}</p>}
         </Popover>
       )}
       {pop?.kind === 'react' && (
@@ -495,7 +510,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
             <button key={l} role="menuitemradio" aria-checked={layout === l} disabled={l === 'presentation' && !shareStream} onClick={() => { setLayout(l); setPop(null); }}
               title={l === 'presentation' && !shareStream ? 'When someone shares a sheet' : undefined}>
               <Glyph name={l} size={16} />{l === 'gallery' ? 'Gallery' : l === 'speaker' ? 'Speaker' : 'Presentation'}
-              <span className="kbd">{l === 'gallery' ? 'Everyone the same size' : l === 'speaker' ? 'Who speaks, large' : 'The shared sheet, large'}</span>
+              <span className="room-layout-note">{l === 'gallery' ? 'Everyone the same size' : l === 'speaker' ? 'Who speaks, large' : l === 'presentation' && !shareStream ? 'When someone shares a sheet' : 'The shared sheet, large'}</span>
             </button>
           ))}
           {pinned && <button role="menuitem" onClick={() => { setPinned(null); setPop(null); }}><Icon name="pin" size={16} />Unpin {pinned === meDevice ? 'yourself' : nameOf(seats.find((s) => s.deviceId === pinned)?.userId ?? '')}</button>}
@@ -551,7 +566,8 @@ function PersonMenu({ anchor, onClose, room, deviceId, meDevice, meId, isHost, i
             <button role="menuitem" onClick={() => act(() => host('room.cohost', { userId: p.userId, on: !isCo }))}><Glyph name="people" size={16} />{isCo ? 'Take back co-host' : 'Make co-host'}</button>
           )}
           {!me && p.userId !== room.hostId && (isMainHost || !isCo) && (
-            <button role="menuitem" className="danger" onClick={() => act(() => { if (confirm(`Take ${nameOf(p.userId)} out of the meeting? They wait in the lobby to come back.`)) return host('room.remove', { deviceId }); })}>
+            <button role="menuitem" className="danger" onClick={() => act(() => void confirmAction({ title: `Take ${nameOf(p.userId)} out of the meeting?`, body: 'They wait in the lobby, and a host can let them back in.', confirm: 'Remove from the meeting', danger: true })
+              .then((ok) => { if (ok) run(host('room.remove', { deviceId })); }))}>
               <Icon name="x" size={16} />Remove from the meeting
             </button>
           )}
@@ -630,7 +646,7 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
         </section>
       )}
       <div className="room-schedule">
-        <div className="tb-head"><span className="label">In the Room</span><span className="mono">{room.participants.length}{room.ringing.length ? ` + ${room.ringing.length} ringing` : ''}{hands.length ? ` · ${hands.length} ${hands.length === 1 ? 'hand' : 'hands'}` : ''}</span></div>
+        <div className="tb-head"><span className="label">In the Room</span><span className="mono">{room.participants.length}{room.ringing.length ? ` + ${room.ringing.length} ringing` : ''}{hands.length ? (hands.length === 1 ? ' · 1 hand' : ` · ${hands.length} hands`) : ''}</span></div>
         <table>
           <tbody>
             {ordered.map((s) => {
@@ -664,8 +680,8 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
         <section className="room-hostbox" aria-label="Host controls">
           <div className="tb-head"><span className="label">Host controls</span><span className="mono">{isMainHost ? 'HOST' : 'CO-HOST'}</span></div>
           <div className="room-host-actions">
-            <button onClick={() => run(host('room.mute', { all: true }))} disabled={room.participants.length < 2}><Icon name="mic-off" size={15} />Mute all</button>
-            <button onClick={() => run(host('room.hand', { up: false, all: true }))} disabled={!hands.length}><Glyph name="hand" size={15} />Lower all hands</button>
+            <button onClick={() => run(host('room.mute', { all: true }))} disabled={room.participants.length < 2} title={room.participants.length < 2 ? 'No one else is in the Room yet' : 'Turn everyone\'s mic off (they can turn it on again)'}><Icon name="mic-off" size={15} />Mute all</button>
+            <button onClick={() => run(host('room.hand', { up: false, all: true }))} disabled={!hands.length} title={hands.length ? undefined : 'No hands are up'}><Glyph name="hand" size={15} />Lower all hands</button>
             <button aria-pressed={!!room.locked} className={room.locked ? 'on' : ''} onClick={() => run(host('room.lock', { locked: !room.locked }))}><Icon name="lock" size={15} />{room.locked ? 'Unlock' : 'Lock meeting'}</button>
             {room.spotlight && <button onClick={() => run(host('room.spotlight', { deviceId: null }))}><Glyph name="spotlight" size={15} />End spotlight</button>}
           </div>
@@ -681,7 +697,9 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
               )}
             </details>
           )}
-          <button className="room-end" onClick={() => { if (confirm('End the meeting for everyone? Everyone leaves the Room.')) run(host('room.end', {})); }}>End for everyone</button>
+          <button className="room-end" title="Everyone leaves and the meeting closes"
+            onClick={() => void confirmAction({ title: 'End the meeting for everyone?', body: 'Everyone leaves the Room and the meeting closes. To go without ending it, use Leave Room instead.', confirm: 'End for everyone', cancel: 'Keep it going', danger: true })
+              .then((ok) => { if (ok) run(host('room.end', {})); })}>End for everyone</button>
         </section>
       )}
       {!isHost && room.hostId && room.hostId !== meId && (

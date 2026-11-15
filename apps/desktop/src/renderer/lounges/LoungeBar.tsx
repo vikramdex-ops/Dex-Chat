@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import type { PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, useToast } from '../ui.tsx';
 import { clearError, toggleMute, toggleScreen, useCall } from '../rooms/engine.ts';
-import { AudioOut, Clock, Video } from '../rooms/parts.tsx';
+import { AudioOut, Clock, Glyph, Video } from '../rooms/parts.tsx';
 import { keepVoices, stopVoices, useSpeaking, watchVoice } from '../rooms/speech.ts';
 import { ScreenPicker } from '../rooms/RoomUi.tsx';
 import { RoomPointers } from '../pointers/surfaces.tsx';
@@ -102,8 +102,8 @@ export default function LoungeBar({ users, meId, meDevice }: { users: Map<string
             </button>
           )}
           {sharer && !view && <button className="lg-btn" onClick={() => setView(true)} title={`Show ${nameOf(sharer.userId)}'s screen`}><Icon name="eye" size={16} /><span>Screen</span></button>}
-          <button ref={peopleBtn} className="lg-btn" aria-expanded={people} onClick={() => setPeople(!people)} title="Who is here"><Icon name="people" size={16} /><span className="mono">{room.participants.length}</span></button>
-          <button className="lg-btn leave" onClick={leaveLounge} title="Leave the lounge"><Icon name="phone-off" size={16} /><span>Leave</span></button>
+          <button ref={peopleBtn} className="lg-btn" aria-expanded={people} onClick={() => setPeople(!people)} title="Who is here" aria-label={`Who is here · ${room.participants.length}`}><Icon name="people" size={16} /><span className="mono">{room.participants.length}</span></button>
+          <button className="lg-btn leave" onClick={leaveLounge} title="Leave the lounge"><Glyph name="door" size={16} /><span>Leave</span></button>
         </span>
       </div>
       {people && (

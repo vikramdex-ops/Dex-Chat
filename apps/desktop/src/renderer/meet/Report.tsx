@@ -84,7 +84,7 @@ export function MeetingReportSheet({ roomId, onClose, onWatch }: { roomId: strin
                 <section>
                   <div className="tb-head"><span className="label">Recordings</span><span className="mono">{r.recordings.length}</span></div>
                   {!r.recordings.length && <p className="faint">No recordings you can watch.</p>}
-                  {r.recordings.map((x) => <p key={x.id} className="rep-line"><button className="tb-link" onClick={() => onWatch(x)}><Icon name="play" size={13} />{x.title}</button><span className="mono faint"> {hms(x.durationMs)} · {x.recordedByName}</span></p>)}
+                  {r.recordings.map((x) => <p key={x.id} className="rep-line"><button className="tb-link" onClick={() => onWatch(x)}><Icon name="play" size={13} />{x.title}</button><span className="faint"> <span className="mono">{hms(x.durationMs)}</span> · <span translate="no">{x.recordedByName}</span></span></p>)}
                   {r.breakouts > 0 && <p className="rep-line faint">{r.breakouts} breakout {r.breakouts === 1 ? 'room' : 'rooms'} were used.</p>}
                 </section>
               </div>

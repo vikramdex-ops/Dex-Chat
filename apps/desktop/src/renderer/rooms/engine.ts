@@ -322,9 +322,11 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
         if (d.missed && !document.hasFocus()) notify(`You missed ${nameOf(d.startedBy)}'s Room · ${clock(state.incoming.room.startedAt)}`, 'Open the conversation to ring back');
         set({ incoming: null, active });
       } else if (state.room?.id === d.roomId) {
+        const kind = state.room.purpose?.kind;
         cleanup();
         set({ active });
-        if (d.endedBy && d.endedBy !== selfUser()) tell(`${nameOf(d.endedBy)} ended the meeting for everyone`);
+        // a support session or a lounge is not a meeting: say what actually ended
+        if (d.endedBy && d.endedBy !== selfUser()) tell(kind === 'support' ? `${nameOf(d.endedBy)} ended the support session` : kind === 'lounge' ? `${nameOf(d.endedBy)} closed the lounge` : `${nameOf(d.endedBy)} ended the meeting for everyone`);
       } else set({ active });
     } else if (name === 'meet.lobby') {
       const d = data as { meetingId: string; state: 'admitted' | 'denied' | 'waiting'; reason?: 'admit' | 'host' };

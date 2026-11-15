@@ -198,6 +198,12 @@ input.bo-col-name:hover, input.bo-col-name:focus { border-color: var(--stroke-st
   .rep-grid > section { border-right: 0; border-bottom: 1px solid var(--stroke-strong); }
   .bo-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+@media (max-width: 520px) {
+  .bo-columns { grid-template-columns: minmax(0, 1fr); max-height: 46vh; }
+  .bo-setup + .dialog-actions, .dialog:has(.bo-setup) .dialog-actions { flex-wrap: wrap; }
+  .dialog:has(.bo-setup) .dialog-actions > :first-child { flex-basis: 100%; }
+  .bo-move { height: 32px; }
+}
 
 /* the sound menu's tab, sitting in the mic cell's top-right corner of the title block's controls */
 .tb-controls { position: relative; }
@@ -207,9 +213,36 @@ input.bo-col-name:hover, input.bo-col-name:focus { border-color: var(--stroke-st
 }
 .tb-controls > button.tb-sound .mono { font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .tb-controls > button.tb-sound.on { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--layer-solid); }
-@media (max-width: 720px) { .tb-controls > button.tb-sound { left: calc(100% / 4 - 34px); } }
+@media (max-width: 720px) {
+  .tb-controls > button.tb-sound { left: calc(100% / 4 - 34px); }
+  /* a larger reach for a finger than the tab's drawing */
+  .tb-controls > button.tb-sound::after { content: ''; position: absolute; inset: -11px -8px; }
+}
+/* the switch keeps its own size in the menu (menu buttons are otherwise full width) */
+.room-sound-menu .sound-row .toggle { width: 40px; flex: none; padding: 0; }
 
 /* Recent meetings: Report beside Rejoin or Open */
 .meet-log .meet-act { width: 1%; white-space: nowrap; }
 .meet-log .meet-act .btn + .btn { margin-left: 4px; }
 .rep-sheet { height: auto; max-height: min(760px, 100%); }
+
+/* the recording-ready dialog: its actions wrap inside the dialog, the main one last on the right */
+.rec-done-actions { flex-wrap: wrap; }
+.rec-done-actions > :first-child { flex: none; }
+.rec-done-actions > .btn.primary { margin-left: auto; }
+@media (max-width: 520px) { .rec-done-actions .btn { flex: 1 1 100%; justify-content: center; height: 40px; } }
+.rec-keep p { overflow-wrap: anywhere; }
+
+/* phones: breakout setup, the recording viewer and the report take a finger (40 px) */
+@media (max-width: 720px) {
+  .dialog:has(.bo-setup) .btn, .dialog:has(.bo-setup) .input, .dialog:has(.bo-setup) select, .dialog:has(.bo-setup) .icon-btn,
+  .dialog:has(.rec-facts) .btn, .dialog:has(.rec-facts) .icon-btn,
+  .rec-viewer .btn, .rec-viewer .icon-btn { min-height: 40px; min-width: 40px; }
+  input.bo-col-name { height: 40px; }
+}
+/* phones: the shelf keeps the title, the date and Watch; who and how large are in the viewer */
+@media (max-width: 560px) {
+  .rec-shelf th:nth-child(3), .rec-shelf td:nth-child(3), .rec-shelf th:nth-child(4), .rec-shelf td:nth-child(4), .rec-shelf th:nth-child(5), .rec-shelf td:nth-child(5) { display: none; }
+  .rec-shelf .btn.sm { min-height: 40px; }
+  .rec-open-link .input, .rec-open-link .btn { min-height: 40px; }
+}

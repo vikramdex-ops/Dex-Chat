@@ -27,7 +27,9 @@
 .lobby-status .faint { font-size: 12.5px; }
 .lobby-status .open-seat-line { width: 120px; }
 .lobby-block .tb-foot { border-top: 1px solid var(--stroke-strong); }
-.lobby-since { font-size: 10.5px; letter-spacing: .12em; animation: pulse 1.6s var(--ease) infinite; }
+.lobby-since { font-size: 10.5px; letter-spacing: .12em; }
+.lobby-clock { font-variant-numeric: tabular-nums; letter-spacing: .04em; color: var(--text-2); }
+.lobby-clock::before { content: ' · '; color: var(--text-3); }
 
 /* ------------------------------------------------------------------ the meeting panel's tabs */
 .meet-empty { margin: 0; padding: 18px 14px; font-size: 12.5px; color: var(--text-2); }
@@ -76,13 +78,15 @@
 .meet-suggest button + button { border-top: 1px solid var(--stroke); }
 .meet-suggest button:hover { background: var(--subtle); }
 .meet-suggest .faint { margin-left: auto; font-size: 12px; }
-.meet-options { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+/* the lobby rule and the check share a row while the select has room for its words, then stack */
+.meet-options { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 14px; }
+.meet-options .meet-opt:not(.check) { flex: 1 1 250px; }
 .meet-personal .meet-options { padding: 0 14px 12px; }
 .meet-opt { display: grid; gap: 4px; font-size: 12.5px; min-width: 0; }
 .meet-opt .label { font-size: 10px; }
 .meet-opt .input { width: 100%; min-width: 0; }
 .meet-col > * { min-width: 0; }
-.meet-opt.check { display: flex; align-items: center; gap: 8px; color: var(--text-2); padding-bottom: 8px; white-space: nowrap; }
+.meet-opt.check { display: flex; align-items: center; gap: 8px; color: var(--text-2); padding-bottom: 8px; }
 .meet-id-input { height: 46px; font-size: 22px !important; letter-spacing: .12em; text-align: center; }
 .meet-found { min-height: 20px; font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
 .meet-form > * { min-width: 0; }
@@ -126,14 +130,15 @@
   .lobby-preview { border-right: 0; border-bottom: 1px solid var(--text-3); }
 }
 @media (max-width: 720px) {
-  .meet-options { grid-template-columns: minmax(0, 1fr); }
-  .meet-opt.check { white-space: normal; }
   .meet-block-foot { flex-wrap: wrap; }
   .meet-number span { width: 26px; height: 38px; font-size: 20px; }
   .meet-who { display: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lobby-since { animation: none; }
+  /* touch targets on phones: 40 px at least */
+  .view.meet .btn, .view.meet .input:not(.meet-id-input), .view.meet select { min-height: 40px; }
+  .meet-invite .input { min-height: 34px !important; }
+  .meet-invite .chip button { width: 28px; height: 28px; }
+  .meet-guests summary, .room-host-settings summary { min-height: 40px; display: flex; align-items: center; }
+  .meet-suggest button { height: 44px; }
 }
 /* centring marks on the lobby sheet's edges, as on the Room sheet */
 .lobby-sheet::before {
@@ -144,3 +149,9 @@
     linear-gradient(var(--text-3), var(--text-3)) 0 50% / 12px 1px no-repeat,
     linear-gradient(var(--text-3), var(--text-3)) 100% 50% / 12px 1px no-repeat;
 }
+
+/* a list or figure that could not be loaded: what failed, and Try again */
+.load-problem { display: flex; align-items: center; gap: 8px; margin: 10px 14px; padding: 8px 10px; border-left: 3px solid var(--danger); background: var(--danger-soft); color: var(--text); font-size: 13px; }
+.load-problem svg { flex: none; color: var(--danger); }
+.load-problem b { font-weight: 600; }
+.load-problem span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
