@@ -21,6 +21,8 @@
     "./flows": "./src/flows.ts",
     "./flow-describe": "./src/flow-describe.ts",
     "./botflows": "./src/botflow-engine.ts",
+    "./botmaker": "./src/botmaker.ts",
+    "./bot-describe": "./src/bot-describe.ts",
     "./miniapp": "./src/miniapp.ts",
     "./bots": "./src/bots.ts",
     "./ics": "./src/ics.ts",

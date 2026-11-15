@@ -49,6 +49,7 @@ import type { RefPayload } from './refs.tsx';
 import { keyFor, keyHint, keyText, pressed, useKeys } from './keys.ts';
 import './chat.css';
 import { LoungeStrip } from '../lounges/Lounges.tsx';
+import { isMadeBot } from '../bots/BotMark.tsx';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
@@ -905,7 +906,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
       <div className="run-body">
         <div className="run-head">
           <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? 'Former member'}</span>
-          {u?.role === 'bot' && <span className="chip accent bot-chip">Integration</span>}
+          {u?.role === 'bot' && <span className="chip accent bot-chip">{isMadeBot(author) ? 'Bot' : 'Integration'}</span>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
         {msgs.map((m) => <MessageItem key={m.clientId ?? m.id} ctx={ctx} m={m} onTrack={onTrack} activeTrack={activeTrack} />)}

@@ -160,6 +160,11 @@ export function presenceFor(id: string): Presence {
   return a === 'busy' ? 'busy' : 'on';
 }
 
+/** Some tiles are drawn rather than lettered (a bot a member made): bots/BotMark.tsx supplies them. */
+type TileArt = (id: string, size?: 'sm' | 'lg') => { colour: string; node: ReactNode; monogram: boolean } | null;
+let tileArt: TileArt = () => null;
+export function setTileArt(f: TileArt): void { tileArt = f; }
+
 /** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
 export function Avatar({ user, online, presence, size }: {
   user: Pick<PublicUser, 'id' | 'displayName'>;
@@ -168,6 +173,14 @@ export function Avatar({ user, online, presence, size }: {
   size?: 'sm' | 'lg';
 }) {
   const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
+  const art = tileArt(user.id, size);
+  if (art) {
+    return (
+      <span className={`avatar bot-tile${art.monogram ? ' mono' : ''}${size ? ` ${size}` : ''}`} style={{ background: art.colour }} translate="no" title={user.displayName}>
+        {art.node}
+      </span>
+    );
+  }
   return (
     <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }} translate="no"
       title={p ? `${user.displayName} · ${presenceText(user.id, p)}` : user.displayName}>
