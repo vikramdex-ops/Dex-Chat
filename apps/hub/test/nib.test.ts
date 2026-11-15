@@ -84,7 +84,7 @@ test('a day: start, capture, wrap-up; the lead gets one live card; the managemen
   clock(19, 5);
   const regs = (await nibCards(owner)).filter((x) => x.nib?.kind === 'register');
   assert.equal(regs.length, 1, 'one register a day');
-  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { kind: 'register' }>;
+  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { register: unknown }>;
   assert.equal(reg.register.headline.reported, 1);
   assert.ok(reg.register.missing.some((x) => x.userId === me(anil)));
   await assert.rejects(priya.request('nib.card', { kind: 'register', ref: today }), /not for you/);
@@ -102,7 +102,7 @@ test('a day: start, capture, wrap-up; the lead gets one live card; the managemen
   clock(21, 30);
   const follow = (await nibCards(owner)).filter((x) => x.nib?.kind === 'followup');
   assert.equal(follow.length, 1, 'exactly one follow-up');
-  const fu = await owner.request('nib.card', { kind: 'followup', ref: today }) as Extract<NibCard, { kind: 'followup' }>;
+  const fu = await owner.request('nib.card', { kind: 'followup', ref: today }) as Extract<NibCard, { register: unknown }>;
   assert.deepEqual(fu.register.late.map((x) => x.userId), [me(anil)]);
   hub.nib.setClock(null);
 });
@@ -130,7 +130,7 @@ test('nudges: counted, stepped, quiet while busy, and the management sees how ma
   const r = await ravi.request('nib.me');
   assert.equal(r.day.asks.filter((x) => x.kind === 'wrap').length, 0, 'not while on Do not disturb');
   clock(19, 1);
-  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { kind: 'register' }>;
+  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { register: unknown }>;
   const miss = new Map(reg.register.missing.map((x) => [x.userId, x]));
   assert.equal(miss.get(me(anil))?.asks, 4, 'the start card and three wrap-up asks');
   assert.equal(miss.get(me(ravi))?.busy, 'dnd');
@@ -190,7 +190,7 @@ test('the leave note: away, calendar, leads, cover, reminders; no nudges; one gr
   clock(18, 55);
   assert.equal((await ravi.request('nib.me')).nudge, null);
   clock(19, 0);
-  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { kind: 'register' }>;
+  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { register: unknown }>;
   assert.deepEqual(reg.register.leave.map((x) => x.userId), [me(ravi)]);
   // back the day after: the welcome back, once
   const back = (() => { const d = new Date(); d.setDate(d.getDate() + 2); return d; })();
