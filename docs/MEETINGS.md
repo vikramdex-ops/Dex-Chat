@@ -372,3 +372,177 @@ process) is ignored; asking, accepting and the stop keys; and stopping the share
 
 Each phase ships with end-to-end tests that drive several app instances through the feature. The
 performance targets above are measured in CI-like runs on the e2e harness.
+
+## Meeting threads, action points and recaps
+
+*Design (November 2026).* After any meeting, everyone who was invited or attended finds everything
+from it in one place, and during the meeting an action point takes one line or one key. Code: the
+hub's `apps/hub/src/meet-threads.ts`, the shared rules in `packages/core/src/meet-threads.ts`, the
+app's `apps/desktop/src/renderer/meet/` (`Register.tsx`, `Capture.tsx`, `Recap.tsx`,
+`ThreadCards.tsx`) and the guest page `apps/gateway/meet/room.ts`.
+
+### 1. Every meeting has a thread
+
+A meeting's **thread** is a conversation, so everything a conversation already does (search,
+files, pins, notes, boards, polls, Decisions, retention, legal holds, export, offline catch-up)
+works on it unchanged. Nothing new stores messages.
+
+| Meeting | Its thread |
+| --- | --- |
+| Instant meeting | Its private Space (as today) |
+| Personal room | Its Space, made the first time it is used (as today) |
+| A conversation's Room | That conversation |
+| Calendar meeting set in a conversation | That conversation |
+| Calendar meeting with "Conversation: None" | **New:** a private Space made when the meeting is saved (when it has someone besides the organiser, or is held as a call), named after it, with the invitees in it. Old events get one the first time it is needed. It replaces the group Direct the Room used to open, so guests' chat can live in it (below). |
+| Webinar | Its backstage Space (organisers and panelists) |
+
+- **Recurring meetings** are one event, so the series has one thread. Each time it is held is an
+  **occurrence**: the hub keeps one row per occurrence (meeting, thread, the Calendar slot it
+  belongs to, when it really started and ended, the Rooms it used, the note-taker, its state).
+  When an occurrence starts, a divider card is posted in the thread (`15 NOV · WEEKLY PIPING SYNC ·
+  STARTED 10:02`); when it ends, its recap card.
+- **Before the meeting** invitees chat and share files in the thread. The Room's panel shows the
+  thread's chat and files, so the agenda and drawings shared beforehand are there when it starts.
+- **An occurrence is found** by the Calendar slot that is running, about to start (up to 60
+  minutes early) or just ended (up to 60 minutes late); outside any slot, the Room is an occurrence
+  of its own. A Room of the same meeting opened again within 15 minutes of the last one ending
+  (everyone dropped, the host came back, the hub restarted) **resumes** that occurrence: one
+  divider, one recap card (it updates in place).
+
+### 2. The meeting chat with guests, saved
+
+The meeting chat ("Everyone here", which browser guests read and write) is saved **as it is
+said**, line by line, as messages in the thread, never at the end. A hub that restarts mid-meeting
+loses nothing: the chat a guest or colleague sees when they come back is read from the thread.
+
+- **Authorship.** A colleague's line is their own message. A guest's line is a message from the
+  guest's meeting identity (`wg_…`, no office account) with their name kept beside it, shown as
+  `Mr Rao · GUEST`. Two guests with the same name in one occurrence are `Mr Rao` and `Mr Rao (2)`.
+- **What guests see** is only the meeting chat of the occurrence they are in, as before. What
+  members write in the thread (the "Conversation" sheet) is never shown to guests.
+- **Breakouts** share the meeting chat; each line saved from a breakout carries its label
+  (`B2 · PIPING`).
+- **Files from guests.** The guest page has Attach: the file is sent in chunks through the gateway
+  and checked by the hub with the office's file rules (blocked types, the upload size, and at most
+  25 MB from a browser) before it is stored and posted in the thread as the guest's line.
+  Guests see the file's name in the chat; colleagues can open it.
+- **End-to-end encryption.** Members' own Direct messages stay sealed. The meeting chat is never
+  end-to-end encrypted (a browser guest holds no keys and the hub relays every line), so when a
+  meeting's thread is an encrypted Direct conversation, its meeting-chat lines are stored in that
+  Direct as plain lines marked with the open lock and the reason "meeting chat with guests: not end
+  to end encrypted". Nothing that was sealed is opened, and the office's "require encryption" rule,
+  which governs what members' apps send, is not bypassed for members. For such a thread the hub
+  cannot read the members' messages, so **the recap is assembled on the PC**: the hub gives the
+  occurrence, attendance, recordings, action points (owner, due and status; their text is the
+  sealed message) and the time range; the app reads and decrypts that range of the thread itself.
+
+### 3. Who can come back to it
+
+- **Thread members**: invitees, everyone admitted to an instant meeting or personal room (as
+  today), office members who attended a Calendar meeting's own thread, and anyone the organiser
+  adds later.
+- **Attendees who are not members** (let in from outside to a meeting held in a Space they are not
+  in) do not get the Space. They can open the **recap** of the occurrence they attended, which
+  then shows only what they could see in the meeting: the meeting chat, its files, the action
+  points, decisions and polls from the meeting, attendance and recordings shared with them.
+- **Removed from the invitation:** before the meeting, they leave the meeting's own thread; after
+  attending an occurrence, they keep it (they were there; records rules decide what stays). In a
+  thread that is an existing conversation, membership of that conversation decides.
+- **Guests** cannot come back after leaving. The organiser may send them the recap by email.
+- **Records rules** apply unchanged: a thread is a conversation (Space or Direct retention, legal
+  holds, compliance export). The recap is built from what is still there, so a purged or deleted
+  message, file or action point never comes back through it; action points and saved chat lines
+  are removed with their messages.
+
+### 4. Action points
+
+An action point is a message in the thread with a register entry: `AP-07` (numbered per thread,
+so a series has one register), the task, an owner (a colleague, or a guest by name: `Mr Rao
+(guest)`), an optional due date, and a status (open, done, dropped). Three ways to capture, all
+ending in the same card:
+
+1. **From chat.** A line starting `/action`, `/ap`, `AP:`, `Action:`, `→` or `->` (in the Room's
+   chat or any thread's Dock) shows the parsed card above the composer as you type (owner and due
+   underlined like Nib's words, `OWNER` and `DUE` captions). Enter logs it; the owner and date are
+   chips to change before or after. `Ravi to send the revised GA by Fri` → owner Ravi, task "Send
+   the revised GA", due Friday. Nib's name matching (`findPerson`) and date words (`by Friday`,
+   `kal tak`, `20/11`) are reused.
+2. **One key in the Room.** `A` (when not typing) or `Ctrl+Shift+A` opens the capture strip along
+   the bottom of the stage: a ruled strip with the next number, the words, owner and due. The
+   note-taker logs a point without leaving the stage; Escape closes it.
+3. **Promote anything.** *Make an action point* on any message's menu (thread or Room chat, a
+   guest's line too) and on a selection in a note.
+
+Then:
+
+- **The register.** A *Register* sheet tab in the Room's panel: 01 Agenda, 02 Action points (the
+  ones brought forward from earlier occurrences first), 03 Decisions taken in this occurrence.
+- **Owners learn at once**: one quiet notification, a To-do on their Desk (the card's message,
+  filed as To-do, and a reminder on the due date at the start of the working day), and an item on
+  their Nib day sheet given by the meeting's organiser (`source: meeting`). A guest owner gets none
+  of these.
+- **Done.** The owner (or the organiser, or whoever logged it) ticks it on the card, the
+  register, the recap or their Desk; their Desk reminder and Nib item close with it, and ticking
+  the Nib item done ticks the action point.
+- **Overdue** points are reminded once a working day, within working hours (Nib's workdays,
+  between the day's start prompt and the wrap-up), one grouped message per person listing all
+  theirs, never one ping each, and not while they are on leave.
+- **Recurring meetings** carry open points forward: the next occurrence's register and recap list
+  them at the top, *Brought forward*, until they are done or dropped.
+
+### 5. The recap
+
+When an occurrence ends a **recap card** is posted in the thread: a title block (title, date,
+time, duration, drawing number `MTG-482913207-03`) over a ruled line of counts (people, files,
+action points open and done, decisions). It opens the **recap sheet**, drawn as a drawing's title
+block and register:
+
+`01 ATTENDANCE` (who attended and for how long, joins summed, two devices counted once; who was
+invited and absent) · `02 RECORDING` (with chapters, once processed) · `03 ACTION POINTS` (owners,
+due, status, progress as a dimension line; brought forward first) · `04 DECISIONS` · `05 FILES`
+(each with a link to its message) · `06 POLLS` (results) · `07 NOTES AND BOARDS` (notes and
+whiteboards changed during it) · `08 AGENDA` (ticked or not reached) · `09 CHAT` (collapsed,
+searchable, paged for long meetings; deleted messages are not shown).
+
+**Reach it from** the card in the thread, the Calendar (an event opened after it happened shows
+its recap), the Meet lens (Recent meetings: Recap) and search (the chat and files are messages).
+**Copy recap** puts plain text on the clipboard; **Send by email** builds an `.eml` draft
+(`packages/core/src/eml.ts`) with the parts the organiser ticks (for guests, for example, only the
+action points and files) and the addresses typed.
+
+### 6. Other basics
+
+- **Agenda** with time boxes, edited in the Register before or during the meeting and ticked off
+  as it goes; the item running is shown on the stage's title block with its time left.
+- **Joined late? Catch up.** Coming in more than three minutes after the start, a small card
+  says what you missed: lines of chat since it started and the action points so far.
+- **Note-taker.** The host gives the role from a person's menu (`NOTE-TAKER` tag); the recap
+  names them.
+- **Files** open in the app's viewer from the panel (PDFs in the PDF viewer).
+- **Pins** work in the thread as in any conversation.
+- **Breakout rooms**' chat is labelled by breakout in the main thread (above).
+
+### 7. Edge cases
+
+| Case | What happens |
+| --- | --- |
+| Never started | No divider or recap. The Calendar shows the event as not held; chat in the thread stays; open action points carry to the next occurrence. |
+| Ended with nobody else joining | A recap is still posted when anything was captured (chat, files, action points); otherwise only the divider. |
+| Started early | Up to 60 minutes before its slot it belongs to that slot. |
+| Host left and came back | Same Room, same occurrence; the host rule is unchanged. |
+| Everyone dropped, back within 15 minutes | The occurrence resumes; one recap, updated. |
+| Hub restarted mid-meeting | Chat was saved as said; attendance as people came and went. The Room reopens under the same occurrence; an occurrence nobody returns to is closed 15 minutes later with its recap. |
+| Two devices for one person | Attendance merges them; capture is idempotent (client ids); notifications go to the person. |
+| Removed from the invitation | See §3. |
+| Cancelled | The thread stays, with a *Cancelled* card; its recaps and action points stay. |
+| Rescheduled | Same event, same thread; occurrences follow the new time. |
+| "This and following" | The Calendar edits a series as a whole; a split series made later keeps the conversation, so the thread continues. |
+| Very long meetings, many files | The chat in the recap is paged (200 at a time); files and attendance are listed in full, ruled; the Room's saved chat keeps the last 200 lines in memory. |
+| Guest name collision | `(2)` within the occurrence. |
+| Deleted messages and files | Not in the recap; an action point whose message is deleted is dropped from the register. |
+| Edit window | Saved chat lines follow it like any message; editing a card's text edits the action point. |
+| Retention purge | Messages go with their action points and chat records; the recap is built from what is left. |
+| Offline clients | The thread syncs like any conversation; action point changes arrive as message updates. |
+| Encrypted Direct | See §2. |
+| Hindi and Tamil | Every string translated; the parser reads English words and the Hindi words Nib already reads. |
+| Phone | The register, capture strip and recap sheet fit 390 px. |
