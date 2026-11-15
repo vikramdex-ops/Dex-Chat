@@ -7,6 +7,7 @@ import { Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo,
 import { createPortal } from 'react-dom';
 import { MEETING_REACTIONS, formatMeetingId, meetingLink } from '@dex/core';
 import type { LobbyRule, PublicUser, RoomInfo, RoomParticipant } from '@dex/core';
+import { LOBBY_RULES, lobbyLabel } from '../meet/lobby.ts';
 import { Avatar, Dialog, Icon, Popover, colorFor, presenceFor, useToast } from '../ui.tsx';
 import {
   answerUnmute, callQuality, capName, clock, leave, onReaction, raiseHand, react, setBackground, setLayout, setMinimized, setPinned, sheetColumns, startCall,
@@ -605,9 +606,6 @@ function BackgroundMenu({ anchor, onClose }: { anchor: HTMLElement; onClose: () 
 }
 
 // ------------------------------------------------------------------ the People tab
-const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
-  { value: 'outside', label: 'Guests and people from outside' }, { value: 'everyone', label: 'Everyone but the hosts' }, { value: 'off', label: 'Nobody: walk straight in' },
-];
 
 function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, isMainHost, handOrder, onMenu, run, host, meDevice }: {
   room: RoomInfo; seats: Seat[]; zones: Map<string, string>; users: Map<string, PublicUser>; meId: string; muted: boolean; camera: boolean;
@@ -688,8 +686,8 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
           <HostExtras room={room} users={users} meDevice={meDevice} />
           {meeting && room.settings && (
             <details className="room-host-settings">
-              <summary className="label">Meeting settings · {room.settings.lobby === 'off' ? 'no lobby' : room.settings.lobby === 'everyone' ? 'everyone waits' : 'outsiders wait'}</summary>
-              <label className="room-setting"><span className="label">Waits in the lobby</span>
+              <summary className="label">Meeting settings · {lobbyLabel(room.settings.lobby)}</summary>
+              <label className="room-setting"><span className="label">Who waits in the lobby</span>
                 <select className="input" value={room.settings.lobby} onChange={(e) => setRule(e.target.value as LobbyRule)}>{LOBBY_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select>
               </label>
               {room.meetingKind !== 'conversation' && (

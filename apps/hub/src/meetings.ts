@@ -136,7 +136,7 @@ export class Meetings {
   /** Settings from a request, on top of what a meeting has now. */
   static settings(input: unknown, base: MeetingSettings): MeetingSettings {
     const d = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-    if (d.lobby !== undefined && !LOBBY.includes(d.lobby as LobbyRule)) throw new MeetingError('Choose who waits in the lobby: nobody, people from outside, or everyone.');
+    if (d.lobby !== undefined && !LOBBY.includes(d.lobby as LobbyRule)) throw new MeetingError('Choose who waits in the lobby: guests and people from outside, everyone, or only guests from a browser.');
     if (d.joinBeforeHost !== undefined && typeof d.joinBeforeHost !== 'boolean') throw new MeetingError('Join before the host is on or off.');
     return { lobby: (d.lobby as LobbyRule | undefined) ?? base.lobby, joinBeforeHost: (d.joinBeforeHost as boolean | undefined) ?? base.joinBeforeHost };
   }

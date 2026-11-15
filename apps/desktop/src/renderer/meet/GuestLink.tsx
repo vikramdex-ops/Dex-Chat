@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatMeetingId, meetingLink, normalizeSlug } from '@dex/core';
 import type { CalEvent, LobbyRule, MeetPublicView, MeetingInfo, Ops, PublicUser } from '@dex/core';
+import { LOBBY_RULES } from './lobby.ts';
 import { buildIcs, invitationText } from '@dex/core/ics';
 import { buildEml, invitationEmail, mailtoLink } from '@dex/core/eml';
 import type { Invitation } from '@dex/core/ics';
@@ -69,9 +70,6 @@ export async function emailDraft(m: { subject: string; text: string; html: strin
 
 const safeFile = (s: string) => s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Meeting';
 
-const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
-  { value: 'outside', label: 'Guests and people from outside wait' }, { value: 'everyone', label: 'Everyone waits to be let in' }, { value: 'off', label: 'Only guests from a browser wait' },
-];
 
 /** The meeting's name on the site: typed, checked as you type (taken, kept, look-alike letters), saved on Enter or Save. */
 export function SlugField({ meetingId, value, site, onSave, compact }: { meetingId: string | null; value: string | null; site: string | null; onSave: (slug: string | null) => void | Promise<void>; compact?: boolean }) {

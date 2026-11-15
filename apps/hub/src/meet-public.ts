@@ -222,7 +222,7 @@ export class MeetPublic {
       this.h.db.prepare('UPDATE meetings SET follow_up = ? WHERE id = ?').run(text || null, m.id);
     }
     if (d.lobby !== undefined) {
-      if (!['off', 'outside', 'everyone'].includes(d.lobby as string)) throw new PublicPageError('Choose who waits in the lobby: nobody, people from outside, or everyone.');
+      if (!['off', 'outside', 'everyone'].includes(d.lobby as string)) throw new PublicPageError('Choose who waits in the lobby: guests and people from outside, everyone, or only guests from a browser.');
       next = this.h.meetings.update(next, me, { lobby: d.lobby as LobbyRule });
     }
     if (d.enabled !== undefined || d.regenerate === true) {

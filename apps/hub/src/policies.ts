@@ -194,7 +194,7 @@ export class Policies {
         if (typeof d.personalDevices === 'boolean') this.setMeta('policy_personal_devices', d.personalDevices ? '1' : '0');
         if (typeof d.memberEmoji === 'boolean') this.setMeta('policy_member_emoji', d.memberEmoji ? '1' : '0');
         if (d.meetingLobby !== undefined) {
-          if (d.meetingLobby !== 'off' && d.meetingLobby !== 'outside' && d.meetingLobby !== 'everyone') throw new PolicyError('Choose who waits in the lobby: nobody, people from outside, or everyone.');
+          if (d.meetingLobby !== 'off' && d.meetingLobby !== 'outside' && d.meetingLobby !== 'everyone') throw new PolicyError('Choose who waits in the lobby: guests and people from outside, everyone, or only guests from a browser.');
           this.setMeta('policy_meeting_lobby', d.meetingLobby);
         }
         if (typeof d.guestLinks === 'boolean') this.setMeta('policy_guest_links', d.guestLinks ? '1' : '0');

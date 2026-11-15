@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { formatMeetingId, isWebGuest, meetingLink, parseMeetingId } from '@dex/core';
 import type { LobbyRule, MeetingInfo, MeetingRecord, Occurrence, PublicUser, RecordingInfo, Session } from '@dex/core';
+import { LOBBY_RULES } from './lobby.ts';
 import { Avatar, Icon, presenceFor, useToast } from '../ui.tsx';
 import { useCall } from '../rooms/engine.ts';
 import { Glyph } from '../rooms/parts.tsx';
@@ -23,9 +24,6 @@ import { SurveySheet, WebinarSheet, WebinarsBlock } from './webinar/Lens.tsx';
 import { clearOpenWebinar, joinAny, useWeb } from './webinar/store.ts';
 import './meet.css';
 
-const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
-  { value: 'outside', label: 'Guests and people from outside wait' }, { value: 'everyone', label: 'Everyone waits to be let in' }, { value: 'off', label: 'Nobody waits' },
-];
 
 function lengthOf(ms: number): string {
   const m = Math.round(ms / 60_000);

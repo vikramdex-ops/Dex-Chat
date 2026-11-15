@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CalEvent, Conversation, LobbyRule, MeetingInfo, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
 import { formatMeetingId, meetingLink, slugFrom } from '@dex/core';
+import { LOBBY_RULES } from '../meet/lobby.ts';
 import { Avatar, Dialog, Icon, Segmented, ToggleRow, presenceFor, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
 import { EventInvite, PageLink, SlugField } from '../meet/GuestLink.tsx';
@@ -490,7 +491,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
             <span className="faint guest-hint">{showTitle ? 'Anyone with the address sees the title and your first name before the passcode.' : 'Before the passcode, the page shows only the date, the time and the office.'}</span>
             <label className="ev-lobby"><span className="label">Lobby</span>
               <select className="input" value={lobby} onChange={(e) => setLobby(e.target.value as LobbyRule)}>
-                <option value="outside">Guests and people from outside wait</option><option value="everyone">Everyone waits to be let in</option><option value="off">Only guests from a browser wait</option>
+                {LOBBY_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </label>
             {guests && <span className="faint guest-hint">The passcode is made when you save; then copy or download the invitation here.</span>}
