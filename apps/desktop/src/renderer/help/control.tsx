@@ -35,7 +35,7 @@ export function ControlConsentSheet({ who, lead, ends, available, reason, whole,
         {!available && <p className="hm-warn"><Icon name="info" size={15} />{reason ?? 'This PC cannot be controlled remotely.'}</p>}
         {available && !whole && <p className="hm-warn"><Icon name="info" size={15} />{wholeNote}</p>}
         <div className="dialog-actions">
-          <button className="btn ghost" onClick={onClose}>No</button>
+          <button className="btn ghost" onClick={onClose}>Don't allow</button>
           <button className="btn primary amber" disabled={busy || !available || !whole} onClick={() => void allow()}>{busy ? <span className="spinner" /> : <Icon name="check" size={15} />}Allow control</button>
         </div>
       </div>

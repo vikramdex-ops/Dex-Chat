@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CalEvent, Conversation, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
 import { formatMeetingId, meetingLink } from '@dex/core';
 import { Avatar, Dialog, Icon, Segmented, ToggleRow, presenceFor, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { EventInvite } from '../meet/GuestLink.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
@@ -162,7 +163,7 @@ function Week({ from, zone2, list, meId, onSlot, onOpen }: { from: number; zone2
           </div>
         ))}
       </div>
-      <div className="week-body" ref={scroller}>
+      <div className="week-body" ref={scroller} tabIndex={0} role="region" aria-label="The week, hour by hour">
         <div className="week-hours">
           {Array.from({ length: 24 }, (_, h) => <span key={h} style={{ top: h * HOUR_PX }}>{h === 0 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString([], { ...timeOpts(), hour: 'numeric' })}</span>)}
           {zone2 && Array.from({ length: 24 }, (_, h) => {
@@ -284,7 +285,8 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
             </div>
           ) : <span />}
           {isOrganiser && <button className="btn ghost" onClick={() => onEdit(ev)}><Icon name="edit" size={15} />Edit</button>}
-          {isOrganiser && <button className="btn ghost danger" onClick={() => { if (confirm(`Cancel "${ev.title}" for everyone${ev.recurrence !== 'none' ? ', including every repeat' : ''}?`)) void window.dex.request('cal.cancel', { eventId: ev.id }).then(() => { toast('Meeting cancelled'); onClose(); }).catch((e: Error) => toast(e.message, true)); }}>Cancel meeting</button>}
+          {isOrganiser && <button className="btn ghost danger" onClick={() => void confirmAction({ title: `Cancel "${ev.title}" for everyone?`, body: ev.recurrence !== 'none' ? 'Every repeat is cancelled too, and everyone invited is told.' : 'Everyone invited is told.', confirm: 'Cancel meeting', cancel: 'Keep it', danger: true })
+            .then((ok) => { if (ok) void window.dex.request('cal.cancel', { eventId: ev.id }).then(() => { toast('Meeting cancelled'); onClose(); }).catch((e: Error) => toast(e.message, true)); })}>Cancel meeting</button>}
           {ev.online && <button className={`btn${live ? ' primary' : ''}`} onClick={() => void joinMeeting(ev).then(onClose).catch((e: Error) => toast(e.message, true))}><Icon name="video" size={15} />Join call</button>}
         </div>
       )}
@@ -418,7 +420,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
         <label>People</label>
         <div className="ev-invitees">
           {people.map((id) => { const u = users.get(id); return u ? <span key={id} className="chip accent">{u.displayName}<button aria-label={`Remove ${u.displayName}`} onClick={() => setPeople(people.filter((x) => x !== id))}><Icon name="x" size={11} /></button></span> : null; })}
-          <input className="input ev-add" placeholder={people.length ? 'Add more people' : 'Invite people'} value={q} onChange={(e) => setQ(e.target.value)}
+          <input className="input ev-add" placeholder={people.length ? 'Add more people' : 'Invite people'} aria-label="Invite people" value={q} onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && candidates[0]) { e.preventDefault(); setPeople([...people, candidates[0].id]); setQ(''); } }} />
         </div>
         {q && candidates.length > 0 && (
@@ -452,7 +454,7 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
       <div className="dialog-actions">
         <span className="faint">{describeSpan(allDay ? startOfDay(start) : start, end, allDay)}</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={!title.trim() || saving} onClick={() => void save()}><Icon name="calendar" size={15} />{ev ? 'Save' : people.length ? 'Send invitations' : 'Save'}</button>
+        <button className="btn primary" disabled={!title.trim() || saving} title={title.trim() ? undefined : 'Give the meeting a title first'} onClick={() => void save()}><Icon name="calendar" size={15} />{ev ? 'Save' : people.length ? 'Send invitations' : 'Save'}</button>
       </div>
     </Dialog>
   );

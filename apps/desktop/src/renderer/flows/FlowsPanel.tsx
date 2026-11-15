@@ -9,6 +9,7 @@ import { FlowError, freshNodeId, validateGraph } from '@dex/core';
 import { draftFlow } from '@dex/core/flow-describe';
 import type { DraftFlow } from '@dex/core/flow-describe';
 import { Icon, Popover, relativeTime, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
 import { chatState, useChat } from '../chat/store.ts';
 import { FlowGraphView } from './FlowGraph.tsx';
 import { NodeEditor } from './NodeEditor.tsx';
@@ -219,8 +220,9 @@ function Workbench({ convId, session }: { convId: string | null; session: Sessio
     } catch (e) { toast((e as Error).message, true); }
   };
 
+  const leaveEdits = async () => !dirty || confirmAction({ title: 'Leave this rule without saving?', body: 'Your changes to it are lost.', confirm: 'Leave without saving', cancel: 'Keep editing', danger: true });
   const remove = async () => {
-    if (!editing?.id || !window.confirm(`Remove “${editing.name}”? Its run log goes with it.`)) return;
+    if (!editing?.id || !(await confirmAction({ title: `Remove “${editing.name}”?`, body: 'The rule stops at once and its run log goes with it.', confirm: 'Remove rule', danger: true }))) return;
     try {
       await window.dex.request('flow.delete', { id: editing.id });
       setFlows((list) => list?.filter((x) => x.id !== editing.id) ?? list);
@@ -286,7 +288,7 @@ function Workbench({ convId, session }: { convId: string | null; session: Sessio
 
       <div className="fl-tabs" role="tablist" aria-label="Rules">
         {(flows ?? []).map((f, i) => (
-          <button key={f.id} type="button" role="tab" aria-selected={current === f.id} className="fl-tab" onClick={() => { if (dirty && !window.confirm('Leave this rule without saving your changes?')) return; open(f); }}>
+          <button key={f.id} type="button" role="tab" aria-selected={current === f.id} className="fl-tab" onClick={() => void leaveEdits().then((ok) => { if (ok) open(f); })}>
             <span className="fl-tab-no">{sheetNo(i)}</span>
             <span className="fl-tab-name" translate="no">{f.name}</span>
             {office && <span className="fl-tab-scope" translate="no">{f.convId ? f.convName ?? 'Conversation' : 'Every Space'}</span>}
@@ -294,7 +296,7 @@ function Workbench({ convId, session }: { convId: string | null; session: Sessio
           </button>
         ))}
         {current === 'new' && <button type="button" role="tab" aria-selected className="fl-tab"><span className="fl-tab-no">{editing?.draft ? 'Draft' : 'New'}</span><span className="fl-tab-name" translate="no">{editing?.name}</span></button>}
-        {canCreate && current !== 'new' && <button type="button" className="fl-tab fl-tab-add" onClick={() => { if (dirty && !window.confirm('Leave this rule without saving your changes?')) return; startNew(); }}><Icon name="plus" size={14} />New rule</button>}
+        {canCreate && current !== 'new' && <button type="button" className="fl-tab fl-tab-add" onClick={() => void leaveEdits().then((ok) => { if (ok) startNew(); })}><Icon name="plus" size={14} />New rule</button>}
       </div>
 
       {flows === null && <div className="tl-more"><span className="spinner" /></div>}
@@ -328,8 +330,8 @@ function Workbench({ convId, session }: { convId: string | null; session: Sessio
 
           {!readOnly && (
             <div className="fl-add">
-              <AddMenu label="Add a condition" disabled={editing.graph.conditions.length >= 6} items={(Object.keys(CONDITION_LABEL) as ConditionKind[]).map((k) => ({ key: k, label: CONDITION_LABEL[k] }))} onPick={(k) => addCondition(k as ConditionKind)} />
-              <AddMenu label="Add a step" disabled={editing.graph.actions.length >= 8} items={(Object.keys(ACTION_LABEL) as ActionKind[]).map((k) => ({ key: k, label: ACTION_LABEL[k] }))} onPick={(k) => addAction(k as ActionKind)} />
+              <AddMenu label="Add a condition" disabled={editing.graph.conditions.length >= 6} hint="A rule can have up to six conditions" items={(Object.keys(CONDITION_LABEL) as ConditionKind[]).map((k) => ({ key: k, label: CONDITION_LABEL[k] }))} onPick={(k) => addCondition(k as ConditionKind)} />
+              <AddMenu label="Add a step" disabled={editing.graph.actions.length >= 8} hint="A rule can have up to eight steps" items={(Object.keys(ACTION_LABEL) as ActionKind[]).map((k) => ({ key: k, label: ACTION_LABEL[k] }))} onPick={(k) => addAction(k as ActionKind)} />
             </div>
           )}
 
@@ -376,12 +378,12 @@ function Workbench({ convId, session }: { convId: string | null; session: Sessio
   );
 }
 
-function AddMenu({ label, items, onPick, disabled }: { label: string; items: Array<{ key: string; label: string }>; onPick: (k: string) => void; disabled?: boolean }) {
+function AddMenu({ label, items, onPick, disabled, hint }: { label: string; items: Array<{ key: string; label: string }>; onPick: (k: string) => void; disabled?: boolean; hint?: string }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [openMenu, setOpen] = useState(false);
   return (
     <>
-      <button ref={setAnchor} type="button" className="btn" disabled={disabled} aria-haspopup="menu" aria-expanded={openMenu} onClick={() => setOpen(!openMenu)}><Icon name="plus" size={14} />{label}</button>
+      <button ref={setAnchor} type="button" className="btn" disabled={disabled} title={disabled ? hint : undefined} aria-haspopup="menu" aria-expanded={openMenu} onClick={() => setOpen(!openMenu)}><Icon name="plus" size={14} />{label}</button>
       {openMenu && (
         <Popover anchor={anchor} onClose={() => setOpen(false)} className="menu" align="start">
           {items.map((it) => <button key={it.key} role="menuitem" onClick={() => { setOpen(false); onPick(it.key); }}>{it.label}</button>)}

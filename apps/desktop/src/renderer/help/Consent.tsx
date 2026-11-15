@@ -151,7 +151,7 @@ export function RateSheet({ ticket, tech, onClose }: { ticket: HelpTicket; tech:
           ))}
           <span className="rt-word">{WORDS[rating]}</span>
         </div>
-        <input className="input" placeholder="A word for IT (optional)" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
+        <input className="input" placeholder="A word for IT (optional)" aria-label="A word for IT" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
         <div className="dialog-actions">
           <button className="btn ghost" disabled={busy} onClick={() => void finish(false)}>{ticket.status === 'closed' ? 'Reopen it' : 'It still needs work'}</button>
           <button className="btn primary" disabled={busy} onClick={() => void finish(true)}><Icon name="check" size={15} />{ticket.status === 'closed' ? 'Done' : 'Solved: close it'}</button>

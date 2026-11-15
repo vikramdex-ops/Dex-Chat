@@ -94,7 +94,7 @@ export function TicketView({ id, users, meId, onBack }: { id: string; users: Map
         <Timeline entries={data.timeline} users={users} />
         {t.status !== 'closed' && (
           <form className="hd-note" onSubmit={(e) => { e.preventDefault(); if (note.trim()) void run(async () => { await window.dex.request('help.note', { id: t.id, text: note }); setNote(''); }); }}>
-            <input className="input" placeholder={requester ? 'Add something for IT' : 'Add a note to the ticket'} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
+            <input className="input" placeholder={requester ? 'Add something for IT' : 'Add a note to the ticket'} aria-label={requester ? 'Add something for IT' : 'Add a note to the ticket'} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
             <button className="btn" disabled={busy || !note.trim()}><Icon name="send" size={14} />Add</button>
           </form>
         )}

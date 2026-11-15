@@ -85,9 +85,10 @@ export function actionSummary(a: ActionNode, n: Names): string {
 }
 
 export function dueText(m: number): string {
-  if (m % 10080 === 0) return `${m / 10080} week${m === 10080 ? '' : 's'}`;
-  if (m % 1440 === 0) return `${m / 1440} day${m === 1440 ? '' : 's'}`;
-  if (m % 60 === 0) return `${m / 60} hour${m === 60 ? '' : 's'}`;
+  // whole phrases, so each one can be translated (not a word with an "s" glued on)
+  if (m % 10080 === 0) return m === 10080 ? '1 week' : `${m / 10080} weeks`;
+  if (m % 1440 === 0) return m === 1440 ? '1 day' : `${m / 1440} days`;
+  if (m % 60 === 0) return m === 60 ? '1 hour' : `${m / 60} hours`;
   return `${m} minutes`;
 }
 

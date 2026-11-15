@@ -1,7 +1,7 @@
 // Always mounted in the app frame: starts the help desk and lounges, opens "Help me…", the Help
 // desk and ticket sheets (from the tile menu, the command palette, the tray and links), shows the
 // "IT is ready to help" card and, after a session, "How did it go?". Also hosts "Look together".
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tr } from '../i18n/index.ts';
 import { ticketRef } from '@dex/core';
 import type { HelpTicket, PublicUser, Session } from '@dex/core';
@@ -78,6 +78,23 @@ export function AssistHost({ session, users, live }: { session: Session; users: 
   }, [invite?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const rated = useMemo(() => (rate ? ticketById(rate) : null), [rate]);
   const close = () => setView(null);
+  // the sheet takes the keyboard when it opens, and Escape closes it wherever the focus is
+  // (unless a dialog over it, a field being typed in, or a menu has it)
+  const sheetRef = useRef<HTMLElement>(null);
+  const sheetOpen = view?.view === 'desk' || view?.view === 'ticket';
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const back = document.activeElement as HTMLElement | null;
+    sheetRef.current?.focus({ preventScroll: true });
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, select') || document.querySelector('.scrim, .popover')) return;
+      setView(null);
+    };
+    window.addEventListener('keydown', k);
+    return () => { window.removeEventListener('keydown', k); if (back?.isConnected) back.focus({ preventScroll: true }); };
+  }, [sheetOpen]);
   const invited = invite ? ticketById(invite.ticketId) : null;
   const techName = (id: string) => users.get(id)?.displayName ?? 'IT';
   return (
@@ -85,8 +102,7 @@ export function AssistHost({ session, users, live }: { session: Session; users: 
       {view?.view === 'me' && <HelpMe users={users} onClose={close} onOpenTicket={(id) => setView({ view: 'ticket', id })} />}
       {(view?.view === 'desk' || view?.view === 'ticket') && (
         <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
-          <aside className="sheet wide hd-sheet" role="dialog" aria-modal="true" aria-label={view.view === 'desk' ? 'Help desk' : 'Help request'}
-            onKeyDown={(e) => { if (e.key === 'Escape' && !(e.target as HTMLElement).closest('input, textarea')) close(); }}>
+          <aside ref={sheetRef} tabIndex={-1} className="sheet wide hd-sheet" role="dialog" aria-modal="true" aria-label={view.view === 'desk' ? 'Help desk' : 'Help request'}>
             <button className="sheet-close" onClick={close} aria-label="Close" title="Close (Esc)"><Icon name="x" size={18} /></button>
             <div className="sheet-body">
               {view.view === 'desk' && isIt() ? <HelpDesk users={users} meId={meId} focus={view.id ?? null} />
