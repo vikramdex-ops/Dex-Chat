@@ -1,0 +1,9 @@
+/* the confirmation dialog (confirm.tsx): red only on the button that removes or ends something */
+.btn.danger.solid-danger { background: var(--danger); border-color: transparent; color: #fff; font-weight: 600; }
+.btn.danger.solid-danger:hover { background: color-mix(in srgb, var(--danger) 86%, #000); color: #fff; }
+:root[data-theme="dark"] .btn.danger.solid-danger, :root[data-theme="dark"] .btn.danger.solid-danger:hover { color: #1a0906; }
+.confirm-actions { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 720px) { .confirm-actions .btn { height: 40px; } }
+/* above everything it is asked from: the Room, the recording viewer, sheets and the call banner */
+.scrim:has(.confirm-actions) { z-index: 60; }
+@media (max-width: 720px) { .scrim:has(.confirm-actions) .icon-btn { width: 40px; height: 40px; } }
