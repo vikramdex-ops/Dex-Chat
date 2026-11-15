@@ -44,7 +44,7 @@
 @keyframes dl-draw { to { stroke-dashoffset: 0; } }
 @keyframes dl-fade { to { opacity: 1; } }
 @keyframes dl-rise { from { opacity: 0; transform: translateY(6px); } }
-@media (max-width: 760px) { .dayline { grid-template-columns: 1fr; } .dl-plot { min-height: 180px; max-height: 220px; } }
+@media (max-width: 760px) { .dayline { grid-template-columns: minmax(0, 1fr); } .dl-text { padding: 18px 18px 14px; } .dl-actions { flex-wrap: wrap; } .dl-plot { min-height: 180px; max-height: 220px; } }
 @media (prefers-reduced-motion: reduce) { .dl-plot.draw path, .dl-plot.draw text, .dl-plot.draw .s-node, .dl-plot.draw .s-centre, .dl-quote { animation: none; stroke-dashoffset: 0; opacity: 1; } .dl-plot .dl-layer { transform: none !important; } }
 
 /* the morning moment */

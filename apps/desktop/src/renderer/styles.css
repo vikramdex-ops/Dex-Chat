@@ -1318,7 +1318,7 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .msg-link-none .mlc-quiet { font-size: 12.5px; color: var(--text-3); }
 /* profile: Spaces and calls in common */
 .in-common .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.in-common .chip { cursor: pointer; border: 0; }
+.in-common .chip { cursor: pointer; border: 0; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; }
 .in-common .chip:hover { background: var(--accent-soft, var(--subtle-2)); color: var(--accent-ink, var(--text)); }
 .call-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
 .call-history li { display: flex; align-items: center; gap: 8px; }

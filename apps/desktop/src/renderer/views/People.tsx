@@ -277,7 +277,7 @@ function InCommon({ userId }: { userId: string }) {
       {d.spaces.length > 0 && (
         <>
           <div className="label">Spaces in common · {d.spaces.length}</div>
-          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
+          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" translate="no" title={s.name} onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
         </>
       )}
       {d.calls.length > 0 && (
