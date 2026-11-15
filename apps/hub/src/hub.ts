@@ -1640,6 +1640,7 @@ export class Hub {
         if (typeof op === 'string' && /^(links\.|admin\.links\.|reactions\.)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
+            if (op === 'links.drives.set') return this.links.setDrives(me, conn.deviceId!, d) satisfies Ops['links.drives.set']['res'];
             const result = op.startsWith('reactions.') ? this.reactionInsights.handle(op, me, d) : await this.links.handle(op, me, d);
             if (result !== undefined) return result;
           } catch (err) {

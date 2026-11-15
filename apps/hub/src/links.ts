@@ -15,6 +15,7 @@ import type { IncomingMessage } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { isSealed } from '@dex/core/e2e';
 import { formatMeetingId } from '@dex/core';
+import { cleanMappings, networkRoots } from '@dex/core/sharepaths';
 import type { CalEvent, FileInfo, LinkAction, LinkCard, LinkCardMeta, LinkSettings, LinkThread, MeetingInfo, Message, PublicUser } from '@dex/core';
 import type { FileStore } from './files.ts';
 import type { Messaging } from './messaging.ts';
@@ -470,7 +471,8 @@ export class Links {
       CREATE INDEX IF NOT EXISTS idx_link_cache_at ON link_cache(fetched_at);
       CREATE TABLE IF NOT EXISTS link_threads (conv_id TEXT NOT NULL, url_hash TEXT NOT NULL, url TEXT NOT NULL, root_message_id TEXT NOT NULL,
         created_by TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conv_id, url_hash));
-      CREATE TABLE IF NOT EXISTS link_hidden (message_id TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY (message_id, url));`);
+      CREATE TABLE IF NOT EXISTS link_hidden (message_id TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY (message_id, url));
+      CREATE TABLE IF NOT EXISTS device_drives (device_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, drives TEXT NOT NULL, updated_at INTEGER NOT NULL);`);
     // cards the author removed from their message are left out for everyone
     deps.messaging.viewExtras.push((r) => {
       if (r.deleted) return {};
@@ -509,6 +511,7 @@ export class Links {
         return this.preview(url, me);
       }
       case 'links.discuss': return this.discuss(me, d);
+      case 'links.drives.of': return this.drivesOf(me, d);
       case 'links.hide': {
         const msg = typeof d.messageId === 'string' ? this.deps.messaging.row(d.messageId) : undefined;
         if (!msg || msg.deleted || !this.deps.messaging.isMember(msg.conv_id, me.id)) throw new LinkError('Message not found.');
@@ -549,6 +552,48 @@ export class Links {
       }
     }
     return undefined;
+  }
+
+  // ---------------------------------------------------------------- drive maps
+  /**
+   * A device publishes its network drives (X: → \\nas01\Project), so the drive-letter paths its
+   * person wrote before messages stored UNC paths can be read on PCs that map the share
+   * differently. Only letters and UNC roots are kept: local and subst drives, user names, server
+   * addresses or anything else never reach the hub. Guests and bots neither publish nor read them.
+   */
+  setDrives(me: PublicUser, deviceId: string, d: Record<string, unknown>): { ok: true; count: number } {
+    if (me.role === 'guest' || me.role === 'bot') throw new LinkError('Only members of the office share their network drives.');
+    if (!Array.isArray(d.drives) || d.drives.length > 26) throw new LinkError('Give up to 26 network drives.');
+    const roots = networkRoots(cleanMappings(d.drives)).filter((x) => x.root.startsWith('\\\\') && x.root.length <= 400);
+    this.db.prepare('INSERT INTO device_drives (device_id, user_id, drives, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(device_id) DO UPDATE SET user_id = excluded.user_id, drives = excluded.drives, updated_at = excluded.updated_at')
+      .run(deviceId, me.id, JSON.stringify(roots), Date.now());
+    return { ok: true, count: roots.length };
+  }
+
+  /** The drive maps of message writers, for members: every approved device of each person together; a letter mapped two ways is left out. */
+  drivesOf(me: PublicUser, d: Record<string, unknown>): Record<string, { known: boolean; drives: Array<{ letter: string; root: string }> }> {
+    if (me.role === 'guest' || me.role === 'bot') throw new LinkError('Network drives are only shown to members of the office.');
+    const ids = Array.isArray(d.userIds) ? [...new Set(d.userIds.filter((x): x is string => typeof x === 'string' && ID.test(x)))].slice(0, 100) : [];
+    const approved = new Set(this.deps.store.devices().filter((x) => x.status === 'approved').map((x) => x.id));
+    const active = new Set(this.deps.store.activeUsers().filter((u) => u.role !== 'guest').map((u) => u.id));
+    const out: Record<string, { known: boolean; drives: Array<{ letter: string; root: string }> }> = {};
+    const q = this.db.prepare('SELECT device_id, drives FROM device_drives WHERE user_id = ?');
+    for (const id of ids) {
+      if (!active.has(id)) { out[id] = { known: false, drives: [] }; continue; }
+      const rows = (q.all(id) as Array<{ device_id: string; drives: string }>).filter((r) => approved.has(r.device_id));
+      const seen = new Map<string, string | null>();
+      for (const r of rows) {
+        let list: Array<{ letter: string; root: string }> = [];
+        try { list = networkRoots(cleanMappings(JSON.parse(r.drives))); } catch { /* skip */ }
+        for (const m of list) {
+          const had = seen.get(m.letter);
+          if (had === undefined) seen.set(m.letter, m.root);
+          else if (had !== null && had.toLowerCase() !== m.root.toLowerCase()) seen.set(m.letter, null);
+        }
+      }
+      out[id] = { known: rows.length > 0, drives: [...seen].filter((e): e is [string, string] => e[1] !== null).map(([letter, root]) => ({ letter, root })) };
+    }
+    return out;
   }
 
   /** A card for any link, as this viewer may see it. */

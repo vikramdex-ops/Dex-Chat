@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { LinkCard } from '@dex/core';
 import { guardedFetch, isBlockedAddress, scanHtml, imageSize, FetchBlocked, USER_AGENT, RATE_LIMIT, youtubeId, github } from '../src/links.ts';
-import { office, me, send, cleanups } from './office.ts';
+import { office, me, send, cleanups, until } from './office.ts';
 
 // ------------------------------------------------------------------ a local web server
 
@@ -384,6 +384,45 @@ test('paths on the office share: a card with the path, its type and Open folder 
   assert.equal(folder.meta.find((x) => x.key === 'path')?.value, '\\\\fileserver\\Projects\\P-12513\\MTO\\');
   const local = await priya.request('links.preview', { url: 'D:\\Jobs\\P-12513\\calc.xlsx' });
   assert.equal(local.meta.find((x) => x.key === 'type')?.value, 'Excel workbook');
+});
+
+test('drive maps: a device publishes only network roots; members read each writer\'s map; guests neither publish nor read', async () => {
+  const { owner, priya, ravi } = await office();
+  // priya's PC: X: and J: are network drives, S: a subst onto X:, C: is local
+  const r = await priya.request('links.drives.set', { drives: [
+    { letter: 'x', root: '\\\\nas01\\Project\\' }, { letter: 'J:', root: '//nas01/Project/Jobs' }, { letter: 'S:', root: 'X:\\Sub' },
+    { letter: 'T:', root: 'C:\\Temp' }, { letter: 'Q:', root: 'not a path' }, { letter: 'bad', root: '\\\\nas01\\x' },
+  ] });
+  assert.equal(r.count, 3);
+  const maps = await ravi.request('links.drives.of', { userIds: [me(priya), me(ravi), 'nobody'] });
+  assert.equal(maps[me(priya)].known, true);
+  assert.deepEqual(maps[me(priya)].drives, [
+    { letter: 'J:', root: '\\\\nas01\\Project\\Jobs' }, { letter: 'S:', root: '\\\\nas01\\Project\\Sub' }, { letter: 'X:', root: '\\\\nas01\\Project' },
+  ], 'local and subst-onto-local drives never reach the hub');
+  assert.deepEqual(maps[me(ravi)], { known: false, drives: [] }, 'a person who never published is unknown');
+  assert.deepEqual(maps.nobody, { known: false, drives: [] });
+  // an empty map is still known: "this PC has no network drives"
+  await ravi.request('links.drives.set', { drives: [] });
+  assert.deepEqual((await priya.request('links.drives.of', { userIds: [me(ravi)] }))[me(ravi)], { known: true, drives: [] });
+  // guests: no publishing, no reading
+  await owner.request('admin.setRole', { userId: me(ravi), role: 'guest' });
+  await assert.rejects(ravi.request('links.drives.of', { userIds: [me(priya)] }), /only shown to members/);
+  await assert.rejects(ravi.request('links.drives.set', { drives: [] }), /Only members/);
+  assert.deepEqual((await priya.request('links.drives.of', { userIds: [me(ravi)] }))[me(ravi)], { known: false, drives: [] }, 'a guest\'s old map is not given out');
+  await assert.rejects(priya.request('links.drives.set', { drives: Array.from({ length: 27 }, (_, i) => ({ letter: 'X:', root: `\\\\s\\${i}` })) }), /up to 26/);
+});
+
+test('drive maps: two devices of one person agree, or the letter is left out', async () => {
+  const { priya, join, owner } = await office();
+  await priya.request('links.drives.set', { drives: [{ letter: 'X:', root: '\\\\nas01\\Project' }, { letter: 'W:', root: '\\\\nas02\\Submissions' }] });
+  // priya's laptop maps W: elsewhere
+  const { c: laptop, identity } = await join('priya');
+  await owner.request('admin.decide', { deviceId: identity.deviceId, approve: true });
+  await until(laptop, (s) => s.kind === 'ready');
+  assert.equal(me(laptop), me(priya));
+  await laptop.request('links.drives.set', { drives: [{ letter: 'x:', root: '\\\\NAS01\\project' }, { letter: 'W:', root: '\\\\nas03\\Archive' }] });
+  const maps = await owner.request('links.drives.of', { userIds: [me(priya)] });
+  assert.deepEqual(maps[me(priya)].drives, [{ letter: 'X:', root: '\\\\nas01\\Project' }]);
 });
 
 // ------------------------------------------------------------------ web cards
