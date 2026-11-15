@@ -18,7 +18,7 @@ try {
   console.log('local zone', tz);
   // a meeting set at 10:00 Dubai time
   await page.getByRole('button', { name: 'New meeting' }).click();
-  await page.getByLabel('Title').fill('Client call: Dubai site');
+  await page.getByLabel('Title', { exact: true }).fill('Client call: Dubai site');
   await page.getByLabel('Time zone').selectOption('Asia/Dubai');
   const day = new Date(Date.now() + 2 * 86400_000); const ymd = day.toISOString().slice(0, 10);
   await page.getByLabel('Starts').fill(`${ymd}T10:00`);

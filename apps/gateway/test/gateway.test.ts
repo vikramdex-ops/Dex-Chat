@@ -1,7 +1,11 @@
 // The gateway Worker in Cloudflare's local runtime (wrangler dev, as the hub's remote tests run
-// it), with a scripted hub on the other side: the guest meeting page and its assets, guest sockets
-// relayed to the hub as guest frames and back, wrong passcodes counted per address in the Durable
-// Object, connection limits, and guests dropped when the hub goes.
+// it), with a scripted hub on the other side: Dexterity Meet's pages (the landing shell holds no
+// meeting data, strict headers, assets by content, old /m/ links redirected, the meeting site's
+// address taking over from the gateway's), the page's questions (only allowed fields pass, one
+// answer for nothing-here, limits per address, wrong passcodes counted with the socket's), guest
+// sockets relayed to the hub as guest frames and back, connection limits, and guests dropped when
+// the hub goes. Requests carry a CF-Connecting-IP of their own (the local runtime keeps it), so
+// each test's limits are its own.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto, { X509Certificate } from 'node:crypto';
@@ -49,11 +53,11 @@ before(async () => {
 after(async () => { await stop(); fs.rmSync(persist, { recursive: true, force: true }); fs.rmSync(homeHubDir, { recursive: true, force: true }); });
 
 /** A hub as the gateway sees it: signs the challenge with its certificate's key, then talks control frames. */
-async function fakeHub(hubId: string, keep?: string) {
+async function fakeHub(hubId: string, keep?: string, ip?: string) {
   const dir = keep ?? fs.mkdtempSync(path.join(os.tmpdir(), 'dexgw-hub-'));
   const tls = loadOrCreateCertificate(dir, `Test hub ${hubId}`);
   const x = new X509Certificate(tls.cert);
-  const ws = new WebSocket(`ws://${base}/hub/${hubId}`);
+  const ws = new WebSocket(`ws://${base}/hub/${hubId}`, ip ? { headers: { 'cf-connecting-ip': ip } } : undefined);
   const inbox: Array<Record<string, unknown>> = [];
   const waiters: Array<() => void> = [];
   ws.on('message', (raw, binary) => {
@@ -80,8 +84,8 @@ async function fakeHub(hubId: string, keep?: string) {
   return { ws, next, send: (m: unknown) => ws.send(JSON.stringify(m)), close: () => { ws.close(); if (!keep) fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 
-function guest(meetingId: string) {
-  const ws = new WebSocket(`ws://${base}/m/${meetingId}/ws`);
+function guest(meetingId: string, ip?: string) {
+  const ws = new WebSocket(`ws://${base}/api/m/${meetingId}/ws`, ip ? { headers: { 'cf-connecting-ip': ip } } : undefined);
   const got: string[] = [];
   ws.on('message', (d) => got.push(d.toString()));
   const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: reason.toString() })));
@@ -89,34 +93,57 @@ function guest(meetingId: string) {
   return { ws, got, closed, opened };
 }
 
-test('the guest page: served for a meeting ID, strict headers, its own script and styles', async (t) => {
+const get = (p: string, ip = '192.0.2.1', init: RequestInit = {}) => fetch(`http://${base}${p}`, { redirect: 'manual', ...init, headers: { 'cf-connecting-ip': ip, ...(init.headers as Record<string, string> | undefined) } });
+
+test('the meeting page: one small shell for every meeting, strict headers, assets by content, canonical addresses', async (t) => {
   if (skip) { t.skip(skip); return; }
-  const page = await fetch(`http://${base}/m/482913207`);
-  assert.equal(page.status, 200);
-  assert.match(page.headers.get('content-type')!, /text\/html/);
-  const csp = page.headers.get('content-security-policy')!;
-  assert.match(csp, /script-src 'self'/);
-  assert.match(csp, /frame-ancestors 'none'/);
-  assert.doesNotMatch(csp, /unsafe-inline/);
-  assert.equal(page.headers.get('x-frame-options'), 'DENY');
-  assert.match(page.headers.get('permissions-policy')!, /camera=\(self\)/);
-  const html = await page.text();
-  assert.match(html, /data-meeting="482913207"/);
-  assert.match(html, /<title>Meeting 482-913-207/);
-  assert.match(html, /src="\/guest\/app\.js"/);
-  const js = await fetch(`http://${base}/guest/app.js`);
-  assert.equal(js.status, 200);
-  assert.match(js.headers.get('content-type')!, /javascript/);
-  const code = await js.text();
-  assert.ok(code.length > 5000 && /RTCPeerConnection/.test(code));
-  const css = await fetch(`http://${base}/guest/app.css`);
-  assert.match(css.headers.get('content-type')!, /text\/css/);
-  // not a meeting ID: nothing
-  assert.equal((await fetch(`http://${base}/m/012345678`)).status, 404);
-  assert.equal((await fetch(`http://${base}/m/48291320`)).status, 404);
-  assert.equal((await fetch(`http://${base}/m/482913207/other`)).status, 404);
-  assert.equal((await fetch(`http://${base}/m/482913207`, { method: 'POST' })).status, 405);
-  assert.equal((await fetch(`http://${base}/m/482913207/ws`)).status, 426);
+  for (const p of ['/482-913-207', '/p12-design-review']) {
+    const page = await get(p);
+    assert.equal(page.status, 200, p);
+    assert.match(page.headers.get('content-type')!, /text\/html/);
+    const csp = page.headers.get('content-security-policy')!;
+    for (const want of ["default-src 'none'", "script-src 'self'", "style-src 'self'", "font-src 'self'", `connect-src 'self' ws://${base}`, "frame-ancestors 'none'", "base-uri 'none'"]) assert.ok(csp.includes(want), want);
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|https?:\/\/(?!127)/);
+    assert.equal(page.headers.get('x-frame-options'), 'DENY');
+    assert.equal(page.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
+    assert.match(page.headers.get('strict-transport-security')!, /max-age=31536000/);
+    assert.equal(page.headers.get('cache-control'), 'no-store');
+    assert.match(page.headers.get('permissions-policy')!, /camera=\(self\), microphone=\(self\)/);
+    assert.match(page.headers.get('permissions-policy')!, /geolocation=\(\)/);
+    const html = await page.text();
+    assert.match(html, new RegExp(`data-ref="${p.slice(1)}"`));
+    // no meeting data in the shell, and nothing from anywhere else
+    assert.match(html, /<title>Dexterity Meet<\/title>/);
+    assert.doesNotMatch(html, /<script>|style="|https?:\/\//);
+    const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
+    assert.ok(assets.length >= 4, assets.join(' '));
+    for (const m of html.matchAll(/data-room-(?:js|css)="([^"]+)"/g)) assets.push(m[1]);
+    for (const a of assets) {
+      const r = await get(a);
+      assert.equal(r.status, 200, a);
+      assert.match(r.headers.get('cache-control')!, /max-age=31536000, immutable/);
+      assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+    }
+    const js = await (await get(assets.find((a) => /landing\.[0-9a-f]+\.js$/.test(a))!)).text();
+    assert.ok(js.length < 60_000, `the landing script is small (${js.length})`);
+    assert.doesNotMatch(js, /RTCPeerConnection/, 'the meeting itself loads only on Join');
+    const room = html.match(/data-room-js="([^"]+)"/)![1];
+    assert.match(await (await get(room)).text(), /RTCPeerConnection/);
+  }
+  // one address per meeting: dashes, lower case
+  assert.equal((await get('/482913207')).headers.get('location'), `http://${base}/482-913-207`);
+  assert.equal((await get('/P12-Design-Review')).headers.get('location'), `http://${base}/p12-design-review`);
+  assert.equal((await get('/p12-design-review/')).headers.get('location'), `http://${base}/p12-design-review`);
+  // old links: /m/<ID> to the clean page (the browser keeps the #passcode)
+  const old = await get('/m/482913207');
+  assert.equal(old.status, 301);
+  assert.equal(old.headers.get('location'), `http://${base}/482-913-207`);
+  // not a meeting address: nothing
+  for (const p of ['/012345678', '/admin', '/api', '/ab', '/a'.repeat(70), '/x/y', '/assets/nothing.js', '/m/48291320', '/vikr%D0%B0m']) assert.equal((await get(p)).status, 404, p);
+  assert.equal((await get('/482-913-207', '192.0.2.1', { method: 'POST' })).status, 405);
+  assert.equal((await get('/api/m/482913207/ws')).status, 426);
+  assert.equal((await get('/api/m/p12-review/ws')).status, 404, 'sockets are by meeting ID only');
 });
 
 test('webinar pages: registration, watch and survey pages; requests answered by the hub; the honeypot, form limits and registrations per address', async (t) => {
@@ -130,11 +157,14 @@ test('webinar pages: registration, watch and survey pages; requests answered by 
     assert.match(page.headers.get('permissions-policy')!, /camera=\(\)/, 'a watch page never asks for the camera');
     const html = await page.text();
     assert.match(html, new RegExp(`data-webinar="482913207" data-mode="${mode}"`));
-    assert.match(html, /src="\/webinar\/app\.js"/);
+    assert.match(html, /src="\/assets\/webinar\.[0-9a-f]+\.js"/);
   }
-  const js = await (await fetch(`http://${base}/webinar/app.js`)).text();
+  const html = await (await fetch(`http://${base}/w/482913207`)).text();
+  const js = await (await fetch(`http://${base}${html.match(/src="([^"]+)"/)![1]}`)).text();
   assert.ok(js.length > 5000 && /RTCPeerConnection/.test(js) && /register/.test(js));
-  assert.match((await fetch(`http://${base}/webinar/app.css`)).headers.get('content-type')!, /text\/css/);
+  assert.match((await fetch(`http://${base}${html.match(/href="(\/assets\/webinar[^"]+\.css)"/)![1]}`)).headers.get('content-type')!, /text\/css/);
+  // a webinar can have a name too
+  assert.match(await (await fetch(`http://${base}/w/pump-skid-webinar`)).text(), /data-webinar="pump-skid-webinar" data-mode="register"/);
   assert.equal((await fetch(`http://${base}/w/012345678`)).status, 404);
   assert.equal((await fetch(`http://${base}/w/482913207/other`)).status, 404);
   assert.equal((await fetch(`http://${base}/w/482913207/ws`)).status, 426);
@@ -237,6 +267,69 @@ test('calendar feeds: /cal/<token>.ics asked of the hub as a cal frame, answered
   hub.close();
 });
 
+test('a page\'s questions: passed to the hub as page.info and page.check, only allowed fields come back, limits per address', async (t) => {
+  if (skip) { t.skip(skip); return; }
+  const ip = '198.51.100.40';
+  const hub = await fakeHub('a1b2c3d4e5f60718', homeHubDir);
+  // before the passcode: what the hub allows, and nothing else even if the hub sent more
+  const info = get('/api/m/p12-design-review', ip);
+  const ask = await hub.next('w', (m) => m.op === 'page.info');
+  assert.equal(ask.m, 'p12-design-review');
+  assert.equal(ask.ip, ip);
+  hub.send({ t: 'w-res', r: ask.r, s: 200, d: JSON.stringify({ found: true, id: '482913207', ref: 'p12-design-review', kind: 'scheduled', org: 'Dexterity Design Services', title: null, host: null, startAt: 1, endAt: 2, zone: 'Asia/Kolkata', repeats: false, state: 'upcoming', liveSince: null, opensAt: 0, attendees: ['Ravi'], hostEmail: 'priya@dexteritydesign.co.in', hubAddress: '192.168.1.20:47900', passcode: 'Hx7kP2qR' }) });
+  const got = await info;
+  assert.equal(got.status, 200);
+  assert.equal(got.headers.get('cache-control'), 'no-store');
+  assert.equal(got.headers.get('x-frame-options'), 'DENY');
+  const body = await got.json() as Record<string, unknown>;
+  assert.deepEqual(Object.keys(body).sort(), ['endAt', 'found', 'host', 'id', 'kind', 'liveSince', 'opensAt', 'org', 'ref', 'repeats', 'startAt', 'state', 'title', 'zone']);
+  for (const leak of ['Ravi', 'priya@', '192.168', 'Hx7kP2qR']) assert.ok(!JSON.stringify(body).includes(leak), leak);
+  // nothing here: one answer, and too many of them from one address are turned away
+  for (let i = 0; i < 30; i++) {
+    const r = get(`/api/m/nothing-${i}`, ip);
+    const a = await hub.next('w', (m) => m.op === 'page.info');
+    hub.send({ t: 'w-res', r: a.r, s: 404, d: JSON.stringify({ found: false, why: 'cancelled' }) });
+    const res = await r;
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), { found: false });
+  }
+  const many = await get('/api/m/one-more', ip);
+  assert.equal(many.status, 429);
+  await assert.rejects(hub.next('w', (m) => m.op === 'page.info', 800), /no w/);
+
+  // the passcode: in a POST body, as JSON; the hub's answer filtered too
+  const ip2 = '198.51.100.41';
+  const post = (body: string, type = 'application/json', who = ip2) => get('/api/m/p12-design-review/check', who, { method: 'POST', headers: { 'content-type': type }, body });
+  assert.equal((await get('/api/m/p12-design-review/check', ip2)).status, 405);
+  assert.equal((await post('passcode=Hx7kP2qR', 'application/x-www-form-urlencoded')).status, 415);
+  assert.equal((await post('x'.repeat(2000))).status, 413);
+  const ok = post(JSON.stringify({ passcode: 'Hx7kP2qR' }));
+  const c1 = await hub.next('w', (m) => m.op === 'page.check');
+  assert.deepEqual(c1.b, { passcode: 'Hx7kP2qR' });
+  hub.send({ t: 'w-res', r: c1.r, s: 200, d: JSON.stringify({ ok: true, id: '482913207', ref: 'p12-design-review', kind: 'scheduled', org: 'Dexterity Design Services', title: 'P-12 design review', host: 'Priya', startAt: 1, endAt: 2, zone: 'Asia/Kolkata', repeats: true, recurrence: 'weekly', state: 'upcoming', liveSince: null, opensAt: 0, next: { startAt: 3, endAt: 4, organizer: 'x' }, followUp: 'Minutes by Friday', attendees: ['Ravi'] }) });
+  const okBody = await (await ok).json() as Record<string, unknown>;
+  assert.equal(okBody.title, 'P-12 design review');
+  assert.deepEqual(okBody.next, { startAt: 3, endAt: 4 });
+  assert.ok(!('attendees' in okBody));
+  // wrong passcodes count per address, with the socket's: the fifth locks this address out
+  for (let i = 0; i < 4; i++) {
+    const w = post(JSON.stringify({ passcode: `Wrong${i}xx` }));
+    const a = await hub.next('w', (m) => m.op === 'page.check');
+    hub.send({ t: 'w-res', r: a.r, s: 403, d: JSON.stringify({ error: 'That passcode does not open a meeting at this address. Check the invitation.' }) });
+    assert.equal((await w).status, 403);
+  }
+  // a passcode that cannot be one is refused here, and counts
+  assert.equal((await post(JSON.stringify({ passcode: '<script>' }))).status, 403);
+  const locked = await post(JSON.stringify({ passcode: 'Hx7kP2qR' }));
+  assert.equal(locked.status, 429);
+  assert.match((await locked.json() as { error: string }).error, /wrong passcodes/);
+  await assert.rejects(hub.next('w', (m) => m.op === 'page.check', 800), /no w/);
+  // and the meeting socket from that address is refused too
+  const g = guest('482913207', ip2);
+  assert.equal((await g.closed).code, 4429);
+  hub.close();
+});
+
 test('guest frames: relayed to the hub and back; passcodes refused by the hub count per address; the hub leaving drops guests', async (t) => {
   if (skip) { t.skip(skip); return; }
   // before any hub has connected, meeting sockets have nowhere to go
@@ -312,4 +405,36 @@ test('connections are limited per address; a second hub cannot take over the mee
     if (code === 4429) refused++;
   }
   assert.ok(refused >= 4, `refused ${refused}`);
+});
+
+test('the meeting site: once the hub names it, pages live only there; the gateway\'s own address redirects and answers no questions', async (t) => {
+  if (skip) { t.skip(skip); return; }
+  const port = base.split(':')[1];
+  const site = `http://localhost:${port}`;
+  const hub = await fakeHub('a1b2c3d4e5f60718', homeHubDir, '192.0.2.60');
+  hub.send({ t: 'site', url: site });
+  await new Promise((r) => setTimeout(r, 400));
+  // the gateway's own address (127.0.0.1 here): pages and old links go to the site
+  const r1 = await get('/482-913-207', '192.0.2.50');
+  assert.equal(r1.status, 301);
+  assert.equal(r1.headers.get('location'), `${site}/482-913-207`);
+  assert.equal((await get('/m/482913207', '192.0.2.50')).headers.get('location'), `${site}/482-913-207`);
+  assert.equal((await get('/w/482913207/watch', '192.0.2.50')).headers.get('location'), `${site}/w/482913207/watch`);
+  assert.equal((await get('/api/m/482-913-207', '192.0.2.50')).status, 404, 'no meeting questions on the gateway\'s address');
+  // the site's address: served, and its CSP names only the site
+  const page = await fetch(`${site}/482-913-207`, { redirect: 'manual' });
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-security-policy')!, new RegExp(`connect-src 'self' ws://localhost:${port};`));
+  assert.match(await (await fetch(`${site}/`)).text(), /data-ref=""/, 'the site\'s front page');
+  // another hub cannot move the site
+  const other = await fakeHub('ffeeddccbbaa9977', undefined, '192.0.2.61');
+  other.send({ t: 'site', url: 'https://evil.example' });
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal((await get('/482-913-207', '192.0.2.50')).headers.get('location'), `${site}/482-913-207`);
+  other.close();
+  // the hub clears it: the gateway serves the pages again
+  hub.send({ t: 'site', url: null });
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal((await get('/482-913-207', '192.0.2.50')).status, 200);
+  hub.close();
 });

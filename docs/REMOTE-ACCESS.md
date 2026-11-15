@@ -47,8 +47,10 @@ and how to set it up.
 | Gateway `/hub/<id>` | Anyone on the internet | Only a connection that signs a fresh challenge with the hub certificate's key is accepted. With `HUB_FINGERPRINT` set, it must be *this* hub's certificate. Otherwise the first hub is remembered and any other hub is refused. At most 4 hub connections. |
 | Gateway `/c/<id>` | Anyone on the internet | Refused unless the hub is connected. Binary frames only, at most 1 MiB each. 40 connections a minute per address, 600 devices at once. The first frame must be a valid handshake, or the hub closes it. |
 | Gateway `/join`, `/health` | Anyone | Static pages, strict headers, no data. |
-| Gateway `/m/<meeting ID>` | Anyone | The guest meeting page and its script and styles: static, served from the Worker, with a strict content security policy (nothing loads from anywhere else). |
-| Gateway `/m/<meeting ID>/ws` | Anyone with a guest link | Refused unless the hub is connected. JSON frames only, at most 64 KiB each and 400 per 10 seconds. 20 connections a minute and 5 wrong passcodes per 10 minutes per address (kept in the Durable Object's storage), 300 guests at once. The hub checks the passcode (and limits wrong ones again, 10 per 10 minutes per address); a guest only ever reaches the meeting's lobby. |
+| Meeting site `/<meeting ID or name>`, `/assets/*` | Anyone | Dexterity Meet's landing page: one shell with no meeting data, its script, styles and fonts named by content, a strict content security policy (nothing loads from anywhere else, `connect-src` only the site). Served on the meeting site's address (the Pages project passes requests to the gateway through a service binding), or on the gateway's own address until a site is set. See [DEXTERITY-MEET.md](DEXTERITY-MEET.md). |
+| Meeting site `/api/m/<ref>`, `/api/m/<ref>/check` | Anyone | What a page may show before a passcode (date, time, the office; the title and the host's first name when allowed), and the passcode check (POST body). Only an allowlist of fields passes the gateway; unknown, ended, cancelled and switched-off meetings get one answer. 60 questions a minute and 30 names that lead nowhere per 10 minutes per address, 240 a minute per meeting; wrong passcodes count with the socket's (5 per 10 minutes per address). Not answered on the gateway's own address once a site is set. |
+| Gateway `/m/<meeting ID>` | Anyone | Old guest links: redirected to the meeting's page on the meeting site (the browser keeps the `#passcode`). |
+| Meeting site `/api/m/<meeting ID>/ws` (and the old gateway `/m/<meeting ID>/ws`) | Anyone with a guest link | Refused unless the hub is connected. JSON frames only, at most 64 KiB each and 400 per 10 seconds. 20 connections a minute and 5 wrong passcodes per 10 minutes per address (kept in the Durable Object's storage), 300 guests at once. The hub checks the passcode (and limits wrong ones again, 10 per 10 minutes per address); a guest only ever reaches the meeting's lobby. |
 | Gateway `/w/<webinar ID>`, `/w/<ID>/watch`, `/w/<ID>/survey` | Anyone | The webinar's registration, watch and survey pages and their script and styles: static, from the Worker, the same strict content security policy; they ask for no camera or microphone. |
 | Gateway `/w/<ID>/info`, `/register`, `/survey-info`, `/answers` | Anyone | Answered by the hub over its own connection (10 seconds at most, else a plain error). JSON of at most 16 KiB. A form with the hidden honeypot field filled is thanked and dropped. 60 requests a minute per address; 5 registrations an hour per address and 300 an hour in all (kept in the Durable Object's storage); 10 survey answers an hour per address. The hub checks everything again: the webinar's cap and whether registration is open, valid answers, one registration per email (a duplicate never learns the link), 10 registrations an hour per address. |
 | Gateway `/cal/<token>.ics` | Anyone with a person's calendar address | GET and HEAD only. Refused unless the hub is connected. 30 requests a minute per address at the gateway. The hub checks the token (43 random characters, kept only as a SHA-256 hash), turns a network away for an hour after 30 wrong addresses, and answers with that person's feed as `text/calendar` (at most 250,000 characters). A reset or an offboarding stops the old address at once. |
@@ -71,8 +73,10 @@ meeting links in it. On the office network the same feed comes straight from the
 ## Guests in meetings (browser, no install)
 
 A meeting's hosts can give people outside the office a **guest link**, for example
-`https://dexconnect-gateway.example.workers.dev/m/482913207#Hx7kP2qR`. It opens a small page served by
-the gateway: the guest enters their name, checks their camera and microphone, and waits in the
+`https://dexterity-meet.pages.dev/p12-design-review#Hx7kP2qR`: the meeting's page on the office's
+meeting site (Dexterity Meet, [DEXTERITY-MEET.md](DEXTERITY-MEET.md)), which the gateway serves
+through the Pages project's service binding. Old links, `https://<gateway>/m/<ID>#<passcode>`,
+redirect there. The page: the guest enters their name, checks their camera and microphone, and waits in the
 lobby until a host lets them in. Then they see and hear the meeting, share their screen, write in
 the meeting chat, raise a hand and react. Nothing is installed.
 
@@ -184,7 +188,11 @@ Things that remain the office's responsibility:
 4. **Turn it on.** In the app, **Control room → Outside the office**:
    - paste the address;
    - **Save address**;
-   - switch on **Allow access from outside the office**.
+   - switch on **Allow access from outside the office**;
+   - under **Meeting site · Dexterity Meet**, paste the meeting site's address (the deploy prints
+     it, `https://dexterity-meet.pages.dev`) and **Save address**. The script and the workflow
+     deploy the site together with the gateway; the token also needs **Cloudflare Pages · Edit**
+     ([DEXTERITY-MEET.md](DEXTERITY-MEET.md), section 1).
 
    The status turns green within seconds.
 5. **Pin the gateway to the hub (recommended).** Copy the **Fingerprint** shown on the same page into a

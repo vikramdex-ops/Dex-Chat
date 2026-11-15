@@ -19,7 +19,7 @@ import crypto from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   EMAIL_RE, HANDOUTS_MAX, MEETING_REACTIONS, REG_TOKEN_RE, WEBINAR_ANSWER_MAX, WEBINAR_AUDIENCE_MAX, WEBINAR_DIRECT_VIEWERS, WEBINAR_MAX_PANELISTS,
-  WEBINAR_QUESTION_MAX, WEBINAR_REGISTRATION_MAX, checkAnswers, cleanEmail, cleanFields, cleanName, isWebGuest, passcodeFrom, ulid,
+  WEBINAR_QUESTION_MAX, WEBINAR_REGISTRATION_MAX, checkAnswers, cleanEmail, formatMeetingId, cleanFields, cleanName, isWebGuest, passcodeFrom, ulid,
   webinarFollowUp, webinarFollowUpMessage, webinarInvitation, webinarRegisterUrl, webinarSurveyUrl, webinarWatchUrl,
 } from '@dex/core';
 import type {
@@ -140,6 +140,8 @@ export interface WebinarHost {
   relayClose(roomId: string): void;
   /** The gateway's address when outside access is on. */
   gateway(): string | null;
+  /** The webinar's name on the meeting site, if its organiser gave it one (its pages are then /w/<name>). */
+  pageRef?(meetingId: string): string | null;
   office(): string;
   /** A Direct message from the system bot. */
   tell(userId: string, text: string, key: string): void;
@@ -311,7 +313,7 @@ export class Webinars {
       meetingId: m.id, title: m.title, description: row.description, startsAt: row.starts_at, durationMin: row.duration_min, hostId: m.hostId, coHosts: [...m.coHosts],
       panelists: this.panelists(m), convId: m.convId, settings: s, fields: this.fields(row), survey: this.survey(row), state: row.state,
       wentLiveAt: row.went_live_at, endedAt: row.ended_at, roomId: row.room_id, registrants: this.counts(m.id),
-      registerUrl: gw ? webinarRegisterUrl(gw, m.id) : null,
+      registerUrl: gw ? webinarRegisterUrl(gw, this.host.pageRef?.(m.id) ?? m.id) : null,
       problem: !gw ? 'People outside the office register through the internet gateway, which is not on (Control room ▸ Outside the office).' : !s.registrationOpen ? 'Registration is closed.' : null,
       stream: { url: row.stream_url, keyHint: row.stream_key ? `••••${row.stream_key.slice(-4)}` : null, watchUrl: row.watch_url },
       followUpAt: row.followup_at, role: this.role(m, me.id),
@@ -852,7 +854,7 @@ export class Webinars {
     const code = passcodeFrom(crypto.randomBytes(48), 10);
     w.passes.set(code, { name: v.name, registrantId: v.registrantId, voter: v.voter, expires: Date.now() + 120_000 });
     this.leaveDevice(v.deviceId);
-    return { t: 'speak', url: `/m/${id}#${code}` };
+    return { t: 'speak', url: `/${formatMeetingId(id)}#${code}` };
   }
 
   /** meet-guests.ts: a meeting-page join with a speaker's pass (used once, within two minutes). */
@@ -1198,7 +1200,7 @@ export class Webinars {
     return {
       meetingId: m.id, title: m.title, description: row.description, startsAt: row.starts_at, durationMin: row.duration_min,
       organizer: { id: m.hostId, name: org?.displayName ?? 'The organiser', email: org?.profile.email ?? null }, office: this.host.office(),
-      when: text(when, 120) || new Date(row.starts_at).toUTCString(), registerUrl: this.host.gateway() ? webinarRegisterUrl(this.host.gateway()!, m.id) : null,
+      when: text(when, 120) || new Date(row.starts_at).toUTCString(), registerUrl: this.host.gateway() ? webinarRegisterUrl(this.host.gateway()!, this.host.pageRef?.(m.id) ?? m.id) : null,
     };
   }
 

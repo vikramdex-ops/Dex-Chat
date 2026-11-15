@@ -52,6 +52,8 @@ export interface FeedHost {
   gateway: () => string | null;
   /** The meeting a Calendar event held as a call takes place in (made the first time). */
   meetingFor: (organizer: PublicUser, eventId: string) => string | null;
+  /** The meeting's page on the office's meeting site (no passcode), or null when there is none. */
+  pageUrl?: (meetingId: string) => string | null;
   venueName: (id: string) => string | null;
   audit: (actor: string | null, action: string, target: string | null, detail?: unknown) => void;
 }
@@ -177,16 +179,19 @@ export class CalendarFeeds {
       const organizer = person(r.organizer_id);
       let link: string | null = null;
       let id: string | null = null;
+      let page: string | null = null;
       if (r.online && !r.cancelled && organizer) {
         try { id = this.h.meetingFor(organizer, r.id); } catch { id = null; }
-        if (id) link = meetingLink(id);
+        if (id) { link = meetingLink(id); page = this.h.pageUrl?.(id) ?? null; }
       }
       const venue = r.venue_id ? this.h.venueName(r.venue_id) : null;
       const where = [venue, r.location].filter((x): x is string => !!x?.trim());
-      if (link) where.push('Dexterity Connect');
+      // the meeting's clean page opens in any calendar app and offers "Open in Dexterity Connect";
+      // the passcode is never in a feed (Google or Outlook keep a copy of it)
+      if (page) where.push(page); else if (link) where.push('Dexterity Connect');
       const description = [
         r.description?.trim() ?? '',
-        link && id ? `Join in Dexterity Connect: ${link}\nMeeting ID: ${formatMeetingId(id)}` : '',
+        link && id ? `${page ? `Meeting page: ${page}\n` : ''}Join in Dexterity Connect: ${link}\nMeeting ID: ${formatMeetingId(id)}` : '',
         organizer && organizer.id !== user.id ? `Organised by ${organizer.displayName}` : '',
       ].filter(Boolean).join('\n\n');
       events.push({
@@ -199,7 +204,7 @@ export class CalendarFeeds {
         until: r.recurrence === 'none' ? null : r.until_at,
         description: description || null,
         location: [...new Set(where)].join(' · ') || null,
-        url: link,
+        url: page ?? link,
         organizer: { name: organizer?.displayName ?? 'Former colleague', email: organizer?.profile.email ?? null, id: r.organizer_id },
         sequence: r.seq ?? 0,
         modifiedAt: r.updated_at ?? r.created_at,

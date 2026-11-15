@@ -14,6 +14,8 @@ export interface Invitation {
   meetingId: string;
   /** The browser link for guests (with the passcode after #), or null when guests cannot join. */
   guestUrl: string | null;
+  /** The meeting's page on the office's meeting site without the passcode (shown as the place). */
+  pageUrl?: string | null;
   passcode: string | null;
   /** The app link for colleagues (dexconnect://meet/…). */
   appLink: string;
@@ -101,7 +103,9 @@ export function buildIcs(inv: Invitation, when: string): string {
     `SEQUENCE:${Math.max(0, Math.floor(inv.sequence ?? 0))}`,
     `SUMMARY:${icsText(inv.title)}`,
     `DESCRIPTION:${icsText(inv.text ?? invitationText(inv, when))}`,
-    `LOCATION:${icsText(inv.location?.trim() || inv.guestUrl || inv.appLink)}`,
+    // the place shows in calendars (and on shared screens): the clean page without the passcode;
+    // URL, the one-click link, carries it in its #fragment, which no server receives
+    `LOCATION:${icsText([inv.location?.trim(), inv.pageUrl || inv.guestUrl || inv.appLink].filter(Boolean).join(' · '))}`,
     ...(inv.guestUrl ? [`URL:${inv.guestUrl}`] : []),
     organizerLine(inv.organizer, inv.office),
     'STATUS:CONFIRMED',

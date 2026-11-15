@@ -1,69 +1,9 @@
-/* The guest meeting page, in Dexterity Connect's drafting-sheet language: a ruled sheet on the
-   drafting grid, a title block of ruled cells, mono captions, people as tiles in zones (A1, B1 …).
-   Teal for structure and actions, amber only for what needs the guest. Light and dark follow the
-   system. System fonts only: the page loads nothing from anywhere else. */
-:root {
-  color-scheme: light dark;
-  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-body: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, ui-monospace, 'SF Mono', monospace;
-  --window: #eef3f3;
-  --layer: #ffffff;
-  --layer-2: #f6f9f9;
-  --subtle: rgba(19, 43, 46, .045);
-  --subtle-2: rgba(19, 43, 46, .08);
-  --stroke: rgba(19, 43, 46, .1);
-  --stroke-strong: rgba(19, 43, 46, .2);
-  --text: #15191b;
-  --text-2: #43585b;
-  --text-3: #56696c;
-  --accent: #1c7680;
-  --accent-hover: #1e6066;
-  --accent-text: #ffffff;
-  --accent-soft: rgba(42, 140, 152, .12);
-  --accent-ink: #1e6066;
-  --amber: #f7af44;
-  --amber-soft: rgba(247, 175, 68, .2);
-  --amber-ink: #7a4a00;
-  --danger: #b23628;
-  --tile: #172729;
-  --cap: #172729;
-  --cap-text: #e8f2f3;
-  --radius: 8px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --window: #0f1d1f;
-    --layer: #172729;
-    --layer-2: #1b2f32;
-    --subtle: rgba(232, 242, 243, .05);
-    --subtle-2: rgba(232, 242, 243, .09);
-    --stroke: rgba(232, 242, 243, .1);
-    --stroke-strong: rgba(232, 242, 243, .2);
-    --text: #e8f2f3;
-    --text-2: #b0c5c8;
-    --text-3: #99b0b3;
-    --accent: #47b0a4;
-    --accent-hover: #63c0b5;
-    --accent-text: #0b1a1c;
-    --accent-soft: rgba(71, 176, 164, .16);
-    --accent-ink: #7dd0c4;
-    --amber-soft: rgba(247, 175, 68, .16);
-    --amber-ink: #f7c372;
-    --danger: #f4907f;
-    --tile: #0b1618;
-  }
-}
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
-  margin: 0; font: 15px/1.5 var(--font-body); color: var(--text);
-  background-color: var(--window);
-  background-image:
-    linear-gradient(var(--subtle) 1px, transparent 1px), linear-gradient(90deg, var(--subtle) 1px, transparent 1px),
-    linear-gradient(var(--subtle-2) 1px, transparent 1px), linear-gradient(90deg, var(--subtle-2) 1px, transparent 1px);
-  background-size: 8px 8px, 8px 8px, 40px 40px, 40px 40px;
-}
+/* The webinar pages' sheet: the drawing sheet, its head and title block, steps, fields and the
+   tools, on Dexterity Meet's tokens and fonts (meet/base.css), so registration, watching and the
+   survey look like the meeting pages under the same address. */
+@import '../meet/base.css';
+@import '../meet/parts.css';
+
 h1, h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.01em; margin: 0; }
 h1 { font-size: 26px; line-height: 1.2; }
 .mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: .02em; }
@@ -92,7 +32,7 @@ button:disabled { cursor: default; opacity: .45; }
 }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--stroke-strong); }
 .mark { display: inline-flex; align-items: center; gap: 9px; font: 600 14px/1 var(--font-display); }
-.mark i { width: 18px; height: 18px; border-radius: 30%; background: var(--accent); box-shadow: inset 0 0 0 4px var(--layer), inset 0 0 0 5px var(--accent); }
+.mark i { width: 22px; height: 22px; background: url('../meet/mark.svg') center / contain no-repeat; }
 .sheet-body { padding: 28px 28px 24px; min-height: 360px; }
 .step { display: grid; gap: 10px; align-content: start; }
 .step .lead { margin: 0 0 6px; color: var(--text-2); max-width: 58ch; }

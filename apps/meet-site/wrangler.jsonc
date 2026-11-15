@@ -1,0 +1,12 @@
+{
+  // Dexterity Meet's meeting site: a free Cloudflare Pages project named dexterity-meet, so every
+  // meeting's address is https://dexterity-meet.pages.dev/<ID or name>. It serves the pages' files
+  // (dist/assets, built from apps/gateway/meet) and passes everything else to the office's gateway
+  // Worker through a service binding: browsers never see the Worker's own address.
+  // Deploy (scripts/release/Deploy-Gateway.cmd does both): npm run deploy -w @dex/meet-site
+  "name": "dexterity-meet",
+  "pages_build_output_dir": "dist",
+  "compatibility_date": "2026-10-01",
+  // the gateway Worker (apps/gateway/wrangler.jsonc ▸ name); it must be deployed in the same account first
+  "services": [{ "binding": "GATEWAY", "service": "dexconnect-gateway" }]
+}

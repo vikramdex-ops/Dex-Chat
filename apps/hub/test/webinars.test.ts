@@ -357,8 +357,8 @@ test('invited to speak: from the app (consent, then on the stage) and from a bro
   await g.event('web.promote');
   g.send({ t: 'speak', accept: true });
   const speak = await g.wait((f) => f.t === 'speak', 'speak') as Extract<WebinarDown, { t: 'speak' }>;
-  const m = speak.url.match(/^\/m\/(\d{9})#([A-Za-z0-9]{10})$/)!;
-  assert.equal(m[1], id);
+  const m = speak.url.match(/^\/(\d{3}-\d{3}-\d{3})#([A-Za-z0-9]{10})$/)!;
+  assert.equal(m[1].replace(/-/g, ''), id);
   assert.equal((await g.isClosed()).code, 4000);
   // the meeting page joins with the pass: straight onto the stage, named as registered
   const knock = nextEvent<{ participants: Array<{ userId: string }> }>(priya, 'room.updated', (r) => r.participants.some((p) => p.userId.startsWith('guest:')));

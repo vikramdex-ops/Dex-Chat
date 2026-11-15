@@ -1,2 +1,4 @@
 .wrangler/
 src/guest-assets.gen.ts
+src/site-assets.gen.ts
+.site-out/

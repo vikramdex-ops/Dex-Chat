@@ -74,6 +74,7 @@ export function RemoteAdmin() {
           <p className="warn-note"><Icon name="warning" size={14} /><span>Recommended: pin the gateway to this hub so nothing else can take its place. Run <span className="mono">npx wrangler secret put HUB_FINGERPRINT</span> in <span className="mono">apps/gateway</span> and paste the fingerprint below.</span></p>
         )}
       </section>
+      <MeetSite v={v} save={save} />
       <section className="card">
         <div className="eyebrow">Who may use it</div>
         <div className="setting">
@@ -92,6 +93,35 @@ export function RemoteAdmin() {
         <div className="kv"><span>Fingerprint</span><span className="mono selectable" style={{ wordBreak: 'break-all' }}>{v.fingerprint}</span></div>
       </section>
     </div>
+  );
+}
+
+/**
+ * Control room ▸ Outside the office ▸ Meeting site: the clean address of every meeting's page
+ * (Dexterity Meet), https://dexterity-meet.pages.dev by default or the office's own domain later.
+ * It is configuration, not code: changing it here moves new links at once, and old ones redirect.
+ */
+function MeetSite({ v, save }: { v: RemoteView; save: (patch: Ops['admin.remote.set']['req']) => void }) {
+  const [site, setSite] = useState(v.config.siteUrl ?? '');
+  const [org, setOrg] = useState(v.config.orgName ?? '');
+  const base = (v.config.siteUrl || v.config.url || '').replace(/\/+$/, '');
+  return (
+    <section className="card meet-site-card">
+      <div className="eyebrow">Meeting site · Dexterity Meet</div>
+      <p className="muted" style={{ marginTop: 0 }}>Every meeting has a page guests open from their invitation, at a clean address such as <span className="mono">{base ? `${base.replace(/^https?:\/\//, '')}/482-913-207` : 'dexterity-meet.pages.dev/482-913-207'}</span> or a name its host chose. The site passes everything to the gateway, so guests never see the gateway's own address. Deploy it with <span className="mono">Deploy-Gateway.cmd</span>, which prints the address to paste here.</p>
+      <label htmlFor="meet-site" className="field-label">Meeting site address</label>
+      <div className="gw-url-row">
+        <input id="meet-site" className="input mono" placeholder="https://dexterity-meet.pages.dev" value={site} onChange={(e) => setSite(e.target.value)} />
+        <button className="btn" disabled={site.trim().replace(/\/+$/, '') === (v.config.siteUrl ?? '')} onClick={() => save({ siteUrl: site.trim() || null })}>Save address</button>
+      </div>
+      <p className="faint site-note">{v.config.siteUrl ? 'Links made from now on use this address. Older links on the gateway\'s address and /m/ links are sent here.' : 'Empty: meeting pages are served on the gateway\'s own address until the site is set up.'} Your own domain later (for example meet.dexteritydesign.co.in): add it to the Pages project under Custom domains, then enter it here.</p>
+      <label htmlFor="meet-org" className="field-label site-label">Name on meeting pages</label>
+      <div className="gw-url-row">
+        <input id="meet-org" className="input" maxLength={80} placeholder="Dexterity Design Services" value={org} onChange={(e) => setOrg(e.target.value)} />
+        <button className="btn" disabled={org.trim() === (v.config.orgName ?? '')} onClick={() => save({ orgName: org.trim() })}>Save name</button>
+      </div>
+      <p className="faint site-note">Before the passcode, a page says only "Meeting with" this name, the date and the time (and the title, if its host allows it).</p>
+    </section>
   );
 }
 

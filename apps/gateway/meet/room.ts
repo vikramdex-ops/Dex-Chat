@@ -1,36 +1,52 @@
-// The page a guest opens from a meeting invitation: https://<gateway>/m/<meeting ID>#<passcode>.
-// Three sheets before the meeting (your name, a camera and mic check, the lobby) and then the
-// meeting itself: everyone's video as tiles with zone captions, a shared screen, the meeting chat,
-// a hand to raise and reactions. Media goes browser to PC (WebRTC, through the office's TURN
-// relay when needed); the signalling goes through this gateway to the office hub. Drawn in the
-// app's drafting-sheet language, in code: no images, fonts or libraries are loaded.
+// The meeting itself, for a guest in a browser: everyone's video as tiles with zone captions, a
+// shared screen, the meeting chat, a hand to raise and reactions. It is loaded only when the guest
+// presses Join on the landing page (landing.ts), which keeps the first load small; the landing page
+// keeps the name, the device check, the lobby, reconnecting and the closing page.
+// Media goes browser to PC (WebRTC, through the office's TURN relay when needed); the signalling
+// goes through the gateway to the office hub. Drawn in the app's drafting-sheet language, in code.
 import { MEETING_REACTIONS } from '@dex/core/protocol';
 import type { GuestDown, GuestRoomView, GuestSeat, RoomChatLine } from '@dex/core/meet';
+import { capName, elapsed, h, icon, initials, tintFor, toast } from './shared.ts';
 
-type Step = 'name' | 'check' | 'connecting' | 'lobby' | 'room' | 'ended';
+type Step = 'connecting' | 'lobby' | 'room' | 'ended';
 interface Link { pc: RTCPeerConnection; polite: boolean; makingOffer: boolean; ignoreOffer: boolean; senders: RTCRtpSender[]; streams: MediaStream[] }
 type Signal = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit | null };
 
-const app = document.getElementById('app') as HTMLElement;
-const meetingId = app.dataset.meeting ?? '';
-const displayId = `${meetingId.slice(0, 3)}-${meetingId.slice(3, 6)}-${meetingId.slice(6)}`;
+/** How the meeting ended for this guest: the landing page words its closing page from it. */
+export type EndKind = 'left' | 'ended' | 'refused' | 'removed' | 'cancelled' | 'passcode' | 'limit' | 'lost' | 'closed';
+export interface RoomEvents {
+  connecting(again: boolean): void;
+  lobby(info: { host: string; title: string }): void;
+  admitted(): void;
+  /** Before the guest is in: something to fix (a missing name). */
+  problem(message: string): void;
+  reconnecting(attempt: number): void;
+  ended(e: { kind: EndKind; reason: string; joinedAt: number | null; at: number }): void;
+  /** A webinar speaker going back to the audience. */
+  demoted(to: string): void;
+}
+export interface RoomStart {
+  mount: HTMLElement;
+  meetingId: string;
+  passcode: string;
+  name: string;
+  local: MediaStream | null;
+  micOn: boolean;
+  camOn: boolean;
+  /** The speakers chosen on the device check (setSinkId), or ''. */
+  speaker: string;
+  on: RoomEvents;
+}
 
-// the passcode comes in the fragment; it is kept for this tab and taken out of the address bar,
-// so it does not show when someone shares their screen
-const PASS_KEY = `dex.guest.pass.${meetingId}`;
-const NAME_KEY = 'dex.guest.name';
-const fromHash = decodeURIComponent(location.hash.slice(1)).trim();
-let passcode = /^[A-Za-z0-9]{6,10}$/.test(fromHash) ? fromHash : '';
-try {
-  if (passcode) sessionStorage.setItem(PASS_KEY, passcode); else passcode = sessionStorage.getItem(PASS_KEY) ?? '';
-} catch { /* storage blocked: keep it in memory */ }
-if (location.hash) history.replaceState(null, '', location.pathname);
-// a webinar attendee the organiser invited to speak comes here from the watch page with a one-time pass
-const SPEAKER = (() => { try { return sessionStorage.getItem(`dex.webinar.speak.${meetingId}`) === '1'; } catch { return false; } })();
+let app: HTMLElement = document.body;
+let meetingId = '';
+let passcode = '';
+let on: RoomEvents | null = null;
+let speaker = '';
 
 const state = {
-  step: 'name' as Step,
-  name: (() => { try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; } })(),
+  step: 'connecting' as Step,
+  name: '',
   local: null as MediaStream | null,
   screen: null as MediaStream | null,
   micOn: true,
@@ -44,206 +60,45 @@ const state = {
   chatOpen: window.innerWidth > 900,
   unread: 0,
   hand: false,
-  lobbyHost: '',
-  lobbyTitle: '',
-  lobbySince: 0,
   ended: '',
+  endKind: null as EndKind | null,
   notice: '',
   askUnmute: '',
+  joinedAt: null as number | null,
+  attempts: 0,
 };
 
-// ------------------------------------------------------------------ small DOM helpers
-type Kid = Node | string | null | false | undefined;
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: Kid[]): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') el.className = String(v);
-    // through the CSS object model: the page's CSP allows no style attributes
-    else if (k === 'style') for (const decl of String(v).split(';')) { const i = decl.indexOf(':'); if (i > 0) el.style.setProperty(decl.slice(0, i).trim(), decl.slice(i + 1).trim()); }
-    else if (v === true) el.setAttribute(k, '');
-    else el.setAttribute(k, String(v));
-  }
-  for (const c of kids) if (c !== null && c !== false && c !== undefined) el.append(c);
-  return el;
-}
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-/** Line icons drawn for this page (1.6 px strokes on a 20 px grid). */
-const ICONS: Record<string, string> = {
-  mic: 'M10 3a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 10 3zM5 9.5a5 5 0 0 0 10 0M10 14.5V17M7 17h6',
-  'mic-off': 'M12.5 8.5v1a2.5 2.5 0 0 1-4.2 1.8M7.5 7V5.5a2.5 2.5 0 0 1 4.6-1.4M5 9.5a5 5 0 0 0 8.4 3.6M15 9.5a5 5 0 0 1-.3 1.6M10 14.5V17M7 17h6M3 3l14 14',
-  cam: 'M3 6h9a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 14H3a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 3 6zM13.5 9l4-2.5v7l-4-2.5',
-  'cam-off': 'M6 6h6a1.5 1.5 0 0 1 1.5 1.5v4M13.5 13.5V12.5M12 14H3a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 3 6M13.5 9l4-2.5v7l-4-2.5M2 2l16 16',
-  screen: 'M2.5 4h15v9h-15zM7 16.5h6M10 13v3.5M7.5 9.5L10 7l2.5 2.5M10 7v4.5',
-  hand: 'M7 10.5V5a1.2 1.2 0 0 1 2.4 0v4.5M9.4 9V3.8a1.2 1.2 0 0 1 2.4 0V9M11.8 9V4.8a1.2 1.2 0 0 1 2.4 0v6.7a5.5 5.5 0 0 1-5.5 5.5h-.3a5 5 0 0 1-4-2l-2.2-3a1.2 1.2 0 0 1 1.9-1.5L7 12',
-  react: 'M10 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zM7 8h.01M13 8h.01M6.8 11.6a4 4 0 0 0 6.4 0',
-  chat: 'M3 4h14v9H8l-4 3.5V13H3z M6 7.5h8M6 10h5',
-  door: 'M4 17V3h8v14M12 4.5l4 1.5v11l-4-1M9.5 10h.01M2 17h16',
-  x: 'M5 5l10 10M15 5L5 15',
-};
-function icon(name: string, size = 18): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 20 20');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('class', 'ico');
-  const p = document.createElementNS(SVG_NS, 'path');
-  p.setAttribute('d', ICONS[name] ?? '');
-  svg.append(p);
-  return svg;
-}
-
-const capName = (n: string) => {
-  const parts = n.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '?';
-  return parts.length > 1 ? `${parts[0].toUpperCase()} ${parts[parts.length - 1][0].toUpperCase()}.` : parts[0].toUpperCase();
-};
-const initials = (n: string) => n.trim().split(/\s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() ?? '').join('') || '?';
 const zone = (i: number, cols: number) => `${String.fromCharCode(65 + (i % cols))}${Math.floor(i / cols) + 1}`;
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-const elapsed = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
-/** A tile's colour from the person's device id: stable, in the office's palette. */
-const TINTS = ['#2a8c98', '#1e6066', '#4f7a5a', '#6b5b8c', '#8c5a3c', '#3c6e8c', '#7a6a2e', '#5c6f73'];
-const tintFor = (id: string) => { let x = 0; for (const c of id) x = (x * 31 + c.charCodeAt(0)) >>> 0; return TINTS[x % TINTS.length]; };
-
-// ------------------------------------------------------------------ the sheet frame
-function titleBlock(sheet: string): HTMLElement {
-  const cell = (label: string, value: string, cls = '') => h('div', { class: `tb-cell ${cls}` }, h('span', { class: 'tb-label' }, label), h('span', { class: 'tb-value' }, value));
-  return h('footer', { class: 'title-block', 'aria-label': 'Meeting details' },
-    cell('Meeting', state.lobbyTitle || state.room?.title || '—', 'wide'),
-    cell('ID', displayId, 'mono'),
-    cell('You', state.name.trim() || '—'),
-    cell('Sheet', sheet, 'mono'),
-  );
-}
-
-function frame(sheet: string, body: HTMLElement): void {
-  app.replaceChildren(h('div', { class: 'sheet' },
-    h('header', { class: 'sheet-head' }, h('span', { class: 'mark' }, h('i', { 'aria-hidden': 'true' }), 'Dexterity Connect'), h('span', { class: 'mono faint' }, `GUEST · ${displayId}`)),
-    h('section', { class: 'sheet-body' }, body),
-    titleBlock(sheet),
-  ));
-}
-
-// ------------------------------------------------------------------ sheet 1: your name
-function renderName(): void {
-  const input = h('input', { id: 'join-name', class: 'input', maxlength: '60', autocomplete: 'name', placeholder: 'For example, Dana Wright', value: state.name, 'aria-describedby': 'name-help' });
-  const next = h('button', { class: 'btn primary', type: 'submit' }, 'Next: camera and mic');
-  const form = h('form', { class: 'step', onsubmit: (e: Event) => { e.preventDefault(); const v = input.value.trim(); if (!v) { input.focus(); return; } state.name = v.slice(0, 60); try { localStorage.setItem(NAME_KEY, state.name); } catch { /* private */ } void goCheck(); } },
-    h('p', { class: 'label' }, 'Sheet 1 · Who is joining'),
-    h('h1', {}, SPEAKER ? 'You are invited to speak' : 'Join the meeting'),
-    h('p', { class: 'lead' }, SPEAKER ? 'The organiser asked you onto the stage of the webinar. Everyone watching will see and hear you until the organiser brings you back to the audience.' : 'You are joining as a guest from your browser. Nothing to install. The host lets you in from the lobby.'),
-    h('label', { class: 'field-label', for: 'join-name' }, 'Your name'),
-    input,
-    h('p', { id: 'name-help', class: 'faint small' }, 'Everyone in the meeting sees this name.'),
-    !passcode ? h('p', { class: 'problem', role: 'alert' }, 'This link has no passcode. Open the whole link from your invitation (it ends with # and the passcode).') : null,
-    h('div', { class: 'actions' }, next),
-  );
-  frame('1 OF 3', form);
-  if (!passcode) next.setAttribute('disabled', '');
-  input.focus();
-}
-
-// ------------------------------------------------------------------ sheet 2: camera and mic
-let meterStop: (() => void) | null = null;
-
-async function getMedia(): Promise<MediaStream | null> {
-  const audio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-  try { return await navigator.mediaDevices.getUserMedia({ audio, video: { width: { ideal: 1280 }, height: { ideal: 720 } } }); } catch { /* try sound only */ }
-  try { return await navigator.mediaDevices.getUserMedia({ audio }); } catch { return null; }
-}
-
-async function goCheck(): Promise<void> {
-  state.step = 'check';
-  if (!state.local) state.local = await getMedia();
-  state.camOn = !!state.local?.getVideoTracks().length;
-  state.micOn = !!state.local?.getAudioTracks().length;
-  renderCheck();
-}
-
-function preview(): HTMLElement {
-  const v = h('video', { autoplay: true, playsinline: true, muted: true, class: 'mirror' }) as HTMLVideoElement;
-  v.muted = true;
-  const cam = state.local?.getVideoTracks()[0];
-  const box = h('div', { class: `preview${cam && state.camOn ? ' live' : ''}` },
-    cam && state.camOn ? v : h('span', { class: 'face', style: `--tint:${tintFor(state.name)}` }, initials(state.name)),
-    h('span', { class: 'cap' }, h('b', {}, 'A1'), h('span', {}, 'YOU · PREVIEW')),
-  );
-  if (cam && state.camOn) { v.srcObject = state.local; void v.play().catch(() => {}); }
-  return box;
-}
-
-/** The mic level as a ruled scale: twenty ticks, lit as you speak. */
-function meter(): HTMLElement {
-  const ticks = Array.from({ length: 20 }, (_, i) => h('i', { class: i % 5 === 4 ? 'major' : '' }));
-  const el = h('div', { class: 'meter', role: 'meter', 'aria-label': 'Microphone level', 'aria-valuemin': '0', 'aria-valuemax': '20' }, ...ticks);
-  meterStop?.();
-  const track = state.local?.getAudioTracks()[0];
-  if (!track) return el;
-  const ctx = new AudioContext();
-  const an = ctx.createAnalyser();
-  an.fftSize = 512;
-  ctx.createMediaStreamSource(new MediaStream([track])).connect(an);
-  const buf = new Uint8Array(an.fftSize);
-  const t = setInterval(() => {
-    an.getByteTimeDomainData(buf);
-    let sum = 0;
-    for (const b of buf) { const x = (b - 128) / 128; sum += x * x; }
-    const lit = state.micOn ? Math.min(20, Math.round(Math.sqrt(sum / buf.length) * 90)) : 0;
-    el.setAttribute('aria-valuenow', String(lit));
-    ticks.forEach((tk, i) => tk.classList.toggle('on', i < lit));
-  }, 100);
-  meterStop = () => { clearInterval(t); void ctx.close(); meterStop = null; };
-  return el;
-}
-
-function renderCheck(): void {
-  const hasCam = !!state.local?.getVideoTracks().length;
-  const hasMic = !!state.local?.getAudioTracks().length;
-  const toggle = (on: boolean, label: string, ico: string, icoOff: string, f: () => void, disabled: boolean) =>
-    h('button', { type: 'button', class: `tool${on ? ' on' : ' off'}`, 'aria-pressed': String(on), onclick: f, disabled }, icon(on ? ico : icoOff), h('span', {}, label));
-  const body = h('div', { class: 'step check' },
-    h('p', { class: 'label' }, 'Sheet 2 · Camera and microphone'),
-    h('h1', {}, 'Check how you look and sound'),
-    h('div', { class: 'check-grid' },
-      preview(),
-      h('div', { class: 'check-side' },
-        h('span', { class: 'field-label' }, 'Microphone'),
-        meter(),
-        h('p', { class: 'faint small' }, hasMic ? 'Say something: the scale moves when the meeting can hear you.' : 'No microphone could be used. You can still listen and chat.'),
-        h('div', { class: 'tools' },
-          toggle(state.micOn && hasMic, state.micOn && hasMic ? 'Mic on' : 'Mic off', 'mic', 'mic-off', () => { state.micOn = !state.micOn; applyMic(); renderCheck(); }, !hasMic),
-          toggle(state.camOn && hasCam, state.camOn && hasCam ? 'Camera on' : 'Camera off', 'cam', 'cam-off', () => { state.camOn = !state.camOn; for (const t of state.local?.getVideoTracks() ?? []) t.enabled = state.camOn; renderCheck(); }, !hasCam),
-        ),
-        !hasCam ? h('p', { class: 'faint small' }, 'No camera could be used: you join with your name on a tile.') : null,
-      ),
-    ),
-    h('p', { class: 'faint small' }, SPEAKER ? 'You are seen and heard as soon as you go on stage.' : 'Nothing is sent until the host lets you in.'),
-    h('div', { class: 'actions' },
-      h('button', { type: 'button', class: 'btn ghost', onclick: () => { meterStop?.(); state.step = 'name'; renderName(); } }, 'Back'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => connect() }, SPEAKER ? 'Go on stage' : 'Ask to join'),
-    ),
-  );
-  frame('2 OF 3', body);
-}
 
 function applyMic(): void {
   for (const t of state.local?.getAudioTracks() ?? []) t.enabled = state.micOn;
 }
 
+/** What the hub's words mean for the closing page. */
+function kindOf(reason: string, code: number): EndKind {
+  if (code === 4403) return 'passcode';
+  if (code === 4429) return 'limit';
+  if (/took you out/.test(reason)) return 'removed';
+  if (/did not let you in|locked/.test(reason)) return 'refused';
+  if (/cancelled/.test(reason)) return 'cancelled';
+  if (/You left/.test(reason)) return 'left';
+  if (/ended|not open yet/.test(reason)) return 'ended';
+  return 'closed';
+}
+
 // ------------------------------------------------------------------ the connection
 let pingTimer: ReturnType<typeof setInterval> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const send = (f: unknown) => { if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify(f)); };
 
 function connect(): void {
-  meterStop?.();
+  const again = state.attempts > 0;
   state.step = 'connecting';
   state.ended = '';
-  renderLobby();
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/m/${meetingId}/ws`);
+  state.endKind = null;
+  on?.connecting(again);
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/m/${meetingId}/ws`);
   state.ws = ws;
   ws.onopen = () => {
     send({ t: 'join', name: state.name, passcode });
@@ -255,20 +110,37 @@ function connect(): void {
     pingTimer = null;
     if (state.ws !== ws) return;
     state.ws = null;
-    if (state.step !== 'ended') finish(state.ended || e.reason || (state.step === 'room' ? 'The connection to the meeting was lost.' : 'The office could not be reached. Try again in a moment.'), true);
+    if (state.step === 'ended') return;
+    // told why (the host, the passcode, a limit): final. A dropped line: try again, a few times
+    if (state.ended) { finish(state.endKind ?? kindOf(state.ended, e.code), state.ended); return; }
+    if (e.code === 4429 || e.code === 4403) { finish(kindOf(e.reason, e.code), e.reason || 'The office refused the connection.'); return; }
+    if (state.attempts < 6) {
+      state.attempts++;
+      const wasIn = state.step === 'room';
+      for (const dev of [...state.links.keys()]) dropLink(dev);
+      if (wasIn) state.room = null;
+      on?.reconnecting(state.attempts);
+      retryTimer = setTimeout(connect, Math.min(15_000, 1000 * 2 ** (state.attempts - 1)));
+      return;
+    }
+    finish('lost', e.reason || 'The connection to the meeting was lost.');
   };
 }
 
 function onFrame(f: GuestDown): void {
   switch (f.t) {
     case 'lobby':
-      state.step = 'lobby'; state.lobbyHost = f.host; state.lobbyTitle = f.title; state.lobbySince = Date.now();
-      renderLobby();
+      state.step = 'lobby';
+      state.attempts = 0;
+      on?.lobby({ host: f.host, title: f.title });
       break;
     case 'admitted':
       state.self = f.self; state.room = f.room; state.iceServers = f.iceServers as RTCIceServer[]; state.chat = f.chat; state.step = 'room';
-      // a camera switched off on the check sheet is not sent: stop it (turning it on later starts it afresh)
+      state.attempts = 0;
+      state.joinedAt = state.joinedAt ?? Date.now();
+      // a camera switched off on the check is not sent: stop it (turning it on later starts it afresh)
       if (!state.camOn) for (const t of state.local?.getVideoTracks() ?? []) { t.stop(); state.local!.removeTrack(t); }
+      on?.admitted();
       renderRoom();
       announce();
       // the newcomer reaches out to everyone already there
@@ -292,20 +164,20 @@ function onFrame(f: GuestDown): void {
     case 'denied': state.ended = f.reason; break;
     case 'demoted':
       // a webinar speaker goes back to the audience: the watch page (it kept their personal link)
-      if (/^\/w\/\d{9}\/watch$/.test(f.to)) {
+      if (/^\/w\/[\w-]+\/watch$/.test(f.to)) {
         state.step = 'ended';
         for (const dev of [...state.links.keys()]) dropLink(dev);
         stopScreen(false);
         for (const t of state.local?.getTracks() ?? []) t.stop();
-        try { sessionStorage.removeItem(`dex.webinar.speak.${meetingId}`); sessionStorage.removeItem(PASS_KEY); } catch { /* private */ }
-        location.replace(f.to);
+        on?.demoted(f.to);
       }
       break;
-    case 'removed': state.ended = 'A host took you out of the meeting.'; break;
-    case 'ended': state.ended = f.reason; finish(f.reason, false); break;
+    case 'removed': state.ended = 'A host took you out of the meeting.'; state.endKind = 'removed'; break;
+    case 'ended': state.ended = f.reason; finish('ended', f.reason); break;
     case 'error':
-      state.notice = f.message; renderBanners();
-      if (state.step === 'connecting' || state.step === 'check') { state.step = 'check'; renderCheck(); toast(f.message); }
+      state.notice = f.message;
+      if (state.step === 'connecting') { on?.problem(f.message); return; }
+      renderBanners();
       break;
   }
 }
@@ -331,50 +203,25 @@ function setRoom(room: GuestRoomView, moved: boolean): void {
   else { renderField(); renderControls(); renderBanners(); }
 }
 
-function finish(reason: string, canRetry: boolean): void {
+function finish(kind: EndKind, reason: string): void {
+  if (state.step === 'ended') return;
   state.step = 'ended';
   state.ended = reason;
+  if (retryTimer) clearTimeout(retryTimer);
   for (const dev of [...state.links.keys()]) dropLink(dev);
   stopScreen(false);
-  meterStop?.();
   try { state.ws?.close(); } catch { /* closed */ }
   state.ws = null;
   state.room = null;
-  const body = h('div', { class: 'step ended' },
-    h('p', { class: 'label' }, 'End of sheet'),
-    h('h1', {}, 'You are out of the meeting'),
-    h('p', { class: 'lead', role: 'status' }, reason),
-    h('div', { class: 'actions' },
-      canRetry && passcode ? h('button', { class: 'btn primary', onclick: () => { void goCheck(); } }, 'Join again') : null,
-    ),
-  );
-  frame('—', body);
-  if (!canRetry) { for (const t of state.local?.getTracks() ?? []) t.stop(); state.local = null; }
+  roomEls = null;
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  on?.ended({ kind, reason, joinedAt: state.joinedAt, at: Date.now() });
 }
 
-// ------------------------------------------------------------------ sheet 3: the lobby
-let lobbyTimer: ReturnType<typeof setInterval> | null = null;
-function renderLobby(): void {
-  if (lobbyTimer) clearInterval(lobbyTimer);
-  const waiting = h('span', { class: 'mono wait-clock' }, '00:00');
-  const body = h('div', { class: 'step lobby' },
-    h('p', { class: 'label' }, 'Sheet 3 · The lobby'),
-    h('h1', {}, state.step === 'connecting' ? 'Reaching the office…' : `Waiting for ${state.lobbyHost} to let you in`),
-    h('div', { class: 'lobby-grid' },
-      preview(),
-      h('div', { class: 'lobby-side' },
-        h('div', { class: 'lobby-wait', role: 'status' }, h('span', { class: 'pulse', 'aria-hidden': 'true' }), h('span', { class: 'mono' }, state.step === 'connecting' ? 'CONNECTING' : 'IN THE LOBBY'), waiting),
-        h('p', { class: 'lead' }, state.step === 'connecting' ? 'Checking the passcode with the office.' : `${state.lobbyTitle || 'The meeting'} · the host sees that you are waiting. Keep this page open.`),
-        h('div', { class: 'tools' },
-          h('button', { type: 'button', class: `tool${state.micOn ? ' on' : ' off'}`, 'aria-pressed': String(state.micOn), disabled: !state.local?.getAudioTracks().length, onclick: () => { state.micOn = !state.micOn; applyMic(); renderLobby(); } }, icon(state.micOn ? 'mic' : 'mic-off'), h('span', {}, state.micOn ? 'Mic on' : 'Mic off')),
-          h('button', { type: 'button', class: 'tool', onclick: () => { send({ t: 'leave' }); finish('You left the lobby.', true); } }, icon('door'), h('span', {}, 'Leave')),
-        ),
-      ),
-    ),
-  );
-  frame('3 OF 3', body);
-  const since = state.lobbySince || Date.now();
-  lobbyTimer = setInterval(() => { if (state.step !== 'lobby' && state.step !== 'connecting') { clearInterval(lobbyTimer!); lobbyTimer = null; return; } waiting.textContent = elapsed(Date.now() - since); }, 1000);
+/** The guest leaves (the Leave button, or the lobby's): the hub is told, then the closing page. */
+function leaveMeeting(): void {
+  send({ t: 'leave' });
+  finish('left', state.step === 'room' ? 'You left the meeting.' : 'You left the lobby.');
 }
 
 // ------------------------------------------------------------------ the meeting
@@ -382,7 +229,6 @@ let roomEls: { field: HTMLElement; chat: HTMLElement; controls: HTMLElement; ban
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 function renderRoom(): void {
-  if (lobbyTimer) { clearInterval(lobbyTimer); lobbyTimer = null; }
   const room = state.room!;
   const field = h('section', { class: 'field', 'aria-label': 'People in the meeting' });
   const chat = h('aside', { class: 'chat', 'aria-label': 'Meeting chat' });
@@ -488,7 +334,7 @@ function renderControls(): void {
     tool(state.hand, state.hand ? 'Hand up' : 'Raise hand', 'hand', () => { state.hand = !state.hand; send({ t: 'hand', up: state.hand }); renderControls(); }, { class: `tool${state.hand ? ' hand' : ''}` }),
     tool(null, 'React', 'react', (e?: unknown) => openReact((e as MouseEvent | undefined)?.currentTarget as HTMLElement | undefined), { 'aria-haspopup': 'menu' }),
     tool(state.chatOpen, state.unread ? `Chat · ${state.unread}` : 'Chat', 'chat', () => { state.chatOpen = !state.chatOpen; state.unread = 0; app.querySelector('.room')?.classList.toggle('chat-open', state.chatOpen); renderControls(); renderChat(); }),
-    h('button', { type: 'button', class: 'leave', onclick: () => { send({ t: 'leave' }); finish('You left the meeting.', true); } }, 'Leave', icon('door', 16)),
+    h('button', { type: 'button', class: 'leave', onclick: () => leaveMeeting() }, 'Leave', icon('door', 16)),
   ].filter((x): x is HTMLButtonElement => !!x));
 }
 
@@ -600,14 +446,6 @@ function renderChat(): void {
   list.scrollTop = list.scrollHeight;
 }
 
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
-function toast(text: string): void {
-  document.querySelector('.toast')?.remove();
-  const t = h('div', { class: 'toast', role: 'status' }, text);
-  document.body.append(t);
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.remove(), 5000);
-}
 
 // ------------------------------------------------------------------ peer connections (as the app does them)
 function signal(to: string, data: Signal): void { send({ t: 'signal', to, data }); }
@@ -651,6 +489,9 @@ function playAudio(deviceId: string, stream: MediaStream): void {
   const a = h('audio', { autoplay: true }) as HTMLAudioElement;
   a.srcObject = stream;
   a.hidden = true;
+  // the speakers chosen on the device check, where the browser lets a page choose
+  const sink = (a as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId;
+  if (speaker && sink) void sink.call(a, speaker).catch(() => {});
   document.body.append(a);
   void a.play().catch(() => {});
   audioEls.set(key, a);
@@ -686,8 +527,16 @@ function dropLink(deviceId: string): void {
 }
 
 window.addEventListener('pagehide', () => { if (state.ws) send({ t: 'leave' }); });
+// a window narrowed to a phone's width: the chat makes way for the people
+matchMedia('(max-width: 720px)').addEventListener?.('change', (e) => { if (e.matches && state.chatOpen) { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } });
 
-// ------------------------------------------------------------------ start
-if (!/^[1-9]\d{8}$/.test(meetingId)) {
-  frame('—', h('div', { class: 'step' }, h('h1', {}, 'This is not a meeting link'), h('p', { class: 'lead' }, 'Open the link from your invitation again.')));
-} else renderName();
+function start(o: RoomStart): { leave(): void; setMic(on: boolean): void } {
+  app = o.mount; meetingId = o.meetingId; passcode = o.passcode; on = o.on; speaker = o.speaker;
+  state.name = o.name; state.local = o.local; state.micOn = o.micOn; state.camOn = o.camOn;
+  state.step = 'connecting'; state.attempts = 0; state.joinedAt = null; state.ended = ''; state.endKind = null;
+  applyMic();
+  connect();
+  return { leave: leaveMeeting, setMic: (v: boolean) => { state.micOn = v; applyMic(); announce(); } };
+}
+
+(window as unknown as { DexRoom: { start: typeof start } }).DexRoom = { start };

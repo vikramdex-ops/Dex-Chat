@@ -27,6 +27,7 @@
     "./bots": "./src/bots.ts",
     "./ics": "./src/ics.ts",
     "./meet": "./src/meet.ts",
+    "./meetlink": "./src/meetlink.ts",
     "./meet-csv": "./src/meet-csv.ts",
     "./assist": "./src/assist.ts",
     "./pointers": "./src/pointers.ts",

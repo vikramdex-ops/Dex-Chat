@@ -79,6 +79,8 @@ export class Meetings {
   private readonly userById: (id: string) => PublicUser | null;
   /** The office's defaults for new meetings. */
   defaults: () => MeetingDefaults = () => ({ lobby: 'outside', joinBeforeHost: true });
+  /** A meeting's page on the meeting site (meet-public.ts), shown with it everywhere. */
+  pageUrl: (meetingId: string) => string | null = () => null;
 
   constructor(db: DatabaseSync, messaging: Messaging, userById: (id: string) => PublicUser | null) {
     this.db = db;
@@ -127,6 +129,7 @@ export class Meetings {
       id: m.id, kind: m.kind, title: m.title, hostId: m.hostId, convId: m.convId, eventId: m.eventId, coHosts: [...m.coHosts],
       settings: { ...m.settings }, link: meetingLink(m.id),
       live: live ? { roomId: live.id, participants: live.participants.length, startedAt: live.startedAt } : null,
+      page: this.pageUrl(m.id),
     };
   }
 

@@ -49,7 +49,8 @@ try {
   await a.page.locator('.guest-url').waitFor({ timeout: 10000 });
   const url = (await a.page.locator('.guest-url').innerText()).trim();
   const pass = (await a.page.locator('.guest-pass').innerText()).trim();
-  assert.ok(url.startsWith(`${gwUrl}/m/`) && url.endsWith(`#${pass}`), url);
+  // no meeting site in this test: the meeting's page is on the gateway's own address (/482-913-207#passcode)
+  assert.match(url, new RegExp(`^${gwUrl.replace(/[.]/g, '\\.')}/\\d{3}-\\d{3}-\\d{3}#${pass}$`), url);
   console.log('guest link', url);
   await shot(a.page, 'm2-01-host-guest-link');
 
@@ -64,14 +65,15 @@ try {
   await guestShot(g, 'm2-02-guest-name');
   await g.emulateMedia({ colorScheme: 'dark' }); await guestShot(g, 'm2-02b-guest-name-dark'); await g.emulateMedia({ colorScheme: 'light' });
   await g.locator('#join-name').fill('Dana Wright');
-  await g.getByRole('button', { name: 'Next: camera and mic' }).click();
+  await g.getByRole('button', { name: 'Check camera and mic' }).click();
   await g.locator('.preview video').waitFor({ timeout: 15000 });
   await g.waitForFunction(() => (document.querySelector('.preview video') as HTMLVideoElement)?.videoWidth > 0);
   await sleep(800);
   await guestShot(g, 'm2-03-guest-check');
   await g.emulateMedia({ colorScheme: 'dark' }); await guestShot(g, 'm2-03b-guest-check-dark'); await g.emulateMedia({ colorScheme: 'light' });
-  await g.getByRole('button', { name: 'Ask to join' }).click();
-  await g.getByText('Waiting for Priya Raman to let you in').waitFor({ timeout: 15000 });
+  await g.getByRole('button', { name: /Join the meeting|Ask to join/ }).click();
+  await g.getByRole('heading', { name: 'The host will let you in' }).waitFor({ timeout: 15000 });
+  assert.match(await g.locator('.lead').first().innerText(), /Priya Raman sees that you are waiting/);
   await sleep(300);
   await guestShot(g, 'm2-04-guest-lobby');
   await g.emulateMedia({ colorScheme: 'dark' }); await guestShot(g, 'm2-04b-guest-lobby-dark'); await g.emulateMedia({ colorScheme: 'light' });
@@ -83,7 +85,7 @@ try {
   await gp.locator('#join-name').fill('Kim on a phone');
   await guestShot(gp, 'm2-05-guest-phone-name');
   await gp.emulateMedia({ colorScheme: 'dark' }); await guestShot(gp, 'm2-05b-guest-phone-name-dark'); await gp.emulateMedia({ colorScheme: 'light' });
-  await gp.getByRole('button', { name: 'Next: camera and mic' }).click();
+  await gp.getByRole('button', { name: 'Check camera and mic' }).click();
   await gp.locator('.preview video').waitFor({ timeout: 15000 });
   await sleep(600);
   await guestShot(gp, 'm2-05c-guest-phone-check');
@@ -186,7 +188,7 @@ try {
 
   // the guest leaves; the meeting ends; the report and the shelf
   await g.getByRole('button', { name: 'Leave' }).click();
-  await g.getByText('You are out of the meeting').waitFor();
+  await g.getByRole('heading', { name: 'Thanks for joining' }).waitFor();
   await guestShot(g, 'm2-13-guest-left');
   await a.page.getByRole('button', { name: 'Leave Room' }).click();
   await a.page.locator('.lens-bar .lens', { hasText: 'Meet' }).click();

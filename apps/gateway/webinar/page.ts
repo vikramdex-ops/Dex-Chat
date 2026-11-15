@@ -16,7 +16,8 @@ import { capName, clock, day, h, icon, pad, sizeText } from './dom.ts';
 const app = document.getElementById('app') as HTMLElement;
 const meetingId = app.dataset.webinar ?? '';
 const mode = (app.dataset.mode ?? 'register') as 'register' | 'watch' | 'survey';
-const displayId = `${meetingId.slice(0, 3)}-${meetingId.slice(3, 6)}-${meetingId.slice(6)}`;
+// the webinar's ID (482-913-207) or the name its organiser gave it on the meeting site
+const displayId = /^\d{9}$/.test(meetingId) ? `${meetingId.slice(0, 3)}-${meetingId.slice(3, 6)}-${meetingId.slice(6)}` : meetingId;
 const TOKEN_KEY = `dex.webinar.token.${meetingId}`;
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
 

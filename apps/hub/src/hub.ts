@@ -38,7 +38,7 @@ import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
-import { Meetings } from './meetings.ts';
+import { MeetingError, Meetings } from './meetings.ts';
 import { Flows, FlowError } from './flows.ts';
 import { BotFlows, BotFlowsError } from './botflows.ts';
 import { BotFlowError } from '@dex/core/botflows';
@@ -47,7 +47,7 @@ import { MeetGuests } from './meet-guests.ts';
 import { MeetReports, ReportError } from './meet-reports.ts';
 import { Recordings, RecordingError } from './recordings.ts';
 import { Webinars, WebinarError } from './webinars.ts';
-import { isWebGuest, isWebGuestDevice } from '@dex/core';
+import { MEET_ORG_DEFAULT, isWebGuest, isWebGuestDevice, normalizeSlug, siteBase, siteUrlProblem } from '@dex/core';
 import { HelpDesk, HelpError } from './helpdesk.ts';
 import { LoungeError, Lounges } from './lounges.ts';
 import { PointerError, Pointers } from './pointers.ts';
@@ -60,6 +60,7 @@ import { Refs, RefError } from './refs.ts';
 import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
 import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
+import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 
 export const HUB_VERSION = '0.1.0';
@@ -137,6 +138,8 @@ export class Hub {
   readonly rooms: Rooms;
   readonly meetings: Meetings;
   readonly meetGuests: MeetGuests;
+  /** Every meeting's page on the office's meeting site (Dexterity Meet): names, what a page may learn. */
+  readonly meetPublic: MeetPublic;
   readonly reports: MeetReports;
   readonly recordings: Recordings;
   readonly webinars: Webinars;
@@ -275,6 +278,19 @@ export class Hub {
     });
     this.meetings.defaults = () => { const p = this.policies.get(); return { lobby: p.meetingLobby ?? 'outside', joinBeforeHost: p.joinBeforeHost !== false }; };
     this.reports = new MeetReports(this.store.db);
+    this.meetPublic = new MeetPublic({
+      db: this.store.db, meetings: this.meetings,
+      live: (meetingId) => this.rooms.live(meetingId),
+      userById: (uid) => this.store.userById(uid),
+      site: () => this.publicSite(),
+      org: () => this.remoteConfig().orgName ?? MEET_ORG_DEFAULT,
+      zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+      allowed: () => this.policies.get().guestLinks !== false,
+      gatewayOn: () => this.remoteConfig().enabled,
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.meetings.pageUrl = (meetingId) => this.meetPublic.pageUrl(meetingId);
     this.rooms = new Rooms({
       members: (convId) => this.messaging.members(convId),
       deliverToUsers: (userIds, name, data) => {
@@ -342,7 +358,9 @@ export class Hub {
       relayAvailable: () => this.opts.relay !== false && this.relay.available(),
       relayLeave: (deviceId) => this.relay.leave(deviceId),
       relayClose: (roomId) => this.relay.closeRoom(roomId),
-      gateway: () => { const rc = this.remoteConfig(); return rc.enabled ? rc.url : null; },
+      // registration and watch pages live on the office's meeting site (or the gateway's address)
+      gateway: () => this.publicSite(),
+      pageRef: (meetingId) => this.meetPublic.slugOf(meetingId),
       office: () => this.info.name,
       tell: (userId, text, key) => this.system.tell(userId, text, key),
       recordingLink: (me, recordingId) => {
@@ -367,6 +385,7 @@ export class Hub {
       lan: () => lanAddresses(this.port),
       gateway: () => { const rc = this.remoteConfig(); return rc.enabled ? rc.url : null; },
       meetingFor: (organizer, eventId) => this.meetings.forEvent(organizer, eventId).id,
+      pageUrl: (meetingId) => this.meetPublic.pageUrl(meetingId),
       venueName: (vid) => this.calendar.venues().find((v) => v.id === vid)?.name ?? null,
       audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
     });
@@ -409,13 +428,16 @@ export class Hub {
         this.deliver(hosts, 'meet.guestRefused', () => ({ roomId: room.id, name, reason }));
       },
       log: (level, msg, extra) => this.log(level, msg, extra),
+      resolve: (ref) => this.meetPublic.resolveId(ref),
+      joinProblem: (m) => this.meetPublic.joinProblem(m),
     });
     this.gateway = new RemoteGateway({
       hubId: id, certPem: tls.cert, keyPem: tls.key, localPort: () => this.port, secret: this.gatewaySecret,
       log: (level, msg, extra) => this.log(level, msg, extra),
       onStatus: () => {},
       guests: this.meetGuests,
-      web: (op, meetingId, ip, body) => this.webinars.webRequest(op, meetingId, ip, body),
+      // the meeting site's questions (page.info, page.check), and the webinar pages, which may name a webinar by its name
+      web: (op, ref, ip, body) => (op.startsWith('page.') ? this.meetPublic.request(op, ref, ip, body) : this.webinars.webRequest(op, this.meetPublic.resolveId(ref) ?? ref, ip, body)),
       calendar: (token, ip) => this.feeds.fetch(token, ip),
     });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
@@ -513,7 +535,21 @@ export class Hub {
   remoteConfig(): RemoteConfig {
     const m = (k: string, d: string) => this.store.meta(k, () => d);
     const url = m('remote_url', '');
-    return { enabled: m('remote_enabled', '0') === '1' && !!url, url: url || null, allowJoin: m('remote_join', '1') === '1', allowAdmin: m('remote_admin', '0') === '1' };
+    return {
+      enabled: m('remote_enabled', '0') === '1' && !!url, url: url || null, allowJoin: m('remote_join', '1') === '1', allowAdmin: m('remote_admin', '0') === '1',
+      siteUrl: m('meet_site_url', '') || null, orgName: m('meet_org_name', '') || MEET_ORG_DEFAULT,
+    };
+  }
+
+  /**
+   * The address of meeting pages: the office's meeting site (Dexterity Meet, on Cloudflare Pages or
+   * the office's own domain) when it is set, else the gateway's own address; null while access
+   * from outside is off.
+   */
+  publicSite(): string | null {
+    const rc = this.remoteConfig();
+    if (!rc.enabled || !rc.url) return null;
+    return siteBase(rc.siteUrl || rc.url);
   }
 
   private setMeta(key: string, value: string): void {
@@ -529,6 +565,7 @@ export class Hub {
   private applyRemote(): void {
     const c = this.remoteConfig();
     this.info = { ...this.info, remote: c.enabled && c.url ? { url: c.url } : null };
+    this.gateway.site = c.siteUrl ?? null;
     this.gateway.configure(c.enabled ? c.url : null);
     for (const conn of this.conns) {
       if (!conn.remote) continue;
@@ -1330,7 +1367,39 @@ export class Hub {
           this.store.audit(me.id, d.regenerate === true ? 'meeting.guestLinkRenewed' : next.guest.enabled ? 'meeting.guestLinkOn' : 'meeting.guestLinkOff', m.id, {});
         }
         const rc = this.remoteConfig();
-        return this.meetings.guestView(next, { gateway: rc.enabled ? rc.url : null, allowed, relayOnly: live?.mode === 'relay' || this.meetings.expected(next) > 8 });
+        const view = this.meetings.guestView(next, { gateway: rc.enabled ? rc.url : null, allowed, relayOnly: live?.mode === 'relay' || this.meetings.expected(next) > 8 });
+        // the link guests are sent: the meeting's page on the office's meeting site
+        return { ...view, url: view.url ? this.meetPublic.view(next).guestUrl : null };
+      }
+
+      case 'meet.public.get':
+      case 'meet.public.set': {
+        const me = this.store.userById(conn.userId!)!;
+        const m = this.meetings.get(d.id);
+        if (!m) throw new OpError('No meeting has that ID.');
+        const live = this.rooms.live(m.id);
+        const may = m.hostId === me.id || m.coHosts.includes(me.id) || (!!live && (live.hostId === me.id || (live.coHosts ?? []).includes(me.id)));
+        if (!may) throw new OpError('Only the host and co-hosts can see or change the meeting\'s page.');
+        try {
+          return op === 'meet.public.get' ? this.meetPublic.view(m) : this.meetPublic.set(m, me, d);
+        } catch (err) { if (err instanceof PublicPageError) throw new OpError(err.message); throw err; }
+      }
+
+      case 'meet.slug.check': {
+        const me = this.store.userById(conn.userId!)!;
+        const m = typeof d.id === 'string' ? this.meetings.get(d.id) : null;
+        const slug = normalizeSlug(typeof d.slug === 'string' ? d.slug : '');
+        const problem = this.meetPublic.availability(slug, m?.id ?? null, m?.hostId ?? me.id);
+        return { slug, ok: !problem, problem };
+      }
+
+      case 'meet.personal.slug': {
+        const me = this.store.userById(conn.userId!)!;
+        try {
+          const m = this.meetings.personal(me);
+          this.meetPublic.setSlug(m, typeof d.slug === 'string' ? d.slug : null, me.id);
+          return this.meetPublic.view(m);
+        } catch (err) { if (err instanceof PublicPageError || err instanceof MeetingError) throw new OpError(err.message); throw err; }
       }
 
       case 'meet.report': {
@@ -1549,7 +1618,7 @@ export class Hub {
         }
         if (op === 'remote.info') {
           const c = this.remoteConfig();
-          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote };
+          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote, site: this.publicSite() };
         }
         if (op === 'admin.remote.get' || op === 'admin.remote.set') {
           const me = this.store.userById(conn.userId!)!;
@@ -1560,6 +1629,13 @@ export class Hub {
               if (url && !/^(https:\/\/[a-z0-9.-]+|http:\/\/(127\.0\.0\.1|localhost))(:\d+)?(\/[\w.-]*)*$/i.test(url)) throw new OpError('Enter the gateway\'s https:// address, for example https://dexconnect-gateway.example.workers.dev');
               this.setMeta('remote_url', url);
             }
+            if (d.siteUrl !== undefined) {
+              const site = d.siteUrl === null || d.siteUrl === '' ? '' : siteBase(String(d.siteUrl));
+              const problem = siteUrlProblem(site);
+              if (problem) throw new OpError(problem);
+              this.setMeta('meet_site_url', site);
+            }
+            if (d.orgName !== undefined) this.setMeta('meet_org_name', clean(d.orgName, 80));
             if (typeof d.enabled === 'boolean') this.setMeta('remote_enabled', d.enabled ? '1' : '0');
             if (typeof d.allowJoin === 'boolean') this.setMeta('remote_join', d.allowJoin ? '1' : '0');
             if (typeof d.allowAdmin === 'boolean') this.setMeta('remote_admin', d.allowAdmin ? '1' : '0');

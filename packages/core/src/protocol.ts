@@ -735,6 +735,8 @@ export interface MeetingInfo {
   link: string;
   /** The meeting's Room while it runs. */
   live: { roomId: string; participants: number; startedAt: number } | null;
+  /** Its page on the office's meeting site (https://…/482-913-207 or its name), without the passcode; null when there is no site. */
+  page?: string | null;
 }
 export interface LobbyEntry { userId: string; deviceId: string; at: number; reason: 'admit' | 'host' }
 export interface RaisedHand { userId: string; deviceId: string; at: number }
@@ -877,7 +879,7 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps {
   'admin.lines.remove': { req: { id: string }; res: OfficeLine[] };
   'emoji.list': { req: void; res: CustomEmoji[] };
   /** How to reach this hub from outside (for a phone's setup code); null url when it is off. */
-  'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean } };
+  'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean; /** The meeting site's address (Dexterity Meet), or null. */ site?: string | null } };
   'admin.remote.get': { req: void; res: RemoteView };
   /** STUN/TURN servers for a call (fresh short-lived credentials when Cloudflare TURN is used). */
   'room.ice': { req: void; res: { iceServers: IceServer[] } };

@@ -3,6 +3,7 @@
 import { calPrefs } from './tz.ts';
 import { alertUser } from '../alerts.ts';
 import { useSyncExternalStore } from 'react';
+import { formatMeetingId } from '@dex/core';
 import type { CalEvent, Occurrence, PublicUser, Venue } from '@dex/core';
 import { joinMeeting as joinById } from '../rooms/engine.ts';
 import { formatTime } from '../time.ts';
@@ -36,7 +37,14 @@ export async function startCalendar(me: string, users: () => PublicUser[]): Prom
         const o = data as Occurrence;
         set({ soon: [...state.soon.filter((x) => !(x.event.id === o.event.id && x.startAt === o.startAt)), o] });
         const mins = Math.max(0, Math.round((o.startAt - Date.now()) / 60_000));
-        alertUser('reminder', mins ? `${o.event.title} starts in ${mins} min` : `${o.event.title} is starting`, describeSpan(o.startAt, o.endAt, o.event.allDay), 'dexconnect://calendar');
+        const title = mins ? `${o.event.title} starts in ${mins} min` : `${o.event.title} is starting`;
+        const span = describeSpan(o.startAt, o.endAt, o.event.allDay);
+        // a meeting held as a call: clicking the reminder opens its Room directly (dexconnect://meet/<ID>)
+        if (o.event.online) {
+          void window.dex.request('meet.event', { eventId: o.event.id })
+            .then((m) => alertUser('reminder', title, span, `dexconnect://meet/${formatMeetingId(m.id)}`))
+            .catch(() => alertUser('reminder', title, span, 'dexconnect://calendar'));
+        } else alertUser('reminder', title, span, 'dexconnect://calendar');
       }
     });
   }

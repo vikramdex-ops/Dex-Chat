@@ -1,6 +1,7 @@
-# Deploys the internet gateway (apps/gateway) to the office's Cloudflare account.
-# Needs two repository secrets: CLOUDFLARE_API_TOKEN (a token with "Edit Cloudflare Workers")
-# and CLOUDFLARE_ACCOUNT_ID. Optional: HUB_FINGERPRINT (Control room > Outside the office), which
+# Deploys the internet gateway (apps/gateway) and Dexterity Meet's meeting site (apps/meet-site,
+# the Cloudflare Pages project dexterity-meet, bound to the gateway) to the office's Cloudflare
+# account. Needs two repository secrets: CLOUDFLARE_API_TOKEN (a token with "Edit Cloudflare
+# Workers" plus Account > Cloudflare Pages > Edit) and CLOUDFLARE_ACCOUNT_ID. Optional: HUB_FINGERPRINT (Control room > Outside the office), which
 # pins the gateway to the office hub. Run it from Actions > gateway > Run workflow; it also runs
 # when the gateway's code changes on main.
 name: gateway
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["apps/gateway/**"]
+    paths: ["apps/gateway/**", "apps/meet-site/**"]
 
 permissions:
   contents: read
@@ -52,3 +53,14 @@ jobs:
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
           echo "### Gateway deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "Paste this address into Control room > Outside the office: **${url}**" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy the meeting site
+        if: steps.check.outputs.ok == 'true'
+        working-directory: apps/meet-site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node scripts/build.mjs
+          npx wrangler pages project create dexterity-meet --production-branch main 2>&1 | tee create.log || grep -qiE 'already (exists|in use)' create.log
+          npx wrangler pages deploy --project-name dexterity-meet --branch main
+          echo "Paste the meeting site's address into the same page: **https://dexterity-meet.pages.dev**" >> "$GITHUB_STEP_SUMMARY"

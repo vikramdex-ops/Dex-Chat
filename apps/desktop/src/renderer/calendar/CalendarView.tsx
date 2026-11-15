@@ -1,11 +1,11 @@
 // The Calendar lens: a week on a drafting grid (or an agenda list), meetings you can open,
 // answer and join, and the dialog to plan one with people, a conference room and a call.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CalEvent, Conversation, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
-import { formatMeetingId, meetingLink } from '@dex/core';
+import type { CalEvent, Conversation, LobbyRule, MeetingInfo, Occurrence, PublicUser, Recurrence, Rsvp, Session } from '@dex/core';
+import { formatMeetingId, meetingLink, slugFrom } from '@dex/core';
 import { Avatar, Dialog, Icon, Segmented, ToggleRow, presenceFor, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
-import { EventInvite } from '../meet/GuestLink.tsx';
+import { EventInvite, PageLink, SlugField } from '../meet/GuestLink.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { renderBody } from '../chat/format.tsx';
@@ -304,15 +304,18 @@ export function EventDetails({ occ, session, users, onClose, onEdit, openConv }:
   );
 }
 
-/** A meeting held as a call: its meeting ID and link, to copy into an invitation or a message. */
+/** A meeting held as a call: its meeting ID, its page on the meeting site and the app link, to copy into an invitation or a message. */
 function MeetingLine({ eventId }: { eventId: string }) {
   const toast = useToast();
-  const [id, setId] = useState<string | null>(null);
-  useEffect(() => { void window.dex.request('meet.event', { eventId }).then((m) => setId(m.id)).catch(() => setId(null)); }, [eventId]);
+  const [m, setM] = useState<MeetingInfo | null>(null);
+  useEffect(() => { void window.dex.request('meet.event', { eventId }).then(setM).catch(() => setM(null)); }, [eventId]);
   return (
     <div>
       <Icon name="video" size={16} />
-      <span>Call in Dexterity Connect{id && <> · <span className="mono">ID {formatMeetingId(id)}</span> <button className="link" onClick={() => void navigator.clipboard.writeText(meetingLink(id)).then(() => toast('Meeting link copied'))}>Copy link</button></>}</span>
+      <span className="ev-meeting">
+        <span>Call in Dexterity Connect{m && <> · <span className="mono">ID {formatMeetingId(m.id)}</span> <button className="link" onClick={() => void navigator.clipboard.writeText(meetingLink(m.id)).then(() => toast('App link copied'))}>Copy app link</button></>}</span>
+        {m?.page && <PageLink url={m.page} />}
+      </span>
     </div>
   );
 }
@@ -344,6 +347,15 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
   const [online, setOnline] = useState(ev?.online ?? true);
   const [reminder, setReminder] = useState<number | null>(ev ? ev.reminderMin : 10);
   const [description, setDescription] = useState(ev?.description ?? '');
+  // the meeting's page on the meeting site, for a new meeting held as a call (an existing one edits it in its invitation block)
+  const [created, setCreated] = useState<CalEvent | null>(null);
+  const evNow = ev ?? created ?? undefined;
+  const [guests, setGuests] = useState(false);
+  const [slug, setSlug] = useState<string | null>(null);
+  const [showTitle, setShowTitle] = useState(true);
+  const [lobby, setLobby] = useState<LobbyRule>('outside');
+  const [site, setSite] = useState<string | null>(null);
+  useEffect(() => { if (!ev) void window.dex.request('remote.info').then((r) => setSite(r.site ?? null)).catch(() => {}); }, [ev]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState<Array<{ id: string; startAt: number; endAt: number }>>([]);
   const [saving, setSaving] = useState(false);
@@ -370,15 +382,23 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
       venueId: venueId || null, location: venueId ? null : location || null, description: description || null,
     };
     try {
-      if (ev) await window.dex.request('cal.update', { eventId: ev.id, ...body });
-      else await window.dex.request('cal.create', body);
-      toast(ev ? 'Meeting updated' : people.length === 1 ? 'Invitations sent to 1 person' : people.length ? `Invitations sent to ${people.length} people` : 'Added to your calendar');
+      if (evNow) { await window.dex.request('cal.update', { eventId: evNow.id, ...body }); toast('Meeting updated'); onClose(); return; }
+      const made = await window.dex.request('cal.create', body);
+      // a call with guests from outside: its page and passcode are made now, and the dialog stays open on the invitation
+      if (online && (guests || slug)) {
+        try {
+          const m = await window.dex.request('meet.event', { eventId: made.id });
+          await window.dex.request('meet.public.set', { id: m.id, enabled: guests, showTitle, lobby, ...(slug ? { slug } : {}) });
+        } catch (e) { toast((e as Error).message, true); }
+      }
+      if (online && guests) { setCreated(made); setSaving(false); toast('Meeting saved. Copy or download the invitation for your guests below.'); return; }
+      toast(people.length === 1 ? 'Invitations sent to 1 person' : people.length ? `Invitations sent to ${people.length} people` : 'Added to your calendar');
       onClose();
     } catch (e) { toast((e as Error).message, true); setSaving(false); }
   };
 
   return (
-    <Dialog title={ev ? 'Edit meeting' : 'New meeting'} onClose={onClose}>
+    <Dialog title={evNow ? 'Edit meeting' : 'New meeting'} onClose={onClose}>
       <div className="field">
         <label htmlFor="ev-title">Title</label>
         <input id="ev-title" className="input" autoFocus maxLength={140} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Design review: P-12 isometrics" />
@@ -459,12 +479,30 @@ export function EventDialog({ session, ev, startAt, allDay: initialAllDay, conv,
         <label htmlFor="ev-desc">Agenda (optional)</label>
         <textarea id="ev-desc" className="input" rows={3} maxLength={4000} value={description} onChange={(e) => setDescription(e.target.value)} />
       </div>
-      {ev?.online && !ev.cancelled && <EventInvite ev={ev} users={users} meId={meId} office={session.hub.name} />}
+      {!evNow && online && (
+        <div className="field ev-page">
+          <label>Meeting page for guests</label>
+          <div className="ev-page-box">
+            <ToggleRow checked={guests} onChange={setGuests} label="Guests from outside can join from a browser" />
+            <SlugField meetingId={null} value={slug} site={site} onSave={setSlug} />
+            {!slug && slugFrom(title) && <button type="button" className="link ev-suggest-slug" onClick={() => setSlug(slugFrom(title))}>Use …/{slugFrom(title)}</button>}
+            <label className="guest-check"><input type="checkbox" checked={showTitle} onChange={(e) => setShowTitle(e.target.checked)} />Show the title on the invitation page</label>
+            <span className="faint guest-hint">{showTitle ? 'Anyone with the address sees the title and your first name before the passcode.' : 'Before the passcode, the page shows only the date, the time and the office.'}</span>
+            <label className="ev-lobby"><span className="label">Lobby</span>
+              <select className="input" value={lobby} onChange={(e) => setLobby(e.target.value as LobbyRule)}>
+                <option value="outside">Guests and people from outside wait</option><option value="everyone">Everyone waits to be let in</option><option value="off">Only guests from a browser wait</option>
+              </select>
+            </label>
+            {guests && <span className="faint guest-hint">The passcode is made when you save; then copy or download the invitation here.</span>}
+          </div>
+        </div>
+      )}
+      {evNow?.online && !evNow.cancelled && <EventInvite ev={evNow} users={users} meId={meId} office={session.hub.name} />}
       {clashNames.length > 0 && <div className="ev-clash"><Icon name="warning" size={15} />Busy then: {clashNames.join(', ')}</div>}
       <div className="dialog-actions">
         <span className="faint">{describeSpan(allDay ? startOfDay(start) : start, end, allDay)}</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={!title.trim() || saving} title={title.trim() ? undefined : 'Give the meeting a title first'} onClick={() => void save()}><Icon name="calendar" size={15} />{ev ? 'Save' : people.length ? 'Send invitations' : 'Save'}</button>
+        <button className="btn primary" disabled={!title.trim() || saving} title={title.trim() ? undefined : 'Give the meeting a title first'} onClick={() => void save()}><Icon name="calendar" size={15} />{evNow ? 'Save' : people.length ? 'Send invitations' : 'Save'}</button>
       </div>
     </Dialog>
   );
