@@ -7,6 +7,7 @@ import { apRef } from '@dex/core';
 import type { ActionPoint, MeetCard, Message, PublicUser } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import './threads.css';
+import { formatTime, useTimeFormat } from '../time.ts';
 
 const RecapSheet = lazy(() => import('./Recap.tsx'));
 
@@ -14,13 +15,15 @@ const RecapSheet = lazy(() => import('./Recap.tsx'));
 export function openRecap(occurrenceId: string): void { window.dispatchEvent(new CustomEvent('dex-recap', { detail: occurrenceId })); }
 
 const two = (n: number) => String(n).padStart(2, '0');
-const hm = (t: number) => { const d = new Date(t); return `${two(d.getHours())}:${two(d.getMinutes())}`; };
+/** The time of day as the person set it (Preferences ▸ Appearance: 12- or 24-hour). */
+const hm = (t: number) => formatTime(t);
 const dayCap = (t: number) => new Date(t).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
 export const minutesText = (min: number) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${two(min % 60)} min`);
 
 /** A card the hub posted in the thread. */
 export function MeetCardView({ m }: { m: Message }) {
   const c = m.meetCard as MeetCard;
+  useTimeFormat(); // drawn again when 12/24-hour changes
   if (c.kind === 'started') {
     return (
       <div className="meet-divider" role="separator" aria-label={`Meeting started: ${c.title}, ${dayCap(c.startedAt)} ${hm(c.startedAt)}`}>

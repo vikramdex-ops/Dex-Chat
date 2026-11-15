@@ -186,6 +186,33 @@ test('who may come back: a removed invitee leaves the thread unless they attende
   assert.ok(msgs.some((x) => x.meetCard?.kind === 'cancelled'));
 });
 
+test('what a late joiner missed is counted on the hub: the thread\'s messages since the Room started (no cards or replies), only the meeting chat for someone let in', async () => {
+  const { owner, priya, ravi, join } = await office();
+  const anil = (await (async () => { const { c, identity } = await join('anil'); await owner.request('admin.decide', { deviceId: identity.deviceId, approve: true }); await until(c, (s) => s.kind === 'ready'); return c; })());
+  const space = await priya.request('conv.create', { kind: 'space', name: 'Structural desk', private: true, members: [me(ravi), me(anil)] }) as Conversation;
+  await send(priya, space.id, 'Before the meeting: not missed');
+  await new Promise((r) => setTimeout(r, 5));
+  const sm = await priya.request('meet.create', { convId: space.id }) as MeetingInfo;
+  const room = (await priya.request('meet.join', { id: sm.id }) as { room: RoomInfo }).room;
+  const first = await send(priya, space.id, 'Beam B4 is fine');
+  await send(ravi, space.id, 'Reply, not counted', first.id);
+  await priya.request('room.chat', { roomId: room.id, text: 'Everyone: column C2 next' });
+  const mid = Date.now() + 1;
+  await new Promise((r) => setTimeout(r, 5));
+  await send(priya, space.id, 'Base plates after that');
+  // a member who joins late: three said before now, two before the mark (the divider is no message)
+  await ravi.request('meet.join', { id: sm.id });
+  assert.equal((await ravi.request('room.missed', { roomId: room.id, before: Date.now() + 1 })).messages, 3);
+  assert.equal((await ravi.request('room.missed', { roomId: room.id, before: mid })).messages, 2);
+  // someone let in from outside hears only of the meeting chat
+  const w = await owner.request('meet.join', { id: sm.id }) as { waiting?: string };
+  if (w.waiting) { await priya.request('room.admit', { roomId: room.id, all: true, allow: true }); await owner.request('meet.join', { id: sm.id }); }
+  assert.equal((await owner.request('room.missed', { roomId: room.id, before: Date.now() + 1 })).messages, 1);
+  // not in the call: nothing
+  await assert.rejects(anil.request('room.missed', { roomId: room.id, before: Date.now() }), /Not in this call/);
+  await priya.request('room.end', { roomId: room.id });
+});
+
 test('action points: logged three ways, numbered for the thread, the owner hears once and finds it on their Desk and day sheet; done, overdue reminders grouped in working hours', async () => {
   const { hub, priya, ravi } = await office();
   const m = await priya.request('meet.create', { title: 'Weekly piping sync', invite: [me(ravi)] }) as MeetingInfo;

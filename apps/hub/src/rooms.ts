@@ -88,6 +88,8 @@ export interface ThreadHooks {
   ended(r: RoomInfo): void;
   said(main: RoomInfo, me: PublicUser, text: string, opts: { breakout: string | null; fileId: string | null }): { messageId: string | null; name: string; text: string };
   log(main: RoomInfo): RoomChatLine[] | null;
+  /** The messages said in the meeting before a moment (null: not a meeting thread). */
+  missed(main: RoomInfo, me: PublicUser, before: number): number | null;
   noteTaker(mainRoomId: string, userId: string | null): void;
 }
 
@@ -748,6 +750,14 @@ export class Rooms {
         let saved: RoomChatLine[] | null = null;
         try { saved = this.host.threads?.log(this.view(main)) ?? null; } catch { saved = null; }
         return saved ?? [...r.chat];
+      }
+      case 'room.missed': {
+        const r = this.mine(d.roomId, me, deviceId);
+        const main = this.breakouts.main(r);
+        const before = typeof d.before === 'number' && Number.isFinite(d.before) ? d.before : Date.now();
+        let n: number | null = null;
+        try { n = this.host.threads?.missed(this.view(main), me, before) ?? null; } catch { n = null; }
+        return { messages: n ?? new Set(r.chat.filter((l) => l.at < before).map((l) => l.messageId ?? l.id)).size };
       }
       case 'meet.noteTaker': {
         const r = this.hosted(d.roomId, me, deviceId);

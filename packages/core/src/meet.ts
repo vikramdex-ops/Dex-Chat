@@ -225,6 +225,8 @@ declare module './protocol.ts' {
     'meet.guestLink': { req: { id: string; enabled?: boolean; regenerate?: boolean }; res: GuestLinkView };
     'room.chat': { req: { roomId: string; text: string }; res: RoomChatLine };
     'room.chatLog': { req: { roomId: string }; res: RoomChatLine[] };
+    /** What a late joiner missed: the messages said in the meeting before `before` (counted on the hub, not from what is loaded). */
+    'room.missed': { req: { roomId: string; before: number }; res: { messages: number } };
     'room.breakout.open': { req: { roomId: string; rooms: Array<{ name: string; devices: string[] }>; minutes: number | null }; res: BreakoutView };
     'room.breakout.note': { req: { roomId: string; text: string }; res: { ok: true } };
     'room.breakout.visit': { req: { roomId: string; to: number | 'main' }; res: RoomInfo };

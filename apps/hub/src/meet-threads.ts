@@ -448,6 +448,24 @@ export class MeetThreads {
     });
   }
 
+  /**
+   * What a late joiner missed: the thread's messages from the start of the Room until `before`
+   * (members), or the meeting chat saved for the occurrence (someone let in from outside). Cards
+   * and replies are not counted.
+   */
+  missed(room: RoomInfo, me: PublicUser, before: number): number | null {
+    const until = Math.min(before, this.now());
+    if (this.d.messaging.isMember(room.convId, me.id)) {
+      const r = this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conv_id = ? AND created_at >= ? AND created_at < ? AND deleted = 0 AND parent_id IS NULL AND id NOT IN (SELECT message_id FROM meet_cards)`)
+        .get(room.convId, room.startedAt, until) as { n: number };
+      return r.n;
+    }
+    const occId = this.occurrenceOf(room.id);
+    if (!occId) return null;
+    const r = this.db.prepare(`SELECT COUNT(*) AS n FROM meet_lines l JOIN messages m ON m.id = l.message_id WHERE l.occ_id = ? AND l.at < ? AND m.deleted = 0`).get(occId, until) as { n: number };
+    return r.n;
+  }
+
   // ------------------------------------------------------------ what messages carry
   private extras(r: MsgRow): Partial<Message> {
     const out: Partial<Message> = {};

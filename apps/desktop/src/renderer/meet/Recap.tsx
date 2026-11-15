@@ -14,9 +14,11 @@ import { minutesText } from './threadcards.tsx';
 import { emailDraft } from './GuestLink.tsx';
 import { RecordingPlayer, hms } from './Recordings.tsx';
 import './recap.css';
+import { formatTime } from '../time.ts';
 
 const two = (n: number) => String(n).padStart(2, '0');
-const hm = (t: number) => { const d = new Date(t); return `${two(d.getHours())}:${two(d.getMinutes())}`; };
+/** The time of day as the person set it (Preferences ▸ Appearance: 12- or 24-hour). */
+const hm = (t: number) => formatTime(t);
 const dateLong = (t: number) => new Date(t).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const mins = (ms: number) => minutesText(Math.max(0, Math.round(ms / 60_000)));
 const size = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);

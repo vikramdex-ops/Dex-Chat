@@ -338,6 +338,7 @@ export class Hub {
         ended: (r) => this.meetThreads.roomEnded(r),
         said: (main, me, text, opts) => this.meetThreads.said(main, me, text, opts),
         log: (main) => this.meetThreads.chatLog(main),
+        missed: (main, me, before) => this.meetThreads.missed(main, me, before),
         noteTaker: (roomId, userId) => { this.meetThreads.setNoteTaker(roomId, userId); },
       },
     });

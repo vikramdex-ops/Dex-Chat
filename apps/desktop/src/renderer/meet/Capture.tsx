@@ -9,6 +9,7 @@ import { useChat } from '../chat/store.ts';
 import { ActionPreview, logAction, ownerPool, ownerText, useActionDraft, useRegister } from './actions.tsx';
 import { useRoomChat } from './live.ts';
 import { useAgenda } from './Register.tsx';
+import { formatTime } from '../time.ts';
 
 /** Words in, an action point out: the strip, the register's last row, a chat line. */
 export function CaptureForm({ room, convId, users, meId, source, autoFocus, onLogged, onClose, next }: {
@@ -108,10 +109,19 @@ function CatchUp({ room, meId, meDevice, actions, onTab, hidden }: { room: RoomI
   const lines = useRoomChat(room.id);
   const msgs = useChat((s) => s.timelines.get(room.convId)?.messages);
   const late = joined - room.startedAt > 3 * 60_000 && room.startedBy !== meId;
+  // counted on the hub: the thread may not be loaded yet, and only its latest page ever is
+  const [counted, setCounted] = useState<number | null>(null);
+  useEffect(() => {
+    if (!late) return;
+    let live = true;
+    window.dex.request('room.missed', { roomId: room.id, before: joined }).then((r) => { if (live) setCounted(r.messages); }).catch(() => { /* fall back to what is loaded */ });
+    return () => { live = false; };
+  }, [late, room.id, joined]);
   if (!late || gone || hidden) return null;
-  const said = new Set([...lines.filter((l) => l.at < joined).map((l) => l.messageId ?? l.id), ...(msgs ?? []).filter((m) => m.createdAt >= room.startedAt && m.createdAt < joined && !m.meetCard && !m.parentId).map((m) => m.id)]).size;
+  const loaded = new Set([...lines.filter((l) => l.at < joined).map((l) => l.messageId ?? l.id), ...(msgs ?? []).filter((m) => m.createdAt >= room.startedAt && m.createdAt < joined && !m.meetCard && !m.parentId).map((m) => m.id)]).size;
+  const said = Math.max(counted ?? 0, loaded);
   if (!said && !actions) return null;
-  const since = new Date(room.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const since = formatTime(room.startedAt);
   return (
     <div className="catch-up" role="status">
       <span className="cap mono">WHAT YOU MISSED</span>
