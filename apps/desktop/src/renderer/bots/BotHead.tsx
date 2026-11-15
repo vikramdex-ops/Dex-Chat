@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 import type { BotAbout, PublicUser } from '@dex/core';
 import { hoursText } from '@dex/core/botflows';
 import { Dialog } from '../ui.tsx';
+import { NIB_ACCOUNT } from '@dex/core/nib';
+import { useNib } from '../nib/store.ts';
 
 export interface BotHeadView {
   subtitle: React.ReactNode;
@@ -20,6 +22,9 @@ export function useBotHead(bot: PublicUser | undefined, convId: string, title: s
   const [about, setAbout] = useState<BotAbout | null>(null);
   const [open, setOpen] = useState(false);
   const botId = bot?.role === 'bot' ? bot.id : null;
+  // Nib is the office's own companion: its cells are your day, not requests or hours
+  const isNib = bot?.account === NIB_ACCOUNT;
+  const nib = useNib((st) => st.me);
   useEffect(() => {
     if (!botId) { setAbout(null); return; }
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -38,8 +43,11 @@ export function useBotHead(bot: PublicUser | undefined, convId: string, title: s
   }, [botId, convId, lastId]);
   if (!botId) return null;
   const maker = about?.ownerId ? users.get(about.ownerId)?.displayName : null;
-  const by = maker ? `Made by ${maker}` : about?.source === 'api' ? 'Integration' : 'Office bot';
-  const facts: Array<[string, string]> = about?.tracked
+  const by = isNib ? 'Your office companion' : maker ? `Made by ${maker}` : about?.source === 'api' ? 'Integration' : 'Office bot';
+  const sheet = nib?.items.length ?? 0;
+  const facts: Array<[string, string]> = isNib
+    ? (nib && !nib.exempt ? [['Your sheet', sheet === 1 ? '1 item' : `${sheet} items`], ['Wrap-up', nib.wrapAt]] : [['Ask', 'Ctrl+Alt+N'], ['Hours', 'Any time']])
+    : about?.tracked
     ? [['Open', String(about.open)], ['Yours', String(about.yours)]]
     : about?.hours
       ? [['Hours', hoursText(about.hours)], ['Now', about.openNow ? 'Open' : 'Closed']]
@@ -47,7 +55,7 @@ export function useBotHead(bot: PublicUser | undefined, convId: string, title: s
   const subtitle = (
     <>
       <span className="chip accent bot-head-tag">Bot</span>
-      <span className="pane-sub"><span>{by}</span>{about?.about ? <span translate="no">{` · ${about.about}`}</span> : null}</span>
+      <span className="pane-sub"><span>{by}</span>{isNib ? <span>{' · Day sheets, leave, reminders and answers'}</span> : about?.about ? <span translate="no">{` · ${about.about}`}</span> : null}</span>
       <button type="button" className="link bot-head-details" onClick={() => setOpen(true)}>Details</button>
     </>
   );

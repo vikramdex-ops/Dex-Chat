@@ -144,7 +144,7 @@ button.nib-item-row:hover { background: var(--subtle); }
 .nib-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .nib-edit .field span, .nib-wrapup .field span, .nib-leave .field span { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .nib-edit-qty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.nib-total { width: 64px; }
+input.nib-total { width: 64px; }
 .nib-edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .nib-edit-from { margin-left: auto; font-size: 12px; }
 .nib-stepper { display: inline-flex; align-items: center; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); }
