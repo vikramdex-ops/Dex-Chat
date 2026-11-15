@@ -39,7 +39,8 @@ export function HostExtras({ room, users, meDevice }: { room: RoomInfo; users: M
     return () => { alive = false; };
   }, [meetingId]);
   const others = room.participants.filter((p) => p.deviceId !== meDevice).length;
-  const isMeeting = !!meetingId && room.meetingKind !== undefined;
+  // a webinar's stage has no breakout rooms (its audience watches; it is not in the Room)
+  const isMeeting = !!meetingId && room.meetingKind !== undefined && room.meetingKind !== 'webinar';
   return (
     <>
       {room.breakouts ? <BreakoutHostBox room={room} />

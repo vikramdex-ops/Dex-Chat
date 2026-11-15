@@ -334,6 +334,7 @@ export class Webinars {
       case 'web.update': return this.update(me, d);
       case 'web.get': { const { m, row } = this.staffOnly(d.id, me); return this.info(m, row, me); }
       case 'web.list': return this.list(me);
+      case 'web.live': { const { m } = this.staffOnly(d.id, me); return this.liveView(m.id); }
       case 'web.state': return this.setState(me, deviceId, d);
       case 'web.registrants': { const { m } = this.hostOnly(d.id, me); return this.registrants(m.id); }
       case 'web.decide': return this.decide(me, d);

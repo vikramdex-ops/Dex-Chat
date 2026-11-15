@@ -26,11 +26,16 @@ import { LobbySheet } from '../meet/Lobby.tsx';
 import { HostExtras, SoundMenu, useRoomUsers } from '../meet/RoomExtras.tsx';
 import { BreakoutBanner } from '../meet/Breakouts.tsx';
 import { useNoise } from './noise.ts';
+import { WEBINAR_TAB_LIST, isWebinarTab } from '../meet/webinar/tabs.ts';
+import type { WebinarTab } from '../meet/webinar/tabs.ts';
 import '../meet/meet.css';
 
 const MeetPanel = lazy(() => import('../meet/MeetPanel.tsx'));
+// a webinar's stage: its bar and its panel tabs (questions, audience, polls, handouts)
+const WebinarPanel = lazy(() => import('../meet/webinar/StageTabs.tsx'));
+const WebinarBar = lazy(() => import('../meet/webinar/StageTabs.tsx').then((m) => ({ default: m.WebinarBar })));
 
-type Tab = 'people' | 'chat' | 'polls' | 'board' | 'files';
+type Tab = 'people' | 'chat' | 'polls' | 'board' | 'files' | WebinarTab;
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'people', label: 'People' }, { id: 'chat', label: 'Chat' }, { id: 'polls', label: 'Polls' }, { id: 'board', label: 'Board' }, { id: 'files', label: 'Files' },
 ];
@@ -312,7 +317,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
 
   // a breakout room is named for itself; its meeting's name is on the banner
   const name = room.breakoutName ?? (room.title || title(room.convId));
-  const kind = room.parentId ? 'BREAKOUT' : room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
+  const kind = room.parentId ? 'BREAKOUT' : room.meetingKind === 'webinar' ? 'WEBINAR STAGE' : room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
     : convKind === 'space' ? 'SPACE' : convMembers.length > 2 ? 'GROUP' : 'DIRECT';
   const canFloat = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
   const canRecord = recordSupported() && (policy.allowRecording || myRec);
@@ -331,6 +336,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
         )}
         <section ref={fieldRef} className={`room-field layout-${layout}${shareStream && layout === 'presentation' ? ' sharing' : ''}`} aria-label="People in the Room">
           <BreakoutBanner room={room} />
+          {room.meetingKind === 'webinar' && <Suspense fallback={null}><WebinarBar room={room} meId={meId} meDevice={meDevice} users={users} /></Suspense>}
           {unmuteAsk && muted && (
             <div className="room-ask" role="alertdialog" aria-label="Asked to unmute">
               <Icon name="mic" size={16} />
@@ -364,7 +370,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
         <aside className="room-side">
           <div className="room-panel">
             <nav className="room-tabs" role="tablist" aria-label="Meeting panel">
-              {TABS.map((t) => (
+              {(room.meetingKind === 'webinar' ? WEBINAR_TAB_LIST : TABS).map((t) => (
                 <button key={t.id} role="tab" id={`room-tab-${t.id}`} aria-selected={tab === t.id} aria-controls="room-panel-body" onClick={() => setTab(t.id)}>
                   <span>{t.label}{t.id === 'people' ? ` · ${room.participants.length}` : ''}</span>
                   {t.id === 'people' && isHost && waiting.length > 0 && <i className="room-tab-badge" aria-label={`${waiting.length} waiting`}>{waiting.length}</i>}
@@ -376,7 +382,8 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
               {tab === 'people'
                 ? <PeoplePanel room={room} seats={seats} zones={zones} users={users} meId={meId} muted={muted} camera={camera} isHost={isHost} isMainHost={isMainHost}
                     handOrder={handOrder} onMenu={openMenu} run={run} host={host} meDevice={meDevice} />
-                : <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><MeetPanel tab={tab} convId={room.convId} users={users} meId={meId} room={room} /></Suspense>}
+                : isWebinarTab(tab) ? <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><WebinarPanel tab={tab} room={room} meId={meId} users={users} /></Suspense>
+                  : <Suspense fallback={<div className="tl-more"><span className="spinner" /></div>}><MeetPanel tab={tab} convId={room.convId} users={users} meId={meId} room={room} /></Suspense>}
             </div>
           </div>
 

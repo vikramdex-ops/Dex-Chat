@@ -1,11 +1,12 @@
 // A meeting's report, opened from Recent meetings on the Meet lens: who came, when and for how
 // long (rejoins summed), shown as an attendance schedule with a bar along the meeting's time for
 // each person; hands, reactions, the polls asked and their results, the recordings; and a CSV of
-// it all for Excel or Dexterity Sheets.
+// it all for Excel or Dexterity Sheets. A webinar's report adds its own part: registrants marked
+// attended or no-show, the audience, questions, poll answers, handout downloads and the survey.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatMeetingId } from '@dex/core';
-import type { MeetingReport, RecordingInfo } from '@dex/core';
+import type { MeetingReport, RecordingInfo, WebinarReport } from '@dex/core';
 import { reportCsv } from '@dex/core/meet-csv';
 import { Icon, colorFor, useToast } from '../ui.tsx';
 import { hm } from '../calendar/store.ts';
@@ -87,6 +88,7 @@ export function MeetingReportSheet({ roomId, onClose, onWatch }: { roomId: strin
                   {r.breakouts > 0 && <p className="rep-line faint">{r.breakouts} breakout {r.breakouts === 1 ? 'room' : 'rooms'} were used.</p>}
                 </section>
               </div>
+              {r.webinar && <WebinarPart w={r.webinar} />}
             </section>
             <footer className="rec-block">
               <div className="tb-name"><span className="label">Meeting report</span><h2 title={r.title}>{r.title || 'Meeting'}</h2></div>
@@ -106,5 +108,28 @@ export function MeetingReportSheet({ roomId, onClose, onWatch }: { roomId: strin
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** The webinar's part of a meeting's report. */
+function WebinarPart({ w }: { w: WebinarReport }) {
+  const approved = w.registrants.filter((x) => x.status === 'approved');
+  const came = approved.filter((x) => x.attended);
+  const downloads = w.handouts.reduce((a, h) => a + h.downloads.length, 0);
+  return (
+    <section className="rep-webinar">
+      <div className="tb-head"><span className="label">Webinar · registrants and audience</span><span className="mono">{came.length} OF {approved.length} ATTENDED · PEAK {w.peakAudience}</span></div>
+      <table className="rep-table">
+        <thead><tr><th>Registrant</th><th>Email</th><th>Status</th><th>Attended</th><th className="num">Minutes</th></tr></thead>
+        <tbody>
+          {w.registrants.map((x) => (
+            <tr key={x.id}><td><b>{x.name}</b></td><td className="mono">{x.email}</td><td className="mono">{x.status.toUpperCase()}</td>
+              <td className="mono">{x.attended === null ? '—' : x.attended ? 'ATTENDED' : 'NO-SHOW'}</td><td className="mono num">{x.minutes || '·'}</td></tr>
+          ))}
+          {!w.registrants.length && <tr><td colSpan={5} className="faint">No one registered from outside the office.</td></tr>}
+        </tbody>
+      </table>
+      <p className="rep-line"><b className="mono">{w.attendees.length}</b> watched ({w.attendees.filter((a) => a.office).length} from the office) · <b className="mono">{w.questions.length}</b> questions · <b className="mono">{w.polls.reduce((a, p) => a + p.voters, 0)}</b> poll answers · <b className="mono">{downloads}</b> handout downloads · <b className="mono">{w.survey.answers.length}</b> survey answers</p>
+    </section>
   );
 }

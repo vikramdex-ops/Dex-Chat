@@ -38,8 +38,10 @@ import { MdPreview } from './chat/MdPreview.tsx';
 import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
-import { joinMeeting, setSelfUser, startCalls } from './rooms/engine.ts';
+import { setSelfUser, startCalls } from './rooms/engine.ts';
 import { startMeetLive } from './meet/live.ts';
+import { joinAny, openWebinar, startWebinars } from './meet/webinar/store.ts';
+import { WebinarSeat } from './meet/webinar/Seat.tsx';
 import { openRecording } from './meet/shelf.ts';
 import { parseMeetingId } from '@dex/core';
 import { AddToolHost } from './bots/AddTool.tsx';
@@ -281,6 +283,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(t, b), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
     startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
+    startWebinars();
   }, [state.phase, session.me.id, session.deviceId]);
 
   const openConversation = (id: string, kind: 'direct' | 'space') => {
@@ -440,7 +443,12 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else if (target === 'meet') {
       setLens('meet'); setSheet(null);
       const id = parseMeetingId(m[2] ?? '');
-      if (id) void joinMeeting(id, false).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
+      if (id) void joinAny(id, false).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
+    }
+    else if (target === 'webinar' && /^\d{9}$/.test(m[2] ?? '')) {
+      setLens('meet'); setSheet(null);
+      if (m[3] === 'survey') openWebinar(m[2], 'survey');
+      else void joinAny(m[2], false).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));
     }
     else setLens('pulse');
   }), [isAdmin, conversations]);
@@ -600,6 +608,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <RoomStage users={users} meDevice={session.deviceId} meId={session.me.id}
         title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : 'Room'; }}
         onOpenConversation={(id) => { const c = conversations.get(id); if (c) openConversation(c.id, c.kind); }} />
+      <WebinarSeat />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}
       <ReminderCards users={users} meId={session.me.id} jump={jump} />

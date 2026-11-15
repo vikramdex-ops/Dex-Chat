@@ -438,6 +438,8 @@ declare module './protocol.ts' {
     'web.update': { req: { id: string; title?: string; description?: string; startsAt?: number; durationMin?: number; panelists?: string[]; settings?: Partial<WebinarSettings>; fields?: WebinarFieldInput[]; survey?: WebinarFieldInput[] }; res: WebinarInfo };
     'web.get': { req: { id: string }; res: WebinarInfo };
     'web.list': { req: void; res: WebinarCard[] };
+    /** The live view, for the organiser and panelists (attendees get it with web.watch). */
+    'web.live': { req: { id: string }; res: WebinarLive };
     'web.state': { req: { id: string; state: 'live' | 'ended' }; res: WebinarInfo };
     'web.registrants': { req: { id: string }; res: Registrant[] };
     'web.decide': { req: { id: string; registrantIds: string[]; approve: boolean }; res: Registrant[] };

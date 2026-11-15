@@ -2,13 +2,13 @@
 // open your personal room, and see what is on now, what is coming up and the meetings you were in.
 // Laid out as a drawing register: ruled title-block cards, mono reference numbers, no pictures.
 // M2: the Recordings shelf and its viewer, a report for each past meeting, and the personal
-// room's guest link.
+// room's guest link. M3: webinars (planning one, its sheet, watching one) and the survey.
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { formatMeetingId, isWebGuest, meetingLink, parseMeetingId } from '@dex/core';
 import type { LobbyRule, MeetingInfo, MeetingRecord, Occurrence, PublicUser, RecordingInfo, Session } from '@dex/core';
 import { Avatar, Icon, presenceFor, useToast } from '../ui.tsx';
-import { joinMeeting, useCall } from '../rooms/engine.ts';
+import { useCall } from '../rooms/engine.ts';
 import { Glyph } from '../rooms/parts.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
@@ -19,6 +19,8 @@ import { RecordingPlayer, RecordingShelf } from './Recordings.tsx';
 import { MeetingReportSheet } from './Report.tsx';
 import { GuestLinkControls } from './GuestLink.tsx';
 import { clearMeetTarget, useMeetTarget } from './shelf.ts';
+import { SurveySheet, WebinarSheet, WebinarsBlock } from './webinar/Lens.tsx';
+import { clearOpenWebinar, joinAny, useWeb } from './webinar/store.ts';
 import './meet.css';
 
 const LOBBY_RULES: Array<{ value: LobbyRule; label: string }> = [
@@ -49,7 +51,16 @@ export default function MeetLens({ session, openConv }: { session: Session; open
   const [scheduling, setScheduling] = useState(false);
   const [playing, setPlaying] = useState<RecordingInfo | null>(null);
   const [report, setReport] = useState<string | null>(null);
-  const go = (id: string, video: boolean) => void joinMeeting(id, video).catch((e: Error) => toast(e.message, true));
+  // a webinar's attendees watch it; everyone else joins as before
+  const go = (id: string, video: boolean) => void joinAny(id, video).catch((e: Error) => toast(e.message, true));
+  const [webinar, setWebinar] = useState<string | null>(null);
+  const [survey, setSurvey] = useState<string | null>(null);
+  const openWeb = useWeb((s) => s.open);
+  useEffect(() => {
+    if (!openWeb) return;
+    clearOpenWebinar();
+    if (openWeb.what === 'survey') setSurvey(openWeb.meetingId); else setWebinar(openWeb.meetingId);
+  }, [openWeb]);
   // something asked for a recording (its link) or a report
   const target = useMeetTarget();
   useEffect(() => {
@@ -75,6 +86,7 @@ export default function MeetLens({ session, openConv }: { session: Session; open
         <div className="meet-col">
           {canHost && <StartCard users={session.users} meId={meId} onStart={go} busy={!!joining || !!inRoom} />}
           <JoinCard onJoin={go} busy={!!joining || !!inRoom} users={users} />
+          <WebinarsBlock session={session} busy={!!joining || !!inRoom} onOpen={setWebinar} onReport={setReport} />
           <OnNow users={users} meId={meId} onJoin={go} busy={!!inRoom} />
           <RecordingShelf onOpen={setPlaying} />
         </div>
@@ -87,6 +99,8 @@ export default function MeetLens({ session, openConv }: { session: Session; open
       {scheduling && <EventDialog session={session} onClose={() => setScheduling(false)} />}
       {report && <MeetingReportSheet roomId={report} onClose={() => setReport(null)} onWatch={(r) => { setReport(null); setPlaying(r); }} />}
       {playing && <RecordingPlayer rec={playing} onClose={() => setPlaying(null)} />}
+      {webinar && <WebinarSheet meetingId={webinar} session={session} onClose={() => setWebinar(null)} onReport={(roomId) => { setWebinar(null); setReport(roomId); }} />}
+      {survey && <SurveySheet meetingId={survey} onClose={() => setSurvey(null)} />}
     </div>
   );
 }
@@ -173,7 +187,7 @@ function JoinCard({ onJoin, busy, users }: { onJoin: (id: string, video: boolean
         <div className="meet-found" role="status">
           {!typed && <span className="faint">Type the nine-digit ID, or paste a dexconnect://meet link.</span>}
           {typed && !id && <span className="faint">A meeting ID has nine digits.</span>}
-          {found && <span><b>{found.title || 'Meeting'}</b><span className="faint"> · {users.get(found.hostId)?.displayName ?? 'host'}{found.live ? ` · on now, ${found.live.participants} in it` : ' · not started'}</span></span>}
+          {found && <span><b>{found.title || 'Meeting'}</b><span className="faint"> · {found.kind === 'webinar' ? 'a webinar by ' : ''}{users.get(found.hostId)?.displayName ?? 'host'}{found.live ? (found.kind === 'webinar' ? ' · its stage is open' : ` · on now, ${found.live.participants} in it`) : ' · not started'}</span></span>}
           {problem && <span className="field-error">{problem}</span>}
         </div>
         </div>
