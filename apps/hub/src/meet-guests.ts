@@ -6,10 +6,12 @@
 // the people in the meeting are all they learn about the office. Guests always wait in the lobby.
 import crypto from 'node:crypto';
 import { GUEST_NAME_MAX, MEETING_ID_RE, WEB_GUEST_DEVICE_PREFIX, WEB_GUEST_PREFIX, formatMeetingId, isWebGuest, isWebGuestDevice, ulid } from '@dex/core';
-import type { GuestDown, GuestRoomView, IceServer, PublicUser, RoomChatLine, RoomInfo, RoomVisitor } from '@dex/core';
+import type { GuestDown, GuestRoomView, IceServer, PublicUser, RoomChatLine, RoomInfo, RoomVisitor, WebinarDown } from '@dex/core';
 import type { Meetings } from './meetings.ts';
 import type { Rooms } from './rooms.ts';
 import { RoomError } from './rooms.ts';
+import type { Webinars } from './webinars.ts';
+import { WebinarError } from './webinars.ts';
 
 /** Close codes the gateway understands: 4403 counts as a failed passcode for that address. */
 export const GUEST_CLOSE = { badPasscode: 4403, tooMany: 4429, refused: 4409, done: 4000, full: 4503 } as const;
@@ -22,6 +24,8 @@ interface Session {
   gid: number;
   ip: string;
   meetingId: string;
+  /** A meeting guest (/m/, the passcode), or a webinar attendee (/w/…/watch, their personal link). */
+  kind: 'meeting' | 'webinar';
   state: 'new' | 'waiting' | 'in';
   name: string;
   userId: string;
@@ -32,7 +36,9 @@ interface Session {
 export interface GuestHost {
   rooms: Rooms;
   meetings: Meetings;
-  send(gid: number, frame: GuestDown): void;
+  /** Webinars: attendees watching with their personal link, and speakers' one-time passes. */
+  webinars?: () => Webinars;
+  send(gid: number, frame: GuestDown | WebinarDown): void;
   close(gid: number, code: number, reason: string): void;
   /** Guest links are allowed by the office policy. */
   allowed(): boolean;
@@ -62,13 +68,15 @@ export class MeetGuests {
 
   get count(): number { return this.sessions.size; }
 
-  /** The gateway opened a guest connection for this meeting. */
-  open(gid: number, ip: string, meetingId: string): void {
+  /** The gateway opened a guest connection for this meeting (kind 'w': a webinar's watch page). */
+  open(gid: number, ip: string, meetingId: string, kind?: string): void {
     if (this.sessions.has(gid)) return;
-    if (this.sessions.size >= MAX_SESSIONS) { this.host.close(gid, GUEST_CLOSE.full, 'Too many guests are connected. Try again in a few minutes.'); return; }
+    const webinar = kind === 'w';
+    // a webinar's audience is larger than a meeting's guests
+    if (this.sessions.size >= (webinar ? MAX_SESSIONS + 400 : MAX_SESSIONS)) { this.host.close(gid, GUEST_CLOSE.full, 'Too many guests are connected. Try again in a few minutes.'); return; }
     if (!MEETING_ID_RE.test(meetingId)) { this.host.close(gid, GUEST_CLOSE.badPasscode, 'That meeting link is not valid.'); return; }
     const id = ulid();
-    this.sessions.set(gid, { gid, ip: ip.slice(0, 80), meetingId, state: 'new', name: '', userId: `${WEB_GUEST_PREFIX}${id}`, deviceId: `${WEB_GUEST_DEVICE_PREFIX}${id}`, roomId: null });
+    this.sessions.set(gid, { gid, ip: ip.slice(0, 80), meetingId, kind: webinar ? 'webinar' : 'meeting', state: 'new', name: '', userId: `${WEB_GUEST_PREFIX}${id}`, deviceId: `${WEB_GUEST_DEVICE_PREFIX}${id}`, roomId: null });
   }
 
   /** The guest's connection closed: they leave the lobby or the Room. */
@@ -76,7 +84,8 @@ export class MeetGuests {
     const s = this.sessions.get(gid);
     if (!s) return;
     this.forget(s);
-    if (s.state !== 'new') this.host.rooms.leaveAll(s.deviceId);
+    if (s.kind === 'webinar') this.host.webinars?.().leaveDevice(s.deviceId);
+    else if (s.state !== 'new') this.host.rooms.leaveAll(s.deviceId);
   }
 
   /** The gateway went away: every guest is gone. */
@@ -91,7 +100,8 @@ export class MeetGuests {
   /** End the guest's session; the full reason goes as a frame (a close reason is cut at 123 bytes). */
   private end(s: Session, code: number, reason: string): void {
     this.forget(s);
-    if (s.state !== 'new') this.host.rooms.leaveAll(s.deviceId);
+    if (s.kind === 'webinar') this.host.webinars?.().leaveDevice(s.deviceId);
+    else if (s.state !== 'new') this.host.rooms.leaveAll(s.deviceId);
     this.host.send(s.gid, { t: 'denied', reason });
     this.host.close(s.gid, code, reason.length > 120 ? `${reason.slice(0, 117)}...` : reason);
   }
@@ -133,7 +143,8 @@ export class MeetGuests {
     try { f = JSON.parse(raw); } catch { return; }
     if (!f || typeof f !== 'object') return;
     if (f.t === 'ping') { this.host.send(gid, { t: 'pong' }); return; }
-    if (f.t === 'leave') { this.end(s, GUEST_CLOSE.done, 'You left the meeting.'); return; }
+    if (f.t === 'leave') { this.end(s, GUEST_CLOSE.done, s.kind === 'webinar' ? 'You left the webinar.' : 'You left the meeting.'); return; }
+    if (s.kind === 'webinar') { this.webinarFrame(s, f); return; }
     if (s.state === 'new') { if (f.t === 'join') void this.join(s, f); else this.host.send(gid, { t: 'error', message: 'Join the meeting first.' }); return; }
     if (s.state !== 'in' || !s.roomId) { this.host.send(gid, { t: 'error', message: 'Wait until the host lets you in.' }); return; }
     try { this.inRoom(s, f); } catch (err) {
@@ -146,15 +157,18 @@ export class MeetGuests {
     if (this.blocked(s.ip)) { this.end(s, GUEST_CLOSE.tooMany, 'Too many wrong passcodes from your network. Try again in 10 minutes.'); return; }
     if (!this.host.allowed()) { this.end(s, GUEST_CLOSE.refused, 'This office does not let guests join meetings from a browser.'); return; }
     const m = this.host.meetings.get(s.meetingId);
-    if (!m || !this.host.meetings.passcodeOk(m, f.passcode)) {
+    // someone a webinar's organiser invited to speak comes with a one-time pass instead of the passcode
+    const pass = m?.kind === 'webinar' ? this.host.webinars?.().takePass(m.id, f.passcode) ?? null : null;
+    if (!m || (!pass && !this.host.meetings.passcodeOk(m, f.passcode))) {
       const blocked = this.failed(s.ip);
       this.host.log('info', 'guest passcode refused', { ip: s.ip, meeting: formatMeetingId(s.meetingId) });
       this.end(s, blocked ? GUEST_CLOSE.tooMany : GUEST_CLOSE.badPasscode, blocked ? 'Too many wrong passcodes from your network. Try again in 10 minutes.' : 'The passcode is wrong, or the host turned this link off. Check the invitation.');
       return;
     }
-    const name = cleanName(f.name);
+    const name = pass ? pass.name : cleanName(f.name);
     if (!name) { this.host.send(s.gid, { t: 'error', message: 'Enter your name so the host knows who is asking.' }); return; }
     s.name = name;
+    if (pass) this.host.webinars?.().speakerJoined(m.id, s.userId, pass);
     const live = this.host.rooms.live(m.id);
     if (live?.mode === 'relay') {
       this.host.tellHosts(live, name, 'The meeting runs on the office relay, which browsers cannot reach.');
@@ -174,6 +188,53 @@ export class MeetGuests {
     }
     this.host.audit(null, 'meeting.guestKnocked', m.id, { name, ip: s.ip });
     this.host.send(s.gid, { t: 'lobby', meetingId: formatMeetingId(m.id), title: m.title || 'Meeting', host: this.host.userById(m.hostId)?.displayName ?? 'The host' });
+  }
+
+  /** A webinar attendee's page: their link first, then questions, votes, polls, hands, reactions, signalling and handouts. */
+  private webinarFrame(s: Session, f: Record<string, unknown>): void {
+    const web = this.host.webinars?.();
+    if (!web) { this.end(s, GUEST_CLOSE.refused, 'Webinars are not available on this hub.'); return; }
+    if (f.t === 'watch') {
+      if (s.state === 'in') return;
+      if (this.blocked(s.ip)) { this.end(s, GUEST_CLOSE.tooMany, 'Too many links that did not work from your network. Try again in 10 minutes.'); return; }
+      void web.webWatch(s.meetingId, f.token, { userId: s.userId, deviceId: s.deviceId }).then((down) => {
+        if (!this.sessions.has(s.gid)) { if (down.t === 'webinar') web.leaveDevice(s.deviceId); return; }
+        if (down.t === 'webinar') {
+          s.state = 'in';
+          s.name = down.self.name;
+          this.byDevice.set(s.deviceId, s.gid);
+          this.byUser.set(s.userId, s.gid);
+          this.host.audit(null, 'webinar.attendeeJoined', s.meetingId, { name: s.name, ip: s.ip });
+        }
+        this.host.send(s.gid, down);
+      }, (err: Error) => {
+        if (err instanceof WebinarError && err.status === 403) {
+          const blocked = this.failed(s.ip);
+          this.end(s, blocked ? GUEST_CLOSE.tooMany : GUEST_CLOSE.badPasscode, blocked ? 'Too many links that did not work from your network. Try again in 10 minutes.' : err.message);
+        } else this.end(s, GUEST_CLOSE.refused, err instanceof WebinarError ? err.message : 'The webinar could not be opened.');
+      });
+      return;
+    }
+    if (s.state !== 'in') { this.host.send(s.gid, { t: 'error', message: 'Open your link first.' }); return; }
+    try {
+      if (f.t === 'handout') {
+        const h = web.webHandout(s.deviceId, f.id);
+        const size = 192 * 1024;
+        const chunks = Math.max(1, Math.ceil(h.data.length / size));
+        this.host.send(s.gid, { t: 'file', id: h.id, name: h.name, mime: h.mime, size: h.data.length, chunks });
+        for (let i = 0; i < chunks; i++) this.host.send(s.gid, { t: 'fileChunk', id: h.id, i, data: h.data.subarray(i * size, (i + 1) * size).toString('base64') });
+        return;
+      }
+      const reply = web.webFrame(s.deviceId, f);
+      if (reply) {
+        this.host.send(s.gid, reply);
+        // invited to speak and accepted: this page opens the meeting page; the attendee session ends
+        if (reply.t === 'speak') { this.forget(s); this.host.close(s.gid, GUEST_CLOSE.done, 'Going on stage'); }
+      }
+    } catch (err) {
+      this.host.send(s.gid, { t: 'error', message: err instanceof WebinarError ? err.message : 'That did not work.' });
+      if (!(err instanceof WebinarError)) this.host.log('warn', 'webinar frame failed', { error: (err as Error).message });
+    }
   }
 
   /** A host let the guest in: into the Room, with the call's ICE servers and the meeting chat so far. */
@@ -250,7 +311,18 @@ export class MeetGuests {
     const s = this.sessions.get(this.byDevice.get(deviceId) ?? -1);
     if (!s) return;
     const d = data as Record<string, unknown>;
+    if (s.kind === 'webinar') {
+      if (name.startsWith('web.')) this.host.send(s.gid, { t: 'w', name, data });
+      return;
+    }
     switch (name) {
+      case 'web.demoted':
+        // a webinar speaker goes back to watching with their personal link (kept by the watch page)
+        this.forget(s);
+        this.host.rooms.leaveAll(s.deviceId);
+        this.host.send(s.gid, { t: 'demoted', to: `/w/${s.meetingId}/watch` });
+        this.host.close(s.gid, GUEST_CLOSE.done, 'Back to the audience');
+        return;
       case 'meet.lobby':
         if (d.state === 'admitted') void this.admitted(s);
         else if (d.state === 'denied') this.end(s, GUEST_CLOSE.done, s.state === 'waiting' ? 'The host did not let you in.' : 'The meeting has ended.');
@@ -294,7 +366,7 @@ export class MeetGuests {
   /** Events the Rooms sent to people: the Room's changes reach a guest in it. */
   toUser(userId: string, name: string, data: unknown): void {
     const s = this.sessions.get(this.byUser.get(userId) ?? -1);
-    if (!s) return;
+    if (!s || s.kind === 'webinar') return;
     if (name === 'room.updated') {
       const r = data as RoomInfo;
       if (s.state === 'in' && r.id === s.roomId) this.host.send(s.gid, { t: 'room', room: this.view(r) });
@@ -304,7 +376,7 @@ export class MeetGuests {
   /** For tests and the Control room: how many guests are in meetings now. */
   summary(): { connected: number; waiting: number; inMeetings: number } {
     let waiting = 0, inMeetings = 0;
-    for (const s of this.sessions.values()) { if (s.state === 'waiting') waiting++; else if (s.state === 'in') inMeetings++; }
+    for (const s of this.sessions.values()) { if (s.kind === 'webinar') continue; if (s.state === 'waiting') waiting++; else if (s.state === 'in') inMeetings++; }
     return { connected: this.sessions.size, waiting, inMeetings };
   }
 

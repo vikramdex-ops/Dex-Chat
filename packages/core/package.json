@@ -27,7 +27,8 @@
     "./meet-csv": "./src/meet-csv.ts",
     "./assist": "./src/assist.ts",
     "./pointers": "./src/pointers.ts",
-    "./helpdesk": "./src/helpdesk.ts"
+    "./helpdesk": "./src/helpdesk.ts",
+    "./webinar": "./src/webinar.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

@@ -23,6 +23,8 @@ export interface Invitation {
   sequence?: number;
   /** When this file was made (DTSTAMP). */
   stamp?: number;
+  /** The calendar entry's text, in place of the meeting invitation's (a webinar's personal link). */
+  text?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -94,7 +96,7 @@ export function buildIcs(inv: Invitation, when: string): string {
     `DTEND:${icsTime(Math.max(inv.endAt, inv.startAt + 60_000))}`,
     `SEQUENCE:${Math.max(0, Math.floor(inv.sequence ?? 0))}`,
     `SUMMARY:${icsText(inv.title)}`,
-    `DESCRIPTION:${icsText(invitationText(inv, when))}`,
+    `DESCRIPTION:${icsText(inv.text ?? invitationText(inv, when))}`,
     `LOCATION:${icsText(inv.location?.trim() || inv.guestUrl || inv.appLink)}`,
     ...(inv.guestUrl ? [`URL:${inv.guestUrl}`] : []),
     `ORGANIZER;CN="${cn}":${orgAddress}`,

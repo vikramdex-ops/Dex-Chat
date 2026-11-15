@@ -39,20 +39,20 @@ the rest of the app.
 | | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation | |
 | | Breakout rooms | ✅ **M2**: the host splits people into rooms (drag between columns, pick from a list, or deal out at random) with a timer; a note to every room; visit or move anyone; call everyone back after a 60-second countdown | |
 | | Annotation on a shared screen | ✅ **M2**: live pointers on a shared screen: everyone's labelled pointer, highlights that fade after 4 s unless kept, numbered markers with a note, ink that fades; the presenter clears all or turns pointers off, and sees them on their own screen in a click-through window. Also on pictures looked at together and on whiteboards | |
-| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time | **M3**: the presenter of a meeting grants control the same way |
+| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time | In meetings: the presenter grants control the same way (to come; the helper is shared) |
 | | Virtual backgrounds | ✅ Blur; ✅ **M1**: drafting sheet, blueprint and plain studio drawn in code, and your own picture (kept on the PC) | |
 | | Noise suppression | ✅ **M2**: RNNoise (BSD-3-Clause) as an audio worklet on the PC, on by default, switched in the Room's sound menu | |
 | | Consent before video | ✅ **M1**: Control room → Policies → Calls: join with the camera off, and ask before turning it on | |
 | | Recording, storage, playback, sharing | ✅ **M2**: kept on the hub (resumable chunks, a size limit), a Recordings shelf, a viewer with chapters (who spoke when), shared with the conversation or by a link for the office, retention, audited downloads | |
 | | Guests join from a browser (no install) | ✅ **M2**: the gateway serves a join page (name, camera and mic check, lobby); guests always wait to be let in; media PC to browser through TURN; meetings on the relay stay on the office network | |
 | | Dial-in by phone | — | Out of scope (needs a telephony provider) |
-| Webinars | Registration page and form, approval | — | **M3**: a public registration page through the gateway; registrants listed, approved, reminded |
-| | Organizer, panelists, attendees | — | **M3**: attendees see and hear but are not seen or heard; promote to speak |
-| | Q&A with upvotes and answered state | — | **M3**: a Questions tab, sorted by votes, answered live or in writing |
-| | Polls, handouts, raise hand, reactions | Partly | **M3**: from M1, plus handouts |
-| | Practice session | — | **M3**: panelists meet before going live |
-| | Live streaming (YouTube and others) | — | **M3**: the hub sends the composited stream over RTMP (ffmpeg) |
-| | Follow-up (thank-you, recording link), survey | — | **M3**: an automatic message to attendees, with an optional form |
+| Webinars | Registration page and form, approval | ✅ **M3**: `https://<gateway>/w/ID` (name, email, the organiser's questions, a honeypot, limits per address); auto or manual approval; each registrant's personal link; registrants in a ruled table (approve, turn away, CSV); invitations and reminders as text, `.ics` and a mail-merge CSV | |
+| | Organizer, panelists, attendees | ✅ **M3**: organiser (host, co-hosts) and up to 7 panelists on a PC-to-PC stage with a backstage Space; attendees watch one composed stage, never seen or heard; invited to speak with their consent (app or browser) and brought back | |
+| | Q&A with upvotes and answered state | ✅ **M3**: Questions tab, anonymous if allowed, votes, sorted by votes; answered live or in writing; dismiss, pin, show on the stage | |
+| | Polls, handouts, raise hand, reactions | ✅ **M3**: polls launched live with results shown or hidden; handouts (up to 12 files) downloaded in the app or the browser; hands queue for the organiser; reactions float up the stage | |
+| | Practice session | ✅ **M3**: the stage opens as a practice session; attendees wait on a "starting soon" sheet with a countdown; the organiser clicks Go live | |
+| | Live streaming (YouTube and others) | ✅ **M3**: the composed stage, encoded by ffmpeg on the hub PC, sent over RTMP to the address and key entered; health shown (bitrate, frames, dropped frames, state) | |
+| | Follow-up (thank-you, recording link), survey | ✅ **M3**: a thank-you with the recording and a survey: in the app for colleagues who watched, as email text for registrants (attended or no-show); the survey in the app or on the gateway | |
 | Analytics | Meeting history, durations, attendance | ✅ **M2**: a report per meeting (who joined, when and for how long with rejoins summed, hands, reactions, polls, recordings) and office totals by week, both as CSV | |
 | Admin | Departments, co-branding, action log, data retention | ✅ **M2**: meeting settings in the Control room (lobby default, join before host, guest links, largest recording; consent and recording as before); meeting events in the audit log | |
 | Security | Encryption, 2FA, lock, consent | ✅ DTLS-SRTP, device keys; ✅ **M1–M2**: lock, lobby, passcodes for guest links (in the link's fragment, limited per address), consent | |
@@ -186,6 +186,119 @@ presenter's own screen shows the pointers in a transparent, click-through, alway
 
 **M3: webinars.** Registration, roles, Q&A, handouts, practice sessions, live streaming, follow-up
 and remote control.
+
+*Delivered (November 2026)*, except remote control, which comes with Help Me (below):
+
+- **A webinar is a meeting of kind `webinar`** (`apps/hub/src/webinars.ts`, types in
+  `packages/core/src/webinar.ts`). The organiser plans it on the Meet lens (title, description,
+  date, length, up to 7 panelists, approval, whether the office sees it listed, the registration
+  questions). Its organiser (the meeting's host, with co-hosts) and panelists meet in a PC-to-PC
+  Room, the *stage*, with a private backstage Space for their chat and files. Attendees never enter
+  that Room: the hub refuses them (`rooms.ts`), so they are never seen or heard, and they see a
+  clean stage, not a gallery of each other. The Room sheet adds the stage bar (practice or LIVE,
+  who is watching, Go live, End, the stream's health, a preview of what attendees see) and the
+  panel's webinar tabs: Questions, Audience, Polls and Handouts (`meet/webinar/StageTabs.tsx`).
+- **One stage, composed once.** The hub chooses a *broadcaster*: an organiser's PC on the office
+  network (else a panelist's there, else any PC on the stage; it changes over when that PC
+  leaves). It composes the stage on a canvas, 1280×720 at 25 frames a second driven by a worker's
+  clock (so it keeps moving behind other windows): everyone on the stage as tiles with zone
+  captions, a shared screen large, a question the organiser shows on the stage as a ruled
+  callout, and a title strip with LIVE in amber; the voices are mixed (`meet/webinar/compositor.ts`).
+  That one picture and sound go out three ways (`meet/webinar/broadcast.ts`).
+- **Attendees on the office network: the relay.** The broadcaster sends the stage once to a relay
+  room of its own on the hub's mediasoup (`stage:<room>`); each attendee takes two tracks from it,
+  so a large audience costs the office little (up to 500 watching). Only the broadcaster may send
+  to that room; the hub checks it on every `relay.produce`.
+- **Remote attendees: the decision.** Browsers through the gateway, and the app outside the office,
+  cannot reach the relay (the office opens no ports, and a TURN server on the internet cannot reach
+  a private address: the M2 reasoning). Compositing on the hub would need the hub to receive every
+  panelist's media, which only the relay could do, and HLS through the gateway would carry video
+  through Cloudflare's Durable Object. So **the broadcaster's PC sends the composed stage straight
+  to each remote viewer**, one WebRTC connection each, through TURN when needed, **at most 25**
+  (about 25 × 1.5 Mbit/s of upload on that PC). The hub counts the seats: earlier viewers keep
+  theirs, a seat that comes free goes to the next viewer waiting, and anyone beyond the 25 is told
+  plainly that the webinar sends to as many viewers outside the office as it can, keeps the
+  questions, votes and poll, and sees a link to the live stream's page when the organiser gave one.
+  Measured on the e2e harness: see below.
+- **Registration** (`/w/<ID>` on the gateway, `apps/gateway/webinar/`): the webinar's details,
+  name, email and the organiser's questions (a line of text or one of a list, each required or
+  not). Auto-approve gives the personal link at once; manual approval gives it too, and it opens
+  the webinar once the organiser approves (the page checks again every 20 seconds). The link is
+  `https://<gateway>/w/<ID>/watch#<token>` (128 random bits, in the fragment); it identifies the
+  person in the report. The gateway drops forms with the honeypot filled, takes JSON of at most
+  16 KiB, allows 5 registrations an hour per address and 300 an hour in all (in the Durable
+  Object's storage); the hub checks it all again, refuses duplicates without revealing the link,
+  and keeps the organiser's cap (up to 5,000). The registrants table approves and turns away (one
+  or many), exports CSV and writes invitations and reminders.
+- **Email: the decision.** The hub has no mail server and no SMTP setting (nothing in the code
+  sends mail), and faking it would be worse than not sending. So the app **writes** the mail: per
+  registrant or for all, the invitation or reminder text with their personal link, an `.ics` with
+  the same link (`packages/core/src/ics.ts`, one VEVENT per person), and a mail-merge CSV; the
+  organiser sends them from their own mailbox. It says so where the texts are made.
+- **Q&A, polls, hands, reactions, handouts.** Attendees ask (anonymously when the organiser
+  allows; then nobody sees the name, the organiser included) and vote; the list is sorted by
+  pinned, then votes, then time. Panelists mark a question answered live or answer it in writing;
+  the organiser dismisses, pins, or shows it on the stage. Updates reach everyone at most once a
+  second, coalesced, so a large audience does not flood the hub. Polls are the webinar's own (the
+  M1 polls live in a conversation attendees are not in), launched live, with results shown to
+  attendees or kept for the stage; each answer is in the report. Hands queue for the organiser in
+  the Audience tab; reactions float up every viewer's stage. Handouts are files the organiser
+  attaches (up to 12, 50 MB each): the app downloads them through the hub's file route (allowed
+  for an hour after asking), browsers receive them in pieces over their connection; every download
+  is in the report.
+- **Practice and go-live.** Opening the stage starts the practice session; attendees who come early
+  wait on a "starting soon" sheet with a countdown in ruled cells (and can already ask questions).
+  The organiser clicks Go live; ending the webinar tells every viewer and closes the stage. A stage
+  closed during practice goes back to waiting.
+- **Invited to speak.** The organiser invites someone from the Audience tab; they see an invitation
+  and choose. In the app they come onto the stage with their mic, or their camera too; from a
+  browser the watch page opens the meeting page with a one-time pass (two minutes, used once,
+  no lobby, their registered name). Back to the audience returns them to watching (the browser
+  page goes back to the watch page, which kept their link).
+- **Live streaming.** The organiser enters the service's RTMP address and key (the key stays on
+  the hub; the app shows its last four characters) and an optional watch page. While streaming,
+  the broadcaster records the stage (WebM, VP8 and Opus) in one-second pieces and sends them to
+  the hub over its connection; the hub pipes them into ffmpeg, which encodes H.264 and AAC and
+  sends FLV to the service (`apps/hub/src/webinar-stream.ts`). The hub finds ffmpeg at the path an
+  administrator set in the webinar's Live stream tab, or `DEX_FFMPEG`, else on PATH, else in
+  `C:\Program Files\ffmpeg\bin`, `C:\ffmpeg\bin` and the winget, Chocolatey and Scoop folders, and
+  needs an H.264 encoder (libx264, OpenH264 or Media Foundation). **On Windows**: on the hub PC,
+  `winget install --id Gyan.FFmpeg -e --scope machine` in an administrator PowerShell (or unzip a
+  release "essentials" build so that `C:\ffmpeg\bin\ffmpeg.exe` exists), then restart the hub or
+  set the path. Health comes from ffmpeg's progress: bitrate, frames per second, dropped frames,
+  time sent and the state (starting, live, stalled, failed with ffmpeg's last line, with the key
+  removed). If ffmpeg stops while streaming, the hub tries again up to five times, asking the
+  broadcaster for a fresh recording; a new broadcaster starts a fresh one too.
+- **Follow-up.** After the webinar the organiser writes a thank-you, picks a recording (its office
+  link is turned on) and a link for people outside, and an optional survey (a form of questions).
+  Colleagues who watched get it in the app from the system bot, with a `dexconnect://webinar/ID/survey`
+  link that opens the survey; registrants get email text (a thank-you if they attended, "we missed
+  you" if not), with their own survey link on the gateway (`/w/<ID>/survey#<token>`).
+- **Reports.** The webinar's report (`web.report`, and the meeting report's webinar part in
+  `meet-reports.ts`): registrants with attended or no-show and minutes watched while it was live,
+  attendees (office or registered), questions with votes and answers, each poll with each person's
+  answer, handout downloads, the survey's answers; all of it in the CSV.
+- **Remote control is not in M3.** The Help Me work (remote IT with remote control) builds the
+  input-injection helper; it joins meetings once both are merged, as "Give control" in the
+  presenter's person menu. No placeholder for it ships now.
+
+Hub tests: `webinars.test.ts` (planning, registration and approval, invitations and `.ics`, practice
+and go-live, attendees who cannot publish, the routes, Q&A, polls, hands, handouts, speakers from
+the app and the browser, follow-up, survey, report and CSV) and `webinar-stream.test.ts` (finding
+ffmpeg, progress as health, a real stream to a local RTMP listener, a failing one without the key);
+Worker tests: the webinar pages, requests answered by the hub, the honeypot, form limits and
+registrations per address (`apps/gateway/test/gateway.test.ts`).
+
+Measured on the e2e harness (the real gateway Worker under `wrangler dev`, three Electron apps and
+headless Chromium on one shared Linux machine, software rendering, fake cameras): from the
+organiser clicking Go live to the first frame of the composed stage, about 1.1 s for an attendee
+in the app through the relay and about 1.2 s for a browser attendee straight from the organiser's
+PC; the stage arrives at 1280×720. The live stream to a local RTMP listener (ffmpeg in listen
+mode) ran at 1.1 to 1.7 Mbit/s (two runs) with H.264 and AAC, and the listener received over 400 frames in
+the run. The run covers registration and approval, the countdown sheet, practice and go-live, an
+attendee refused when publishing, Q&A, a poll, a raised hand, a speaker invited and brought back,
+handouts in the app and the browser, folding the sheet away, the live stream, the end, the
+follow-up, the survey in the app and in the browser, and the report.
 
 Each phase ships with end-to-end tests that drive several app instances through the feature. The
 performance targets above are measured in CI-like runs on the e2e harness.

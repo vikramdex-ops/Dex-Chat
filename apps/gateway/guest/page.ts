@@ -25,6 +25,8 @@ try {
   if (passcode) sessionStorage.setItem(PASS_KEY, passcode); else passcode = sessionStorage.getItem(PASS_KEY) ?? '';
 } catch { /* storage blocked: keep it in memory */ }
 if (location.hash) history.replaceState(null, '', location.pathname);
+// a webinar attendee the organiser invited to speak comes here from the watch page with a one-time pass
+const SPEAKER = (() => { try { return sessionStorage.getItem(`dex.webinar.speak.${meetingId}`) === '1'; } catch { return false; } })();
 
 const state = {
   step: 'name' as Step,
@@ -132,8 +134,8 @@ function renderName(): void {
   const next = h('button', { class: 'btn primary', type: 'submit' }, 'Next: camera and mic');
   const form = h('form', { class: 'step', onsubmit: (e: Event) => { e.preventDefault(); const v = input.value.trim(); if (!v) { input.focus(); return; } state.name = v.slice(0, 60); try { localStorage.setItem(NAME_KEY, state.name); } catch { /* private */ } void goCheck(); } },
     h('p', { class: 'label' }, 'Sheet 1 · Who is joining'),
-    h('h1', {}, 'Join the meeting'),
-    h('p', { class: 'lead' }, 'You are joining as a guest from your browser. Nothing to install. The host lets you in from the lobby.'),
+    h('h1', {}, SPEAKER ? 'You are invited to speak' : 'Join the meeting'),
+    h('p', { class: 'lead' }, SPEAKER ? 'The organiser asked you onto the stage of the webinar. Everyone watching will see and hear you until the organiser brings you back to the audience.' : 'You are joining as a guest from your browser. Nothing to install. The host lets you in from the lobby.'),
     h('label', { class: 'field-label', for: 'join-name' }, 'Your name'),
     input,
     h('p', { id: 'name-help', class: 'faint small' }, 'Everyone in the meeting sees this name.'),
@@ -219,10 +221,10 @@ function renderCheck(): void {
         !hasCam ? h('p', { class: 'faint small' }, 'No camera could be used: you join with your name on a tile.') : null,
       ),
     ),
-    h('p', { class: 'faint small' }, 'Nothing is sent until the host lets you in.'),
+    h('p', { class: 'faint small' }, SPEAKER ? 'You are seen and heard as soon as you go on stage.' : 'Nothing is sent until the host lets you in.'),
     h('div', { class: 'actions' },
       h('button', { type: 'button', class: 'btn ghost', onclick: () => { meterStop?.(); state.step = 'name'; renderName(); } }, 'Back'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => connect() }, 'Ask to join'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => connect() }, SPEAKER ? 'Go on stage' : 'Ask to join'),
     ),
   );
   frame('2 OF 3', body);
@@ -288,6 +290,17 @@ function onFrame(f: GuestDown): void {
       break;
     case 'unmuteAsk': state.askUnmute = f.by; renderBanners(); break;
     case 'denied': state.ended = f.reason; break;
+    case 'demoted':
+      // a webinar speaker goes back to the audience: the watch page (it kept their personal link)
+      if (/^\/w\/\d{9}\/watch$/.test(f.to)) {
+        state.step = 'ended';
+        for (const dev of [...state.links.keys()]) dropLink(dev);
+        stopScreen(false);
+        for (const t of state.local?.getTracks() ?? []) t.stop();
+        try { sessionStorage.removeItem(`dex.webinar.speak.${meetingId}`); sessionStorage.removeItem(PASS_KEY); } catch { /* private */ }
+        location.replace(f.to);
+      }
+      break;
     case 'removed': state.ended = 'A host took you out of the meeting.'; break;
     case 'ended': state.ended = f.reason; finish(f.reason, false); break;
     case 'error':

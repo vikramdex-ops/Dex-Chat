@@ -2,11 +2,12 @@
 // needed, safe from spreadsheet formulas, UTF-8 with a BOM so Excel and Dexterity Sheets open it).
 import { toCsv } from './csv.ts';
 import type { MeetingReport, MeetingUsage } from './meet.ts';
+import { webinarReportRows } from './webinar.ts';
 
 const iso = (t: number | null) => (t === null ? '' : new Date(t).toISOString().replace('T', ' ').slice(0, 19));
 const minutes = (ms: number) => Math.round((ms / 60_000) * 10) / 10;
 
-/** One row per person (time in the meeting with rejoins summed), then hands, reactions, polls and recordings. */
+/** One row per person (time in the meeting with rejoins summed), then hands, reactions, polls and recordings (and a webinar's own sections). */
 export function reportCsv(r: MeetingReport): string {
   const rows: Array<Array<string | number | null>> = [
     ['Meeting', r.title || 'Meeting'],
@@ -30,6 +31,8 @@ export function reportCsv(r: MeetingReport): string {
     rows.push([], ['Recording', 'Recorded by', 'Minutes', 'Chapters']);
     for (const rec of r.recordings) rows.push([rec.title, rec.recordedByName, minutes(rec.durationMs), rec.chapters.length]);
   }
+  // a webinar: its registrants, attendees, questions, polls, handouts and survey after the meeting's own rows
+  if (r.webinar) rows.push([], ...webinarReportRows(r.webinar));
   return toCsv(rows);
 }
 

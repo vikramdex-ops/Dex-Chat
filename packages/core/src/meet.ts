@@ -178,6 +178,8 @@ export type GuestDown =
   | { t: 'removed' }
   | { t: 'ended'; reason: string }
   | { t: 'error'; message: string }
+  /** A webinar speaker going back to the audience: the page returns to the webinar's watch page. */
+  | { t: 'demoted'; to: string }
   | { t: 'pong' };
 
 // ---------------------------------------------------------------- the protocol, extended

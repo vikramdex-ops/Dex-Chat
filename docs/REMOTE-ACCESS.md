@@ -14,11 +14,12 @@ and how to set it up.
 
 - **The office opens no ports.** The hub connects *out* to the gateway and keeps that connection
   open. Nothing on the office network listens on the internet.
-- **The gateway only relays.** It is a small Cloudflare Worker (`apps/gateway`, about 350 lines, plus the guest meeting page)
+- **The gateway only relays.** It is a small Cloudflare Worker (`apps/gateway`, about 450 lines, plus the guest meeting page and the webinar pages)
   with one Durable Object per hub. It pairs each device's WebSocket with the hub's and passes
   opaque binary frames. It stores no messages, files or keys. The only things it saves are the hub's
   certificate fingerprint (only when you don't pin one), which hub its meeting pages lead to, and,
-  for ten minutes, how many wrong guest passcodes came from an address.
+  for ten minutes, how many wrong guest passcodes came from an address, and for an hour, how many
+  webinar registrations came from an address (and from all addresses together).
 - **Each device has an encrypted channel to the hub.** Inside the gateway's WebSocket, the device and
   the hub run their own handshake (`packages/core/src/remote.ts`):
   - X25519 key exchange, HKDF-SHA256, and one AES-256-GCM key per direction.
@@ -48,6 +49,9 @@ and how to set it up.
 | Gateway `/join`, `/health` | Anyone | Static pages, strict headers, no data. |
 | Gateway `/m/<meeting ID>` | Anyone | The guest meeting page and its script and styles: static, served from the Worker, with a strict content security policy (nothing loads from anywhere else). |
 | Gateway `/m/<meeting ID>/ws` | Anyone with a guest link | Refused unless the hub is connected. JSON frames only, at most 64 KiB each and 400 per 10 seconds. 20 connections a minute and 5 wrong passcodes per 10 minutes per address (kept in the Durable Object's storage), 300 guests at once. The hub checks the passcode (and limits wrong ones again, 10 per 10 minutes per address); a guest only ever reaches the meeting's lobby. |
+| Gateway `/w/<webinar ID>`, `/w/<ID>/watch`, `/w/<ID>/survey` | Anyone | The webinar's registration, watch and survey pages and their script and styles: static, from the Worker, the same strict content security policy; they ask for no camera or microphone. |
+| Gateway `/w/<ID>/info`, `/register`, `/survey-info`, `/answers` | Anyone | Answered by the hub over its own connection (10 seconds at most, else a plain error). JSON of at most 16 KiB. A form with the hidden honeypot field filled is thanked and dropped. 60 requests a minute per address; 5 registrations an hour per address and 300 an hour in all (kept in the Durable Object's storage); 10 survey answers an hour per address. The hub checks everything again: the webinar's cap and whether registration is open, valid answers, one registration per email (a duplicate never learns the link), 10 registrations an hour per address. |
+| Gateway `/w/<ID>/ws` | Anyone with a personal link | A guest socket, as for meetings: the token is checked by the hub, and a link that does not work counts as a wrong passcode for the address (5 per 10 minutes at the gateway). An attendee's session can only watch that webinar: ask, vote, answer the poll, raise a hand, react, download its handouts. |
 | Hub, through a channel | A device that completed the handshake | Unknown devices can only *ask* to join (they become pending). At most 10 such requests an hour from outside, and administrators can turn new joins from outside off altogether. The Control room is office-only unless an administrator allows it. Every action is audited, and outside connections show as `internet <address> (<country>)`. |
 | Office hub on the internet | Nobody | It accepts no inbound connections from the internet. |
 | Bot API, integrations, update mirror admin | Office network only | Not reachable through the gateway. |
@@ -94,6 +98,39 @@ the meeting chat, raise a hand and react. Nothing is installed.
   and their hosts are told. The guest link panel says so before anyone is invited. Guests count
   towards the 8 people a PC-to-PC meeting holds.
 - Every guest knocking, being let in, refused or removed is in the audit log, with the address.
+
+## Webinars: registration and watching from a browser
+
+A webinar's organiser shares its **registration page**, for example
+`https://dexconnect-gateway.example.workers.dev/w/482913207`. Anyone can open it: it shows the
+webinar (title, date and time in the visitor's own time zone, the organiser and the office, what it
+is about) and a form: name, email and the organiser's questions.
+
+- **Personal links.** Each registrant gets their own link, `…/w/482913207/watch#<token>`, at once.
+  With manual approval the link opens a "waiting for the organiser" sheet until they are approved.
+  The token (128 random bits) is in the fragment, so no server logs it; the page keeps it for the
+  tab, takes it out of the address bar, and sends it in its first frame. It identifies the person
+  in the webinar's report (attended or no-show, minutes, their questions and answers).
+- **Abuse.** The gateway limits requests per address in the Durable Object (registrations in its
+  storage, so they survive it sleeping), caps registrations passed on in an hour, drops forms whose
+  honeypot field (hidden from people) is filled, and refuses anything but small JSON. The hub
+  checks the form again and keeps the organiser's cap.
+- **No email is sent.** The hub has no mail server. The organiser copies each invitation or
+  reminder (with the personal link), saves `.ics` files, or exports a mail-merge CSV, and sends them
+  from their own mailbox. The registration page itself offers the calendar file.
+- **Watching.** The watch page is a sheet with the stage, the questions (ask, anonymously if the
+  organiser allows, and vote), the current poll, handouts to download, a hand to raise and
+  reactions. Before the organiser goes live it shows a countdown. The stage comes straight from the
+  office PC composing it, through TURN when needed: the gateway carries only the signalling, never
+  the video. **At most 25 viewers outside the office** are sent the stage this way (it is that PC's
+  upload); anyone beyond that is told so, keeps the questions and the poll, and sees the live
+  stream's page when the organiser gave one. Attendees on the office network watch through the
+  hub's relay instead, with room for hundreds.
+- **Speaking.** If the organiser invites a browser attendee to speak and they accept, the page
+  opens the meeting page with a one-time pass (two minutes, once): they check their camera and mic
+  and come onto the stage without waiting in the lobby. When the organiser brings them back, they
+  return to the watch page.
+- **The survey** after the webinar is `…/w/482913207/survey#<token>`, from the follow-up email.
 
 ## Data protection and allowed networks
 
