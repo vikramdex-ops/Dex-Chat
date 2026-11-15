@@ -86,7 +86,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
           <div className="list">
             {needsYou.map((c) => {
               const last = c.lastMessage;
-              const who = last ? users.get(last.authorId)?.displayName.split(' ')[0] : '';
+              const who = last ? users.get(last.authorId)?.displayName.split(' ')[0] ?? 'Former member' : '';
               return (
                 <button key={c.id} className="list-row pulse-row" onClick={() => open(c.id, c.kind)}>
                   <ConvTile c={c} users={users} meId={session.me.id} online={online} />

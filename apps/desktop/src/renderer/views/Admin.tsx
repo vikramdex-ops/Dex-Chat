@@ -11,9 +11,10 @@ import { PoliciesAdmin, ReportsAdmin, UsageAdmin } from './PoliciesUsage.tsx';
 import { RemoteAdmin } from './Remote.tsx';
 import { AutomationsAdmin } from '../flows/FlowsPanel.tsx';
 import { ItDeskAdmin } from '../help/ItDesk.tsx';
+import { CONTINUITY_AUDIT, ContinuityAdmin } from './Continuity.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'continuity' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -54,6 +55,7 @@ const AUDIT_TEXT: Record<string, string> = {
   'flow.disabled': 'turned an automation off',
   'flow.deleted': 'removed an automation',
   'flow.settings': 'changed whether automations may call the office network',
+  ...CONTINUITY_AUDIT,
 };
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
@@ -117,6 +119,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'integrations', label: 'Integrations', icon: 'grid' },
           { value: 'automations', label: 'Automations', icon: 'repeat' },
           { value: 'bots', label: 'Bots & tools', icon: 'branch' },
+          { value: 'continuity', label: 'Backups & leavers', icon: 'archive' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
       </div>
@@ -209,6 +212,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'integrations' && <Integrations state={state} />}
       {tab === 'automations' && <AutomationsAdmin session={session} />}
       {tab === 'bots' && <BotsAdmin users={session.users} />}
+      {tab === 'continuity' && <ContinuityAdmin session={session} live={live} />}
 
       {tab === 'audit' && (audit.length === 0 ? (
         <div className="card empty"><Icon name="list" size={36} /><span>Nothing recorded yet.</span></div>
