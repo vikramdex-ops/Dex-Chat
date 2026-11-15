@@ -56,6 +56,12 @@ const WhiteboardStage = lazy(() => import('./Whiteboard.tsx').then((m) => ({ def
 const ScanDialog = lazy(() => import('../scan/ScanDialog.tsx').then((m) => ({ default: m.ScanDialog })));
 
 const RUN_GAP = 5 * 60 * 1000;
+/**
+ * Where you were reading in each conversation you scrolled back in (a message and its distance from
+ * the top), so coming back to it puts you there again. At the newest messages nothing is kept.
+ */
+const READING = new Map<string, { id: string; top: number }>();
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 /** A time tick on the spine every ten minutes of activity. */
 const TICK = 10 * 60 * 1000;
 
@@ -530,26 +536,102 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
   const convId = ctx.conv.id;
   const tl = useChat((s) => s.timelines.get(convId));
   const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
+  // back where you were reading, if you had scrolled back here before
+  const restore = useRef(READING.get(convId) ?? null);
+  const stick = useRef(!restore.current);
   const prevHeight = useRef(0);
   const prevFirst = useRef<string | null>(null);
+  const prevLast = useRef<string | null>(null);
   const messages = tl?.messages ?? [];
+  // the line above what arrived since you last read here (kept while the Pane is open; gone once you write)
+  const [readTo, setReadTo] = useState<string | undefined>(() => (ctx.conv.unread > 0 ? ctx.conv.lastReadId ?? '' : undefined));
+  // scrolled away from the newest messages, and how many arrived since
+  const [away, setAway] = useState(!!restore.current);
+  const [fresh, setFresh] = useState(0);
 
   // keep the view pinned to the bottom unless the reader scrolled up; keep position when older pages load
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const first = messages[0]?.id ?? null;
-    if (prevFirst.current && first !== prevFirst.current && !stick.current) {
+    const last = messages.at(-1);
+    const sentNow = !!last && last.id !== prevLast.current && prevLast.current !== null && last.authorId === ctx.meId && 'pending' in last;
+    if (restore.current && tl?.loaded) {
+      // coming back: the message you were reading sits where it was
+      const { id, top } = restore.current;
+      const place = () => {
+        const at = el.querySelector<HTMLElement>(`[data-mid="${CSS.escape(id)}"]`);
+        if (at) el.scrollTop += at.getBoundingClientRect().top - el.getBoundingClientRect().top - top;
+        return !!at;
+      };
+      if (place()) {
+        // runs above it are drawn as they come into view and change height: hold it in place while they settle
+        let n = 0;
+        const again = () => { if (!stick.current && place() && ++n < 12) requestAnimationFrame(again); };
+        requestAnimationFrame(again);
+      } else { stick.current = true; setAway(false); el.scrollTop = el.scrollHeight; }
+      restore.current = null;
+    } else if (sentNow) {
+      // what you just wrote is always in view
+      stick.current = true; setAway(false); setFresh(0); setReadTo(undefined);
+      el.scrollTop = el.scrollHeight;
+    } else if (prevFirst.current && first !== prevFirst.current && !stick.current) {
       el.scrollTop += el.scrollHeight - prevHeight.current;
     } else if (stick.current) {
       el.scrollTop = el.scrollHeight;
+    } else if (last && prevLast.current && last.id !== prevLast.current && last.authorId !== ctx.meId) {
+      setFresh((n) => n + 1);
     }
     prevFirst.current = first;
+    prevLast.current = last?.id ?? null;
     prevHeight.current = el.scrollHeight;
-  }, [messages]);
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { stick.current = true; }, [convId]);
+  // where you are reading, for when you come back (nothing kept at the newest messages); measured once a frame
+  const noting = useRef(0);
+  const noteReading = () => {
+    if (noting.current) return;
+    noting.current = requestAnimationFrame(() => {
+      noting.current = 0;
+      const el = scroller.current;
+      if (!el || restore.current) return;
+      if (stick.current) { READING.delete(convId); return; }
+      const box = el.getBoundingClientRect();
+      const top = [...el.querySelectorAll<HTMLElement>('[data-mid]')].find((m) => m.getBoundingClientRect().bottom > box.top + 8);
+      if (top?.dataset.mid) READING.set(convId, { id: top.dataset.mid, top: top.getBoundingClientRect().top - box.top });
+    });
+  };
+  useEffect(() => () => cancelAnimationFrame(noting.current), []);
+  // on the way down to the newest message (a smooth scroll that the scroll handler leaves alone)
+  const goingDown = useRef(false);
+  const toLatest = () => {
+    const el = scroller.current;
+    if (!el) return;
+    stick.current = true; setAway(false); setFresh(0);
+    goingDown.current = true;
+    // runs drawn on the way change the height: land on the real bottom when the scroll ends
+    const land = () => { if (!goingDown.current) return; goingDown.current = false; el.scrollTop = el.scrollHeight; stick.current = true; markRead(convId); };
+    el.addEventListener('scrollend', land, { once: true });
+    setTimeout(land, 900);
+    el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    markRead(convId);
+  };
+  // arrow keys move between messages; Home and End go to the first and the newest loaded
+  const onKeys = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target as HTMLElement;
+    if (t !== e.currentTarget && !t.matches('.msg[data-mid]')) return; // a field or button inside a message keeps its keys
+    const all = [...e.currentTarget.querySelectorAll<HTMLElement>('.spine .msg[data-mid]')];
+    if (!all.length) return;
+    e.preventDefault();
+    const at = all.indexOf(t);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : at < 0 ? all.length - 1 : Math.max(0, Math.min(all.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
+    // its tools stay out while the keyboard is in the message (a class, not :focus: Tab into the tools must find them there)
+    for (const m of e.currentTarget.querySelectorAll('.msg.kbd-on')) m.classList.remove('kbd-on');
+    all[next].classList.add('kbd-on');
+    all[next].focus({ preventScroll: true });
+    all[next].scrollIntoView({ block: 'nearest' });
+  };
   // switching between spine and cards changes every height: stay with the newest message while
   // the runs settle (they are laid out as they come into view)
   useLayoutEffect(() => {
@@ -582,23 +664,32 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
 
   const onScroll = () => {
     const el = scroller.current!;
-    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (stick.current) markRead(convId);
+    if (goingDown.current) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stick.current = gap < 60;
+    if (stick.current) { markRead(convId); if (fresh) setFresh(0); }
+    // the way back to the newest messages shows once they are a screen away
+    const far = gap > Math.max(240, el.clientHeight * 0.6);
+    if (far !== away) setAway(far);
+    noteReading();
     if (el.scrollTop < 200 && tl?.hasMore && !tl.loading) { prevHeight.current = el.scrollHeight; void loadOlder(convId); }
   };
   // runs: consecutive messages by one person within 5 minutes; a title-block label at each new day;
   // a time tick on the spine whenever ten minutes have gone by
   const blocks = useMemo(() => {
-    type Block = { kind: 'day'; label: string; key: string } | { kind: 'tick'; label: string; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string };
+    type Block = { kind: 'day'; label: string; key: string } | { kind: 'tick'; label: string; key: string } | { kind: 'new'; key: string } | { kind: 'notice'; m: AnyMessage; key: string } | { kind: 'run'; author: string; mine: boolean; msgs: AnyMessage[]; key: string };
     const out: Block[] = [];
     let lastDay = '';
     let lastTick = 0;
+    // the first message that arrived since you last read here (not your own)
+    const firstNew = readTo === undefined ? null : messages.find((m) => !('pending' in m) && m.id > readTo && m.authorId !== ctx.meId && !('system' in m && m.system))?.id ?? null;
     for (const m of messages) {
+      if (m.id === firstNew) out.push({ kind: 'new', key: 'new-line' });
       const day = new Date(m.createdAt).toDateString();
       if (day !== lastDay) { out.push({ kind: 'day', label: dayLabel(m.createdAt), key: `d${day}` }); lastDay = day; lastTick = m.createdAt; }
       if ('system' in m && m.system) { out.push({ kind: 'notice', m, key: `n${m.id}` }); continue; }
       const prev = out[out.length - 1];
-      if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP) { prev.msgs.push(m); continue; }
+      if (prev?.kind === 'run' && prev.author === m.authorId && m.createdAt - prev.msgs[prev.msgs.length - 1].createdAt < RUN_GAP && m.id !== firstNew) { prev.msgs.push(m); continue; }
       if (m.createdAt - lastTick >= TICK) {
         const at = Math.floor(m.createdAt / TICK) * TICK;
         // a dimension mark, not a timestamp: no AM/PM
@@ -608,10 +699,13 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
       out.push({ kind: 'run', author: m.authorId, mine: m.authorId === ctx.meId, msgs: [m], key: `r${m.id}` });
     }
     return out;
-  }, [messages, ctx.meId]);
+  }, [messages, ctx.meId, readTo]);
 
   return (
-    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll}>
+    <>
+    <div className={`timeline${ctx.cards ? ' layout-cards' : ''}`} ref={scroller} onScroll={onScroll} onKeyDown={onKeys}
+      onBlur={(e) => { const m = (e.target as HTMLElement).closest('.msg.kbd-on'); if (m && !m.contains(e.relatedTarget as Node | null)) m.classList.remove('kbd-on'); }}
+      tabIndex={0} role="log" aria-label="Messages" aria-live="off">
       <div className="spine">
         {tl?.hasMore && <div className="tl-more">{tl.loading ? <span className="spinner" /> : null}</div>}
         {tl?.loaded && !tl.hasMore && <Beginning ctx={ctx} />}
@@ -619,10 +713,17 @@ function Timeline({ ctx, onTrack, activeTrack }: { ctx: Ctx; onTrack: (id: strin
         {blocks.map((b) => b.kind === 'day'
           ? <div key={b.key} className="day-mark"><span className="label">{b.label}</span></div>
           : b.kind === 'tick' ? <div key={b.key} className="spine-tick" aria-hidden="true"><span className="mono">{b.label}</span></div>
+          : b.kind === 'new' ? <div key={b.key} className="new-line" role="separator" aria-label="New since you last read"><span className="label">New</span></div>
           : b.kind === 'notice' ? <Notice key={b.key} m={b.m as Message} users={ctx.users} meId={ctx.meId} />
           : <Run key={b.key} ctx={ctx} author={b.author} mine={b.mine} msgs={b.msgs} onTrack={onTrack} activeTrack={activeTrack} />)}
       </div>
     </div>
+    {away && (
+      <button className={`to-latest${fresh ? ' fresh' : ''}`} onClick={toLatest} title="Go to the newest message">
+        {fresh ? `${fresh} new` : 'Newest'}<Icon name="chevron" size={14} />
+      </button>
+    )}
+    </>
   );
 }
 
@@ -747,7 +848,7 @@ function MessageItem({ ctx, m, onTrack, activeTrack, inTrack }: {
   })();
 
   return (
-    <div data-mid={m.id} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
+    <div data-mid={m.id} tabIndex={-1} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
       onPointerDown={refPayload && !ctx.selected && !editing ? (e) => startHoldDrag(e, refPayload, ctx.users) : undefined}
       onMouseEnter={inTrack ? undefined : toolsFit} onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
