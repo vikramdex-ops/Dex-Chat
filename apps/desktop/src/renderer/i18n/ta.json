@@ -596,7 +596,7 @@
   "You are not in that conversation": "நீங்கள் அந்த உரையாடலில் இல்லை",
   "You: status, Preferences": "நீங்கள்: நிலை, விருப்பங்கள்",
   "Add": "சேர்",
-  "No tools are approved yet. An administrator adds them in Control room → Bots &amp; tools.": "இன்னும் எந்தக் கருவியும் அனுமதிக்கப்படவில்லை. நிர்வாகி அவற்றைக் கண்ட்ரோல் ரூம் → பாட்களும் கருவிகளும் பகுதியில் சேர்ப்பார்.",
+  "No tools are approved yet. An administrator adds them in Control room → Bots & tools.": "இன்னும் எந்தக் கருவியும் அனுமதிக்கப்படவில்லை. நிர்வாகி அவற்றைக் கண்ட்ரோல் ரூம் → பாட்களும் கருவிகளும் பகுதியில் சேர்ப்பார்.",
   "this conversation": "இந்த உரையாடல்",
   "this Space": "இந்த ஸ்பேஸ்",
   "Tools run inside the conversation for everyone in it. Each one added keeps its own sheet: what one person changes, the others see.": "கருவிகள் உரையாடலுக்குள்ளேயே, அதில் உள்ள அனைவருக்கும் இயங்கும். சேர்க்கப்படும் ஒவ்வொரு கருவியும் தனக்கென ஒரு தாளை வைத்திருக்கும்: ஒருவர் மாற்றுவதை மற்றவர்கள் பார்ப்பார்கள்.",
@@ -4044,5 +4044,15 @@
   "and {0}": "மற்றும் {0}",
   "{0} min": "{0} நிமி",
   "for {0}": "({0}-க்காக)",
-  "Connection": "இணைப்பு"
+  "Connection": "இணைப்பு",
+  "Only my time zone": "என் நேர மண்டலம் மட்டும்",
+  "Hold the barcode or QR code inside the square": "பார்கோடு அல்லது QR கோடை சதுரத்துக்குள் வையுங்கள்",
+  "Share your whole screen first (not one window): control works on a whole screen.": "முதலில் உங்கள் முழு ஸ்கிரீனையும் ஷேர் செய்யுங்கள் (ஒரு விண்டோ மட்டும் அல்ல): கண்ட்ரோல் முழு ஸ்கிரீனில் மட்டுமே வேலை செய்யும்.",
+  "BY ID OR LINK": "ID அல்லது லிங்க் மூலம்",
+  "STANDING ID": "நிலையான ID",
+  "Registration, a practice session, Q&A, polls, handouts and a live stream.": "முன்பதிவு, பயிற்சி அமர்வு, கேள்வி-பதில், வாக்கெடுப்புகள், கையேடுகள் மற்றும் நேரலை ஒளிபரப்பு.",
+  "Welcome to Dexterity Connect": "Dexterity Connect-க்கு வரவேற்கிறோம்",
+  "NOW": "இப்போது",
+  "CALENDAR": "நாள்காட்டி",
+  "LOG": "பதிவேடு"
 }

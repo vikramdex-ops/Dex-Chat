@@ -11,20 +11,43 @@ const f = (n: number) => n.toFixed(1);
 const line = (a: [number, number], b: [number, number]) => `M${f(a[0])} ${f(a[1])}L${f(b[0])} ${f(b[1])}`;
 const circle = (cx: number, cy: number, r: number) => `M${f(cx - r)} ${f(cy)}a${f(r)} ${f(r)} 0 1 0 ${f(r * 2)} 0a${f(r)} ${f(r)} 0 1 0 ${f(-r * 2)} 0`;
 
-/** A dimension: extension ticks at both ends, the line, and its value. */
-function dimension(a: [number, number], b: [number, number], off: number, text: string, out: Drawing): void {
+/** The box a label takes (rotated text included), for keeping figures from writing over each other. */
+function labelBox(x: number, y: number, text: string, rotate = 0, anchor: 'start' | 'middle' = 'start'): [number, number, number, number] {
+  const w = text.length * 6.2, h = 11;
+  const cx = anchor === 'middle' ? x : x + w / 2, cy = y - h / 2 + 2;
+  const a = rotate * Math.PI / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+  const hw = (w * c + h * s) / 2 + 3, hh = (w * s + h * c) / 2 + 3;
+  return [cx - hw, cy - hh, cx + hw, cy + hh];
+}
+const overlaps = (p: [number, number, number, number], q: [number, number, number, number]) => p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3];
+
+/**
+ * A dimension: extension ticks at both ends, the line, and its value. Its figure goes on the side
+ * where it writes over no other figure; when neither side is clear the dimension is left out.
+ */
+function dimension(a: [number, number], b: [number, number], off: number, text: string, out: Drawing, taken: Array<[number, number, number, number]> = []): void {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const len = Math.hypot(dx, dy) || 1;
   const ux0 = -dy / len, uy0 = dx / len;
-  const nx = ux0 * off, ny = uy0 * off;
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  const rotate = Math.abs(ang) > 90 ? ang + 180 : ang;
+  let side: number | null = null;
+  for (const o of off ? [off, -off] : [0]) {
+    const nx = ux0 * o, ny = uy0 * o;
+    const lx = (a[0] + b[0]) / 2 + nx * 1.35, ly = (a[1] + b[1]) / 2 + ny * 1.35 - 4;
+    const box = labelBox(lx, ly, text, rotate, 'middle');
+    if (taken.length && (box[0] < 4 || box[2] > 596 || box[1] < 4 || box[3] > 356)) continue;
+    if (!taken.some((t) => overlaps(t, box))) { side = o; taken.push(box); break; }
+  }
+  if (side === null) return;
+  const nx = ux0 * side, ny = uy0 * side;
   const A: [number, number] = [a[0] + nx, a[1] + ny], B: [number, number] = [b[0] + nx, b[1] + ny];
   out.strokes.push({ kind: 'fine', d: `${line(a, [a[0] + nx * 1.15, a[1] + ny * 1.15])}${line(b, [b[0] + nx * 1.15, b[1] + ny * 1.15])}` });
   out.strokes.push({ kind: 'dim', d: line(A, B) });
   // architectural ticks
   const t = 5, ux = dx / len, uy = dy / len;
   for (const P of [A, B]) out.strokes.push({ kind: 'dim', d: line([P[0] - (ux + ux0) * t, P[1] - (uy + uy0) * t], [P[0] + (ux + ux0) * t, P[1] + (uy + uy0) * t]) });
-  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-  out.labels.push({ x: (A[0] + B[0]) / 2 + nx * 0.35, y: (A[1] + B[1]) / 2 + ny * 0.35 - 4, text, anchor: 'middle', rotate: Math.abs(ang) > 90 ? ang + 180 : ang });
+  out.labels.push({ x: (A[0] + B[0]) / 2 + nx * 0.35, y: (A[1] + B[1]) / 2 + ny * 0.35 - 4, text, anchor: 'middle', rotate });
 }
 
 function isometric(r: () => number): Drawing {
@@ -37,6 +60,8 @@ function isometric(r: () => number): Drawing {
   }
   let p: [number, number] = [90 + r() * 60, 280 - r() * 40];
   let last = -1;
+  // the line number's corner is spoken for; dimensions keep clear of it and of each other
+  const taken: Array<[number, number, number, number]> = [labelBox(40, 40, '8"-P-1000-A1B')];
   const segs = 5 + Math.floor(r() * 3);
   out.nodes.push({ x: p[0], y: p[1], r: 4 });
   for (let i = 0; i < segs; i++) {
@@ -52,11 +77,19 @@ function isometric(r: () => number): Drawing {
       const n: [number, number] = [-dirs[d][1] * 7, dirs[d][0] * 7], u: [number, number] = [dirs[d][0] * 9, dirs[d][1] * 9];
       out.strokes.push({ kind: 'main', d: `M${f(m[0] - u[0] + n[0])} ${f(m[1] - u[1] + n[1])}L${f(m[0] + u[0] - n[0])} ${f(m[1] + u[1] - n[1])}L${f(m[0] + u[0] + n[0])} ${f(m[1] + u[1] + n[1])}L${f(m[0] - u[0] - n[0])} ${f(m[1] - u[1] - n[1])}Z` });
     }
-    if (len > 80) dimension(p, q, 18, String(Math.round(len * 12.5)), out);
+    if (len > 80) dimension(p, q, 18, String(Math.round(len * 12.5)), out, taken);
     out.nodes.push({ x: q[0], y: q[1], r: 3 });
     p = q; last = d;
   }
-  out.labels.push({ x: p[0] + 8, y: p[1] - 10, text: `EL +${(100 + r() * 10).toFixed(3)}` });
+  // the elevation at the end of the run, on whichever side of the last node is clear
+  const el = `EL +${(100 + r() * 10).toFixed(3)}`;
+  for (const [x, y] of [[p[0] + 8, p[1] - 10], [p[0] + 8, p[1] + 18], [p[0] - 8 - el.length * 6.2, p[1] - 10], [p[0] - 8 - el.length * 6.2, p[1] + 18]] as Array<[number, number]>) {
+    const box = labelBox(x, y, el);
+    if (box[0] < 4 || box[2] > 596 || box[1] < 4 || box[3] > 356 || taken.some((t) => overlaps(t, box))) continue;
+    taken.push(box);
+    out.labels.push({ x, y, text: el });
+    break;
+  }
   out.labels.push({ x: 40, y: 40, text: `${[2, 3, 4, 6, 8][Math.floor(r() * 5)]}"-P-${1000 + Math.floor(r() * 900)}-A1B` });
   return out;
 }

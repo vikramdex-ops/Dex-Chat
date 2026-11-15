@@ -33,6 +33,23 @@ function compile(d: Record<string, string>): Array<{ re: RegExp; out: string }> 
   }));
 }
 
+/**
+ * Dates and times follow the language too: the app asks for "the person's locale" (no locale, or
+ * []), which would otherwise be the PC's (English). Digits stay the usual 0-9 in both languages.
+ */
+const LOCALE: Record<string, string> = { hi: 'hi-IN', ta: 'ta-IN' };
+for (const name of ['toLocaleDateString', 'toLocaleTimeString', 'toLocaleString'] as const) {
+  const orig = Date.prototype[name] as (this: Date, locales?: string | string[], opts?: Intl.DateTimeFormatOptions) => string;
+  Object.defineProperty(Date.prototype, name, {
+    configurable: true, writable: true,
+    value(this: Date, locales?: string | string[], opts?: Intl.DateTimeFormatOptions) {
+      const mine = LOCALE[lang];
+      const unset = locales === undefined || (Array.isArray(locales) && locales.length === 0);
+      return orig.call(this, mine && unset ? mine : locales, opts);
+    },
+  });
+}
+
 export const language = () => lang;
 export const translating = () => lang !== 'en';
 

@@ -596,7 +596,7 @@
   "You are not in that conversation": "आप उस बातचीत में नहीं हैं",
   "You: status, Preferences": "आप: स्टेटस, प्राथमिकताएँ",
   "Add": "जोड़ें",
-  "No tools are approved yet. An administrator adds them in Control room → Bots &amp; tools.": "अभी कोई टूल मंज़ूर नहीं है। व्यवस्थापक इन्हें कंट्रोल रूम → बॉट और टूल में जोड़ते हैं।",
+  "No tools are approved yet. An administrator adds them in Control room → Bots & tools.": "अभी कोई टूल मंज़ूर नहीं है। व्यवस्थापक इन्हें कंट्रोल रूम → बॉट और टूल में जोड़ते हैं।",
   "this conversation": "यह बातचीत",
   "this Space": "यह स्पेस",
   "Tools run inside the conversation for everyone in it. Each one added keeps its own sheet: what one person changes, the others see.": "टूल बातचीत के अंदर, उसमें शामिल सभी लोगों के लिए चलते हैं। जोड़ा गया हर टूल अपनी अलग शीट रखता है: एक व्यक्ति जो बदलता है, बाकी सब उसे देखते हैं।",
@@ -4044,5 +4044,15 @@
   "and {0}": "और {0}",
   "{0} min": "{0} मिनट",
   "for {0}": "({0} के लिए)",
-  "Connection": "कनेक्शन"
+  "Connection": "कनेक्शन",
+  "Only my time zone": "केवल मेरा टाइम ज़ोन",
+  "Hold the barcode or QR code inside the square": "बारकोड या QR कोड को चौकोर के अंदर रखें",
+  "Share your whole screen first (not one window): control works on a whole screen.": "पहले अपनी पूरी स्क्रीन शेयर करें (एक विंडो नहीं): कंट्रोल पूरी स्क्रीन पर ही काम करता है।",
+  "BY ID OR LINK": "ID या लिंक से",
+  "STANDING ID": "स्थायी ID",
+  "Registration, a practice session, Q&A, polls, handouts and a live stream.": "रजिस्ट्रेशन, अभ्यास सत्र, सवाल-जवाब, पोल, हैंडआउट और लाइव स्ट्रीम।",
+  "Welcome to Dexterity Connect": "Dexterity Connect में आपका स्वागत है",
+  "NOW": "अभी",
+  "CALENDAR": "कैलेंडर",
+  "LOG": "रिकॉर्ड"
 }

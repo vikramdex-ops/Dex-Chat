@@ -9,6 +9,10 @@ import ts from 'typescript';
 
 const root = path.resolve(import.meta.dirname, '../src/renderer');
 const ATTRS = new Set(['title', 'placeholder', 'aria-label', 'alt', 'label']);
+// props of the app's own components that carry words shown as they are (refText, hint, emptyText…)
+const TEXT_PROP = /^(?:[a-z]+(?:Text|Label|Title|Hint|Note|Caption)|hint|note|caption|empty|subtitle|description|summary|heading|eyebrow)$/;
+// JSX text arrives decoded (Q&A), so the list must hold it decoded too
+const decode = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, '\u00a0');
 const files = [];
 (function walk(d) {
   for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -40,8 +44,10 @@ const hubFiles = [];
     if (e.isDirectory()) walkHub(p); else if (e.name.endsWith('.ts')) hubFiles.push(p);
   }
 })(hubRoot);
-const add = (text, file) => {
+const add = (text, file, caption = false) => {
   const t = text.replace(/\s+/g, ' ').trim();
+  // a capitalised caption in a component prop (refText="NOW") is words, though it looks like a constant
+  if (caption && /^[A-Z]{3,}$/.test(t)) { if (!out.has(t)) out.set(t, path.relative(root, file)); return; }
   if (!looksLikeText(t.replace(/\{\d\}/g, 'X'))) return;
   if (!out.has(t)) out.set(t, path.relative(root, file));
 };
@@ -56,9 +62,9 @@ for (const file of files) {
   if (/@jsxImportSource react\b/.test(src)) continue; // files that draw what people wrote
   const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const visit = (n) => {
-    if (ts.isJsxText(n)) add(n.text, file);
-    else if (ts.isJsxAttribute(n) && ATTRS.has(n.name.getText()) && n.initializer) {
-      if (ts.isStringLiteral(n.initializer)) add(n.initializer.text, file);
+    if (ts.isJsxText(n)) add(decode(n.text), file);
+    else if (ts.isJsxAttribute(n) && (ATTRS.has(n.name.getText()) || TEXT_PROP.test(n.name.getText())) && n.initializer) {
+      if (ts.isStringLiteral(n.initializer)) add(n.initializer.text, file, TEXT_PROP.test(n.name.getText()));
     } else if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) {
       const p = n.parent;
       const skip = p && (ts.isImportDeclaration(p) || ts.isExportDeclaration(p) || (ts.isCallExpression(p) && /request|querySelector|getItem|setItem|addEventListener|getContext|createElement|matchMedia|startsWith|endsWith|includes|split|replace|test/.test(p.expression.getText())) || ts.isElementAccessExpression(p) || (ts.isBinaryExpression(p) && /===|!==|==|!=/.test(p.operatorToken.getText())) || ts.isCaseClause(p) || ts.isLiteralTypeNode(p) || ts.isPropertyAccessExpression(p));
