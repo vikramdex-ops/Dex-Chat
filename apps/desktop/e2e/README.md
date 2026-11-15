@@ -40,6 +40,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
   - org chart: `org`, `orgscape`
   - devices: `pair`, `phone`, `phone-sec`
   - Control room: `admin2`, `m2-admin`, `policy`, `dlp`
+  - Nib: `nib` (a whole day in three apps), `nibfix` (the wrap-up fits its tray in three languages, Nib's times, a tray kept live from another device, the lobby rule names)
   - plus others.
 
 ## Timing
