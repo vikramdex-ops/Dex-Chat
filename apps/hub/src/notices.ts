@@ -436,11 +436,12 @@ export class NoticeBoard {
 
   /** May this person open the file (an attachment of a notice they can see)? */
   mayReadFile(userId: string, fileId: string): boolean {
-    const rows = this.db.prepare('SELECT DISTINCT notice_id FROM notice_revs WHERE file_id = ?').all(fileId) as Array<{ notice_id: string }>;
+    const rows = this.db.prepare('SELECT notice_id, issued_at FROM notice_revs WHERE file_id = ?').all(fileId) as Array<{ notice_id: string; issued_at: number | null }>;
     if (!rows.length) return false;
     const u = this.d.store.userById(userId);
     if (!u) return false;
-    return rows.some((r) => { const n = this.notice(r.notice_id); return !!n && this.canSee(u, n); });
+    // readers open what was issued to them; a draft revision's new PDF is the desk's until it is issued
+    return rows.some((r) => { const n = this.notice(r.notice_id); return !!n && this.canSee(u, n) && (r.issued_at !== null || this.canIssue(u, n.desk_id)); });
   }
 
   // ------------------------------------------------------------ writing

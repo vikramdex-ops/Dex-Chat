@@ -223,6 +223,12 @@ test('the text of an attached PDF is searchable; the PDF opens for the audience 
   assert.equal(hub.files.canRead(me(meera), file.id), false);
   hub.files.gc(Date.now() + DAY);
   assert.ok(hub.files.info(file.id), 'kept while its notice is');
+  // a PDF in a revision still being written is the desk's alone
+  const next = hub.files.storeBuffer(me(priya), 'HR leave policy rev B.pdf', 'application/pdf', pdf);
+  await priya.request('notices.save', { ...draft({ fileId: next.id, body: 'Rev B is attached.' }), id: v.id });
+  assert.equal(hub.files.canRead(me(ravi), next.id), false);
+  await priya.request('notices.issue', { id: v.id });
+  assert.equal(hub.files.canRead(me(ravi), next.id), true);
 });
 
 test('urgent notices: admins only, a banner each person dismisses once, a few a day; expiry archives; withdrawal stamps', async () => {
