@@ -44,3 +44,4 @@
   .slug-row { flex-wrap: wrap; gap: 6px; }
   .slug-row .btn { margin-left: 0; }
 }
+.guest-cells td .guest-hint, .guest-cells td .slug-note { white-space: normal; overflow-wrap: anywhere; }
