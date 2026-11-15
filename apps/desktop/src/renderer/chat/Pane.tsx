@@ -51,6 +51,7 @@ import './chat.css';
 import { LoungeStrip } from '../lounges/Lounges.tsx';
 import { isMadeBot } from '../bots/BotMark.tsx';
 import { toLocalText, toShareable } from './sharepaths.ts';
+import { useBotHead } from '../bots/BotHead.tsx';
 
 /** The kind of a conversation, read from the chat store without subscribing. */
 const convKind = (id: string) => chatState().conversations.get(id)?.kind;
@@ -265,6 +266,9 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const ctx = useMemo<Ctx | null>(() => (conv ? { users, meId, isAdmin, conv, online, view, selected, cards: layout === 'cards', select, clock: clockFormat } : null),
     [users, meId, isAdmin, conv, online, view, selected, layout, select, clockFormat]);
   const onTrack = useCallback((parentId: string) => setSide({ kind: 'track', parentId }), []);
+  // a bot is not a person: its own header (who made it, what it is for, its requests or hours)
+  const botPeer = conv?.kind === 'direct' ? conv.members.filter((m) => m !== meId) : [];
+  const botHead = useBotHead(botPeer.length === 1 ? users.get(botPeer[0]) : undefined, convId, conv ? convTitle(conv, users, meId) : '', users, conv?.lastMessage?.id ?? null);
   if (!conv || !ctx) return <div className="pane-wrap"><div className="pane empty"><div className="empty"><Icon name="direct" size={36} /><span>This conversation is no longer available.</span>{onClose && <button className="btn" onClick={onClose}>Close this Pane</button>}</div></div></div>;
   const picked = (): AnyMessage[] => (chatState().timelines.get(convId)?.messages ?? []).filter((m) => selected?.has(m.id) && !('pending' in m));
   const canAttach = filesSupported() && live && !direct;
@@ -297,13 +301,13 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
       })()
       : `${others.length + 1} people`;
   // the title block on the right: two ruled rows of mono facts
-  const facts: Array<[string, string]> = conv.kind === 'space'
+  const facts: Array<[string, string]> = botHead ? botHead.facts : conv.kind === 'space'
     ? [['People', String(conv.members.length)], ['Opened', fullDate(conv.createdAt)]]
     : one
       ? [['Status', STATUS_WORD[presenceFor(others[0])]], ['Last on', lastOn(one, online.has(others[0]))]]
       : [['People', String(conv.members.length)], ['On now', String(others.filter((id) => online.has(id)).length)]];
   // a long Space name is cut short so the hint never runs out of the Dock
-  const placeholder = conv.kind === 'space' ? `Write in ${title.length > 28 ? `${title.slice(0, 26).trimEnd()}…` : title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
+  const placeholder = botHead ? botHead.placeholder : conv.kind === 'space' ? `Write in ${title.length > 28 ? `${title.slice(0, 26).trimEnd()}…` : title}` : one ? `Write to ${title.split(' ')[0]}` : title.length <= 28 ? `Write to ${title}` : 'Write to the group';
   const toggleSheet = (kind: SheetKind) => setSide(side?.kind === kind ? null : openSheet(kind));
   const canPlan = live && !!session && session.me.role !== 'guest';
 
@@ -320,21 +324,23 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
           <div className="pane-title">
             <h2 translate="no" title={title}><span className="pane-name">{title}</span>{conv.private && conv.kind === 'space' && <Icon name="lock" size={14} />}</h2>
             <p className="faint">
-              {e2e && conv.kind === 'direct' && (
+              {botHead?.subtitle}
+              {!botHead && e2e && conv.kind === 'direct' && (
                 <button className={`e2e-chip${e2e.encrypted ? '' : ' off'}`} onClick={() => setVerify(true)} title={e2e.encrypted ? 'Messages here are end-to-end encrypted' : 'Not end-to-end encrypted yet'}>
                   <Icon name={e2e.encrypted ? 'lock' : 'unlock'} size={11} />{e2e.encrypted ? 'Encrypted' : 'Not encrypted'}
                 </button>
               )}
               {sheetNo && sheetNo.of > 1 && <span className="sheet-no mono">Sheet {sheetNo.n}/{sheetNo.of}</span>}
               {conv.muted && <span className="sheet-no mono hushed">Hushed</span>}
-              <span className="pane-sub" translate={conv.kind === 'space' && !conv.topic ? undefined : 'no'}>{subtitle}</span>
+              {!botHead && <span className="pane-sub" translate={conv.kind === 'space' && !conv.topic ? undefined : 'no'}>{subtitle}</span>}
             </p>
           </div>
+          {botHead?.details}
           <dl className="title-block" aria-label="About this conversation">
             {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
           {conv.kind === 'space' && <LoungeStrip convId={convId} live={live} />}
-          {conv.members.length > 1 && <RoomButton convId={convId} live={live} />}
+          {conv.members.length > 1 && !botHead && <RoomButton convId={convId} live={live} />}
           <button ref={moreBtn} className="icon-btn head-more" title="More for this conversation" aria-label="More for this conversation" aria-haspopup="menu" aria-expanded={headMenu} onClick={() => setHeadMenu(!headMenu)}><Icon name="more" size={18} /></button>
           {onClose && <button className="icon-btn pane-x" title="Close this Pane" aria-label="Close this Pane" onClick={onClose}><Icon name="x" size={16} /></button>}
           {headMenu && (
@@ -408,10 +414,10 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
         {fwdMany && picked().length > 0 && <ForwardDialog message={picked()[0] as never} more={picked().slice(1) as never} users={users} meId={meId} online={online} onClose={() => { setFwdMany(false); setSelected(null); }} />}
         <WritingLine k={tlKey(convId)} users={users} />
         {/* before sending: say plainly when a Direct conversation is not end-to-end encrypted, and why */}
-        {e2e && conv.kind === 'direct' && !e2e.encrypted && e2e.missing.length > 0 && !e2e.required && (
+        {!botHead && e2e && conv.kind === 'direct' && !e2e.encrypted && e2e.missing.length > 0 && !e2e.required && (
           <div className="e2e-notice" role="status"><Icon name="unlock" size={13} /><span>{e2e.missing.length === 1 ? `Not end-to-end encrypted: ${missingNames(e2e.missing)} is on an older version of Dexterity Connect.` : `Not end-to-end encrypted: ${missingNames(e2e.missing)} are on an older version of Dexterity Connect.`}</span><button className="link" onClick={() => setVerify(true)}>Why</button></div>
         )}
-        {conv.archived ? null : e2e && conv.kind === 'direct' && e2e.required && !e2e.encrypted && e2e.missing.length > 0 ? (
+        {conv.archived ? null : !botHead && e2e && conv.kind === 'direct' && e2e.required && !e2e.encrypted && e2e.missing.length > 0 ? (
           <div className="dock-locked faint e2e-required" role="status"><Icon name="lock" size={14} />{e2e.missing.length === 1
             ? `Your office requires Direct messages to be end-to-end encrypted. You can write here once ${missingNames(e2e.missing)} updates Dexterity Connect.`
             : `Your office requires Direct messages to be end-to-end encrypted. You can write here once ${missingNames(e2e.missing)} update Dexterity Connect.`}</div>

@@ -57,7 +57,10 @@ function ActionBar({ v, driver, busy, run }: { v: BotTrackView; driver: TrackDri
   const [note, setNote] = useState('');
   useEffect(() => { setOpen(null); setNote(''); }, [v.stage?.id, v.stage?.round, v.status]);
   const checks = v.stage?.checklist ?? [];
-  const missing = checks.some((_c, i) => !v.stage?.checks.includes(i));
+  // ticks show at once; the hub's answer (the card drawn again) confirms them
+  const [ticked, setTicked] = useState<number[]>(v.stage?.checks ?? []);
+  useEffect(() => { setTicked(v.stage?.checks ?? []); }, [v.stage?.checks?.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const missing = checks.some((_c, i) => !ticked.includes(i));
   const press = (a: BotFlowStageAction) => {
     if (a.note) { setOpen(a); setNote(''); return; }
     run(() => driver.act(v.itemId, a.id, ''));
@@ -69,7 +72,7 @@ function ActionBar({ v, driver, busy, run }: { v: BotTrackView; driver: TrackDri
           <legend className="trk-cap">Checklist</legend>
           {checks.map((c, i) => (
             <label key={i} className="trk-check">
-              <input type="checkbox" checked={v.stage?.checks.includes(i) ?? false} disabled={busy} onChange={(e) => run(() => driver.tick(v.itemId, i, e.target.checked))} />
+              <input type="checkbox" checked={ticked.includes(i)} onChange={(e) => { const on = e.target.checked; setTicked((t) => (on ? [...new Set([...t, i])] : t.filter((x) => x !== i))); run(() => driver.tick(v.itemId, i, on)); }} />
               <span>{c}</span>
             </label>
           ))}

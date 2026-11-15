@@ -1241,6 +1241,23 @@ export class BotFlows {
       case 'botflow.act': case 'botflow.tick': case 'botflow.withdraw': case 'botflow.takeover': case 'botflow.item':
         if (me.role === 'bot') throw new BotFlowsError('Integrations cannot act on requests.', 403);
         try { return this.items.handle(op, me, d); } catch (err) { if (err instanceof BotFlowError) throw new BotFlowsError(err.message); throw err; }
+      case 'botflow.about': {
+        const botId = String(d.botId ?? '');
+        const bot = this.d.store.userById(botId);
+        if (!bot || bot.role !== 'bot') throw new BotFlowsError('That bot was not found.', 404);
+        const rows = (this.db.prepare('SELECT * FROM bot_flows WHERE bot_id = ? AND enabled = 1 ORDER BY name').all(botId) as unknown as FlowRow[]).filter((r) => this.canUse(r, me));
+        const defs = rows.map((r) => ({ r, def: parse<BotFlowDefinition | null>(r.def, null) })).filter((x): x is { r: FlowRow; def: BotFlowDefinition } => !!x.def);
+        const main = defs[0];
+        let open = 0; let yours = 0;
+        for (const { def } of defs.filter((x) => x.def.track)) { const c = this.items.countsFor(def.name, me.id); open += c.open; yours += c.yours; }
+        const persona = main?.def.persona ?? null;
+        return {
+          botId, title: defs.length === 1 ? main.def.title : bot.displayName, about: persona?.about ?? main?.def.description ?? null,
+          ownerId: main?.r.owner_id ?? null, source: main?.r.source ?? null, persona, hours: persona?.hours ?? null,
+          openNow: withinHours(persona?.hours, Date.now()), flows: defs.map(({ def }) => ({ name: def.name, title: def.title })),
+          tracked: defs.some((x) => !!x.def.track), open, yours,
+        } satisfies Ops['botflow.about']['res'];
+      }
       case 'botflow.register': {
         const u = this.usable(String(d.flow ?? ''));
         if (!u || !u.def.track || !this.canUse(u.row, me)) throw new BotFlowsError('That bot was not found.', 404);

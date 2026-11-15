@@ -188,8 +188,9 @@ export class BotItems {
   // ------------------------------------------------------------ cards
   private cardFor(bot: PublicUser, def: BotFlowDefinition, item: Kept, userId: string, purpose: CardPurpose, body: string): void {
     const convId = this.d.dm(bot, userId);
-    // the newest card for this request in this conversation is the one that acts; older ones fold
-    const older = this.db.prepare("SELECT client_id FROM bot_item_cards WHERE item_id = ? AND user_id = ? AND purpose = 'actor' AND superseded = 0").all(item.id, userId) as Array<{ client_id: string }>;
+    // one live card per request in a conversation: the newest; older ones (the person who asked's
+    // first card too) fold to a line pointing at it
+    const older = this.db.prepare("SELECT client_id FROM bot_item_cards WHERE item_id = ? AND user_id = ? AND purpose != 'register' AND superseded = 0").all(item.id, userId) as Array<{ client_id: string }>;
     const persona = def.persona ? { mark: def.persona.mark, colour: def.persona.colour } : null;
     const clientId = this.d.postCard(bot, convId, body, 'track', { title: def.title, itemId: item.id, ownerId: userId, ...(persona ? { persona } : {}) });
     this.db.prepare('INSERT INTO bot_item_cards (client_id, item_id, flow, user_id, conv_id, purpose, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(clientId, item.id, item.flow, userId, convId, purpose, this.d.now());
@@ -251,6 +252,14 @@ export class BotItems {
       if (v.seats.length) v.seats = registerView(f.def, queues, [], { mode, viewerId: viewer ?? '', now, limit: 0 }).seats;
     }
     return o.moved ? { ...v, moved: true } : v;
+  }
+
+  /** For a bot's header: open requests this person may see, and those waiting for them. */
+  countsFor(flow: string, me: string): { open: number; yours: number } {
+    const f = this.d.flowOf(flow, null);
+    if (!f) return { open: 0, yours: 0 };
+    const open = this.openOf(flow);
+    return { open: open.filter((i) => this.canSee(f.def, f.ownerId, i, me)).length, yours: open.filter((i) => i.actorId === me && !i.waiting).length };
   }
 
   /** Post the register as a card into a conversation, folding the one before it there. */

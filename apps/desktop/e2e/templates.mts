@@ -113,6 +113,18 @@ try {
   await mine.waitFor({ timeout: 10000 });
   assert.match(await mine.innerText(), /With Ravi Kumar to check/);
   assert.match(await mine.innerText(), /With Ravi Kumar/);
+  // the header says what the bot is, not a person's status or encryption
+  const head = P.locator('.pane-head');
+  await head.locator('.bot-head-tag').waitFor({ timeout: 8000 });
+  const headText = await head.innerText();
+  assert.match(headText, /Made by Priya Raman/);
+  assert.match(headText, /OPEN\s*1/i);
+  assert.doesNotMatch(headText, /encrypted|Last on|Offline|botmaker/i);
+  assert.equal(await P.locator('.dock textarea').first().getAttribute('placeholder'), 'Write to Drawing check and issue');
+  await head.getByRole('button', { name: 'Details' }).click();
+  await P.locator('.bot-details-note').waitFor();
+  await shot(P, 'tp-05a-bot-details-1440-light');
+  await P.keyboard.press('Escape');
   await scrollEnd(P);
   await both(P, 'tp-05-priya-sent-1440');
 
@@ -132,8 +144,11 @@ try {
   await rc().locator('.trk-note').getByRole('button', { name: 'Return with comments' }).click();
   await R.locator('.flow-card.track').last().locator('.trk-holder', { hasText: 'With Priya Raman' }).waitFor({ timeout: 8000 });
 
-  // Priya's own card followed it live; a card asks her to correct
-  await mine.locator('.trk-cell.returned', { hasText: 'Check' }).waitFor({ timeout: 8000 });
+  // Priya's card followed it live; her turn comes as the newest card, and the first folds to a line
+  const latest = () => P.locator('.flow-card.track:not(.moved)').last();
+  await latest().locator('.trk-cell.returned', { hasText: 'Check' }).waitFor({ timeout: 8000 });
+  await mine.locator('.flow-foot', { hasText: 'See the latest card below' }).waitFor({ timeout: 8000 });
+  assert.equal(await P.locator('.flow-card.track:not(.moved)').count(), 1, 'one live card for her request');
   const fix = P.locator('.flow-card.track.acting').last();
   await fix.waitFor({ timeout: 8000 });
   assert.match(await fix.innerText(), /Tag 101-P-02 is missing/);
@@ -165,7 +180,9 @@ try {
   await scrollEnd(V);
   await shot(V, 'tp-09a-meena-issues-1440-light');
   await mc().locator('.trk-note').getByRole('button', { name: 'Issued on transmittal' }).click();
-  await mine.locator('.trk-cell.here', { hasText: 'Client receipt' }).waitFor({ timeout: 8000 });
+  await latest().locator('.trk-cell.here', { hasText: 'Client receipt' }).waitFor({ timeout: 8000 });
+  assert.equal(await P.locator('.flow-card.track:not(.moved)').count(), 1);
+  assert.equal(await R.locator('.flow-card.track:not(.moved)').count(), 1, 'one live card for Ravi');
   await scrollEnd(P);
   await both(P, 'tp-09-priya-issued-live-1440');
 
@@ -174,8 +191,7 @@ try {
   await dock.fill('register');
   await dock.press('Enter');
   const reg = P.locator('.flow-card.register').last();
-  await reg.waitFor({ timeout: 10000 });
-  assert.match(await reg.innerText(), /DC-0001/);
+  await reg.locator('.reg-ref', { hasText: 'DC-0001' }).waitFor({ timeout: 10000 });
   await scrollEnd(P);
   await both(P, 'tp-10-register-priya-1440');
   // the lead's digest: Meena asks for the register in her conversation with the bot
@@ -225,7 +241,7 @@ try {
   await shot(P, 'tp-13-priya-asked-to-release-1440-light');
   await pSeat.getByRole('button', { name: 'Release the seat' }).click();
   await R.locator('.flow-card.track.acting', { hasText: 'Release the seat' }).last().waitFor({ timeout: 10000 });
-  await rSeat.locator('.trk-cell.here').waitFor({ timeout: 8000 });
+  await rSeat.locator('.flow-foot', { hasText: 'See the latest card below' }).waitFor({ timeout: 8000 });
   await scrollEnd(R);
   await both(R, 'tp-14-ravi-seat-is-his-1440');
   // who has one now
@@ -258,6 +274,11 @@ try {
     await sleep(500);
     await scrollEnd(P);
     await shot(P, `tp-18-request-card-${lang}-1440-light`);
+    if (lang === 'hi') {
+      await P.setViewportSize({ width: 390, height: 844 }); await sleep(600);
+      await shot(P, 'tp-19-request-card-hi-390-light');
+      await P.setViewportSize({ width: 1440, height: 900 }); await sleep(400);
+    }
   }
   await P.evaluate(() => { localStorage.setItem('dex.language', 'en'); });
   console.log('TEMPLATES E2E PASSED');

@@ -239,3 +239,15 @@ html:is([lang='hi'], [lang='ta']) .trk-label, html:is([lang='hi'], [lang='ta']) 
   .trk-log li { grid-template-columns: 1fr; gap: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .reg-chev { transition: none; } }
+
+/* ------------------------------------------------------------ a bot's conversation header (chat/Pane.tsx) */
+.bot-head-tag { height: 18px; padding: 0 6px; font: 600 9.5px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+html:is([lang='hi'], [lang='ta']) .bot-head-tag { font-family: var(--font-body); letter-spacing: 0; text-transform: none; font-size: 11px; }
+.bot-head-details { font-size: 12px; white-space: nowrap; }
+.bot-details { display: grid; grid-template-columns: max-content 1fr; margin: 0 0 12px; border: 1px solid var(--stroke); border-radius: 3px; font-size: 13px; }
+.bot-details > div { display: contents; }
+.bot-details dt { padding: 6px 10px; border-right: 1px solid var(--stroke); color: var(--text-3); font: 600 9.5px/1.9 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.bot-details dd { margin: 0; padding: 6px 10px; }
+.bot-details > div + div > * { border-top: 1px solid var(--stroke); }
+.bot-details-note { margin: 0; font-size: 12.5px; padding-left: 10px; border-left: 2px solid var(--stroke-strong); }
+html:is([lang='hi'], [lang='ta']) .bot-details dt { font-family: var(--font-body); letter-spacing: 0; text-transform: none; font-size: 11.5px; }
