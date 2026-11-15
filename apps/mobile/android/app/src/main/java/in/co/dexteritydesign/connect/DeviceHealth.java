@@ -117,7 +117,8 @@ final class DeviceHealth {
             default: candidates = new Intent[] { appDetails(ctx) };
         }
         for (Intent i : candidates) {
-            if (!resolves(ctx, i)) continue;
+            // the maker's pages are checked first (listed under <queries>); system pages are simply tried
+            if (i.getComponent() != null && !resolves(ctx, i)) continue;
             try {
                 ctx.startActivity(i);
                 return i.getComponent() != null ? "maker" : i.getAction() != null && i.getAction().equals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS) ? "app" : target;
