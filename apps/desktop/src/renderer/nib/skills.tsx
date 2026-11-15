@@ -269,23 +269,27 @@ function Remind({ query }: { query: string }) {
 }
 
 // ------------------------------------------------------------------ help with the app
-interface Topic { keys: RegExp; title: string; steps: string[]; go?: string; goLabel?: string }
+/**
+ * A help topic. `ui` lists every label of the app a step names, exactly as the app shows it (a slash
+ * command with its "/"); test/nib-help.test.ts checks that each one is still in the app.
+ */
+interface Topic { keys: RegExp; title: string; steps: string[]; ui: string[]; go?: string; goLabel?: string }
 const TOPICS: Topic[] = [
-  { keys: /share (?:my )?screen|present|screen ?share/i, title: 'Share your screen', steps: ['Open a Room in the conversation (the Room button in its title block).', 'In the Room, choose Share screen.', 'Pick a window or the whole screen, then Share.'] },
-  { keys: /\b(?:call|room|video|voice|ring)\b/i, title: 'Start a Room (a call)', steps: ['Open the conversation.', 'Choose the Room button in its title block, with voice or video.', 'Or type /call or /video in the Dock.'] },
-  { keys: /meeting|schedule a meet|invite/i, title: 'Plan a meeting', steps: ['Go to Calendar and choose New meeting, or type /meet in a conversation.', 'Add people, a time and a room.', 'Everyone gets an invitation with a Join button.'], go: 'dexconnect://calendar', goLabel: 'Open the Calendar' },
-  { keys: /remind/i, title: 'Set a reminder', steps: ['Tell Nib: “remind me to … after lunch”.', 'Or type /remind in 30m Call the client.', 'Reminders live on your Desk.'], go: 'dexconnect://desk', goLabel: 'Open the Desk' },
-  { keys: /send later|schedule (?:a )?message/i, title: 'Send a message later', steps: ['Write the message in the Dock.', 'Type /schedule, or open the send menu and choose Send later.', 'Pick when it goes.'] },
-  { keys: /keep|save|bookmark|star/i, title: 'Keep a message on your Desk', steps: ['Hover the message (long-press on a phone).', 'Choose Keep on my Desk.', 'Find it under Desk → Kept.'] },
-  { keys: /leave|out of office|away|ooo|holiday/i, title: 'Go on leave', steps: ['Tell Nib: “on leave tomorrow”, or choose Going on leave in Nib’s tray.', 'Choose the days, who covers and who to tell.', 'Nib sets your away status, blocks your calendar and tells everyone.'] },
-  { keys: /start (?:my )?day|check ?in|day log|attendance/i, title: 'Start or close your day', steps: ['Open your own tile in the title bar.', 'Choose where you are working and Start my day.', 'Or type /startday site in any conversation.'] },
-  { keys: /bot|automat|flow/i, title: 'Make a bot', steps: ['Go to Desk → Bots → Make a bot.', 'Start from a template, a few words or a blank bot.', 'Test it on the right, then share it.'], go: 'dexconnect://desk', goLabel: 'Open the Desk' },
-  { keys: /find|search|file|drawing/i, title: 'Find a message or a file', steps: ['Press Ctrl+K, or tell Nib “where is …”.', 'Filter by person, Direct or Spaces, dates or files.', 'Open a result to jump to it.'] },
-  { keys: /language|hindi|tamil/i, title: 'Change the language', steps: ['Open your tile → Preferences.', 'Under Language, choose English, हिन्दी or தமிழ்.'], go: 'dexconnect://settings', goLabel: 'Open Preferences' },
-  { keys: /mute|quiet|notification|sound|disturb/i, title: 'Quieten notifications', steps: ['Mute one conversation from its menu.', 'Or set your status to No interruptions from your tile.', 'Sounds and notifications are in Preferences.'] },
-  { keys: /phone|mobile|pair/i, title: 'Add your phone', steps: ['Open Preferences → Your devices → Add a phone.', 'Scan the code with the Dexterity Connect app on the phone.'], go: 'dexconnect://settings', goLabel: 'Open Preferences' },
-  { keys: /poll|vote/i, title: 'Ask a quick poll', steps: ['Type /poll Lunch? | Dosa | Biryani in the Dock.', 'Or choose Poll from the Dock’s insert menu.'] },
-  { keys: /side-?track|thread|reply/i, title: 'Reply in a side-track', steps: ['Hover the message and choose Reply in a side-track.', 'The side-track opens beside the conversation, linked to the message.'] },
+  { keys: /share (?:my )?screen|present|screen ?share/i, title: 'Share your screen', steps: ['Choose Open a Room in the conversation’s title block.', 'In the Room, choose Share sheet.', 'Pick a window or the whole screen.'], ui: ['Open a Room', 'Share sheet'] },
+  { keys: /\b(?:call|room|video|voice|ring)\b/i, title: 'Start a Room (a call)', steps: ['Open the conversation.', 'Choose Open a Room in its title block, or its arrow for With voice or With video.', 'Or type /call or /video in the Dock.'], ui: ['Open a Room', 'With voice', 'With video', '/call', '/video'] },
+  { keys: /meeting|schedule a meet|invite/i, title: 'Plan a meeting', steps: ['Go to Calendar and choose New meeting, or type /meet in a conversation.', 'Add people, a time and a room.', 'Everyone gets an invitation with a Join call button.'], ui: ['Calendar', 'New meeting', '/meet', 'Join call'], go: 'dexconnect://calendar', goLabel: 'Open the Calendar' },
+  { keys: /remind/i, title: 'Set a reminder', steps: ['Tell Nib: “remind me to … after lunch”.', 'Or type /remind in 30m Call the client.', 'Reminders live on your Desk.'], ui: ['/remind', 'Desk'], go: 'dexconnect://desk', goLabel: 'Open the Desk' },
+  { keys: /send later|schedule (?:a )?message/i, title: 'Send a message later', steps: ['Write the message in the Dock.', 'Type /schedule, or open the send menu and choose Send later.', 'Pick when it goes.'], ui: ['/schedule', 'Send later'] },
+  { keys: /keep|save|bookmark|star/i, title: 'Keep a message on your Desk', steps: ['Hover the message (long-press on a phone).', 'Choose Keep on my Desk.', 'Find it under Desk → Kept.'], ui: ['Keep on my Desk', 'Desk', 'Kept'] },
+  { keys: /leave|out of office|away|ooo|holiday/i, title: 'Go on leave', steps: ['Tell Nib: “on leave tomorrow”, type /leave, or choose Going on leave in Nib’s tray.', 'Choose the days, who covers and who to tell.', 'Nib sets your away status, blocks your calendar and tells everyone.'], ui: ['/leave', 'Going on leave'] },
+  { keys: /start (?:my )?day|check ?in|day log|attendance/i, title: 'Start or close your day', steps: ['Open your own tile in the title bar.', 'Choose where you are working and Start my day.', 'Or type /startday site in any conversation.'], ui: ['Start my day', '/startday'] },
+  { keys: /bot|automat|flow/i, title: 'Make a bot', steps: ['Go to Desk → Bots → Make a bot.', 'Start from a template, a few words or a blank bot.', 'Test it on the right, then share it.'], ui: ['Desk', 'Bots', 'Make a bot'], go: 'dexconnect://desk', goLabel: 'Open the Desk' },
+  { keys: /find|search|file|drawing/i, title: 'Find a message or a file', steps: ['Press Ctrl+Shift+F, or tell Nib “where is …”.', 'Filter by person, Direct or Spaces, dates or files.', 'Open a result to jump to it.'], ui: ['Ctrl+Shift+F', 'Direct', 'Spaces'] },
+  { keys: /language|hindi|tamil/i, title: 'Change the language', steps: ['Open your tile → Preferences.', 'Under Language, choose English, हिन्दी or தமிழ்.'], ui: ['Preferences', 'Language'], go: 'dexconnect://settings', goLabel: 'Open Preferences' },
+  { keys: /mute|quiet|hush|notification|sound|disturb/i, title: 'Quieten notifications', steps: ['Hush one conversation from its menu.', 'Or set your status to No interruptions from your tile.', 'Sounds and notifications are in Preferences.'], ui: ['Hush', 'No interruptions', 'Preferences'] },
+  { keys: /phone|mobile|pair/i, title: 'Add your phone', steps: ['Open Preferences → Your devices → Add my phone.', 'Scan the code with the Dexterity Connect app on the phone.'], ui: ['Preferences', 'Your devices', 'Add my phone'], go: 'dexconnect://settings', goLabel: 'Open Preferences' },
+  { keys: /poll|vote/i, title: 'Ask a quick poll', steps: ['Type /poll Lunch? | Dosa | Biryani in the Dock.', 'Or choose Poll from the Dock’s Insert menu.'], ui: ['/poll', 'Poll', 'Insert'] },
+  { keys: /side-?track|thread|reply/i, title: 'Reply in a side-track', steps: ['Hover the message and choose Side-track.', 'The side-track opens beside the conversation, linked to the message.'], ui: ['Side-track'] },
 ];
 function Help({ query }: { query: string }) {
   const [q, setQ] = useState(query);
