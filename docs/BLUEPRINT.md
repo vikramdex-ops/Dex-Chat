@@ -167,7 +167,7 @@ Live Events (deferred), Office-document inline preview, and Deluge scripting (re
 | --- | --- |
 | P0 Foundation | ✅ Done |
 | P1 Messaging core | ✅ Done, including end-to-end encrypted Direct messages and the hub-off PC-to-PC mode |
-| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, a PDF viewer for drawing sheets, Files panel, full-text search with filters, OCR of images, voice notes, video messages and screen recordings, files on phones |
+| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, a PDF viewer for drawing sheets, Files panel, full-text search with filters, on-device search of encrypted Direct messages, OCR of images, voice notes, video messages and screen recordings, files on phones |
 | P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks. Background effects and an SFU for larger calls are not built |
 | P4 Productivity | ✅ Saved messages, reminders, scheduled messages, polls, forms, notes (with Slate), calendar and conference rooms, remote work, organisation and org chart |
 | P5 Platform & governance | ✅ Bot API, slash commands with signed webhooks, share links for office tools, whiteboards, guests, retention, legal hold, exports, Control room, audit |

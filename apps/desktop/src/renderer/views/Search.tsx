@@ -8,12 +8,12 @@ import { SheetTabs } from './People.tsx';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
 import { formatSize } from '../chat/files.tsx';
-import { chatState } from '../chat/store.ts';
+import { searchLocal } from '../localsearch/service.ts';
 import { timeOpts } from '../time.ts';
 
 export interface SearchInit { q?: string; convId?: string | null }
 type When = 'any' | 'today' | 'week' | 'month' | 'year';
-type Hit = { message: Message; snippet: string };
+type Hit = { message: Message; snippet: string; local?: boolean };
 type FileHit = FileInfo & { messageId: string; convId: string; textMatch?: string };
 
 const WHEN: Array<{ value: When; label: string }> = [
@@ -66,38 +66,33 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
     if (!ready) { setHits([]); setFiles([]); setMore(false); return; }
     setBusy(true);
     const t = setTimeout(() => {
-      void window.dex.request('search', { q: q.trim(), limit: 30, ...filters })
-        .then((r) => { setHits(mergeLocal(r.messages)); setFiles(r.files); setMore(r.messages.length === 30); })
-        .catch(() => { setHits([]); setFiles([]); })
+      const hub = window.dex.request('search', { q: q.trim(), limit: 30, ...filters }).catch(() => null);
+      void Promise.all([hub, onDevice()])
+        .then(([r, mine]) => { setHits(merge(r?.messages ?? [], mine)); setFiles(r?.files ?? []); setMore((r?.messages.length ?? 0) === 30 || mine.length === 30); })
         .finally(() => setBusy(false));
     }, 200);
     return () => clearTimeout(t);
   }, [key]);
-  /** End-to-end encrypted Direct text never reaches the hub's index: search what this device has open. */
-  const mergeLocal = (fromHub: Hit[]): Hit[] => {
-    const terms = q.trim().toLowerCase().split(/\s+/).filter((t) => t.length > 1);
-    if (!terms.length || kind === 'space' || hasFile) return fromHub;
-    const seen = new Set(fromHub.map((h) => h.message.id));
-    const after = since(period) ?? 0;
-    const local: Hit[] = [];
-    for (const [k, tl] of chatState().timelines) {
-      const c = conversations.get(k.split('/')[0]);
-      if (!c || c.kind !== 'direct' || (convId && c.id !== convId)) continue;
-      for (const m of tl.messages) {
-        if ('pending' in m || seen.has(m.id) || m.deleted || m.createdAt < after || (from && m.authorId !== from)) continue;
-        const body = m.body.toLowerCase();
-        if (terms.every((t) => body.includes(t))) { seen.add(m.id); local.push({ message: m as Message, snippet: '' }); }
-      }
-    }
-    return [...fromHub, ...local].sort((a, b) => (a.message.id < b.message.id ? 1 : -1));
+  /**
+   * End-to-end encrypted Direct text never reaches the hub's index: it is searched in this device's
+   * own encrypted index (localsearch/) and merged in, marked "from this device".
+   */
+  const onDevice = (olderThan?: string): Promise<Hit[]> => {
+    if (!q.trim() || kind === 'space' || hasFile || (convId && conversations.get(convId)?.kind !== 'direct')) return Promise.resolve([]);
+    return searchLocal(q.trim(), { convs: new Set(conversations.keys()), convId: convId ?? undefined, from: from ?? undefined, after: since(period), olderThan }, 30).catch(() => []);
+  };
+  const merge = (fromHub: Hit[], local: Hit[], have: Hit[] = []): Hit[] => {
+    const seen = new Set([...have, ...fromHub].map((h) => h.message.id));
+    return [...fromHub, ...local.filter((h) => !seen.has(h.message.id))].sort((a, b) => (a.message.id < b.message.id ? 1 : -1));
   };
   const loadMore = () => {
     const last = hits[hits.length - 1];
     if (!last) return;
     setBusy(true);
-    void window.dex.request('search', { q: q.trim(), limit: 30, olderThan: last.message.id, ...filters })
-      .then((r) => { setHits((h) => [...h, ...r.messages]); setMore(r.messages.length === 30); })
-      .catch(() => setMore(false)).finally(() => setBusy(false));
+    const hub = window.dex.request('search', { q: q.trim(), limit: 30, olderThan: last.message.id, ...filters }).catch(() => null);
+    void Promise.all([hub, onDevice(last.message.id)])
+      .then(([r, mine]) => { setHits((h) => [...h, ...merge(r?.messages ?? [], mine, h)]); setMore((r?.messages.length ?? 0) === 30 || mine.length === 30); })
+      .finally(() => setBusy(false));
   };
 
   const convs = [...conversations.values()].filter((c) => c.joined);
@@ -176,7 +171,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
 
       {!ready ? (
         <div className="empty"><Icon name="search" size={28} /><p>Type at least two letters, or set one of the filters above: by whom, in which conversation, when, or files attached.</p>
-          <p className="faint" style={{ fontSize: 12.5 }}>End-to-end encrypted Direct messages are searched on this device, among the conversations it has open: the hub cannot read them.</p></div>
+          <p className="faint" style={{ fontSize: 12.5 }}>End-to-end encrypted Direct messages are searched on this device, in an encrypted index of what it has received and sent: the hub cannot read them.</p></div>
       ) : tab === 'text' ? (
         <div className="search-results" role="list">
           {!busy && hits.length === 0 && <div className="empty"><p>Nothing written matches.</p></div>}
@@ -187,7 +182,7 @@ export function SearchView({ init, users, meId, conversations, onOpen }: {
               <button key={h.message.id} role="listitem" className="search-hit" onClick={() => onOpen(h.message.convId, h.message.id, h.message.parentId)}>
                 <Avatar user={a ?? { id: h.message.authorId, displayName: '?' }} size="sm" />
                 <span className="sb-main">
-                  <span className="search-meta"><b>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint"> in {convTitle(c, byId, meId)}</span>}{h.message.parentId && <span className="faint"> · side-track</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
+                  <span className="search-meta"><b>{a?.displayName ?? 'Someone'}</b>{c && <span className="faint"> in {convTitle(c, byId, meId)}</span>}{h.message.parentId && <span className="faint"> · side-track</span>}{h.local && <span className="search-local" title="Found in this device's encrypted index: the hub cannot read end-to-end encrypted messages">from this device</span>}<span className="mono faint">{when(h.message.createdAt)}</span></span>
                   <span className="search-snippet">{h.snippet ? <Snippet text={h.snippet} /> : plainPreview(h.message.body, byId).slice(0, 220) || (h.message.files.length ? `📎 ${h.message.files.map((f) => f.name).join(', ')}` : '')}</span>
                 </span>
               </button>

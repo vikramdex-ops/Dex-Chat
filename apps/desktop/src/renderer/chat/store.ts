@@ -6,6 +6,7 @@ import { readImageText } from '../ocr.ts';
 import { useSyncExternalStore } from 'react';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
 import { plainPreview } from './format.tsx';
+import { observeMessages, startLocalSearch } from '../localsearch/service.ts';
 
 export interface PendingMessage extends Message {
   pending: true;
@@ -92,6 +93,8 @@ export async function startChat(meId: string, users: () => PublicUser[]): Promis
     }, 1500);
   }
   await refreshConversations();
+  // end-to-end encrypted Direct text is searched from an index on this device (localsearch/)
+  startLocalSearch(meId);
 }
 
 export function stopChat(): void {
@@ -154,6 +157,7 @@ function onEvent(name: string, data: unknown): void {
 }
 
 function upsertMessage(m: AnyMessage): void {
+  observeMessages([m]);
   const tl = state.timelines.get(tlKey(m.convId, m.parentId));
   if (!tl) return;
   const msgs = tl.messages.slice();
@@ -176,6 +180,7 @@ export async function loadLatest(convId: string, parentId?: string): Promise<voi
   changed();
   try {
     const res = await window.dex.request('msg.list', { convId, parentId, limit: 60 });
+    observeMessages(res.messages);
     const pending = (state.timelines.get(key)?.messages ?? []).filter((m) => 'pending' in m);
     state.timelines.set(key, { messages: [...res.messages, ...pending], hasMore: res.hasMore, loaded: true, loading: false });
   } catch {
@@ -193,6 +198,7 @@ export async function loadOlder(convId: string): Promise<void> {
   changed();
   try {
     const res = await window.dex.request('msg.list', { convId, before: oldest?.id, limit: 60 });
+    observeMessages(res.messages);
     const now = state.timelines.get(convId)!;
     state.timelines.set(convId, { ...now, messages: [...res.messages, ...now.messages], hasMore: res.hasMore, loading: false });
   } catch {
