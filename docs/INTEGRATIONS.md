@@ -83,6 +83,12 @@ X-Dex-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>.<body>" with the signin
 Reply within 8 seconds with `{ "text": "…" }` to post into the conversation as the integration, or
 `{ "text": "…", "ephemeral": true }` to show it only to the person who typed the command.
 
+The app's own commands (`/remind`, `/poll`, `/action`, `/call`, `/startday`, Nib's `/got`, `/done`, `/wrap`,
+`/sheet`, `/leave`, `/nib` and the rest: `APP_COMMANDS` in `packages/core/src/bots.ts`) are never
+sent to the hub, so no integration or flow can take one. The slash list shows each name once: the
+app's own first, then integrations' and flows' commands; a command saved before its name became the
+app's is left out.
+
 ### Message actions
 
 Give an integration **message actions** next to its commands (Control room → Integrations →
@@ -338,9 +344,13 @@ switch flows off in **Control room → Bots & tools → Flows**.
 
 Dexterity Connect comes with **Front Office** and two flows: **Request a plot** (`/plot`: job,
 drawings and revisions, the plot set, sheet size, media, sets, date needed, approver; the approver
-gets a task on their Desk) and **Leave request** (`/leave`: kind, from, working days, who covers,
-handover, approver; the approver gets a task and the person covering is told). Revoking Front Office
-in Control room → Integrations switches them off.
+gets a task on their Desk) and **Leave request** (`/leave-request`: kind, from, working days, who
+covers, handover, approver; the approver gets a task and the person covering is told). `/leave` is
+Nib's leave note, the office's way of going on leave (it tells leads and Spaces, blocks the calendar
+and shows the person away); the leave request is only the approval, and when it is sent it points to
+`/leave` for the rest. Hubs that installed the leave request with `/leave` move it to
+`/leave-request` when they start. Revoking Front Office in Control room → Integrations switches them
+off.
 
 ### Nib, the office's companion
 

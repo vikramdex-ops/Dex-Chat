@@ -54,7 +54,7 @@ export interface PublicHost {
   org: () => string;
   /** The office's time zone, noted beside the visitor's. */
   zone: () => string;
-  /** The office allows guest links (Control room ▸ Meetings). */
+  /** The office allows guest links (Control room ▸ Policies ▸ Meetings). */
   allowed: () => boolean;
   /** Access from outside is on (the gateway is set up). */
   gatewayOn: () => boolean;
@@ -185,7 +185,7 @@ export class MeetPublic {
     const allowed = this.h.allowed();
     const on = m.guest.enabled && allowed;
     const { showTitle, followUp } = this.extra(m);
-    const problem = !allowed ? 'Your office has turned guest links off (Control room ▸ Meetings).'
+    const problem = !allowed ? 'Your office has turned guest links off (Control room ▸ Policies ▸ Meetings).'
       : !site || !this.h.gatewayOn() ? 'Guest links work through the internet gateway, which is not set up (Control room ▸ Outside the office).'
         : null;
     const ref = slug ?? m.id;
@@ -222,11 +222,11 @@ export class MeetPublic {
       this.h.db.prepare('UPDATE meetings SET follow_up = ? WHERE id = ?').run(text || null, m.id);
     }
     if (d.lobby !== undefined) {
-      if (!['off', 'outside', 'everyone'].includes(d.lobby as string)) throw new PublicPageError('Choose who waits in the lobby: nobody, people from outside, or everyone.');
+      if (!['off', 'outside', 'everyone'].includes(d.lobby as string)) throw new PublicPageError('Choose who waits in the lobby: guests and people from outside, everyone, or only guests from a browser.');
       next = this.h.meetings.update(next, me, { lobby: d.lobby as LobbyRule });
     }
     if (d.enabled !== undefined || d.regenerate === true) {
-      if (d.enabled === true && !this.h.allowed()) throw new PublicPageError('Your office has turned guest links off (Control room ▸ Meetings).');
+      if (d.enabled === true && !this.h.allowed()) throw new PublicPageError('Your office has turned guest links off (Control room ▸ Policies ▸ Meetings).');
       next = this.h.meetings.setGuest(next, typeof d.enabled === 'boolean' ? d.enabled : undefined, d.regenerate === true);
       this.h.audit(me.id, d.regenerate === true ? 'meeting.guestLinkRenewed' : next.guest.enabled ? 'meeting.guestLinkOn' : 'meeting.guestLinkOff', m.id, {});
     }

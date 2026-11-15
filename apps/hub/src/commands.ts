@@ -6,6 +6,7 @@ import http from 'node:http';
 import https from 'node:https';
 import type { DatabaseSync } from 'node:sqlite';
 import type { BotAction, Ops, PublicUser, SlashCommand, Widget } from '@dex/core';
+import { APP_COMMANDS, uniqueCommands } from '@dex/core';
 import type { Messaging } from './messaging.ts';
 import type { Store } from './store.ts';
 
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS bot_widgets (
 `;
 
 /** Names the app handles itself; integrations cannot take them. */
-export const BUILT_IN = ['remind', 'poll', 'meet', 'call', 'video', 'available', 'busy', 'dnd', 'invisible', 'status', 'checkin', 'checkout', 'break', 'shrug', 'schedule', 'help', 'away', 'me'];
+export const BUILT_IN: readonly string[] = APP_COMMANDS;
 const TIMEOUT_MS = 8000;
 
 /** POST JSON and read a JSON reply (up to 64 KB), ignoring certificate names on the LAN. */
@@ -125,8 +126,10 @@ export class Commands {
 
   list(): SlashCommand[] {
     const active = new Set(this.store.bots().filter((b) => b.active).map((b) => b.bot.id));
-    return [...(this.db.prepare('SELECT * FROM bot_commands ORDER BY command').all() as Array<{ command: string; bot_id: string; description: string }>)
+    // each name once, and none the app answers itself (a command saved before that name was the app's)
+    return uniqueCommands([...(this.db.prepare('SELECT * FROM bot_commands ORDER BY command').all() as Array<{ command: string; bot_id: string; description: string }>)
       .filter((c) => active.has(c.bot_id)).map((c) => ({ command: c.command, description: c.description, botId: c.bot_id })), ...(this.extra?.list() ?? [])]
+      .filter((c) => !BUILT_IN.includes(c.command)))
       .sort((a, b) => a.command.localeCompare(b.command));
   }
 

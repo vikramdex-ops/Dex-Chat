@@ -637,3 +637,33 @@ export interface BotEvents {
 
 /** Files a tool may be shown (a conversation's shared files). */
 export type MiniAppFile = Pick<FileInfo, 'id' | 'name' | 'mime' | 'size' | 'createdAt'>;
+
+// ---------------------------------------------------------------- slash commands
+/**
+ * Slash commands the app answers itself (the desktop's chat/commands.ts lists them, with what they
+ * do), and older names kept out of reach. No integration or flow may take one: the app would never
+ * send it to the hub, so the integration's command could not start.
+ */
+export const APP_COMMANDS: readonly string[] = [
+  'remind', 'poll', 'action', 'meet', 'call', 'video', 'schedule', 'status', 'here', 'headsdown', 'quiet', 'unlisted',
+  'startday', 'endday', 'stepout', 'got', 'done', 'wrap', 'sheet', 'leave', 'nib', 'me', 'shrug', 'help',
+  // reserved since the first command list
+  'available', 'busy', 'dnd', 'invisible', 'checkin', 'checkout', 'break', 'away',
+];
+
+/**
+ * The slash list: each name once. The app's own commands come first; an integration's command with a
+ * name already listed (an app command, or another integration's) is left out, because typing it can
+ * only ever run the first.
+ */
+export function uniqueCommands<T extends { command: string }>(...lists: T[][]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const list of lists) for (const c of list) {
+    const k = c.command.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(c);
+  }
+  return out;
+}

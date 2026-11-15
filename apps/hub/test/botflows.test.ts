@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import type { BotFlowCard, Message } from '@dex/core';
 import { HubClient } from '@dex/core/client';
 import { checkAnswer, nextAfter, remainingPath, validateFlow } from '@dex/core/botflows';
+import { APP_COMMANDS } from '@dex/core';
 import type { Hub } from '../src/hub.ts';
 import { office, me, until, nextEvent } from './office.ts';
 
@@ -250,6 +251,31 @@ test('writing to the integration starts a flow, and Front Office comes with two'
   assert.equal(step.botflow.stepId, 'job');
   await priya.request('msg.send', { convId: dm.id, body: 'cancel', clientId: 'h3' });
   await waitFor(async () => ((await priya.request('botflow.sessions')).length === 0 ? true : undefined));
+});
+
+test('/leave is Nib’s leave note: Front Office’s leave request has its own command, and the slash list has each name once', async () => {
+  const { hub, owner, priya } = await office();
+  let list = await priya.request('cmd.list');
+  assert.ok(list.some((c) => c.command === 'leave-request' && /Nib’s leave note \(\/leave\)/.test(c.description)), 'the leave request starts with /leave-request and points to /leave');
+  assert.ok(!list.some((c) => APP_COMMANDS.includes(c.command)), 'no command the app answers itself');
+  assert.equal(new Set(list.map((c) => c.command)).size, list.length, 'each name once');
+  const front = (await priya.request('botflow.list')).find((f) => f.name === 'leave-request')!;
+  assert.equal(front.command, 'leave-request');
+  // the app's own commands, Nib's included, are not for integrations
+  const { bot } = await owner.request('admin.bots.create', { name: 'HR desk' });
+  for (const command of ['leave', 'got', 'wrap', 'startday']) {
+    await assert.rejects(owner.request('admin.bots.commands', { userId: bot.id, webhookUrl: 'https://hr.example/hook', commands: [{ command, description: 'x' }] }), /built into the app/);
+  }
+  // a hub from before: the leave request was saved with /leave. It takes /leave-request on the next start
+  const row = hub.store.db.prepare(`SELECT def FROM bot_flows WHERE name = 'leave-request'`).get() as { def: string };
+  hub.store.db.prepare(`UPDATE bot_flows SET def = ? WHERE name = 'leave-request'`).run(JSON.stringify({ ...JSON.parse(row.def), command: 'leave', description: 'Ask for leave.' }));
+  assert.ok(!(await priya.request('cmd.list')).some((c) => c.command === 'leave'), 'an old /leave never reaches the list');
+  (hub.botflows as unknown as { seed(): void }).seed();
+  list = await priya.request('cmd.list');
+  assert.ok(list.some((c) => c.command === 'leave-request'));
+  assert.equal(list.filter((c) => c.command.startsWith('leave')).length, 1);
+  const started = await priya.request('cmd.run', { convId: (await priya.request('conv.create', { kind: 'direct', members: [front.botId] })).id, command: 'leave-request', text: '' });
+  assert.match(started.text ?? '', /Leave request started/);
 });
 
 test('integrations with their own logic keep sessions on the hub and get answers at their webhook', async () => {

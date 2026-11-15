@@ -216,6 +216,14 @@ export class BotFlows {
       store.createBotToken(bot.id, crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'), bot.id);
     }
     for (const def of BUILTIN_FLOWS) {
+      // a built-in flow saved with a command the app now answers itself (the leave request had /leave,
+      // which is Nib's leave note) takes the command it has now, so it can be started again
+      const row = this.flowRow(def.name);
+      const kept = row?.source === 'builtin' ? parse<BotFlowDefinition | null>(row.def, null) : null;
+      if (row && kept?.command && BUILT_IN.includes(kept.command)) {
+        const command = def.command && !this.commandTaken(def.command, def.name) ? def.command : undefined;
+        this.db.prepare('UPDATE bot_flows SET def = ? WHERE name = ?').run(JSON.stringify({ ...kept, command, ...(command === def.command ? { description: def.description, done: def.done } : {}) }), def.name);
+      }
       const key = `flow_seeded_${def.name}`;
       if (store.meta(key, () => '') === '1') continue;
       if (!this.flowRow(def.name)) {

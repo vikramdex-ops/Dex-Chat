@@ -59,12 +59,16 @@ export const PLOT_REQUEST: BotFlowDefinition = {
   done: 'Sent. It is on {{approver}}\'s Desk, due {{due}}. The plot room starts once it is approved.',
 };
 
-/** Leave goes to the approver's Desk; the person covering hears about it straight away. */
+/**
+ * Leave goes to the approver's Desk; the person covering hears about it straight away. Telling
+ * everyone (leads, Spaces, the calendar, the away status) is Nib's leave note, which has /leave:
+ * this flow starts with /leave-request and points to the note when it is done.
+ */
 export const LEAVE_REQUEST: BotFlowDefinition = {
   name: 'leave-request',
   title: 'Leave request',
-  description: 'Ask for leave. Your approver gets it on their Desk and whoever covers for you is told.',
-  command: 'leave',
+  description: 'Ask your approver for leave. To tell everyone you are away, use Nib’s leave note (/leave).',
+  command: 'leave-request',
   keywords: ['leave', 'holiday', 'time off', 'vacation', 'leave request'],
   steps: [
     {
@@ -101,7 +105,7 @@ export const LEAVE_REQUEST: BotFlowDefinition = {
     { do: 'task', assignee: 'approver', text: 'Approve {{kind}} for {{user}}: {{days}} working day(s) from {{from}}', due: 'from' },
     { do: 'post', to: 'person:cover', text: '{{user}} is on {{kind}} from {{from}} ({{days}} working days) and asked you to cover.\n\nHandover: {{handover}}' },
   ],
-  done: 'Sent to {{approver}}. It is on their Desk.',
+  done: 'Sent to {{approver}}. It is on their Desk.\n\nTo tell your leads and show you as away while you are off, write /leave: Nib’s leave note does it in one go.',
 };
 
 export const BUILTIN_FLOWS: BotFlowDefinition[] = [PLOT_REQUEST, LEAVE_REQUEST];

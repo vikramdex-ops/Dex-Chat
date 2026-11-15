@@ -10,7 +10,8 @@ import { NibTile } from './NibMark.tsx';
 import { DimBar, GiverTile, ItemQty, PersonPick, ProjectTag, Stepper } from './parts.tsx';
 import { nibDay, nibDelete, nibMeId, nibNow, nibSave, nibStart, nibWelcomeSeen, nibWrap, openTray, rankGivers, readWords, readWordsSmart, setView, useNib } from './store.ts';
 import type { SkillId, TrayView } from './store.ts';
-import { STATUS_WORD, dayLabel, digestTimeText, firstName, greetingLine, qtyWords, wrapTimeText } from './words.ts';
+import { STATUS_WORD, clockOf, dayLabel, digestTimeText, firstName, greetingLine, qtyWords, wrapTimeText } from './words.ts';
+import { formatTime } from '../time.ts';
 
 const Leave = lazy(() => import('./leave.tsx'));
 const Skill = lazy(() => import('./skills.tsx'));
@@ -93,7 +94,7 @@ function Home({ me, name, users, seed }: { me: NibMe; name: string; users: Map<s
         <section className="nib-sec" aria-label="Today’s day sheet">
           <div className="nib-sec-head">
             <span className="label">{me.items.length === 1 ? '01 Today’s sheet · 1 item' : `01 Today’s sheet · ${me.items.length} items`}</span>
-            <span className="mono faint">{me.day.state === 'sent' ? `SENT ${new Date(me.day.sentAt ?? 0).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toUpperCase()}` : `WRAP-UP ${wrapTimeText(me).toUpperCase()}`}</span>
+            <span className="mono faint">{me.day.state === 'sent' ? `SENT ${formatTime(me.day.sentAt ?? 0).toUpperCase()}` : `WRAP-UP ${wrapTimeText(me).toUpperCase()}`}</span>
           </div>
           {!me.day.started && !me.items.length && (
             <button className="nib-prompt" onClick={() => setView({ v: 'start' })}>
@@ -359,10 +360,21 @@ function StartView({ users }: { users: Map<string, PublicUser> }) {
 }
 
 // ------------------------------------------------------------------ the wrap-up
+const wrapRow = (x: NibItem) => ({ id: x.id, done: x.qty?.done ?? (x.status === 'done' ? x.qty?.total ?? 0 : 0), total: x.qty?.total ?? null, status: x.status, note: x.note ?? '' });
 function WrapView({ users }: { users: Map<string, PublicUser> }) {
   const me = useNib((s) => s.me)!;
   const toast = useToast();
-  const [rows, setRows] = useState(() => me.items.map((x) => ({ id: x.id, done: x.qty?.done ?? (x.status === 'done' ? x.qty?.total ?? 0 : 0), total: x.qty?.total ?? null, status: x.status, note: x.note ?? '' })));
+  const [rows, setRows] = useState(() => me.items.map(wrapRow));
+  // an item saved elsewhere (another PC, the phone, Nib's conversation) joins the open wrap-up, and
+  // one taken off leaves it; what was already changed here stays as it is
+  useEffect(() => {
+    setRows((rs) => {
+      const ids = new Set(me.items.map((x) => x.id));
+      const have = new Set(rs.map((r) => r.id));
+      const added = me.items.filter((x) => !have.has(x.id));
+      return added.length || rs.some((r) => !ids.has(r.id)) ? [...rs.filter((r) => ids.has(r.id)), ...added.map(wrapRow)] : rs;
+    });
+  }, [me.items]);
   const [extra, setExtra] = useState('');
   const [note, setNote] = useState(me.day.note ?? '');
   const [blockers, setBlockers] = useState(me.day.blockers ?? '');
@@ -389,7 +401,8 @@ function WrapView({ users }: { users: Map<string, PublicUser> }) {
       {rows.length > 0 && (
         <ul className="nib-sheet wrap">
           {rows.map((r) => {
-            const x = byId.get(r.id)!;
+            const x = byId.get(r.id);
+            if (!x) return null;
             const pct = x.qty?.unit === '%';
             const f = r.status === 'done' ? 1 : r.total ? r.done / r.total : null;
             return (
@@ -442,7 +455,7 @@ function WrapTime() {
   return (
     <span className="nib-wraptime-edit">
       <input type="time" className="input" aria-label="My wrap-up time" value={v} onChange={(e) => setV(e.target.value)} />
-      <button className="btn sm" onClick={() => void nibDay({ wrapAt: v }).then(() => { toast(`I’ll ask at ${v}`); setEdit(false); }).catch((e: Error) => toast(e.message, true))}>Set</button>
+      <button className="btn sm" onClick={() => void nibDay({ wrapAt: v }).then(() => { toast(`I’ll ask at ${clockOf(me.date, v)}`); setEdit(false); }).catch((e: Error) => toast(e.message, true))}>Set</button>
       {me.ownWrapAt && <button className="btn ghost sm" onClick={() => void nibDay({ wrapAt: null }).then(() => { toast('Back to the office’s time'); setEdit(false); })}>Office time</button>}
     </span>
   );

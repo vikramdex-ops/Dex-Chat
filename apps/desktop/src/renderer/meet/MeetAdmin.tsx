@@ -3,12 +3,12 @@
 // hours, average size, guests from a browser, recordings), with a CSV export.
 import { useEffect, useState } from 'react';
 import type { LobbyRule, MeetingUsage, OfficePolicy } from '@dex/core';
+import { LOBBY_RULES } from './lobby.ts';
 import { usageCsv } from '@dex/core/meet-csv';
 import { Icon, Segmented, Toggle, useToast } from '../ui.tsx';
 import { formatSize } from '../chat/files.tsx';
 import { saveText } from './GuestLink.tsx';
 
-const LOBBY: Array<[LobbyRule, string]> = [['outside', 'Guests and people from outside wait'], ['everyone', 'Everyone waits to be let in'], ['off', 'Nobody waits']];
 const REC_MB: Array<[number, string]> = [[250, '250 MB'], [500, '500 MB'], [1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB'], [8192, '8 GB']];
 
 export function MeetingPolicies({ p, save }: { p: OfficePolicy; save: (patch: Partial<OfficePolicy>) => void }) {
@@ -19,7 +19,7 @@ export function MeetingPolicies({ p, save }: { p: OfficePolicy; save: (patch: Pa
       <div className="form-row" style={{ marginTop: 6 }}>
         <div className="field"><label htmlFor="p-lobby">New meetings: who waits in the lobby</label>
           <select id="p-lobby" className="input" value={p.meetingLobby ?? 'outside'} onChange={(e) => save({ meetingLobby: e.target.value as LobbyRule })}>
-            {LOBBY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {LOBBY_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select></div>
         <div className="field"><label htmlFor="p-recmb">Largest recording kept on the hub</label>
           <select id="p-recmb" className="input" value={p.recordingMaxMb ?? 2048} onChange={(e) => save({ recordingMaxMb: Number(e.target.value) })}>

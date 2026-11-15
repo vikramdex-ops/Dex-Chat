@@ -9,6 +9,8 @@ import { hoursText } from '@dex/core/botflows';
 import { Dialog } from '../ui.tsx';
 import { NIB_ACCOUNT } from '@dex/core/nib';
 import { useNib } from '../nib/store.ts';
+import { wrapTimeText } from '../nib/words.ts';
+import { useTimeFormat } from '../time.ts';
 
 export interface BotHeadView {
   subtitle: React.ReactNode;
@@ -25,6 +27,8 @@ export function useBotHead(bot: PublicUser | undefined, convId: string, title: s
   // Nib is the office's own companion: its cells are your day, not requests or hours
   const isNib = bot?.account === NIB_ACCOUNT;
   const nib = useNib((st) => st.me);
+  // the wrap-up time reads as the person reads times ("6:00 PM" or "18:00"), and again when that changes
+  useTimeFormat();
   useEffect(() => {
     if (!botId) { setAbout(null); return; }
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -46,7 +50,7 @@ export function useBotHead(bot: PublicUser | undefined, convId: string, title: s
   const by = isNib ? 'Your office companion' : maker ? `Made by ${maker}` : about?.source === 'api' ? 'Integration' : 'Office bot';
   const sheet = nib?.items.length ?? 0;
   const facts: Array<[string, string]> = isNib
-    ? (nib && !nib.exempt ? [['Your sheet', sheet === 1 ? '1 item' : `${sheet} items`], ['Wrap-up', nib.wrapAt]] : [['Ask', 'Ctrl+Alt+N'], ['Hours', 'Any time']])
+    ? (nib && !nib.exempt ? [['Your sheet', sheet === 1 ? '1 item' : `${sheet} items`], ['Wrap-up', wrapTimeText(nib)]] : [['Ask', 'Ctrl+Alt+N'], ['Hours', 'Any time']])
     : about?.tracked
     ? [['Open', String(about.open)], ['Yours', String(about.yours)]]
     : about?.hours

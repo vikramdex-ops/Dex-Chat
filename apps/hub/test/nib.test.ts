@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message, NibCard, NibMe } from '@dex/core';
-import { office, me, nextClientId } from './office.ts';
+import { office, me, nextClientId, nextEvent } from './office.ts';
 import { localDate } from '../src/work.ts';
 
 /** Today at a time, in the hub's local time (Nib's clock is moved to these). */
@@ -105,6 +105,40 @@ test('a day: start, capture, wrap-up; the lead gets one live card; the managemen
   const fu = await owner.request('nib.card', { kind: 'followup', ref: today }) as Extract<NibCard, { register: unknown }>;
   assert.deepEqual(fu.register.late.map((x) => x.userId), [me(anil)]);
   hub.nib.setClock(null);
+});
+
+test('a day sheet changed by any path reaches every app the person has open', async () => {
+  const { hub, priya, meera, join, owner, clock } = await setup();
+  clock(10, 0);
+  // Priya's second device (a laptop); her PC keeps its tray open
+  const { c: laptop, identity } = await join('priya');
+  await owner.request('admin.decide', { deviceId: identity.deviceId, approve: true });
+  for (let i = 0; i < 50 && laptop.state.kind !== 'ready'; i++) await new Promise((r) => setTimeout(r, 40));
+  // saved through the API from the laptop: the PC hears of it
+  let heard = nextEvent<NibMe>(priya, 'nib.me', (m) => m.items.some((x) => x.activity === 'Spool drawings'));
+  await laptop.request('nib.item.save', { giverId: me(meera), project: 'P-12', activity: 'Spool drawings', qty: { done: 2, total: 6, unit: 'drawings' } });
+  const m = await heard;
+  const id = m.items.find((x) => x.activity === 'Spool drawings')!.id;
+  // and the laptop itself, for a change made on the hub's side (a flow, a cover taken)
+  heard = nextEvent<NibMe>(laptop, 'nib.me', (x) => x.items.find((i) => i.id === id)?.qty?.done === 5);
+  hub.nib.handle('nib.item.save', hub.store.userById(me(priya))!, { id, qty: { done: 5, total: 6, unit: 'drawings' } });
+  await heard;
+  // taken off, and the day sent
+  heard = nextEvent<NibMe>(priya, 'nib.me', (x) => !x.items.some((i) => i.id === id));
+  await laptop.request('nib.item.delete', { id });
+  await heard;
+  heard = nextEvent<NibMe>(priya, 'nib.me', (x) => x.day.state === 'nothing');
+  await laptop.request('nib.day', { nothing: true });
+  await heard;
+  // reading changes nothing, so nobody is told
+  let extra = false;
+  const on = (n: string) => { if (n === 'nib.me') extra = true; };
+  priya.on('event', on);
+  await laptop.request('nib.me');
+  await laptop.request('nib.card', { kind: 'ask', ref: today });
+  await new Promise((r) => setTimeout(r, 150));
+  priya.off('event', on);
+  assert.equal(extra, false);
 });
 
 test('nudges: counted, stepped, quiet while busy, and the management sees how many', async () => {
