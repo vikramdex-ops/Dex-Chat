@@ -55,5 +55,5 @@ export function fractionOf(x: Pick<NibItem | NibItemLite, 'qty' | 'status'>): nu
   if (!x.qty || !x.qty.total || x.qty.unit === 'hours') return null;
   return Math.max(0, Math.min(1, (x.qty.done ?? 0) / x.qty.total));
 }
-export const STATUS_WORD: Record<string, string> = { going: 'Going', done: 'Done', blocked: 'Blocked' };
+export const STATUS_WORD: Record<string, string> = { going: 'Ongoing', done: 'Done', blocked: 'Blocked' };
 export const LEAVE_WORD: Record<string, string> = { annual: 'Annual leave', sick: 'Sick leave', comp: 'Comp-off', half: 'Half day' };

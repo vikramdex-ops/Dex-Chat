@@ -45,7 +45,7 @@ export default function Tray({ session, users, onClose }: { session: Session; us
           ? <button className="icon-btn sm" aria-label="Back to Nib" title="Back (Esc)" onClick={() => setView({ v: 'home' })}><Icon name="back" size={16} /></button>
           : <NibTile size={30} />}
         <div className="nib-tray-title">
-          <span className="mono nib-tray-caption">{title ? `NIB · ${title.toUpperCase()}` : 'NIB'}</span>
+          <span className="mono nib-tray-caption">{title ? `NIB · ${title}` : 'NIB'}</span>
           {me && <span className="nib-tray-date mono">{dayLabel(me.date, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()}</span>}
         </div>
         <button className="icon-btn sm" aria-label="Close Nib" title="Close (Esc)" onClick={onClose}><Icon name="x" size={16} /></button>
@@ -205,7 +205,7 @@ export async function act(p: NibParse, text: string, toast: (t: string, bad?: bo
       const total = p.qty?.total ?? match.qty?.total ?? null;
       const done = p.intent === 'done' ? (p.qty?.done ?? total) : p.qty?.done ?? null;
       await nibSave({ id: match.id, qty: total !== null || done !== null ? { done, total, unit: match.qty?.unit ?? p.qty?.unit ?? null } : match.qty, status: p.status ?? (p.intent === 'done' ? 'done' : match.status), ...(p.note ? { note: p.note } : {}) });
-      toast(`Updated: ${match.activity}${total ? ` · ${qtyWords({ done, total, unit: match.qty?.unit ?? p.qty?.unit ?? null })}` : ''}`);
+      toast(total ? `Updated: ${match.activity} · ${qtyWords({ done, total, unit: match.qty?.unit ?? p.qty?.unit ?? null })}` : `Updated: ${match.activity}`);
       return true;
     }
   }
@@ -230,7 +230,7 @@ export function SheetList({ items, users, compact }: { items: NibItem[]; users: 
               {x.note && <span className="nib-item-note" translate="no">{x.note}</span>}
             </span>
             <ItemQty x={x} />
-            <span className={`nib-state mono s-${x.status}`}>{STATUS_WORD[x.status].toUpperCase()}</span>
+            <span className={`nib-state mono s-${x.status}`}>{STATUS_WORD[x.status]}</span>
           </button>
           {open === x.id && <ItemEditor x={x} users={users} onDone={() => setOpen(null)} />}
         </li>

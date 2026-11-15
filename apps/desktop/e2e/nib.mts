@@ -189,6 +189,7 @@ try {
     // most of the office sends before the wrap-up time (Nib asks Kiran, online, at the start of the day meanwhile)
     clock(17, n % 50);
     const g = GIVE[n % GIVE.length] === o.u ? GIVE[(n + 1) % GIVE.length] : GIVE[n % GIVE.length];
+    try { hub.work.handle('work.checkIn', u, { mode: n % 6 === 0 ? 'site' : n % 7 === 0 ? 'home' : 'office' }); } catch { /* already in */ }
     if (n === 7) { hub.nib.handle('nib.day', u, { nothing: true }); n++; continue; }
     hub.nib.handle('nib.start', u, { givers: [ids[g]] });
     const total = 6 + (n * 7) % 30;
@@ -239,6 +240,8 @@ try {
   assert.equal(leadCards.length, 1, 'one card a day');
   await P.locator('.nib-card.k-lead .nib-row', { hasText: 'Karthik' }).getByRole('button', { name: 'Seen' }).click();
   await P.locator('.nib-card.k-lead .nib-row', { hasText: 'Karthik' }).locator('.nib-seen').waitFor();
+  await P.locator('.nib-card.k-lead').first().evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await sleep(300);
   await pair(P, '09-lead-card');
   assert.ok((await K.evaluate(() => window.dex.request('nib.me'))).seen[ids.priya], 'Karthik sees that Priya saw it');
 
@@ -255,11 +258,14 @@ try {
   assert.equal(reg.register.leave.length, 3, 'three on leave, one grouped line');
   assert.ok(reg.register.missing.some((m: any) => m.userId === ids.kiran && m.asks >= 3), 'Kiran missing, with the asks');
   assert.ok(!(await owner.request('msg.list', { convId: (await owner.request('nib.me')).convId })).messages.some((m: any) => m.nib?.kind === 'leave'), 'no individual leave messages to the management');
+  await B.locator('.nib-card.k-register').first().evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
   await sleep(500);
   await pair(B, '10-register');
   await B.locator('.nib-card.k-register .nib-cell.s-blocked').first().click();
   await B.locator('.nib-person-panel').waitFor();
   await B.locator('.nib-person-panel .nib-lines li').first().waitFor();
+  await B.locator('.nib-person-panel').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(300);
   await pair(B, '11-register-person');
   await B.locator('.nib-card.k-register [role="tab"]', { hasText: 'Call-outs' }).click();
   await sleep(200);
@@ -269,7 +275,8 @@ try {
   await snap(B, '12-register-missing-light');
   await B.setViewportSize({ width: 390, height: 844 });
   await sleep(500);
-  await B.locator('.nib-card.k-register').scrollIntoViewIfNeeded();
+  await B.locator('.nib-card.k-register').first().evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await sleep(300);
   await pair(B, '13-register-phone');
   await B.setViewportSize({ width: 1440, height: 900 });
 
@@ -288,10 +295,10 @@ try {
   assert.deepEqual(fu.register.late.map((x: any) => x.userId), [ids.deepa]);
   const kiranRow = fu.register.missing.find((m: any) => m.userId === ids.kiran);
   assert.ok(kiranRow && kiranRow.asks === 4, `Kiran: asked ${kiranRow?.asks} times (the start card and three wrap-up asks)`);
-  await B.locator('.nib-card.k-followup').scrollIntoViewIfNeeded();
+  await B.locator('.nib-card.k-followup').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
   await sleep(400);
   await pair(B, '14-followup');
-  if (await B.locator('.nib-card.k-week').count()) { await B.locator('.nib-card.k-week').scrollIntoViewIfNeeded(); await sleep(200); await pair(B, '15-week'); }
+  if (await B.locator('.nib-card.k-week').count()) { await B.locator('.nib-card.k-week').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' })); await sleep(200); await pair(B, '15-week'); }
 
   // ---------------------------------------------------------------- 11. Karthik notes leave for tomorrow in one short sheet
   clock(21, 40);
@@ -338,6 +345,7 @@ try {
   for (const x of big) {
     const u = hub.store.userById(bigIds.get(x.u)!);
     if (!u || i % 9 === 4) { i++; continue; }
+    try { if (i % 7) hub.work.handle('work.checkIn', u, { mode: 'office' }); } catch { /* already in */ }
     hub.nib.handle('nib.item.save', u, { giverId: ids.priya, project: PROJ[i % 3], activity: 'Routing', qty: { done: i % 11, total: 10 + (i % 5), unit: UNITS[i % 6] }, ...(i % 13 === 0 ? { status: 'blocked', note: 'Vendor data' } : {}) });
     hub.nib.handle('nib.wrap', u, {});
     i++;
@@ -360,7 +368,7 @@ try {
   console.log(`register for ${cells} people: on screen ${ms} ms after the hub was asked (posting, fetching, drawing); a redraw takes ${paint.toFixed(1)} ms`);
   assert.ok(cells >= 190, `${cells} cells`);
   assert.ok(ms < 3000);
-  await B.locator('.nib-card.k-register').last().scrollIntoViewIfNeeded();
+  await B.locator('.nib-card.k-register').last().evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
   await sleep(400);
   await pair(B, '19-register-200');
 

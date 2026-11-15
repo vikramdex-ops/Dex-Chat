@@ -490,7 +490,7 @@ export function parseWork(input: string, ctx: NibParseContext): NibParse {
       /^\s*@?([\p{L}][\p{L}.'-]{1,30}(?:\s[\p{L}][\p{L}.'-]{1,30})?)\s*[:–-]\s+/u,
       /\b(?:from|frm|by|via)\s+@?([\p{L}][\p{L}.'-]{1,30}(?:\s[\p{L}][\p{L}.'-]{1,30})?)/u,
       /@([\p{L}][\p{L}.'-]{1,30})/u,
-      /\b([\p{L}][\p{L}.'-]{1,30})(?:'s)?\s+(?:side|ne diya|ne diye|ne di|ne bola|ne kaha|se mila|se mili|ka kaam|ki taraf se|sir|ma'am|madam)\b/u,
+      /\b([\p{L}][\p{L}.'-]{1,30})(?:'s)?\s+(?:side|ne diya|ne diye|ne di|ne bola|ne kaha|se mila|se mili|se mile|ka kaam|ki taraf se|sir|ma'am|madam)\b/u,
       /\b(?:for|to)\s+@?([\p{L}][\p{L}.'-]{1,30}(?:\s[\p{L}][\p{L}.'-]{1,30})?)/u,
       /^\s*([\p{L}][\p{L}.'-]{1,30})\s+(?:gave|asked|assigned|wants|needs|sent)\b/u,
     ];

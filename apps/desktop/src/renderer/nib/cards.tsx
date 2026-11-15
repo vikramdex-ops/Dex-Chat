@@ -30,7 +30,7 @@ export default function NibMessageCard({ m, meId, users }: { m: Message; meId: s
     case 'ask': return <AskCard c={card} />;
     case 'leave': case 'leaveSpace': return <LeaveCard c={card} users={users} meId={meId} />;
     case 'cover': return <CoverCard c={card} users={users} />;
-    case 'welcome': return <Frame kind="WELCOME BACK" title={dayLabel(card.leave.to)}><p className="nib-line">Welcome back.</p><button className="btn sm" onClick={() => openTray({ v: 'welcome' })}>What moved while I was away</button></Frame>;
+    case 'welcome': return <Frame caption="WELCOME BACK" title={dayLabel(card.leave.to)}><p className="nib-line">Welcome back.</p><button className="btn sm" onClick={() => openTray({ v: 'welcome' })}>What moved while I was away</button></Frame>;
     case 'joiner': return <JoinerCard c={card} users={users} />;
     case 'hello': return <HelloCard />;
     case 'reply': return <ReplyCard c={card} users={users} />;
@@ -38,12 +38,12 @@ export default function NibMessageCard({ m, meId, users }: { m: Message; meId: s
   return null;
 }
 
-function Frame({ kind, title, no, children, className }: { kind: string; title: string; no?: string; children: React.ReactNode; className?: string }) {
+function Frame({ caption, title, no, children, className }: { caption: string; title: string; no?: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`nib-card${className ? ` ${className}` : ''}`}>
       <div className="nib-card-tb">
         <NibTile size={20} />
-        <span className="mono nib-card-kind">{kind}</span>
+        <span className="mono nib-card-kind">{caption}</span>
         <span className="nib-card-title" translate="no">{title}</span>
         {no && <span className="mono nib-card-no" translate="no">{no}</span>}
       </div>
@@ -61,7 +61,7 @@ function LeadCard({ v, users }: { v: LeadCardView; users: Map<string, PublicUser
   const ack = (userId?: string) => void window.dex.request('nib.ack', { date: v.date, ...(userId ? { userId } : {}) }).then((lead) => { setCard('lead', v.date, { kind: 'lead', lead }); toast(userId ? 'Marked seen' : 'All marked seen'); }).catch((e: Error) => toast(e.message, true));
   const people = v.rows.length;
   return (
-    <Frame kind="FROM YOUR DESK" title={`${dayLabel(v.date)} · ${people === 1 ? '1 person' : `${people} people`}`} no={dwg('TX', v.date)} className="k-lead">
+    <Frame caption="FROM YOUR DESK" title={`${dayLabel(v.date)} · ${people === 1 ? '1 person' : `${people} people`}`} no={dwg('TX', v.date)} className="k-lead">
       {v.rows.length === 0 ? <p className="nib-line">Nobody has sent work from you yet today.</p> : (
         <ul className="nib-rows">
           {v.rows.map((r) => <LeadRowView key={r.userId} r={r} users={users} onSeen={() => ack(r.userId)} />)}
@@ -112,7 +112,7 @@ function ItemLines({ items }: { items: NibItemLite[] }) {
         <li key={x.id} className={`s-${x.status}`}>
           <span className="nib-line-what"><span translate="no">{x.activity}</span><ProjectTag code={x.project} /></span>
           <ItemQty x={x} />
-          <span className={`nib-state mono s-${x.status}`}>{STATUS_WORD[x.status].toUpperCase()}</span>
+          <span className={`nib-state mono s-${x.status}`}>{STATUS_WORD[x.status]}</span>
           {x.note && <span className="nib-line-note" translate="no">{x.note}</span>}
         </li>
       ))}
@@ -141,7 +141,7 @@ function RegisterCard({ r, sentAt, users }: { r: NibRegister; sentAt: number; us
   const [pick, setPick] = useState<string | null>(null);
   const calls = r.callouts.length;
   return (
-    <Frame kind="DAILY REGISTER" title={dayLabel(r.date, { weekday: 'long', day: 'numeric', month: 'short' })} no={dwg('REG', r.date)} className="k-register">
+    <Frame caption="DAILY REGISTER" title={dayLabel(r.date, { weekday: 'long', day: 'numeric', month: 'short' })} no={dwg('REG', r.date)} className="k-register">
       <Headline r={r} />
       <Grid r={r} users={users} pick={pick} onPick={setPick} />
       {pick && <PersonPanel userId={pick} date={r.date} r={r} users={users} onClose={() => setPick(null)} />}
@@ -203,7 +203,7 @@ const Cell = memo(function Cell({ c, u, idx, active, picked, onClick, big }: { c
   const ini = name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   return (
     <button data-i={idx} tabIndex={active ? 0 : -1} className={`nib-cell s-${c.status}${picked ? ' picked' : ''}${c.late ? ' late' : ''}`} style={{ '--fill': c.fill } as React.CSSProperties}
-      aria-label={`${name}: ${CELL_WORD[c.status]}${c.items ? `, ${c.items} items` : ''}`} title={`${name} · ${CELL_WORD[c.status]}`} onClick={() => onClick(idx)}>
+      aria-label={`${name} · ${CELL_WORD[c.status]}`} title={`${name} · ${CELL_WORD[c.status]}`} onClick={() => onClick(idx)}>
       <span className="nib-cell-fill" />
       {!big && <span className="nib-cell-ini" translate="no">{ini}</span>}
     </button>
@@ -223,7 +223,7 @@ function PersonPanel({ userId, date, r, users, onClose }: { userId: string; date
       <div className="nib-row-head">
         {u && <Avatar user={u} size="sm" />}
         <span className="nib-row-name" translate="no">{u?.displayName ?? 'Former member'}</span>
-        {cell && <span className={`nib-state mono s-${cell.status}`}>{CELL_WORD[cell.status].toUpperCase()}</span>}
+        {cell && <span className={`nib-state mono s-${cell.status}`}>{CELL_WORD[cell.status]}</span>}
         <span className="nib-row-acts">
           <button className="btn ghost sm" onClick={() => writeTo(userId)}>Write</button>
           <button className="icon-btn sm" aria-label="Close" onClick={onClose}><Icon name="x" size={14} /></button>
@@ -315,7 +315,7 @@ function LeaveMissing({ r, users, onPick }: { r: NibRegister; users: Map<string,
 // ------------------------------------------------------------------ the follow-up
 function FollowUpCard({ r, sentAt, users }: { r: NibRegister; sentAt: number; users: Map<string, PublicUser> }) {
   return (
-    <Frame kind="FOLLOW-UP" title={dayLabel(r.date, { weekday: 'long', day: 'numeric', month: 'short' })} no={dwg('FU', r.date)} className="k-followup">
+    <Frame caption="FOLLOW-UP" title={dayLabel(r.date, { weekday: 'long', day: 'numeric', month: 'short' })} no={dwg('FU', r.date)} className="k-followup">
       <p className="nib-line">{r.late.length === 1 ? 'One sheet came in after the register.' : `${r.late.length} sheets came in after the register.`}</p>
       <ul className="nib-rows">
         {r.late.map((l) => <LeadRowView key={l.userId} r={{ userId: l.userId, sentAt: l.sentAt, late: true, changed: false, seenAt: null, items: l.items, note: l.note, blockers: l.blockers }} users={users} />)}
@@ -335,7 +335,7 @@ function WeekCard({ w, users }: { w: NibWeek; users: Map<string, PublicUser> }) 
   const height = head + rows * (cw + gap);
   const max = Math.max(1, ...w.days.map((d) => d.expected));
   return (
-    <Frame kind="THE WEEK" title={`${dayLabel(w.from)} – ${dayLabel(w.to)}`} no={dwg('WK', w.to)} className="k-week">
+    <Frame caption="THE WEEK" title={`${dayLabel(w.from)} – ${dayLabel(w.to)}`} no={dwg('WK', w.to)} className="k-week">
       <div className="nib-week-days" aria-label="Day sheets by day">
         {w.days.map((d) => (
           <div key={d.date} className="nib-week-day">
@@ -380,7 +380,7 @@ function AskCard({ c }: { c: Extract<NibCard, { kind: 'ask' }> }) {
   const me = useNib((s) => s.me);
   const live = me && me.date === c.date ? me.day.state : c.state;
   return (
-    <Frame kind="DAY SHEET" title={dayLabel(c.date)}>
+    <Frame caption="DAY SHEET" title={dayLabel(c.date)}>
       {live === 'sent' ? <p className="nib-line"><Icon name="check" size={14} />Sent. Thank you.</p>
         : live === 'nothing' ? <p className="nib-line">Nothing that day. Noted.</p>
           : <><p className="nib-line">{c.items === 0 ? 'Your day sheet is still blank. Thirty seconds, before the register.' : c.items === 1 ? 'Your day sheet is still open, with 1 item. Thirty seconds, before the register.' : `Your day sheet is still open, with ${c.items} items. Thirty seconds, before the register.`}</p>
@@ -395,7 +395,7 @@ function LeaveCard({ c, users, meId }: { c: Extract<NibCard, { kind: 'leave' | '
   const cover = l.coverId ? users.get(l.coverId) : undefined;
   const when = l.half ? `${l.half === 'am' ? 'the morning' : 'the afternoon'} of ${dayLabel(l.from)}` : l.from === l.to ? dayLabel(l.from) : `${dayLabel(l.from)} – ${dayLabel(l.to)}`;
   return (
-    <Frame kind={c.kind === 'leaveSpace' ? 'AWAY' : 'LEAVE'} title={when} className="k-leave">
+    <Frame caption={c.kind === 'leaveSpace' ? 'AWAY' : 'LEAVE'} title={when} className="k-leave">
       <div className="nib-leave-line">
         {users.get(l.userId) && <Avatar user={users.get(l.userId)!} size="sm" />}
         <span>{l.cancelled ? `${who} cancelled this leave.` : c.kind === 'leaveSpace' ? `${who} is away.` : `${who} is on ${LEAVE_WORD[l.kind].toLowerCase()}.`}</span>
@@ -413,7 +413,7 @@ function CoverCard({ c, users }: { c: Extract<NibCard, { kind: 'cover' }>; users
   const who = users.get(l.userId)?.displayName ?? 'A colleague';
   const take = (itemId: string) => void window.dex.request('nib.cover.take', { leaveId: l.id, itemId }).then(() => { forgetCard('cover'); toast('On your day sheet'); }).catch((e: Error) => toast(e.message, true));
   return (
-    <Frame kind="HANDOVER" title={l.from === l.to ? dayLabel(l.from) : `${dayLabel(l.from)} – ${dayLabel(l.to)}`} className="k-cover">
+    <Frame caption="HANDOVER" title={l.from === l.to ? dayLabel(l.from) : `${dayLabel(l.from)} – ${dayLabel(l.to)}`} className="k-cover">
       <div className="nib-leave-line">{users.get(l.userId) && <Avatar user={users.get(l.userId)!} size="sm" />}<span>{`${who} is on leave, and you are covering.`}</span></div>
       {l.handover && <blockquote className="nib-handover" translate="no">{l.handover}</blockquote>}
       {c.items.length > 0 && (
@@ -442,7 +442,7 @@ const TOUR: Array<{ title: string; text: string; url: string }> = [
 function JoinerCard({ c, users }: { c: Extract<NibCard, { kind: 'joiner' }>; users: Map<string, PublicUser> }) {
   const me = users.get(c.userId);
   return (
-    <Frame kind="WELCOME" title={me ? firstName(me.displayName) : ''} className="k-joiner">
+    <Frame caption="WELCOME" title={me ? firstName(me.displayName) : ''} className="k-joiner">
       <p className="nib-line">{me ? `Welcome to the office, ${firstName(me.displayName)}. I’m Nib. Five stops, and you know your way round.` : 'Welcome to the office. I’m Nib.'}</p>
       <ol className="nib-tour">
         {TOUR.map((t, i) => (
@@ -467,7 +467,7 @@ function JoinerCard({ c, users }: { c: Extract<NibCard, { kind: 'joiner' }>; use
 }
 function HelloCard() {
   return (
-    <Frame kind="NIB" title="Hello" className="k-hello">
+    <Frame caption="NIB" title="Hello" className="k-hello">
       <p className="nib-line">I’m Nib. I keep day sheets, leave notes and the odd reminder.</p>
       <ul className="nib-did">
         <li><Icon name="daysheet" size={14} /><span>Tell me what work came in, in plain words. I send your leads one tidy sheet.</span></li>
@@ -487,7 +487,7 @@ function ReplyCard({ c, users }: { c: Extract<NibCard, { kind: 'reply' }>; users
   if (c.itemId) {
     const giver = p.giver?.id ? users.get(p.giver.id) : undefined;
     return (
-      <Frame kind="NOTED" title={item ? dayLabel(item.date) : ''} className="k-reply">
+      <Frame caption="NOTED" title={item ? dayLabel(item.date) : ''} className="k-reply">
         {item ? (
           <div className="nib-reply-item">
             {giver && <Avatar user={giver} size="sm" />}
@@ -506,9 +506,9 @@ function ReplyCard({ c, users }: { c: Extract<NibCard, { kind: 'reply' }>; users
     );
   }
   const skill = p.intent;
-  if (skill === 'nothing') return <Frame kind="NIB" title=""><p className="nib-line">Nothing today. Fair enough.</p></Frame>;
+  if (skill === 'nothing') return <Frame caption="NIB" title=""><p className="nib-line">Nothing today. Fair enough.</p></Frame>;
   return (
-    <Frame kind="NIB" title="" className="k-reply">
+    <Frame caption="NIB" title="" className="k-reply">
       <p className="nib-line">{skill === 'leave' ? 'Going on leave? I’ll set it all up in one short note.' : skill === 'unknown' ? 'I didn’t catch any work in that. Try “got 6 GAs from Ravi for P-14”.' : 'Here’s what I can do with that.'}</p>
       <div className="nib-card-actions">
         <button className="btn sm" onClick={() => void act(p, c.text, toast)}>{skill === 'leave' ? 'Open the leave note' : skill === 'unknown' ? 'Open Nib' : 'Show me'}</button>
