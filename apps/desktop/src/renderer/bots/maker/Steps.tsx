@@ -37,6 +37,10 @@ function KindFields({ step, onInput }: { step: BotFlowStep; onInput: (i: BotFlow
   const kind = kindOf(input);
   const id = useId();
   const v = input.validate;
+  // a default from the office's records, offered as one tap
+  const jobs = (
+    <label className="check-line bm-wide"><input type="checkbox" checked={input.suggest === 'jobs'} onChange={(e) => { const { suggest: _s, ...rest } = input; onInput(e.target.checked ? { ...rest, suggest: 'jobs' } : rest); }} />Offer job numbers from the Spaces they are in</label>
+  );
   const quick = (
     <div className="field bm-wide">
       <label htmlFor={`${id}-q`}>Quick replies (one tap instead of typing; separate with commas)</label>
@@ -79,8 +83,11 @@ function KindFields({ step, onInput }: { step: BotFlowStep; onInput: (i: BotFlow
           <div className="field"><label htmlFor={`${id}-p`}>The answer must look like (a pattern)</label><input id={`${id}-p`} className="input mono" value={v?.pattern ?? ''} spellCheck={false} onChange={(e) => onInput({ ...input, validate: { ...v!, type: 'regex', pattern: e.target.value } })} /></div>
           <div className="field"><label htmlFor={`${id}-m`}>What to say when it does not</label><input id={`${id}-m`} className="input" value={v?.message ?? ''} onChange={(e) => onInput({ ...input, validate: { ...v!, type: 'regex', message: e.target.value || undefined } })} /></div>
           <div className="field bm-wide"><label htmlFor={`${id}-ph`}>Example shown in the box</label><input id={`${id}-ph`} className="input" value={input.placeholder ?? ''} onChange={(e) => onInput({ ...input, placeholder: e.target.value || undefined })} /></div>
+          {jobs}
         </>
       );
+    case 'person':
+      return <label className="check-line bm-wide"><input type="checkbox" checked={input.suggest === 'lead'} onChange={(e) => { const { suggest: _s, ...rest } = input; onInput(e.target.checked ? { ...rest, suggest: 'lead' } : rest); }} />Offer their lead from the directory as one tap</label>;
     case 'file':
       return (
         <div className="field bm-wide"><label htmlFor={`${id}-f`}>File types allowed (leave empty for any)</label>
@@ -99,6 +106,7 @@ function KindFields({ step, onInput }: { step: BotFlowStep; onInput: (i: BotFlow
         <>
           <div className="field bm-wide"><label htmlFor={`${id}-ph`}>Example shown in the box</label><input id={`${id}-ph`} className="input" value={input.placeholder ?? ''} onChange={(e) => onInput({ ...input, placeholder: e.target.value || undefined })} /></div>
           {kind === 'text' && quick}
+          {kind === 'text' && jobs}
         </>
       );
     default:

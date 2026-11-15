@@ -32,11 +32,16 @@ export const GLYPH_PATHS: Record<BotGlyph, string> = {
   pin: 'M12 20.5s-6-5.4-6-10.5a6 6 0 0 1 12 0c0 5.1-6 10.5-6 10.5ZM12 12.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z',
   /** A request for information: a revision delta with a question in it. */
   rfi: 'M12 4 3.5 19.5h17zM10.3 11.2a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.9.8-.9 1.4v.3M12 16.8h.01',
+  /** A licence key: the bow, the shaft and its wards. */
+  key: 'M7.5 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7ZM11 12h9.5M17 12v3M20 12v2.5M7.5 12h.01',
+  /** A drawing-board lamp, for late work. */
+  lamp: 'M4.5 20h9M9 20l-2.5-6.5L11 9M11 9l2.2-4.5 5.3 3.4-4.6 2.6ZM17 13.5l1.4 1.4M19.2 11.2h1.6',
 };
 
 export const GLYPH_WORDS: Record<BotGlyph, string> = {
   sheet: 'Drawing sheet', plotter: 'Plotter', helmet: 'Hard hat', level: 'Level', flange: 'Flange', beam: 'Beam',
   calendar: 'Calendar', stamp: 'Issue stamp', compass: 'Compass', clipboard: 'Check sheet', pin: 'Setting-out pin', rfi: 'RFI',
+  key: 'Licence key', lamp: 'Desk lamp',
 };
 export const COLOUR_WORDS: Record<BotColour, string> = {
   teal: 'Teal', petrol: 'Petrol', slate: 'Slate', indigo: 'Indigo', plum: 'Plum', rust: 'Rust', olive: 'Olive', ochre: 'Ochre',

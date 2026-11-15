@@ -42,6 +42,12 @@ export interface BotFlowInput {
   optional?: boolean;
   /** text: quick replies, answers people can give with one tap ("Tomorrow", "Same as the GA"). */
   suggestions?: string[];
+  /**
+   * A default from the office's own records, offered as one tap: person → "lead" (the person's
+   * lead from the directory: their manager, else their department's head); text → "jobs" (job
+   * numbers from the names of the Spaces they are in, added to the quick replies).
+   */
+  suggest?: 'lead' | 'jobs';
 }
 
 /** A test on an answer or a variable. Every given test must pass. */
@@ -102,8 +108,8 @@ export const BOT_COLOURS: Record<BotColour, string> = {
   teal: '#1e6066', petrol: '#1c7680', slate: '#3d5a5e', indigo: '#2f5d8a', plum: '#6a4c93', rust: '#a0522d', olive: '#4d6b2f', ochre: '#7a5a14',
 };
 /** Symbols drawn for us on the 24 px grid (see bots/maker/BotMark.tsx), from the drawing office. */
-export type BotGlyph = 'sheet' | 'plotter' | 'helmet' | 'level' | 'flange' | 'beam' | 'calendar' | 'stamp' | 'compass' | 'clipboard' | 'pin' | 'rfi';
-export const BOT_GLYPHS: BotGlyph[] = ['sheet', 'plotter', 'helmet', 'level', 'flange', 'beam', 'calendar', 'stamp', 'compass', 'clipboard', 'pin', 'rfi'];
+export type BotGlyph = 'sheet' | 'plotter' | 'helmet' | 'level' | 'flange' | 'beam' | 'calendar' | 'stamp' | 'compass' | 'clipboard' | 'pin' | 'rfi' | 'key' | 'lamp';
+export const BOT_GLYPHS: BotGlyph[] = ['sheet', 'plotter', 'helmet', 'level', 'flange', 'beam', 'calendar', 'stamp', 'compass', 'clipboard', 'pin', 'rfi', 'key', 'lamp'];
 
 /** A bot's mark: two letters set in a title-block frame, or one of our drawn symbols. */
 export interface BotMark { kind: 'monogram' | 'glyph'; letters?: string; glyph?: BotGlyph }
@@ -156,6 +162,193 @@ export interface BotFlowDefinition {
   done?: string;
   /** Its own identity: a mark, a colour, a voice, its hours (member-made bots; optional for others). */
   persona?: BotPersona;
+  /** After it is sent: each request is tracked through stages where other people act (see BotFlowTrack). */
+  track?: BotFlowTrack;
+}
+
+// ---------------------------------------------------------------- after it is sent: tracked requests
+/**
+ * Who acts at a stage: "requester" (the person who asked), "lead" (their lead from the directory:
+ * their manager, else their department's head, else the bot's maker), the variable of a step that
+ * picked a person, or "role:<key>" (a person the bot's maker names once, like the plot room).
+ * Someone out of office with a delegate is passed over to the delegate.
+ */
+export type BotWho = string;
+
+/** A button for the person acting at a stage. */
+export interface BotFlowStageAction {
+  /** Short id (kept in the history). */
+  id: string;
+  /** The button's words ("Approve", "Return with comments"). */
+  label: string;
+  /** The next stage's id, the same stage (to start it again), or "end". */
+  to: string;
+  /** Ending here: the stamp drawn on every card ("APPROVED", "ISSUED", "TURNED DOWN"). */
+  stamp?: string;
+  /** Ending here: done (the default) or stopped (turned down, rejected). */
+  outcome?: 'done' | 'stopped';
+  /** A note with it: none (left out), optional or required; `ask` labels the box ("Comments"). */
+  note?: 'optional' | 'required';
+  ask?: string;
+  /** Every line of the stage's checklist must be ticked first. */
+  needsChecks?: boolean;
+  /** How the button looks: go (the main way on), back (returns it), stop (ends it short). */
+  tone?: 'go' | 'back' | 'stop';
+}
+
+export interface BotFlowStage {
+  id: string;
+  /** Short name on the progress strip ("Check", "Approve", "Plot"). */
+  label: string;
+  who: BotWho;
+  /** What the person acting is asked ({{placeholders}} work, {{note}} is the last note given). */
+  prompt: string;
+  actions: BotFlowStageAction[];
+  /** Lines the person acting ticks ("Safety shoes", "Permit to work"). */
+  checklist?: string[];
+  /** When it is due: a date answer, or days after the stage is reached. */
+  due?: string;
+  dueInDays?: number;
+  /**
+   * A queue: at most this many requests at once in this stage, counted per answer of `by` (seats
+   * of each software); the rest wait in order, see their place, and move up as one leaves.
+   */
+  limit?: { by?: string; seats: Record<string, number>; otherwise: number };
+  /** A Desk task for the person acting (on unless they are the person who asked). */
+  task?: boolean;
+}
+
+/** A person the bot's maker names once (the plot room, document control); the maker until chosen. */
+export interface BotFlowRole { label: string; person?: string }
+
+export interface BotFlowTrack {
+  /** Letters before each request's number: "DC" makes DC-0007. */
+  ref: string;
+  /** A request's one-line name in the register ("{{drawings}} rev {{rev}}"). */
+  name?: string;
+  stages: BotFlowStage[];
+  roles?: Record<string, BotFlowRole>;
+  /**
+   * Gentle reminders, during the bot's hours (or office hours): after `afterHours` waiting, up to
+   * `times`, gathered into one list per person; then once to `escalate` ("lead", "role:<key>" or
+   * "none"). Left out: a day, twice, then their lead.
+   */
+  remind?: { afterHours: number; times: number; escalate?: string };
+  /**
+   * The register: one card with what is open, how old, and each request to open. It is posted
+   * on `days` at `at` (HH:MM) to `to` ("space:<name>", "role:<key>" or "owner"), replacing the
+   * one before; anyone involved asks for it by writing "register" to the bot.
+   */
+  register?: { to?: string; at?: string; days?: number[]; columns?: string[] };
+}
+
+/** One thing that happened to a tracked request. */
+export interface BotItemEvent {
+  at: number;
+  /** Who did it (null: the bot itself, e.g. a reminder). */
+  by: string | null;
+  /** The stage it happened at. */
+  stage: string | null;
+  /** start, an action's id, withdraw, takeover, nudge, escalate, seat (moved up the queue). */
+  action: string;
+  /** The words for it ("Return with comments", "Reminder"). */
+  label: string;
+  note?: string;
+  /** The stage it went to (or "end"). */
+  to?: string | null;
+}
+
+export type BotItemStatus = 'open' | 'done' | 'stopped' | 'withdrawn';
+
+/** A request being tracked, as the hub keeps it (the same state the bot maker's test run plays). */
+export interface BotItem {
+  id: string;
+  flow: string;
+  /** DC-0007 */
+  ref: string;
+  /** Its one-line name. */
+  title: string;
+  requesterId: string;
+  stage: string | null;
+  /** The person acting now. */
+  actorId: string | null;
+  /** Why the actor is who they are, when it is not the plain rule ("delegate of Ravi Kumar"). */
+  actorNote?: string | null;
+  status: BotItemStatus;
+  stamp: string | null;
+  /** The answers (and the person who asked), as the steps left them. */
+  vars: Record<string, BotFlowAnswer>;
+  lines: Array<{ label: string; value: string }>;
+  /** When it reached the stage it is in. */
+  since: number;
+  due: number | null;
+  createdAt: number;
+  updatedAt: number;
+  closedAt: number | null;
+  history: BotItemEvent[];
+  /** The checklist lines ticked at this stage (by position). */
+  checks: number[];
+  /** Reminders sent at this stage, and whether it was passed up. */
+  nudges: number;
+  escalated: boolean;
+  /** Waiting for a place in a stage with a limit. */
+  waiting: boolean;
+  /** Times each stage was reached (round 2 of Check is the back-check). */
+  rounds: Record<string, number>;
+}
+
+/** A tracked request as one card shows it to one person. */
+export interface BotTrackView {
+  itemId: string;
+  flow: string;
+  ref: string;
+  title: string;
+  status: BotItemStatus;
+  stamp: string | null;
+  /** The strip across the card: each stage on the main way, and where it is. */
+  stages: Array<{ id: string; label: string; state: 'done' | 'here' | 'todo' | 'returned'; round?: number }>;
+  stage: { id: string; label: string; round: number; prompt: string; who: string | null; whoNote: string | null; since: number; due: number | null; overdue: boolean; checklist: string[]; checks: number[] } | null;
+  requesterId: string;
+  lines: Array<{ label: string; value: string }>;
+  history: BotItemEvent[];
+  /** What this person may press now. */
+  actions: BotFlowStageAction[];
+  /** This person: the one who asked, the one acting, or someone shown it (a lead, the register). */
+  role: 'requester' | 'actor' | 'watcher';
+  canWithdraw: boolean;
+  canTakeOver: boolean;
+  /** Waiting for a place: their position (1 = next), and who holds the places now. */
+  queue: { position: number; of: number; key: string; holders: Array<{ userId: string; since: number; ref: string }> } | null;
+  /** A newer card for this request is further down this conversation. */
+  moved?: boolean;
+  /** It is this person's turn, on a newer card further down (their first card only follows it). */
+  turnBelow?: boolean;
+  /** The bot maker's test run: whose part the maker plays at this stage ("Their lead"). */
+  actingAs?: string;
+  createdAt: number;
+  closedAt: number | null;
+}
+
+/** The register: one consolidated card of a bot's requests. */
+export interface BotRegisterView {
+  flow: string;
+  title: string;
+  /** all: everything open; mine: what waits for this person (a reminder); team: passed up to a lead. */
+  mode: 'all' | 'mine' | 'team';
+  counts: { open: number; overdue: number; waiting: number; closedWeek: number };
+  /** The oldest open request, in days. */
+  oldestDays: number;
+  byStage: Array<{ id: string; label: string; open: number; overdue: number }>;
+  /** Stages with a limit: each queue's places. */
+  seats: Array<{ key: string; seats: number; used: Array<{ userId: string; since: number; ref: string; itemId: string }>; waiting: Array<{ userId: string; since: number; ref: string; itemId: string }> }>;
+  rows: BotTrackView[];
+  /** How many open requests there are beyond the rows shown. */
+  more: number;
+  /** Recently closed. */
+  closed: Array<{ itemId: string; ref: string; title: string; stamp: string | null; status: BotItemStatus; closedAt: number }>;
+  columns: string[];
+  at: number;
+  moved?: boolean;
 }
 
 export interface BotFlowInfo {
@@ -235,7 +428,7 @@ export interface BotSession {
 
 /** What a message from an integration shows as an interactive card. */
 export interface BotFlowCard {
-  kind: 'step' | 'resume' | 'menu' | 'offer' | 'summary' | 'done';
+  kind: 'step' | 'resume' | 'menu' | 'offer' | 'summary' | 'done' | 'track' | 'register';
   botId: string;
   sessionId: string | null;
   /** Whose conversation it is: only they can answer. */
@@ -269,6 +462,13 @@ export interface BotFlowCard {
   lastTime?: BotFlowAnswer | null;
   /** step: the bot's own words for "Same as last time". */
   lastTimeWords?: string;
+  /** step: a default from the office's records (the person's lead), offered as one tap. */
+  suggested?: BotFlowAnswer | null;
+  suggestedWhy?: 'lead';
+  /** done (a tracked bot) and track: the request as it stands now (the card follows it live). */
+  track?: BotTrackView | null;
+  /** register: the bot's requests in one card. */
+  register?: BotRegisterView | null;
   /** resume: when the conversation was started and last touched. */
   startedAt?: number;
   updatedAt?: number;
@@ -364,6 +564,18 @@ export interface BotOps {
   'botflow.stats': { req: { name: string }; res: BotStats };
   /** A bot you can start, to duplicate and change. */
   'botflow.definition': { req: { name: string }; res: { definition: BotFlowDefinition } };
+  /** Act on a tracked request at the stage it is in: one of its buttons, with a note when asked. */
+  'botflow.act': { req: { itemId: string; action: string; note?: string; checks?: number[] }; res: { ok: true; track: BotTrackView } };
+  /** Tick or untick a line of the stage's checklist (the person acting). */
+  'botflow.tick': { req: { itemId: string; index: number; on: boolean }; res: { ok: true; track: BotTrackView } };
+  /** The person who asked takes it back while it is open. */
+  'botflow.withdraw': { req: { itemId: string; note?: string }; res: { ok: true; track: BotTrackView } };
+  /** A lead it was passed up to (or the bot's maker) takes over the stage it is waiting at. */
+  'botflow.takeover': { req: { itemId: string }; res: { ok: true; track: BotTrackView } };
+  /** A tracked bot's register as this person may see it; with `post`, also as a card in their conversation with the bot. */
+  'botflow.register': { req: { flow: string; post?: boolean }; res: { register: BotRegisterView; convId?: string } };
+  /** One request, as this person may see it. */
+  'botflow.item': { req: { itemId: string }; res: { track: BotTrackView } };
   /** Forget the answers a bot remembers for you. */
   'botflow.forget': { req: { name: string }; res: { ok: true } };
   /** Marks and colours of member-made bots (for their tiles in conversations). */

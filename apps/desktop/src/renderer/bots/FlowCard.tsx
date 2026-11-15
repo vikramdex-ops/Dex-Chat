@@ -9,6 +9,8 @@ import { chatState } from '../chat/store.ts';
 import { filesSupported, formatSize, startUploads } from '../chat/files.tsx';
 import { BotMarkTile } from './BotMark.tsx';
 import { formatDateTime } from '../time.ts';
+import { RegisterBody, TrackBody } from './TrackCard.tsx';
+import type { TrackDriver } from './TrackCard.tsx';
 
 const req = <K extends OpName>(op: K, data?: Ops[K]['req']) => window.dex.request(op, data);
 
@@ -24,7 +26,16 @@ export interface FlowDriver {
   start: (flow: string, convId: string) => Promise<{ convId: string; resumed: boolean }>;
   /** A test run: files are named, not uploaded. */
   test?: boolean;
+  /** Tracked requests: the buttons of whoever acts now. */
+  track?: TrackDriver;
 }
+
+const HUB_TRACK: TrackDriver = {
+  act: (itemId, action, note) => req('botflow.act', note ? { itemId, action, note } : { itemId, action }),
+  tick: (itemId, index, on) => req('botflow.tick', { itemId, index, on }),
+  withdraw: (itemId) => req('botflow.withdraw', { itemId }),
+  takeover: (itemId) => req('botflow.takeover', { itemId }),
+};
 
 export const HUB_DRIVER: FlowDriver = {
   answer: (sessionId, stepId, value) => req('botflow.answer', { sessionId, stepId, value }),
@@ -32,6 +43,7 @@ export const HUB_DRIVER: FlowDriver = {
   cancel: (sessionId) => req('botflow.cancel', { sessionId }),
   resume: (sessionId, over) => req('botflow.resume', over ? { sessionId, over: true } : { sessionId }),
   start: (flow, convId) => req('botflow.start', { flow, convId }),
+  track: HUB_TRACK,
 };
 const open = (convId: string) => window.dispatchEvent(new CustomEvent('dex-open', { detail: convId }));
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -179,6 +191,37 @@ export function FlowCardView({ m, meId, users, driver = HUB_DRIVER }: { m: Messa
     );
   }
 
+  const track = driver.track ?? HUB_TRACK;
+  if (card.kind === 'track') {
+    const v = card.track;
+    if (!v) return <div className="flow-card track">{head(null)}<div className="flow-foot faint">This request is no longer available.</div></div>;
+    if (v.moved) return <div className="flow-card track moved">{head(<span className="flow-step mono" translate="no">{v.ref}</span>)}<div className="flow-foot faint">Carried on below.</div></div>;
+    return (
+      <div className={`flow-card track${v.role === 'actor' ? ' acting' : ''}`}>
+        {head(<span className="flow-step mono">{v.role === 'actor' ? 'For you' : v.status === 'open' ? 'Following' : 'Closed'}</span>)}
+        <TrackBody v={v} users={users} meId={meId} driver={track} />
+      </div>
+    );
+  }
+  if (card.kind === 'register') {
+    const r = card.register;
+    return (
+      <div className={`flow-card register${r?.moved ? ' moved' : ''}`}>
+        {head(<span className="flow-step mono">{r?.mode === 'mine' ? 'Waiting for you' : r?.mode === 'team' ? 'Passed up to you' : 'Register'}{r && !r.moved ? <span className="reg-at">{formatDateTime(r.at, { day: 'numeric', month: 'short' })}</span> : null}</span>)}
+        {r ? <RegisterBody r={r} users={users} meId={meId} driver={track} /> : <div className="flow-foot faint">This bot is switched off.</div>}
+      </div>
+    );
+  }
+  if (card.kind === 'done' && card.track) {
+    return (
+      <div className={`flow-card done track${card.track.role === 'actor' ? ' acting' : ''}`}>
+        {head(<span className="flow-step mono"><Icon name="check" size={12} />Sent</span>)}
+        {card.prompt && <div className="flow-q">{renderBody(card.prompt, users, meId)}</div>}
+        <TrackBody v={card.track} users={users} meId={meId} driver={track} />
+      </div>
+    );
+  }
+
   if (card.kind === 'summary' || card.kind === 'done') {
     const from = card.requesterId ? users.get(card.requesterId) : undefined;
     return (
@@ -226,6 +269,13 @@ export function FlowCardView({ m, meId, users, driver = HUB_DRIVER }: { m: Messa
         <div className="flow-again">
           <button type="button" className="flow-again-btn" disabled={busy} onClick={() => answer(card.lastTime!.value)}>
             <Icon name="refresh" size={14} /><span>{card.lastTimeWords || card.lastTime.label}</span>
+          </button>
+        </div>
+      )}
+      {active && card.suggested && (
+        <div className="flow-again">
+          <button type="button" className="flow-again-btn" disabled={busy} onClick={() => answer(card.suggested!.value)}>
+            <Icon name="user" size={14} /><span>{`Your lead: ${users.get(card.suggested.value)?.displayName ?? card.suggested.label}`}</span>
           </button>
         </div>
       )}

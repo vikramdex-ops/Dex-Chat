@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BotFlowAnswer, BotFlowDefinition, Message, PublicUser } from '@dex/core';
 import { BotFlowError, validateFlow } from '@dex/core/botflows';
-import { testAnswer, testBack, testCancel, testStart } from '@dex/core/botmaker';
+import { testAct, testAnswer, testBack, testCancel, testStart, testTick, testWithdraw } from '@dex/core/botmaker';
 import type { TestRun } from '@dex/core/botmaker';
 import { Icon } from '../../ui.tsx';
 import { FlowCardView } from '../FlowCard.tsx';
@@ -13,13 +13,29 @@ import { BotMarkTile } from '../BotMark.tsx';
 import { DEFAULT_PERSONA } from './Identity.tsx';
 import { formatTime } from '../../time.ts';
 
-type Given = Array<{ stepId: string; value: string }>;
+/** What was given in the test run: answers to steps, then (a tracked bot) what each person pressed. */
+type Given = Array<{ stepId: string; value: string; note?: string }>;
+const ACT = '@act';
+const TICK = '@tick';
+const WITHDRAW = '@withdraw';
+
+/** One thing done to the test request (pressed, ticked, withdrawn). */
+function trackStep(run: TestRun, g: Given[number]): TestRun {
+  if (g.stepId === ACT) return testAct(run, g.value, g.note ?? '');
+  if (g.stepId === TICK) { const [i, on] = g.value.split(':'); return testTick(run, Number(i), on === '1'); }
+  return testWithdraw(run);
+}
 
 /** A test run of `def`, with `given` answered again (as far as they still fit). */
-function replay(def: BotFlowDefinition, me: { id: string; name: string; account: string }, given: Given, memory: Record<string, BotFlowAnswer>, ctx: Parameters<typeof testAnswer>[3]): { run: TestRun; given: Given } {
-  let run = testStart(def, me, memory);
+function replay(def: BotFlowDefinition, me: { id: string; name: string; account: string }, given: Given, memory: Record<string, BotFlowAnswer>, ctx: Parameters<typeof testAnswer>[3], lead: string | null): { run: TestRun; given: Given } {
+  let run = testStart(def, me, memory, lead);
   const kept: Given = [];
   for (const g of given) {
+    if (g.stepId.startsWith('@')) {
+      if (!run.item) break;
+      try { run = trackStep(run, g); kept.push(g); } catch { break; }
+      continue;
+    }
     if (run.status !== 'active' || run.step !== g.stepId) break;
     try { run = testAnswer(run, g.stepId, g.value, ctx); kept.push(g); } catch { break; }
   }
@@ -42,7 +58,9 @@ export function Preview({ def, me, users, restartKey }: { def: BotFlowDefinition
     file: (v: string) => (v.startsWith('test:') ? { id: v, name: v.slice(5) } : null),
   }), [users, me.id]);
   useEffect(() => { setGiven([]); setEnded(null); }, [restartKey]);
-  const base = useMemo(() => (shown ? replay(shown, meRef, given, memory, ctx) : null), [shown, given, memory, meRef, ctx]);
+  // "their lead" in the test run: the maker's own lead from the directory
+  const lead = me.profile?.managerId ?? null;
+  const base = useMemo(() => (shown ? replay(shown, meRef, given, memory, ctx, lead) : null), [shown, given, memory, meRef, ctx, lead]);
   const run = base && ended ? testCancel(base.run) : base?.run ?? null;
   // when it finishes, it remembers (as the real bot would) for the next test run
   useEffect(() => { if (run?.status === 'done' && shown?.persona?.remember) setMemory((m) => ({ ...m, ...run.memory })); }, [run?.status]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -62,6 +80,17 @@ export function Preview({ def, me, users, restartKey }: { def: BotFlowDefinition
     cancel: async () => { setEnded('cancelled'); },
     resume: async (_sid, over) => { if (over) setGiven([]); },
     start: async () => ({ convId: 'test', resumed: false }),
+    track: {
+      act: async (_id, action, note) => {
+        if (!base) return;
+        const g = { stepId: ACT, value: action, note };
+        try { trackStep(base.run, g); } catch (e) { throw new Error(e instanceof BotFlowError ? e.message : String(e)); }
+        setGiven([...base.given, g]);
+      },
+      tick: async (_id, index, on) => { if (base) setGiven([...base.given, { stepId: TICK, value: `${index}:${on ? 1 : 0}` }]); },
+      withdraw: async () => { if (base) setGiven([...base.given, { stepId: WITHDRAW, value: '' }]); },
+      takeover: async () => {},
+    },
   };
   const p = shown?.persona ?? DEFAULT_PERSONA(def.title);
   const botUser = { id: 'test-bot', displayName: def.title || 'Your bot' };

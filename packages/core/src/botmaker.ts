@@ -2,9 +2,12 @@
 // templates that suit a design office, a fresh blank bot, short names, and a test run that walks
 // through a bot exactly as a colleague would (the same cards, checks and wording as the hub), with
 // nothing sent at the end.
-import type { BotFlowAction, BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotFlowStep, BotGlyph, BotPersona } from './bots.ts';
+import type { BotFlowAction, BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotFlowStep, BotGlyph, BotItem, BotPersona } from './bots.ts';
 import { BotFlowError, checkAnswer, checkInput, doneLine, validateFlow, effectiveVars, nextAfter, renderTemplate, saveKey, startVars, stepById, stepCard, summaryLines, summaryText, voiceOf } from './botflow-engine.ts';
 import type { AnswerContext, BotFlowVars, RunLike } from './botflow-engine.ts';
+import { mainWay, personAnswer, stageOf, trackAct, trackOpen, trackTick, trackView, trackWithdraw } from './botflow-track.ts';
+import type { TrackPeople } from './botflow-track.ts';
+import { DRAWING_CHECK, LATE_WORK, PLOT_REQUEST, SITE_VISIT, SOFTWARE_SEAT, TECHNICAL_QUERY } from './bot-templates.ts';
 
 // ---------------------------------------------------------------- names
 /** A short name from a title: "Plot request" → "plot-request" (2 to 40 characters, a letter first). */
@@ -39,24 +42,7 @@ const OFFICE_HOURS = { days: [1, 2, 3, 4, 5], from: '09:00', to: '18:30' };
 
 /** Starting points that suit a design office. Each one is a working bot as it stands. */
 export const BOT_TEMPLATES: BotTemplate[] = [
-  {
-    id: 'plot-request', title: 'Plot request', about: 'Plots go to your lead for approval, then to the plot room.',
-    definition: {
-      name: 'plot-request', title: 'Plot request', description: 'Ask for a plot set; your lead approves it from their Desk.',
-      persona: persona('plotter', 'rust', 'Plots go to your lead for approval, then to the plot room.', 'warm'),
-      steps: [
-        { id: 'job', label: 'Job', prompt: 'Which job is it for?', input: { kind: 'text', placeholder: 'P-12513', validate: { type: 'regex', pattern: '[A-Za-z]{1,4}-?\\d{3,6}', message: 'Write the job number: letters then digits, like P-12513.' } } },
-        { id: 'drawings', label: 'Drawings', prompt: 'Which drawings, at which revision? One per line.', input: { kind: 'text', multiline: true, placeholder: 'ISO-1001-01 rev C' } },
-        { id: 'size', label: 'Sheet size', prompt: 'Which sheet size?', input: { kind: 'choice', options: [{ value: 'A0', label: 'A0' }, { value: 'A1', label: 'A1' }, { value: 'A3', label: 'A3' }] } },
-        { id: 'sets', label: 'Sets', prompt: 'How many sets?', input: { kind: 'text', validate: { type: 'number', integer: true, min: 1, max: 50 }, suggestions: ['1', '2', '3'] } },
-        { id: 'due', label: 'Needed by', prompt: 'When do you need them?', input: { kind: 'text', validate: { type: 'date', notBefore: 'today' } } },
-        { id: 'lead', label: 'Approver', prompt: 'Who approves it? Usually your discipline lead.', input: { kind: 'person' } },
-        { id: 'ok', prompt: 'Send this to {{lead}}?\n\n{{summary}}', input: { kind: 'confirm', yes: 'Send for approval', no: 'Change something' }, branches: [{ if: { equals: 'no' }, goto: 'job' }] },
-      ],
-      finish: [{ do: 'task', assignee: 'lead', text: 'Approve plot for {{job}}: {{sets}} × {{size}} for {{user}}, needed {{due}}', due: 'due' }],
-      done: 'Sent to {{lead}}. The plot room starts once it is approved.',
-    },
-  },
+  PLOT_REQUEST,
   {
     id: 'leave-note', title: 'Leave note', about: 'Tell your lead you are away, and who covers for you.',
     definition: {
@@ -74,56 +60,11 @@ export const BOT_TEMPLATES: BotTemplate[] = [
       done: 'Noted. {{lead}} has it on their Desk.',
     },
   },
-  {
-    id: 'site-visit', title: 'Site visit', about: 'Book a visit; the host on site gets it on their Desk.',
-    definition: {
-      name: 'site-visit', title: 'Site visit', description: 'Book a site visit with a host on site.',
-      persona: persona('helmet', 'olive', 'Book a visit; the host on site gets it on their Desk.', 'plain', { hours: OFFICE_HOURS }),
-      steps: [
-        { id: 'site', label: 'Site', prompt: 'Which site?', input: { kind: 'choice', options: [{ value: 'refinery', label: 'Refinery' }, { value: 'pump-house', label: 'Pump house' }, { value: 'depot', label: 'Depot' }] } },
-        { id: 'day', label: 'Day', prompt: 'Which day?', input: { kind: 'text', validate: { type: 'date', notBefore: 'today' } } },
-        { id: 'people', label: 'People', prompt: 'How many people are going?', input: { kind: 'text', validate: { type: 'number', integer: true, min: 1, max: 12 }, suggestions: ['1', '2', '4'] } },
-        { id: 'why', label: 'Purpose', prompt: 'What is the visit for?', input: { kind: 'text', placeholder: 'Walk-down of the pipe rack' } },
-        { id: 'host', label: 'Host', prompt: 'Who hosts you on site?', input: { kind: 'person' } },
-        { id: 'ok', prompt: 'Book it with {{host}}?\n\n{{summary}}', input: { kind: 'confirm', yes: 'Book', no: 'Change something' }, branches: [{ if: { equals: 'no' }, goto: 'site' }] },
-      ],
-      finish: [{ do: 'task', assignee: 'host', text: 'Host {{people}} from {{user}} at {{site}}: {{why}}', due: 'day' }, { do: 'remind', text: 'Site visit to {{site}}: PPE and permit', due: 'day' }],
-      done: 'Booked with {{host}}. A reminder is on your Desk for the day.',
-    },
-  },
-  {
-    id: 'rfi-log', title: 'RFI log', about: 'Log a request for information against a drawing, and chase it.',
-    definition: {
-      name: 'rfi-log', title: 'RFI log', description: 'Log an RFI against a drawing; it reminds you to chase it.',
-      persona: persona('rfi', 'indigo', 'Log a request for information against a drawing, and chase it.', 'formal'),
-      steps: [
-        { id: 'job', label: 'Job', prompt: 'Which job?', input: { kind: 'text', placeholder: 'P-12513' } },
-        { id: 'discipline', label: 'Discipline', prompt: 'Which discipline?', input: { kind: 'choice', options: [{ value: 'piping', label: 'Piping' }, { value: 'structural', label: 'Structural' }, { value: 'civil', label: 'Civil' }, { value: 'mech', label: 'Mechanical' }, { value: 'ei', label: 'E&I' }] } },
-        { id: 'ref', label: 'Drawing', prompt: 'Which drawing does it concern?', input: { kind: 'text', placeholder: 'GA-200 rev B' } },
-        { id: 'question', label: 'Question', prompt: 'What do you need to know?', input: { kind: 'text', multiline: true } },
-        { id: 'markup', label: 'Mark-up', prompt: 'Attach a mark-up if you have one.', input: { kind: 'file', accept: ['.pdf', '.png', '.jpg'], optional: true } },
-        { id: 'due', label: 'Answer by', prompt: 'When do you need the answer?', input: { kind: 'text', validate: { type: 'date', notBefore: 'today' } } },
-      ],
-      finish: [{ do: 'post', to: 'origin', text: '**RFI for {{job}}** ({{discipline}}, {{ref}})\n\n{{question}}\n\nAnswer needed by {{due}}.' }, { do: 'remind', text: 'Chase the RFI on {{ref}} ({{job}})', due: 'due' }],
-      done: 'The RFI is logged. You will be reminded to chase it on {{due}}.',
-    },
-  },
-  {
-    id: 'drawing-issue', title: 'Drawing issue request', about: 'Ask for drawings to be checked and issued at a revision.',
-    definition: {
-      name: 'drawing-issue', title: 'Drawing issue request', description: 'Drawings to check and issue, at a revision, for a purpose.',
-      persona: persona('stamp', 'teal', 'Ask for drawings to be checked and issued at a revision.', 'brief'),
-      steps: [
-        { id: 'drawings', label: 'Drawings', prompt: 'Which drawings? One per line.', input: { kind: 'text', multiline: true, placeholder: 'ISO-1001-01\nISO-1001-02' } },
-        { id: 'rev', label: 'Revision', prompt: 'At which revision?', input: { kind: 'text', placeholder: 'C', validate: { type: 'regex', pattern: '[A-Z]{1,2}|\\d{1,2}|[A-Z]\\d', message: 'Write the revision: a letter like C, or a number like 2.' }, suggestions: ['A', 'B', 'C', '0'] } },
-        { id: 'purpose', label: 'Issued for', prompt: 'Issued for what?', input: { kind: 'choice', options: [{ value: 'IFR', label: 'Review (IFR)' }, { value: 'IFA', label: 'Approval (IFA)' }, { value: 'IFC', label: 'Construction (IFC)' }, { value: 'AB', label: 'As-built' }] } },
-        { id: 'checker', label: 'Checker', prompt: 'Who checks them?', input: { kind: 'person' } },
-        { id: 'due', label: 'Issue by', prompt: 'Issue by when?', input: { kind: 'text', validate: { type: 'date', notBefore: 'today' } } },
-      ],
-      finish: [{ do: 'task', assignee: 'checker', text: 'Check and issue rev {{rev}} for {{purpose}} ({{user}})', due: 'due' }],
-      done: 'With {{checker}} to check.',
-    },
-  },
+  SITE_VISIT,
+  TECHNICAL_QUERY,
+  SOFTWARE_SEAT,
+  LATE_WORK,
+  DRAWING_CHECK,
 ];
 
 /** A blank bot to build up from nothing: one question and a reminder at the end. */
@@ -170,6 +111,10 @@ export interface TestRun extends RunLike {
   /** What the bot remembers for this person (from earlier test runs). */
   memory: Record<string, BotFlowAnswer>;
   seq: number;
+  /** A tracked bot, once sent: the request, which the maker then plays through every part. */
+  item?: BotItem | null;
+  /** Who "their lead" is in the test run (the maker's own lead from the directory, else the maker). */
+  lead?: string | null;
 }
 
 const TEST_ID = 'test-run';
@@ -189,9 +134,9 @@ function stepCardOf(t: TestRun, fresh: boolean): TestRun {
 }
 
 /** Start a test run as `user` (the person making the bot sees it as a colleague would). */
-export function testStart(def: BotFlowDefinition, user: { id: string; name: string; account: string }, memory: Record<string, BotFlowAnswer> = {}): TestRun {
+export function testStart(def: BotFlowDefinition, user: { id: string; name: string; account: string }, memory: Record<string, BotFlowAnswer> = {}, lead: string | null = null): TestRun {
   if (!def.steps.length) throw new BotFlowError('Add a step first.');
-  const t: TestRun = { def, step: def.steps[0].id, history: [], answers: {}, vars: startVars(def, user), status: 'active', cards: [], memory, seq: 0 };
+  const t: TestRun = { def, step: def.steps[0].id, history: [], answers: {}, vars: startVars(def, user), status: 'active', cards: [], memory, seq: 0, item: null, lead };
   return stepCardOf(t, true);
 }
 
@@ -204,6 +149,44 @@ function wouldDo(def: BotFlowDefinition, vars: BotFlowVars, summary: string): st
     if (a.do === 'post') return `Would post ${a.to === 'origin' ? 'in the Space it was started from' : a.to.startsWith('space:') ? `in ${a.to.slice(6)}` : `to ${vars[a.to.slice(7)]?.label || 'no one'}`}`;
     return 'Would call the webhook with the answers';
   });
+}
+
+/** In a test run every part is played by the maker: their lead, a role nobody holds yet, the person who asked. */
+function testPeople(t: Pick<TestRun, 'def' | 'vars' | 'lead'>): TrackPeople {
+  const me = t.vars.user?.value ?? 'me';
+  return {
+    resolve: (who, item) => {
+      if (who === 'requester') return { id: item.requesterId };
+      const picked = personAnswer(t.def, who, item);
+      if (picked) return { id: picked };
+      if (who === 'lead') return { id: t.lead || me };
+      if (who.startsWith('role:')) return { id: t.def.track?.roles?.[who.slice(5)]?.person || me };
+      return { id: me };
+    },
+  };
+}
+
+/** The done card of a test run follows the request, as the real one does. */
+function withTrack(t: TestRun, now: number): TestRun {
+  if (!t.item) return t;
+  const view = trackView(t.def, t.item, t.item.actorId ?? t.item.requesterId, { now, actingAs: true });
+  const cards = t.cards.map((c) => (c.card?.kind === 'done' ? { ...c, card: { ...c.card, track: view } } : c));
+  return { ...t, cards };
+}
+
+/** The maker presses a button on the request, playing whoever acts at this stage. */
+export function testAct(t: TestRun, action: string, note = '', now = Date.now()): TestRun {
+  if (!t.item) throw new BotFlowError('Send it first.');
+  const item = trackAct(t.def, t.item, action, t.item.actorId ?? '', now, testPeople(t), note);
+  return withTrack({ ...t, item }, now);
+}
+export function testTick(t: TestRun, index: number, on: boolean, now = Date.now()): TestRun {
+  if (!t.item) throw new BotFlowError('Send it first.');
+  return withTrack({ ...t, item: trackTick(t.def, t.item, index, on, t.item.actorId ?? '') }, now);
+}
+export function testWithdraw(t: TestRun, now = Date.now()): TestRun {
+  if (!t.item) throw new BotFlowError('Send it first.');
+  return withTrack({ ...t, item: trackWithdraw(t.item, t.item.requesterId, now) }, now);
 }
 
 /** One answer in a test run: checked exactly as the hub checks it. Throws a BotFlowError worded for the person. */
@@ -224,7 +207,13 @@ export function testAnswer(t: TestRun, stepId: string, raw: string, ctx: Omit<An
       : {};
     next = { ...next, step: null, status: 'done', memory: { ...next.memory, ...remember } };
     const done = doneLine(next.def, vars, summary);
-    return push(next, done, { kind: 'done', title: next.def.title, state: 'done', prompt: done, lines, notes: wouldDo(next.def, vars, summary), ...(next.def.persona ? { persona: { mark: next.def.persona.mark, colour: next.def.persona.colour } } : {}) });
+    const notes = wouldDo(next.def, vars, summary);
+    if (next.def.track) {
+      const now = ctx.now;
+      next.item = trackOpen(next.def, { id: 'test-item', num: 1, requesterId: vars.user?.value ?? 'me', vars, lines, now, people: testPeople(next) });
+      notes.push(`Then tracked as ${next.item.ref}: ${mainWay(next.def).map((id) => stageOf(next.def, id)?.label ?? id).join(' → ')}. Try each part on the card.`);
+    }
+    return withTrack(push(next, done, { kind: 'done', title: next.def.title, state: 'done', prompt: done, lines, notes, ...(next.def.persona ? { persona: { mark: next.def.persona.mark, colour: next.def.persona.colour } } : {}) }), ctx.now);
   }
   next.step = go.goto;
   return stepCardOf(next, false);
@@ -248,6 +237,8 @@ export interface BotProblems {
   steps: Record<string, string[]>;
   /** By position in `finish`. */
   finish: Record<number, string[]>;
+  /** What happens after it is sent (the stages, roles, reminders and register). */
+  track: string[];
   /** Anything else (the name, the title, no steps…). */
   general: string[];
   count: number;
@@ -279,7 +270,7 @@ function plainWords(msg: string): string {
  * next problem can be found too.
  */
 export function problemsOf(def: BotFlowDefinition): BotProblems {
-  const out: BotProblems = { steps: {}, finish: {}, general: [], count: 0 };
+  const out: BotProblems = { steps: {}, finish: {}, track: [], general: [], count: 0 };
   let d: BotFlowDefinition = JSON.parse(JSON.stringify(def ?? {})) as BotFlowDefinition;
   if (!Array.isArray(d.steps)) d.steps = [];
   if (!Array.isArray(d.finish)) d.finish = [];
@@ -291,6 +282,13 @@ export function problemsOf(def: BotFlowDefinition): BotProblems {
   for (let guard = 0; guard < 60; guard++) {
     try { validateFlowSafe(d); return out; } catch (err) {
       const msg = (err as Error).message;
+      // the track is checked last: one problem in it is shown there, and it is set aside
+      if (/^(Stage |Track:|Role ")/.test(msg)) {
+        out.track.push(msg.replace(/^Track:\s*/, ''));
+        out.count++;
+        delete d.track;
+        continue;
+      }
       const byId = /^Step "([^"]+)"/.exec(msg);
       const byNo = /^Step (\d+)/.exec(msg);
       const act = /^Finish action (\d+)/.exec(msg);

@@ -98,7 +98,10 @@ test('a test run walks through a bot as a colleague would: checks, branches, Bac
   assert.equal(t.status, 'done');
   const done = t.cards[t.cards.length - 1].card!;
   assert.equal(done.kind, 'done');
-  assert.match(done.notes?.[0] ?? '', /^Would put a task on Vikram Shah's Desk: Approve plot for P-12513: 2 × A1 for Priya Raman/);
+  // no Desk task at the end: the request is tracked, and each stage puts its own task on the person acting
+  assert.match(done.notes?.[0] ?? '', /^Then tracked as PLT-0001: Approve → Plot queue → Plotting → Collect\./);
+  assert.equal(done.track?.stage?.label, 'Approve');
+  assert.equal(done.track?.actingAs, 'Approver', 'the maker plays the approver chosen at the step');
   assert.equal(done.lines?.find((l) => l.label === 'Sheet size')?.value, 'A1');
   // the next test run offers last time's answers
   const again = testStart(def, ME, t.memory);
