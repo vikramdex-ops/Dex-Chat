@@ -65,6 +65,11 @@ body.in-room #app { display: block; padding: 0; }
 .line-head .mono:first-child { font-weight: 700; color: var(--accent); }
 .line.mine .line-head .mono:first-child { color: var(--text-2); }
 .line-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.line-file { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--stroke-strong); font-size: 13px; overflow-wrap: anywhere; }
+.line-file span:first-of-type { flex: 1; min-width: 0; }
+.sending { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--stroke-strong); font-size: 12px; }
+.sending span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--stroke-strong); }
 .compose .input { resize: none; padding: 8px 10px; min-height: 38px; }
 

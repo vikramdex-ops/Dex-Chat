@@ -364,9 +364,3 @@ declare module './protocol.ts' {
     'agenda.updated': { convId: string; occurrenceId: string | null; items: AgendaItem[] };
   }
 }
-
-// ---------------------------------------------------------------- guest files
-/** The largest file a browser guest may send (the office's upload limit applies when smaller). */
-export const GUEST_FILE_MAX = 25 * 1024 * 1024;
-/** A guest file is sent in chunks of this many bytes (base64 in a frame under the gateway's 64 KB). */
-export const GUEST_FILE_CHUNK = 36 * 1024;
