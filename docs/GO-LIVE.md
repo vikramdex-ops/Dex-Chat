@@ -17,7 +17,9 @@ On an office Windows PC that will build releases, following [RELEASING.md](RELEA
    Without them the release has no APK.
 3. For publishing: install the **GitHub CLI** and run `gh auth login` with the account that owns
    `dexterity-admin/dexterity-connect`.
-4. Check out `main`. In `scripts\release`, double-click **Build-Release.cmd**. The installers land in
+4. Make sure `main` holds the finished work: it is merged from the development branch through a
+   pull request. A build from any other branch is published on the **beta** channel. Check out
+   `main`. In `scripts\release`, double-click **Build-Release.cmd**. The installers land in
    `D:\DexterityConnect-Releases\<version>`.
 5. Install the Windows setup from that folder on one PC and open it. If it starts, run
    `Build-Release.cmd -Publish -Version <that version> -SkipTests`.
