@@ -55,7 +55,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Phones | The same app on Android, in the office or anywhere on mobile data: images and voice notes inline, open files in another app, save to Downloads, attach from the phone, a layout made for small screens |
 | Comfort | Pop a conversation out into its own window, a global shortcut to bring the app forward (Ctrl+Alt+D), Preferences for compact density and text size (also Ctrl+= / Ctrl+-), 12- or 24-hour time, sidebar sorting and a resizable sidebar, a keyboard shortcuts sheet (Ctrl+/), Alt+↑/↓ between conversations, light and dark themes |
-| Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built by CI on every push |
+| Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built on an office PC with `scripts/release/Build-Release.cmd` (see [`docs/RELEASING.md`](docs/RELEASING.md)) |
 
 **Next:** a pilot on the office's own PCs and phones, then the remaining items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
 
@@ -81,7 +81,9 @@ from the hub's mirror when they have no internet. Pushing code builds nothing.
 
 ### Setting up the office
 
-1. **Hub PC:** extract the hub zip to where it should live (for example `D:\Dexterity Connect Hub`) and double-click `Install-Hub.cmd`. It installs the service, opens its two firewall ports and starts it.
+The full go-live checklist, in order, is [`docs/GO-LIVE.md`](docs/GO-LIVE.md). In short:
+
+1. **Hub PC:** extract the hub zip to where it should live (for example `D:\Dexterity Connect Hub`) and double-click `Install-Hub.cmd`. It installs the service, opens its firewall ports and starts it.
 2. **Your PC:** install Dexterity Connect, open it, and click **Request access**. As the first person, you become the owner.
 3. **Everyone else:** they install and open the app, then approve them in **Control room → Approvals** (click your tile at the top right).
 4. **Backups:** choose a backup folder on a second disk or a network share in **Control room → Backups & leavers** (see [`docs/BACKUP.md`](docs/BACKUP.md)).
