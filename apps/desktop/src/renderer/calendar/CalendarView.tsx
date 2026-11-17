@@ -18,6 +18,7 @@ import './calendar.css';
 import { DAY, addDays, describeSpan, dismissSoon, hm, joinMeeting, startOfDay, startOfWeek, useCal } from './store.ts';
 import { timeOpts } from '../time.ts';
 import { onOpenRequest } from '../chat/deeplinks.ts';
+import { ZohoCalendarCard } from '../views/ZohoCalendar.tsx';
 
 const HOUR_PX = 48;
 const H = 3600_000;
@@ -27,11 +28,14 @@ type Open = (convId: string) => void;
 function useRange(from: number, to: number): Occurrence[] | null {
   const version = useCal((s) => s.version);
   const [list, setList] = useState<Occurrence[] | null>(null);
+  // Zoho events change when the hub reads them again (zoho.status after each sync)
+  const [zohoTick, setZohoTick] = useState(0);
+  useEffect(() => window.dex.onHubEvent((n) => { if (n === 'zoho.status') setZohoTick((x) => x + 1); }), []);
   useEffect(() => {
     let alive = true;
-    window.dex.request('cal.list', { from, to }).then((l) => { if (alive) setList(l); }).catch(() => { if (alive) setList((x) => x ?? []); });
+    window.dex.request('cal.list', { from, to, external: true }).then((l) => { if (alive) setList(l); }).catch(() => { if (alive) setList((x) => x ?? []); });
     return () => { alive = false; };
-  }, [from, to, version]);
+  }, [from, to, version, zohoTick]);
   return list;
 }
 
@@ -80,10 +84,12 @@ export function CalendarView({ session, openConv }: { session: Session; openConv
           {canCreate && <button className="btn primary" onClick={() => setEditing({})}><Icon name="plus" size={15} />New meeting</button>}
         </div>
       </div>
+      <ZohoCalendarCard session={session} />
       {mode === 'week'
         ? <Week from={anchor} zone2={prefs.zone2} list={list ?? []} meId={meId} onSlot={(t, allDay) => canCreate && setEditing({ startAt: t, allDay })} onOpen={setViewing} />
         : <Agenda list={list} meId={meId} users={users} onOpen={setViewing} />}
-      {viewing && <EventDetails occ={viewing} session={session} users={users} onClose={() => setViewing(null)} onEdit={(ev) => { setViewing(null); setEditing({ ev }); }} openConv={openConv} />}
+      {viewing?.event.external && <ExternalDetails occ={viewing} onClose={() => setViewing(null)} />}
+      {viewing && !viewing.event.external && <EventDetails occ={viewing} session={session} users={users} onClose={() => setViewing(null)} onEdit={(ev) => { setViewing(null); setEditing({ ev }); }} openConv={openConv} />}
       {editing && <EventDialog session={session} ev={editing.ev} startAt={editing.startAt} allDay={editing.allDay} onClose={() => setEditing(null)} />}
       {settings && <CalendarSettings onClose={() => setSettings(false)} />}
     </div>
@@ -161,7 +167,7 @@ function Week({ from, zone2, list, meId, onSlot, onOpen }: { from: number; zone2
         {days.map((d) => (
           <div key={d} className="week-allday-cell" onDoubleClick={() => onSlot(d, true)}>
             {allDay.filter((o) => o.startAt < addDays(d, 1) && o.endAt > d).map((o) => (
-              <button key={`${o.event.id}-${o.startAt}`} className={`cal-chip r-${myResponse(o.event, meId) ?? 'none'}`} onClick={() => onOpen(o)}>{o.event.title}</button>
+              <button key={`${o.event.id}-${o.startAt}`} className={`cal-chip r-${myResponse(o.event, meId) ?? 'none'}` + (o.event.external ? ' ext' : '')} onClick={() => onOpen(o)}>{o.event.title}</button>
             ))}
           </div>
         ))}
@@ -188,11 +194,11 @@ function Week({ from, zone2, list, meId, onSlot, onOpen }: { from: number; zone2
                 const bottom = Math.min(24, (o.endAt - d) / H) * HOUR_PX;
                 const r = myResponse(o.event, meId);
                 return (
-                  <button key={`${o.event.id}-${o.startAt}`} className={`cal-block r-${r ?? 'none'}${o.endAt < now ? ' past' : ''}`} onClick={() => onOpen(o)}
+                  <button key={`${o.event.id}-${o.startAt}`} className={`cal-block r-${r ?? 'none'}${o.endAt < now ? ' past' : ''}` + (o.event.external ? ' ext' : '')} onClick={() => onOpen(o)}
                     style={{ top, height: Math.max(20, bottom - top - 2), left: `calc(${(col / cols) * 100}% + 2px)`, width: `calc(${100 / cols}% - 4px)` }}
-                    title={`${o.event.title}\n${hm(o.startAt)} – ${hm(o.endAt)}`}>
+                    title={`${o.event.title}\n${hm(o.startAt)} – ${hm(o.endAt)}${o.event.external ? '\nZoho Calendar' : ''}`}>
                     <b>{o.event.title}</b>
-                    {bottom - top > 34 && <span>{hm(o.startAt)} – {hm(o.endAt)}{o.event.online ? ' · call' : ''}</span>}
+                    {bottom - top > 34 && <span>{hm(o.startAt)} – {hm(o.endAt)}{o.event.online ? ' · call' : ''}{o.event.external ? ' · Zoho' : ''}</span>}
                   </button>
                 );
               })}
@@ -229,11 +235,11 @@ function AgendaDays({ list, meId, users, onOpen }: { list: Occurrence[]; meId: s
             const r = myResponse(o.event, meId);
             const org = users.get(o.event.organizerId);
             return (
-              <button key={`${o.event.id}-${o.startAt}`} className={`agenda-row r-${r ?? 'none'}`} onClick={() => onOpen(o)}>
+              <button key={`${o.event.id}-${o.startAt}`} className={`agenda-row r-${r ?? 'none'}` + (o.event.external ? ' ext' : '')} onClick={() => onOpen(o)}>
                 <span className="agenda-time mono">{o.event.allDay ? 'All day' : `${hm(o.startAt)}`}<i>{o.event.allDay ? '' : hm(o.endAt)}</i></span>
                 <span className="agenda-main">
                   <b>{o.event.title}</b>
-                  <span className="faint">{[org && `by ${o.event.organizerId === meId ? 'you' : org.displayName}`, o.event.online && 'call', `${o.event.attendees.length} invited`].filter(Boolean).join(' · ')}</span>
+                  <span className="faint">{o.event.external ? 'From your Zoho Calendar · only you see this' : [org && `by ${o.event.organizerId === meId ? 'you' : org.displayName}`, o.event.online && 'call', `${o.event.attendees.length} invited`].filter(Boolean).join(' · ')}</span>
                 </span>
                 {r === 'pending' && <span className="chip warn">Reply</span>}
                 {r === 'maybe' && <span className="chip">Maybe</span>}
@@ -247,6 +253,20 @@ function AgendaDays({ list, meId, users, onOpen }: { list: Occurrence[]; meId: s
 }
 
 // ------------------------------------------------------------------ details
+/** An event from the person's own Zoho Calendar: read-only, changed in Zoho. */
+function ExternalDetails({ occ, onClose }: { occ: Occurrence; onClose: () => void }) {
+  return (
+    <Dialog title={occ.event.title} onClose={onClose} narrow>
+      <div className="ev-facts">
+        <div><Icon name="clock" size={16} /><span>{describeSpan(occ.startAt, occ.endAt, occ.event.allDay)}</span></div>
+        <div><Icon name="calendar" size={16} /><span>From your Zoho Calendar{occ.event.external?.calendar ? ` (${occ.event.external.calendar})` : ''}</span></div>
+        <div><Icon name="lock" size={16} /><span className="faint">Only you see the title. Colleagues planning a meeting see this time as busy. Change it in Zoho Calendar.</span></div>
+      </div>
+      <div className="dialog-actions"><button className="btn primary" onClick={onClose}>Done</button></div>
+    </Dialog>
+  );
+}
+
 const RSVP_LABEL: Record<Rsvp, string> = { yes: 'Going', no: 'Not going', maybe: 'Maybe', pending: 'No reply yet' };
 
 export function EventDetails({ occ, session, users, onClose, onEdit, openConv }: {

@@ -7,6 +7,7 @@ import type { CalendarFeedInfo, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { Icon, Toggle, relativeTime, useToast } from '../ui.tsx';
 import './continuity.css';
+import { ZohoCalendarSettings } from './ZohoCalendar.tsx';
 
 type Urls = NonNullable<CalendarFeedInfo['urls']>;
 const keyFor = (session: Session) => `dex.calfeed.${session.hub.id}.${session.me.id}`;
@@ -49,6 +50,7 @@ export function CalendarFeedSettings({ state, session }: { state: AppState; sess
   return (
     <section>
       <h3>Calendar</h3>
+      <ZohoCalendarSettings session={session} live={live} />
       <div className="setting">
         <Icon name="calendar" className="lead" />
         <div className="txt">

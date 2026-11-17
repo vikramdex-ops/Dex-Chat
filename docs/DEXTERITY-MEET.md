@@ -384,6 +384,9 @@ the app (`dexconnect://meet/<ID>`).
 - **The office calendar feed** (`/cal/<token>.ics`, `apps/hub/src/calfeed.ts`) carries the clean
   link, by name or ID and **without the passcode**, in `URL`, `LOCATION` and the description,
   beside the app link. Feeds are copied by Google and Outlook, and staff do not need a passcode.
+- **Zoho Calendar sync** (`apps/hub/src/zoho.ts`, [`ZOHO-CALENDAR.md`](ZOHO-CALENDAR.md)) writes the same
+  description and place as the feed (`CalendarFeeds.details`): the clean link and app link, **never the
+  passcode**, into each person's own Zoho calendar.
 - **The page's Add to calendar**:
   - the `.ics` file has the passcode, since it stays on the computer;
   - the Google Calendar and Outlook.com links carry the link without it, with "the passcode is in
