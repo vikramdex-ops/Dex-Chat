@@ -43,6 +43,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
   - seating: `seating` (the real floor plan: dragging people onto seats, a swap, a team moved with a preview, a plan for Monday applied by the hub's clock, the moved person's notice and walk, revisions compared, a bench added in the layout editor, a CSV import, 150 seats measured; screenshots in `SEATING_OUT`)
   - notice board: `notices` (desks, scheduled issue, acknowledgement and its register, Rev B, PDF search, urgent banner, expiry; screenshots in `NOTICES_OUT`)
   - Nib: `nib` (a whole day in three apps), `nibfix` (the wrap-up fits its tray in three languages, Nib's times, a tray kept live from another device, the lobby rule names)
+  - Zoho Calendar: `zoho` (against the mock Zoho in `apps/hub/test/zoho-mock.ts`, never the real one: the disabled button before setup, the Control room's one form, Connect through the loopback listener, a 10:00 IST meeting arriving in Zoho at 04:30Z, a read-only Zoho event, Reconnect; screenshots in `ZOHO_OUT`)
   - plus others.
 
 ## Timing

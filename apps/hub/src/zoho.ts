@@ -355,7 +355,8 @@ export class ZohoSync {
         if (!r) throw new ZohoError('Connect Zoho Calendar first.');
         if (this.stateOf(r) === 'reconnect') throw new ZohoError('Reconnect Zoho Calendar first.');
         this.h.db.prepare('UPDATE zoho_accounts SET due = 1, next_try_at = 0, last_pull_at = NULL WHERE user_id = ?').run(me.id);
-        await this.runNow(me.id);
+        // answered within the app's request time; a longer run finishes and sends zoho.status
+        await Promise.race([this.runNow(me.id), new Promise((r) => setTimeout(r, 10_000).unref())]);
         return this.status(me.id);
       }
     }
@@ -489,7 +490,7 @@ export class ZohoSync {
   private async raw(url: string, init: RequestInit): Promise<{ status: number; json: unknown; text: string }> {
     let res: Response;
     try {
-      res = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(20_000) });
+      res = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(10_000) });
     } catch {
       throw new ZohoApiError('busy', 0, 'unreachable');
     }
