@@ -11,7 +11,9 @@
 // GUIDE_ONLY=pulse,messages,… runs only some parts (the office is always seeded); GUIDE_OUT puts
 // the pictures somewhere else. Every part catches its own failure, saves a "-FAIL" picture in
 // e2e/out and carries on, and the run ends with the list of parts that failed. The script is
-// re-runnable: each run starts from an empty hub and overwrites the figures.
+// re-runnable: each run starts from an empty hub and overwrites the figures. Revision 3 parts
+// (setupcheck, seatnames, holidays, zoho, hubupdate, cloud) use local stand-ins for the release
+// feed, Zoho and Cloudflare, and a pretend second disk; docs/guide/README.md says how.
 import pw from 'playwright-core';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -22,7 +24,14 @@ import { createIdentity, signWith } from '../../../packages/core/src/index.ts';
 import { createEncKeys } from '../../../packages/core/src/e2e.ts';
 import { E2EClient } from '../../../packages/core/src/e2e-client.ts';
 import { HubClient } from '../../../packages/core/src/hub-client.ts';
-import { Hub } from '../../../apps/hub/src/hub.ts';
+import type { CloudBundle } from '../../../apps/hub/src/cfdeploy.ts';
+import type { DiskLayout, DiskVolume } from '../../../apps/hub/src/firstrun.ts';
+import { CloudflareMock } from '../../../apps/hub/test/cfmock.ts';
+import { ZohoMock } from '../../../apps/hub/test/zoho-mock.ts';
+import { circularPdf } from '../../../apps/hub/test/pdfs.ts';
+import crypto from 'node:crypto';
+import http from 'node:http';
+import net from 'node:net';
 import { OFFICE, seedOffice } from './officeseed.mts';
 import { upload } from './seed.mts';
 import { makePdf, text } from '../../../apps/desktop/test/pdf-fixtures.ts';
@@ -38,9 +47,69 @@ const ONLY = process.env.GUIDE_ONLY ? process.env.GUIDE_ONLY.split(',') : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const W = 1440, H = 900;
 
+// ------------------------------------------------------------------ stand-ins for the world outside
+// (revision 3) Nothing here reaches the internet: the hub's release feed, Zoho and Cloudflare are
+// local stand-ins, as their own walks use them (hubupdate.mts, zoho.mts, cfsetup.mts), and the
+// hub PC's disks are a pretend layout with a second disk (setupcheck.mts). The hub runs as a
+// release build would: its version is stamped like one.
+const HUB_RUNNING = '0.1.26111409', HUB_NEXT = '0.1.26111712';
+process.env.DEX_HUB_BUILD_VERSION ??= HUB_RUNNING;
+// the release feed, offering the next hub setup
+const hubExe = Buffer.concat([Buffer.from('MZ'), crypto.randomBytes(200_000)]);
+const hubExeName = `DexterityConnectHub-Setup-${HUB_NEXT}.exe`;
+const feed = http.createServer((req, res) => {
+  const base = `http://127.0.0.1:${(feed.address() as net.AddressInfo).port}`;
+  if (req.url === '/stable.json') {
+    res.end(JSON.stringify({ schema: 1, channel: 'stable', version: HUB_NEXT, releasedAt: new Date().toISOString(), notes: `Hub ${HUB_NEXT}`,
+      assets: [{ platform: 'hub-win-x64', file: hubExeName, url: `${base}/${hubExeName}`, size: hubExe.length, sha512: crypto.createHash('sha512').update(hubExe).digest('base64') }] }));
+    return;
+  }
+  if (req.url === `/${hubExeName}`) { res.end(hubExe); return; }
+  res.writeHead(404); res.end();
+});
+await new Promise<void>((r) => feed.listen(0, '127.0.0.1', r));
+const feedBase = `http://127.0.0.1:${(feed.address() as net.AddressInfo).port}`;
+// Zoho: the office's client, and Priya's Zoho account (the redirect address is the real one when the port is free)
+const portFree = (p: number) => new Promise<boolean>((res) => { const s = net.createServer(); s.once('error', () => res(false)); s.listen(p, '127.0.0.1', () => s.close(() => res(true))); });
+const anyPort = () => new Promise<number>((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => res(p)); }); });
+const zoho = await new ZohoMock().start(['com', 'in']);
+const zohoPort = (await portFree(47917)) ? 47917 : await anyPort();
+zoho.redirectUri = `http://127.0.0.1:${zohoPort}/zoho/callback`;
+Object.assign(zoho as any, { clientId: '1000.7KQ2M9XWD4TR8VHN3BLP6CJ1EYZ05F', clientSecret: 'a3f9c1e07b5d42c8e6f1092d7ab34c58e1d0f6a2b9' });
+zoho.addUser('priya@dexterity.example', 'in');
+zoho.signIn = 'priya@dexterity.example';
+process.env.DEX_ZOHO_TEST_DCS = JSON.stringify(zoho.dcs());
+process.env.DEX_ZOHO_CALLBACK_PORT = String(zohoPort);
+// Cloudflare: the office's account and a token with the four permissions; the hub's real gateway and site
+const cf = await new CloudflareMock().start();
+const CF_ACCOUNT = 'c4'.repeat(16);
+cf.addAccount(CF_ACCOUNT, 'Dexterity Design Services', null);
+const CF_TOKEN = 'cfut_GuideSetupToken0123456789abcdefABCDEF';
+cf.tokens.set(CF_TOKEN, { perms: ['workers', 'pages', 'calls', 'accounts'] });
+let cloudBundle: CloudBundle | null = null;
+const bundle = (): CloudBundle => {
+  const file = path.join(OUT, 'cloud-bundle.json');
+  if (!fs.existsSync(file)) execFileSync(process.execPath, [path.join(ROOT, 'apps/hub/scripts/build-cloud.mjs'), file], { stdio: 'inherit' });
+  return (cloudBundle ??= JSON.parse(fs.readFileSync(file, 'utf8')) as CloudBundle);
+};
+// the hub PC: Windows on C:, the hub's data on D:, and a second disk E: for backups
+const GB = 1024 ** 3;
+const vol = (v: Partial<DiskVolume> & Pick<DiskVolume, 'letter'>): DiskVolume => ({ driveType: 'Fixed', disk: 0, bus: 'SATA', boot: false, free: 400 * GB, size: 930 * GB, label: '', ...v });
+const disks: DiskLayout = { system: 'C', volumes: [vol({ letter: 'C', boot: true, label: 'Windows', free: 120 * GB, size: 240 * GB }), vol({ letter: 'D', label: 'Data' }), vol({ letter: 'E', disk: 1, label: 'Backup', free: 1700 * GB, size: 1860 * GB })] };
+const backupDir = fs.mkdtempSync(path.join(OUT, 'guide-backup-'));
+/** The figures show the folder as the Windows hub PC has it. */
+const WIN_BACKUP = 'E:\\DexConnectBackup';
+
 // ------------------------------------------------------------------ the hub and its owner
-const hubDir = fs.mkdtempSync(path.join(OUT, 'hub-guide-'));
-const hub = new Hub({ dataDir: hubDir, updates: false, port: 0, discoveryPort: false });
+const { Hub } = await import('../../../apps/hub/src/hub.ts');
+// the hub's data on its own roomy disk (a RAM disk where there is one), as on the hub PC
+const hubDir = fs.mkdtempSync(path.join(fs.existsSync('/dev/shm') ? '/dev/shm' : OUT, 'hub-guide-'));
+const hub = new Hub({
+  dataDir: hubDir, updates: false, port: 0, discoveryPort: false,
+  firstRun: { detector: async () => disks, dataDrive: 'D', folderOn: () => backupDir, lockDown: async () => {} },
+  hubUpdate: { feedUrls: { stable: `${feedBase}/stable.json`, beta: `${feedBase}/beta.json` }, allowHttp: true, unsupported: null, version: HUB_RUNNING, firstCheckDelayMs: 1e9, launcher: async () => {} },
+  cloudflare: { bundle, endpoints: { api: cf.apiBase, rtc: cf.rtcBase, workersDev: () => cf.workersDevUrl, pagesDev: () => cf.pagesDevUrl }, waits: { addressMs: 20_000, connectMs: 20_000, deployMs: 3000, pollMs: 300 } },
+});
 await hub.start();
 let autoApprove = true;
 const owner = new HubClient({ identity: createIdentity(), account: { username: 'vikram', domain: 'DEX', displayName: 'Vikram Shah', hostname: 'VIKRAM-PC' } });
@@ -60,7 +129,7 @@ async function openApp(username: string, displayName: string, opts: { width?: nu
     executablePath: ELECTRON,
     args: [path.join(ROOT, 'apps/desktop'), `--user-data-dir=${userData}`, '--no-sandbox', '--force-device-scale-factor=1',
       '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', ...(opts.video ? [`--use-file-for-fake-video-capture=${opts.video}`] : [])],
-    env: { ...process.env, USERDOMAIN: 'DEX', DEXCONNECT_DEV_ACCOUNT: `${username}|${displayName}`, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', ...opts.env },
+    env: { ...process.env, USERDOMAIN: 'DEX', DEXCONNECT_DEV_ACCOUNT: `${username}|${displayName}`, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', DEXCONNECT_TEST_ZOHO_BROWSER: 'fetch', ...opts.env },
   });
   const page = await app.firstWindow();
   await size({ app, page, name: username }, opts.width ?? W, opts.height ?? H);
@@ -87,6 +156,32 @@ async function joinHub(page: any, name?: string) {
 async function closeApp(a: App) { await a.app.close().catch(() => {}); apps.splice(apps.indexOf(a), 1); }
 const theme = async (page: any, t: 'light' | 'dark') => { await page.evaluate((x: string) => window.dex.setSettings({ theme: x as 'light' }), t); await sleep(400); };
 
+/**
+ * The stand-ins' local addresses and folders, written as the office's own hub shows them: the backup
+ * folder on the hub PC's second disk, and the gateway's and meeting site's Cloudflare addresses. Only
+ * the words on the screen change, just before a picture; nothing is sent anywhere.
+ */
+async function asOnTheHubPc(page: any) {
+  const host = (u: string) => u.replace(/^https?:\/\//, '');
+  const pairs: Array<[string, string]> = [];
+  if (cf.workersDevUrl) pairs.push([cf.workersDevUrl, 'https://dexconnect-gateway.dexterity-design.workers.dev'], [host(cf.workersDevUrl), 'dexconnect-gateway.dexterity-design.workers.dev']);
+  if (cf.pagesDevUrl) pairs.push([cf.pagesDevUrl, 'https://dexterity-meet.pages.dev'], [host(cf.pagesDevUrl), 'dexterity-meet.pages.dev']);
+  await page.evaluate(([dir, win, pairs]: [string, string, Array<[string, string]>]) => {
+    const fix = (t: string) => {
+      let out = t.split(dir).map((x, i) => (i ? x.replace(/^[^\s,;)]*/, (m) => m.replace(/\//g, '\\')) : x)).join(win);
+      for (const [a, b] of pairs) out = out.split(a).join(b);
+      return out;
+    };
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) { const t = n.nodeValue ?? ''; const f = fix(t); if (f !== t) n.nodeValue = f; }
+    for (const el of document.querySelectorAll('input')) { const f = fix(el.value); if (f !== el.value) el.value = f; }
+  }, [backupDir, WIN_BACKUP, pairs]).catch(() => {});
+}
+/** The Control room scrolled so its register of sections is at the top (the setup check sits above it). */
+async function toRegister(page: any) {
+  const reg = page.locator('.toolbar:has(.seg-register)').first();
+  if (await reg.count()) { await reg.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' })); await sleep(400); }
+}
 /** Save a figure. `clip` is a box, or a locator to crop to (with a margin). */
 async function shot(page: any, name: string, clip?: any, pad = 12) {
   let box = clip;
@@ -99,6 +194,7 @@ async function shot(page: any, name: string, clip?: any, pad = 12) {
     box = { x, y, width: Math.min(vp.width - x, b.width + 2 * pad), height: Math.min(vp.height - y, b.height + 2 * pad) };
   }
   await sleep(250);
+  await asOnTheHubPc(page);
   await page.screenshot({ path: path.join(FIG, `fig-${name}.png`), ...(box ? { clip: box } : {}), animations: 'disabled', caret: 'hide' });
   console.log('  fig', name);
 }
@@ -614,7 +710,8 @@ await part('calendar', async () => {
   if (monday(at(2, 11)) > monday(Date.now())) await P.getByRole('button', { name: 'Next week' }).click();
   await sleep(1200);
   await P.locator('.cal-block').first().waitFor();
-  await P.locator('[aria-label="The week, hour by hour"]').evaluate((el: HTMLElement) => { el.scrollTop = el.scrollHeight * 0.05; }).catch(() => {});
+  // the working day from 8 AM, whatever the time of the run
+  await P.locator('[aria-label="The week, hour by hour"]').evaluate((el: HTMLElement) => { el.scrollTop = (el.scrollHeight / 24) * 8 - 8; }).catch(() => {});
   await sleep(400);
   await shot(P, 'calendar');
   await P.locator('.cal-block', { hasText: 'model review' }).first().click();
@@ -814,11 +911,13 @@ await part('admin', async () => {
   const sec = async (name: string, fig: string, wait = 1200) => {
     await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: new RegExp(`^${name.replace(/[&]/g, '.')}`) }).click();
     await sleep(wait);
+    await toRegister(V);
     await shot(V, fig, { x: W - 988, y: 0, width: 988, height: H });
   };
   await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Approvals/ }).click();
   await sleep(1200);
-  await shot(V, 'cr-approvals', { x: W - 988, y: 0, width: 988, height: 420 });
+  await toRegister(V);
+  await shot(V, 'cr-approvals', { x: W - 988, y: 0, width: 988, height: 360 });
   await sec('Devices', 'cr-devices');
   await sec('People & roles', 'cr-roles');
   await sec('Organisation', 'cr-organisation');
@@ -832,6 +931,33 @@ await part('admin', async () => {
   await sec('Bots & tools', 'cr-bots');
   await sec('Backups & leavers', 'cr-backups');
   await sec('Audit log', 'cr-audit');
+});
+
+// (revision 3) The setup check at the top of the Control room, as the owner first sees it: the backup
+// folder the hub chose on its first start passes; outside access, Zoho and the register are to do.
+// It only looks, so it sits with the Control room; GUIDE_ONLY=setupcheck walks it alone.
+await part('setupcheck', async () => {
+  const v = apps.find((a) => a.name === 'vikram') ?? await (async () => { autoApprove = true; const a = await openApp('vikram', 'Vikram Shah'); await sleep(1500); return a; })();
+  const V = v.page;
+  await V.evaluate(() => { try { localStorage.removeItem('dex.setupcheck.open'); } catch { /* private */ } });
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1200);
+  await V.locator('.me-btn').click();
+  await V.getByRole('menuitem', { name: /Control room/ }).click();
+  const sheet = V.locator('.sc-sheet');
+  await sheet.locator('.sc-block').waitFor({ timeout: 20000 });
+  await sheet.locator('[data-check="remote.access"]').waitFor({ timeout: 10000 });
+  await sleep(800);
+  await shot(V, 'cr-setupcheck', sheet, 12);
+  // every check, with the four made by hand
+  await sheet.locator('.sc-toggle').click();
+  await sheet.locator('[data-check="manual.meetlink"]').waitFor();
+  await sheet.locator('[data-check="manual.meetlink"]').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'end' }));
+  await sleep(700);
+  const sb = await sheet.boundingBox();
+  const top = Math.max(0, sb.y);
+  await shot(V, 'cr-setupcheck-all', { x: sb.x - 12, y: top, width: sb.width + 24, height: Math.min(H, sb.y + sb.height + 12) - top });
+  await sheet.locator('.sc-toggle').click();
+  await V.keyboard.press('Escape');
 });
 
 // ================================================================== revision 1: Nib, office bots, share paths, meeting links
@@ -867,8 +993,7 @@ await part('nib', async () => {
     managers: [id('vikram'), id('meera'), id('arjun')],
     projects: [{ code: 'P-12', name: 'Hydrotreater revamp, Jamnagar' }, { code: 'P-14', name: 'Pipe rack and platforms' }, { code: 'J-0412', name: 'Pump house upgrade' }],
     workdays: [1, 2, 3, 4, 5, 6],
-    // the walk below is timed to these (a new hub's defaults are now register 18:30, follow-up 19:00)
-    digestAt: '19:00', followUpAt: '21:00',
+    // the times stay the new hub's own: wrap-up 18:00, register 18:30, follow-up 19:00, three asks
   };
   await owner.request('admin.nib.set' as never, nibCfg as never);
   const V = (await appOf('vikram', 'Vikram Shah')).page;
@@ -877,7 +1002,14 @@ await part('nib', async () => {
   await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Nib & day sheets/ }).click();
   await V.locator('.nib-admin').waitFor();
   await sleep(1200);
+  await toRegister(V);
   await shot(V, 'cr-nib', { x: W - 988, y: 0, width: 988, height: H });
+  // 03 Times: when Nib asks, worked out from the wrap-up and the register
+  const times = V.locator('.nib-admin section', { has: V.locator('h3', { hasText: /^Times$/ }) });
+  await times.locator('.nib-admin-asks').waitFor();
+  await times.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(600);
+  await shot(V, 'cr-nib-times', times, 12);
   await V.keyboard.press('Escape');
   // the walk runs on whatever day it is: today is a workday for it
   await owner.request('admin.nib.set' as never, { ...nibCfg, workdays: [...new Set([...nibCfg.workdays, new Date().getDay()])] } as never);
@@ -970,10 +1102,10 @@ await part('nib', async () => {
   await sleep(1000);
   await P.keyboard.press('Escape');
 
-  // the wrap-up time passes: Nib asks Kiran three times; the register goes to the management at 19:00
-  for (const [h, m] of [[18, 0], [18, 26], [18, 46], [19, 0], [19, 5]]) { nibClock(h, m); await sleep(300); }
-  // Deepa sends after the register: Priya's card marks her LATE, and one follow-up goes at 21:00
-  nibClock(20, 15);
+  // the wrap-up time passes: Nib asks Kiran three times (18:00, 18:11, 18:22); the register goes to the management at 18:30
+  for (const [h, m] of [[18, 0], [18, 11], [18, 22], [18, 30], [18, 35]]) { nibClock(h, m); await sleep(300); }
+  // Deepa sends after the register: Priya's card marks her LATE, and one follow-up goes at 19:00
+  nibClock(18, 45);
   (hub as any).nib.handle('nib.item.save', user('deepa'), { giverId: priyaId, project: 'P-12', activity: 'Stress check, 8"-P-1014', qty: { done: 60, total: 100, unit: '%' } });
   (hub as any).nib.handle('nib.wrap', user('deepa'), {});
 
@@ -1130,20 +1262,10 @@ await part('paths', async () => {
 });
 
 await part('meetlinks', async () => {
-  // the office's meeting site, as an administrator sets it in Control room ▸ Outside the office
+  // the office's meeting site, as Set up with Cloudflare saves it in Control room ▸ Outside the office
   // (the gateway's address is a placeholder that never resolves: nothing leaves this PC)
   await owner.request('admin.remote.set' as never, { url: 'https://dexconnect-gateway.example.invalid', enabled: true, siteUrl: 'https://dexterity-meet.pages.dev', orgName: 'Dexterity Design Services' } as never);
-  const V = (await appOf('vikram', 'Vikram Shah')).page;
-  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1500);
-  await V.locator('.me-btn').click();
-  await V.getByRole('menuitem', { name: /Control room/ }).click();
-  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Outside the office/ }).click();
-  const card = V.locator('.meet-site-card');
-  await card.waitFor({ timeout: 10000 });
-  await card.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
-  await sleep(800);
-  await shot(V, 'cr-meetsite', card, 10);
-  await V.keyboard.press('Escape');
+  // (the Control room's page for it is pictured once set up, by the cloud part, revision 3)
   // Priya plans the P-12 design review with the client, with a page of its own
   await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
   await lens(P, 'Calendar');
@@ -1317,6 +1439,7 @@ await part('notices', async () => {
   await V.getByText('Revathi Iyer now issues for HR').waitFor();
   await noToasts(V);
   await sleep(500);
+  await toRegister(V);
   await shot(V, 'cr-notices', { x: W - 988, y: 0, width: 988, height: H });
   await V.keyboard.press('Escape');
   // the office's other notices this week, from the IT and Admin desks
@@ -1540,7 +1663,14 @@ await part('botnet', async () => {
   await run(priyaId, 'rfi-log', tqAnswers('P-12513'));
   await run(priyaId, 'rfi-log', tqAnswers('P-12514'));
   bf.now = () => Date.now();
-  await owner.request('admin.botjob.holidays' as never, { holidays: [{ date: ymdOf(nextDow(5)), name: 'Guru Nanak Jayanti' }, { date: ymdOf(new Date(new Date().getFullYear(), 11, 25)), name: 'Christmas' }] } as never).catch((e: Error) => console.log('holidays', e.message));
+  // Friday is a day off (added by hand to the year's circular days, which keep their source)
+  {
+    const days = ((await owner.request('botjob.calendar' as never)) as any).days as Array<{ date: string; name: string; kind: string; for?: string | null }>;
+    const fri = ymdOf(nextDow(5));
+    const keep = days.map((d) => ({ date: d.date, name: d.name, kind: d.kind, for: d.for ?? null }));
+    if (!keep.some((d) => d.date === fri)) keep.push({ date: fri, name: 'Guru Nanak Jayanti', kind: 'holiday', for: null });
+    await owner.request('admin.botjob.holidays' as never, { holidays: keep } as never).catch((e: Error) => console.log('holidays', e.message));
+  }
   await lens(P, 'Desk');
   await P.getByRole('tab', { name: 'Bots' }).click();
   await P.getByRole('button', { name: 'Make a bot' }).first().click();
@@ -1584,18 +1714,7 @@ await part('botnet', async () => {
   await sleep(800);
   await shot(P, 'bn-network');
   await P.keyboard.press('Escape'); await P.keyboard.press('Escape');
-  // the office's holidays, in the Control room
-  const V = (await appOf('vikram', 'Vikram Shah')).page;
-  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1200);
-  await V.locator('.me-btn').click();
-  await V.getByRole('menuitem', { name: /Control room/ }).click();
-  await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Bots & tools/ }).click();
-  const hol = V.locator('.bots-holidays');
-  await hol.waitFor({ timeout: 10000 });
-  await hol.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
-  await sleep(700);
-  await shot(V, 'cr-holidays', hol, 12);
-  await V.keyboard.press('Escape');
+  // (the office's holidays in the Control room are pictured by the holidays part, revision 3)
 });
 
 await part('seating', async () => {
@@ -1719,9 +1838,225 @@ await part('seating', async () => {
   await B.keyboard.press('Escape');
 });
 
+// ================================================================== revision 3: the office set up by itself
+// GUIDE_ONLY=seatnames,holidays,zoho,hubupdate,cloud walks only these (and setupcheck, after admin).
+/** The Control room open on one section, as `page` sees it. */
+async function controlRoom(page: any, section: string) {
+  await page.reload(); await page.locator('.frame').waitFor(); await sleep(1200);
+  await page.locator('.me-btn').click();
+  await page.getByRole('menuitem', { name: /Control room/ }).click();
+  await page.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: new RegExp(`^${section.replace(/[&]/g, '.')}`) }).click();
+  await sleep(1000);
+}
+/** The Floor sheet, with nothing in front of it. */
+async function floorOf(page: any) {
+  await page.reload(); await page.locator('.frame').waitFor(); await sleep(1200);
+  await lens(page, 'Directory');
+  await page.getByRole('tab', { name: 'Org chart', exact: true }).click();
+  await page.locator('.os-stage').waitFor();
+  await page.getByRole('button', { name: 'Floor', exact: true }).click();
+  await sleep(2600);
+  await page.locator('.nib-callout').getByRole('button', { name: 'Not now' }).click({ timeout: 1500 }).catch(() => {});
+  if (await page.locator('.nb-banner').count()) { await page.locator('.nb-banner').getByRole('button', { name: 'Dismiss' }).click().catch(() => {}); await sleep(400); }
+  if (await page.locator('.seat-notice').count()) { await page.locator('.seat-notice').getByRole('button', { name: 'Got it' }).click().catch(() => {}); await sleep(400); }
+}
+
+await part('seatnames', async () => {
+  autoApprove = true;
+  // the names written on the office drawing are on their seats from the start; Bhavna arranges seats
+  await owner.request('admin.seating.managers' as never, { userIds: [id('bhavna')] } as never).catch((e: Error) => console.log('managers', e.message));
+  const B = (await appOf('bhavna', 'Bhavna Shah')).page;
+  await floorOf(B);
+  await B.locator('.os-find-input').fill('Shar');
+  const hit = B.locator('.os-results li', { hasText: 'Sharada' });
+  await hit.waitFor({ timeout: 10000 });
+  await sleep(500);
+  await hit.click();
+  await B.locator('.seat-callout', { hasText: 'W-A31' }).waitFor({ timeout: 10000 });
+  await B.mouse.move(700, 880);
+  await sleep(1400);
+  await noToasts(B);
+  await shot(B, 'seat-named');
+  await B.locator('.seat-callout').getByRole('button', { name: 'Close' }).click().catch(() => {});
+  await B.locator('.os-find-input').fill('');
+  // people join: Sharada Venkat is "Sharada" on the drawing and takes W-A31 at once. Anand Kumar may be
+  // "Anandh", and two people become Pavithra in one import of the office's list: they wait to be matched.
+  const joiners = [await colleague('sharada', 'Sharada Venkat'), await colleague('anandk', 'Anand Kumar'), await colleague('pavithrar', 'P Ramesh'), await colleague('pavithras', 'P Suresh')];
+  await owner.request('admin.org.import' as never, { rows: [{ account: 'DEX\\pavithrar', displayName: 'Pavithra Ramesh' }, { account: 'DEX\\pavithras', displayName: 'Pavithra Suresh' }] } as never).catch((e: Error) => console.log('import', e.message));
+  await sleep(1500);
+  await floorOf(B);
+  await B.getByRole('button', { name: 'Arrange' }).click();
+  const waiting = B.locator('.seat-waiting');
+  await waiting.waitFor({ timeout: 10000 });
+  await waiting.locator('.seat-wait', { hasText: 'Pavithra' }).waitFor();
+  await B.locator('.seat-panel').evaluate((el: HTMLElement) => { el.scrollTop = 0; }).catch(() => {});
+  await B.mouse.move(700, 880);
+  await noToasts(B);
+  await sleep(800);
+  await shot(B, 'seat-waiting');
+  // Bhavna knows which Pavithra sits at W-A45, and confirms her
+  const row = waiting.locator('.seat-wait', { hasText: 'Pavithra' });
+  await row.locator('select').selectOption({ label: 'Pavithra Ramesh' }).catch(() => {});
+  await row.getByRole('button', { name: /^Confirm/ }).click();
+  await B.getByText('Pavithra Ramesh now holds W-A45').first().waitFor({ timeout: 8000 }).catch(() => {});
+  await B.locator('.seat-panel').getByRole('button', { name: 'Close arranging' }).click().catch(() => {});
+  for (const j of joiners) j.c.disconnect();
+});
+
+/** Next year's holiday circular, as management issues it: dates, weekdays, kinds; one weekday written wrong. */
+function circular2027(): string[] {
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const rows: Array<[string, string, string?]> = [
+    ['2027-01-01', 'New Year’s Day'], ['2027-01-09', 'Week-Off'], ['2027-01-15', 'Pongal'], ['2027-01-16', 'Thiruvalluvar Day'],
+    ['2027-01-26', 'Republic Day'], ['2027-02-13', 'Week-Off'], ['2027-04-14', 'Tamil New Year'], ['2027-04-15', 'Compensatory Off'],
+    ['2027-04-24', 'Compensatory work for 15-Apr-2027'], ['2027-05-01', 'May Day'], ['2027-08-15', 'Independence Day'],
+    ['2027-10-02', 'Gandhi Jayanti', 'Friday'], ['2027-12-25', 'Christmas'],
+  ];
+  const out = ['DEXTERITY DESIGN SERVICES PRIVATE LIMITED', 'Ref: HRD/CIR/2026/041   12-Nov-2026', 'COMMUNICATION CIRCULAR',
+    'Following are the list of Official Holidays for the period of January-2027 to December-2027.', 'Sl. No.   Date   Day   Description'];
+  rows.forEach(([ymd, what, day], i) => {
+    const d = new Date(`${ymd}T00:00:00Z`);
+    out.push(`${i + 1}   ${String(d.getUTCDate()).padStart(2, '0')}-${MON[d.getUTCMonth()]}-${d.getUTCFullYear()}   ${day ?? DAYS[d.getUTCDay()]}   ${what}`);
+  });
+  out.push('1. The above list of Holiday plan is common for all Associates.');
+  return out;
+}
+
+await part('holidays', async () => {
+  autoApprove = true;
+  // Vikram drops next year's circular into his conversation with Nib
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  const pdf = path.join(OUT, 'Holiday circular 2027.pdf');
+  fs.writeFileSync(pdf, circularPdf(circular2027()));
+  await V.reload(); await V.locator('.frame').waitFor(); await sleep(1200);
+  await lens(V, 'Direct');
+  await V.locator('.sb-nib').click();
+  await sleep(800);
+  await V.locator('.dock input[type=file]').setInputFiles([pdf]);
+  await sleep(1200);
+  await V.locator('.dock textarea').first().press('Enter');
+  const card = V.locator('.nib-card.k-holidays').last();
+  await card.getByRole('button', { name: /^Register \d+ days?$/ }).waitFor({ timeout: 20000 });
+  for (let i = 0; i < 50; i++) { const t = await card.innerText().catch(() => ''); if (/HRD\/CIR\/2026\/041/.test(t) && /In doubt/i.test(t)) break; await sleep(200); }
+  await card.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await noToasts(V);
+  await sleep(900);
+  await shot(V, 'nib-holidays', await boxIn(card, V.locator('.timeline').first()));
+  await card.getByRole('button', { name: /^Register \d+ days?$/ }).click();
+  await V.locator('.nib-card.k-holidays', { hasText: /Registered on/ }).first().waitFor({ timeout: 15000 });
+  await sleep(800);
+  // Office holidays in the Control room: the two years, the circulars, each day's kind and source
+  await controlRoom(V, 'Bots & tools');
+  const hol = V.locator('.bots-holidays');
+  await hol.waitFor({ timeout: 10000 });
+  await hol.getByRole('tab', { name: '2027' }).click();
+  await sleep(500);
+  await hol.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await sleep(700);
+  await shot(V, 'cr-holidays', hol, 12);
+  await V.keyboard.press('Escape');
+});
+
+await part('zoho', async () => {
+  autoApprove = true;
+  // the office's one Zoho client, saved once by an administrator
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await controlRoom(V, 'Integrations');
+  const form = V.locator('.zoho-admin');
+  await form.waitFor({ timeout: 10000 });
+  await form.getByPlaceholder('1000.XXXXXXXXXXXX').fill(zoho.clientId);
+  await form.getByPlaceholder('Paste the client secret').fill(zoho.clientSecret);
+  await form.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await sleep(700);
+  await shot(V, 'cr-zoho', form, 12);
+  await form.getByRole('button', { name: 'Save and invite everyone' }).click();
+  await form.getByPlaceholder('Saved. Leave empty to keep it').waitFor({ timeout: 10000 });
+  await V.keyboard.press('Escape');
+  // Priya: the card above her week, then one click to connect
+  await P.reload(); await P.locator('.frame').waitFor(); await sleep(1500);
+  await P.evaluate(() => { try { localStorage.removeItem('dex.zoho.card.hidden'); } catch { /* private */ } });
+  await lens(P, 'Calendar');
+  const card = P.locator('.zoho-card');
+  await card.getByRole('button', { name: 'Connect Zoho Calendar' }).waitFor({ timeout: 10000 });
+  await P.waitForFunction(() => { const b = [...document.querySelectorAll('.zoho-card button')].find((x) => x.textContent?.includes('Connect Zoho Calendar')) as HTMLButtonElement | undefined; return !!b && !b.disabled; }, null, { timeout: 10000 });
+  await noToasts(P);
+  await sleep(500);
+  { const cb = await card.boundingBox(); await shot(P, 'zoho-card', { x: cb.x - 14, y: 52, width: cb.width + 28, height: cb.y + cb.height + 14 - 52 }); }
+  await card.getByRole('button', { name: 'Connect Zoho Calendar' }).click();
+  await P.locator('.zoho-strip', { hasText: 'Connected as priya@dexterity.example' }).waitFor({ timeout: 20000 });
+  // a Zoho appointment tomorrow afternoon: hatched and read-only in her week
+  const zt = at(1, 16);
+  const z = (t: number) => new Date(t).toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  zoho.addZohoEvent('priya@dexterity.example', { title: 'Pump vendor call (Zoho)', start: z(zt), end: z(zt + 3600_000) });
+  await P.evaluate(() => window.dex.request('zoho.syncNow'));
+  await sleep(1200);
+  if (!(await P.locator('.cal-block.ext').count())) { await P.getByRole('button', { name: 'Next week' }).click(); await sleep(800); }
+  await P.locator('.cal-block.ext', { hasText: 'Pump vendor call' }).waitFor({ timeout: 10000 });
+  await P.locator('.cal-block.ext', { hasText: 'Pump vendor call' }).scrollIntoViewIfNeeded();
+  await noToasts(P);
+  await sleep(600);
+  await shot(P, 'zoho-week');
+  // Preferences → Calendar: connected
+  await P.keyboard.press('Control+,');
+  const box = P.locator('.zoho-box');
+  await box.waitFor({ timeout: 10000 });
+  await box.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
+  await sleep(700);
+  { const bb = await box.boundingBox(); await shot(P, 'prefs-zoho', { x: bb.x - 14, y: bb.y - 46, width: bb.width + 28, height: bb.height + 60 }); }
+  await P.keyboard.press('Escape');
+});
+
+await part('hubupdate', async () => {
+  // the hub finds its next version on the release feed and sets it for the quiet time
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await controlRoom(V, 'Backups & leavers');
+  await V.getByRole('button', { name: /^Hub updates/ }).click();
+  const sheet = V.locator('.hu-sheet');
+  await sheet.waitFor({ timeout: 10000 });
+  await sheet.getByRole('button', { name: 'Look now' }).click();
+  for (let i = 0; i < 20 && !(await sheet.locator('.bk-state', { hasText: 'is ready to install' }).count()); i++) { hub.hubUpdate?.tick(); await hub.hubUpdate?.idle(); await sleep(300); }
+  await sheet.locator('.bk-state', { hasText: `${HUB_NEXT} is ready to install` }).waitFor({ timeout: 10000 });
+  await sheet.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await noToasts(V);
+  await sleep(700);
+  const hb = await sheet.boundingBox();
+  await shot(V, 'cr-hubupdates', { x: W - 988, y: Math.max(0, hb.y - 60), width: 988, height: H - Math.max(0, hb.y - 60) });
+  await V.keyboard.press('Escape');
+});
+
+await part('cloud', async () => {
+  // Set up with Cloudflare: one token, and the hub does the rest
+  const V = (await appOf('vikram', 'Vikram Shah')).page;
+  await controlRoom(V, 'Outside the office');
+  const card = V.locator('.cf-sheet');
+  await card.waitFor({ timeout: 10000 });
+  await card.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await V.getByText('Put the office online in one step').waitFor();
+  await sleep(600);
+  await shot(V, 'cr-cloud-start', card, 12);
+  await V.locator('#cf-token').fill(CF_TOKEN);
+  await V.getByText('Keep it on the hub for gateway updates').click();
+  await V.getByRole('button', { name: 'Set up', exact: true }).click();
+  await V.locator('.cf-sheet.ok').waitFor({ timeout: 90000 });
+  await V.locator('.gw-status.ok', { hasText: 'gateway pinned to this hub' }).waitFor({ timeout: 20000 });
+  // the page again, as the next administrator opens it
+  await controlRoom(V, 'Outside the office');
+  await card.waitFor({ timeout: 10000 });
+  await V.locator('.gw-status.ok', { hasText: 'gateway pinned to this hub' }).waitFor({ timeout: 20000 });
+  await card.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'start' }));
+  await noToasts(V);
+  await sleep(800);
+  const cb = await card.boundingBox();
+  await shot(V, 'cr-cloud-done', { x: W - 988, y: Math.max(0, cb.y - 24), width: 988, height: H - Math.max(0, cb.y - 24) });
+  await V.keyboard.press('Escape');
+});
+
 console.log(failed.length ? `FAILED PARTS: ${failed.join(', ')}` : 'GUIDE SHOTS DONE');
 for (const a of [...apps]) await closeApp(a);
 for (const c of Object.values(col)) c.c.disconnect();
 owner.disconnect();
 await hub.stop();
+await zoho.stop().catch(() => {}); await cf.stop().catch(() => {}); feed.close();
+fs.rmSync(hubDir, { recursive: true, force: true });
 setTimeout(() => process.exit(failed.length ? 1 : 0), 300);

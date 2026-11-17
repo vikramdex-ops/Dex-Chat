@@ -77,12 +77,27 @@ POL1_ISOLATED=1 TZ=Asia/Kolkata xvfb-run -a -s "-screen 0 2000x1000x24 -noreset"
   office manager in Control room ▸ Organisation, Office managers; she finds a free seat, drags Priya to a new one, moves the Structural team and sets the move plan for Monday;
   the hub's seating clock reaches Monday and Priya walks to her new seat; revisions B and C compared; the layout editor).
   `GUIDE_ONLY=recap,notices,botnet,seating` walks just these. The office is seated on the real floor plan when it is seeded.
+- Revision 3 adds `setupcheck` (right after `admin`: the setup check at the top of the Control room, folded and opened) and, at the
+  end, `seatnames` (a seat the drawing names, found by name; Sharada Venkat joins and takes it; Anand Kumar and two Pavithras wait to
+  be matched in Arrange ▸ People), `holidays` (Vikram drops a made-up 2027 circular with one wrong weekday into Nib's conversation; the
+  card, Register, and Office holidays in the Control room), `zoho` (the office's client saved in Control room ▸ Integrations; Priya's
+  Calendar card, connecting, a Zoho appointment in her week, Preferences ▸ Calendar), `hubupdate` (Backups & leavers ▸ Hub updates
+  with the next version ready for the quiet time) and `cloud` (Set up with Cloudflare, before and after). The `nib` part now keeps
+  the new hub's own times (wrap-up 18:00, register 18:30, follow-up 19:00) and pictures `03 Times` too.
+  `GUIDE_ONLY=setupcheck,seatnames,holidays,zoho,hubupdate,cloud` walks just these.
+- Nothing reaches the internet: the release feed, Zoho (`apps/hub/test/zoho-mock.ts`) and Cloudflare (`apps/hub/test/cfmock.ts`,
+  with the hub's real gateway and site from `apps/hub/scripts/build-cloud.mjs`) are local stand-ins, and the hub PC's disks are a
+  pretend layout with a second disk, so the hub chooses its backup folder on its first start. The hub's version is stamped like a
+  release build's (`DEX_HUB_BUILD_VERSION`, 0.1.26111409 unless set). The hub's data goes in `/dev/shm` where there is one, so the
+  setup check's free space reads like a hub PC's. Just before each picture, the stand-ins' local folder and addresses on the screen
+  are written as the office's hub shows them (`E:\DexConnectBackup`, the gateway on `workers.dev`, `dexterity-meet.pages.dev`);
+  nothing else on the screen is changed. Zoho's redirect address is the real `127.0.0.1:47917` when that port is free.
 - The three pictures of the guest's meeting page, `fig-meet-landing-1.png` to `-3.png`, are not made
   here: they are the 1440 px light screenshots `ml-05`, `ml-08` and `ml-11` of
   `apps/desktop/e2e/meetlink.mts`, which runs the meeting site in Cloudflare's local runtime.
 - Each part catches its own failure, saves `guide-FAIL-<part>-<who>.png` in `apps/desktop/e2e/out/`,
   and carries on; the run ends with the list of parts that failed and exits with 1.
-- The run takes about 15 minutes. Every run starts from an empty hub, so it can be repeated at any time.
+- The run takes about 20 minutes. Every run starts from an empty hub, so it can be repeated at any time.
 - ffmpeg makes the placeholder camera pictures for the meeting screenshot.
 
 Look at every new figure before rebuilding the PDF: no error, spinner, empty placeholder, overlap or
@@ -96,4 +111,4 @@ cut-off dialog. The people, messages and files are invented; never use real acco
   the build fills in the page.
 - Figures are captioned `Fig. <section>-<n>`; renumber the section's figures and their mentions in the text.
 - A new revision: change the Revision and Date on the cover, in the `meta` block and in the revision
-  history (section 21.2), and the revision in the running header in `guide.css`.
+  history (section 22.2), and the revision in the running header in `guide.css`.
