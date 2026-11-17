@@ -3,8 +3,8 @@
 // drags three people from the list onto seats (Priya among them), swaps two people on the plan,
 // moves the Structural team into the north-east benches with a preview, sets the move plan for
 // next Monday and applies it; the hub's clock (hub.seating.setClock, in this process) reaches
-// Monday and the moves take effect. Priya sees her notice and walks to her new seat. Revisions B
-// and C are compared (clouds round the seats that changed); a bench of 4 is added in the layout
+// Monday and the moves take effect. Priya sees her notice and walks to her new seat. Revisions D
+// and E are compared (clouds round the seats that changed); a bench of 4 is added in the layout
 // editor and saved; a small CSV is imported and matched. The plan is filled to 150 seats and its
 // frame times measured. Screenshots at 1440 and 390 px, light and dark, and in Hindi, in
 // SEATING_OUT (default e2e/out), with the drawing beside our rendering when SEATING_DRAWING points
@@ -26,6 +26,8 @@ const pair = async (page: any, name: string) => {
 const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const nextMonday = () => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); return ymd(d.getTime()); };
 const P = (userId: string) => ({ kind: 'person' as const, userId });
+/** Nib's start-of-day card can open over the bar after a reload; it is not what this walk is about. */
+const quietNib = async (page: any) => { await page.locator('.nib-callout').getByRole('button', { name: 'Not now' }).click({ timeout: 1500 }).catch(() => {}); };
 
 const { hub, owner } = await startOffice('seating');
 const s = await seedOffice(hub, owner, OFFICE, ['vikram', 'bhavna', 'priya']);
@@ -64,6 +66,7 @@ try {
   // 1. the seeded real plan, in Bhavna's Directory ▸ Org chart ▸ Floor
   const openFloor = async (page: any) => {
     await page.reload(); await page.locator('.frame').waitFor();
+    await quietNib(page);
     await page.locator('nav.lens-bar, .lens-dock').getByRole('button', { name: /^Directory/ }).first().click();
     await page.getByRole('tab', { name: 'Org chart', exact: true }).click();
     await page.locator('.os-stage').waitFor();
@@ -137,7 +140,7 @@ try {
   await B.getByLabel('To', { exact: true }).selectOption({ label: 'North-east benches' });
   await B.getByRole('button', { name: 'Preview' }).click();
   await B.locator('.seat-preview li', { hasText: 'Anand Pillai' }).waitFor();
-  assert.match((await B.locator('.seat-preview').textContent())!, /W-C07 → W-B04/);
+  assert.match((await B.locator('.seat-preview').textContent())!, /W-C07 → W-B05/);
   await sleep(500);
   await snap(B, '05-team-preview');
   await B.getByRole('button', { name: 'Add to the move plan' }).click();
@@ -159,7 +162,9 @@ try {
   hub.seating.tick();
   v = await owner.request('seating.get');
   assert.deepEqual(v.holders['W-A14'], P(id('priya')));
-  assert.equal(v.revisions[0].rev, 'C');
+  // Rev B: Vikram took the seat the drawing names him on as he set the hub up; C: Manoj and Ganesh
+  // as their profiles came in; D: the office as it is
+  assert.equal(v.revisions[0].rev, 'E');
   const pv = (await owner.request('directory.list')).users.find((u: any) => u.id === id('priya'));
   assert.equal(pv.profile.location, 'W-A14 · Left benches', 'her directory seat follows the plan');
   hub.seating.setClock(null);
@@ -175,16 +180,16 @@ try {
   // her own profile: the seat is derived and read-only
   await PR.getByRole('button', { name: 'Clear the route' }).click();
 
-  // 7. revisions B and C compared: clouds round the seats that changed
+  // 7. revisions D and E compared: clouds round the seats that changed
   await B.locator('.seat-panel').getByRole('button', { name: 'Close arranging' }).click();
   await B.getByRole('button', { name: 'Revisions' }).click();
   await B.locator('.seat-revs').waitFor();
-  await B.getByLabel('Compare', { exact: true }).selectOption('B');
-  await B.getByLabel('with', { exact: true }).selectOption('C');
+  await B.getByLabel('Compare', { exact: true }).selectOption('D');
+  await B.getByLabel('with', { exact: true }).selectOption('E');
   await B.locator('.seat-compare').getByRole('button', { name: 'Compare' }).click();
   await B.locator('.seat-comparing', { hasText: /seats changed/ }).waitFor();
   await sleep(700);
-  await pair(B, '09-compare-B-C');
+  await pair(B, '09-compare-D-E');
   // the plan for the notice wall
   await B.evaluate(() => { (globalThis as any).__seatingExport = (name: string, blob: Blob) => { (globalThis as any).__exported = { name, size: blob.size, type: blob.type }; }; });
   await B.locator('.seat-revs').getByRole('button', { name: 'PDF' }).click();
@@ -213,7 +218,7 @@ try {
   await pair(B, '11-layout-bench-of-4');
   await B.getByLabel('What changed').fill('A bench of 4 added');
   await B.getByRole('button', { name: 'Save layout' }).click();
-  await B.locator('.toast', { hasText: /Layout saved as Rev D/ }).first().waitFor();
+  await B.locator('.toast', { hasText: /Layout saved as Rev F/ }).first().waitFor();
   v = await owner.request('seating.get');
   assert.equal(v.plan.seats.length, 157);
   assert.ok(v.plan.seats.some((q: any) => q.id === 'W-A57' || q.id === 'W-B21' || q.id === 'W-C43'));
@@ -296,8 +301,10 @@ try {
   const freeSeats = vv.plan.seats.map((q: any) => q.id).filter((sid: string) => !vv.holders[sid]);
   const fill = await owner.request('seating.draft', { title: 'Fill', moves: freeSeats.slice(0, extraIds.length).map((sid: string, i: number) => ({ seatId: sid, to: P(extraIds[i]) })) });
   await owner.request('seating.apply', { id: fill.id });
-  const held = Object.values((await owner.request('seating.get')).holders).filter((h: any) => h.kind === 'person').length;
+  // people on their seats, and the names from the drawing still waiting for theirs
+  const held = Object.values((await owner.request('seating.get')).holders).filter((h: any) => h.kind === 'person' || h.kind === 'named').length;
   await B.reload(); await B.locator('.frame').waitFor();
+  await quietNib(B);
   await B.locator('nav.lens-bar, .lens-dock').getByRole('button', { name: /^Directory/ }).first().click();
   await B.getByRole('tab', { name: 'Org chart', exact: true }).click();
   await B.getByRole('button', { name: 'Floor', exact: true }).click();
