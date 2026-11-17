@@ -6,9 +6,10 @@ replaces the generic plan the Floor sheet used to invent from free-text seats ("
 that generated plan is still the fallback when a hub has no plan.
 
 Code: `apps/hub/src/seating.ts` (the hub), `packages/core/src/seating.ts` (rules both share),
-`apps/hub/seed/floor-l01.json` (the transcribed drawing), `apps/desktop/src/renderer/orgscape/`
-(`plan.ts`, `drawplan.ts`, `seating/`). Tests: `apps/hub/test/seating.test.ts`,
-`packages/core/test/seating.test.ts`, `apps/desktop/e2e/seating.mts`.
+`apps/hub/seed/floor-l01.json` (the transcribed drawing), `apps/hub/seed/floor-l01-names.json` (the
+names written on its seats), `apps/desktop/src/renderer/orgscape/` (`plan.ts`, `drawplan.ts`,
+`seating/`). Tests: `apps/hub/test/seating.test.ts`, `apps/hub/test/seatnames.test.ts`,
+`packages/core/test/seating.test.ts`, `apps/desktop/e2e/seating.mts`, `apps/desktop/e2e/seatnames.mts`.
 
 ## The plan as data
 
@@ -52,9 +53,58 @@ next pod number (`POD3-1`…).
 
 ## Who holds a seat
 
-A seat is held by nobody, a person, a reservation for a role or team ("Piping · hot desk"), or is a
-hot desk that anyone can book for a day (today or up to two weeks ahead). A person holds at most one
-seat.
+A seat is held by nobody, a person, a reservation for a role or team ("Piping · hot desk"), a name
+from the office drawing whose person has not joined yet (below), or is a hot desk that anyone can
+book for a day (today or up to two weeks ahead). A person holds at most one seat.
+
+## Names from the drawing
+
+The drawing has a name written on 40 of its seats, mostly first names ("Sharada", "Logesh M",
+"Karthikeyan A S"). They are committed as seed data in `apps/hub/seed/floor-l01-names.json`, with
+where they came from: the drawing `Seating_Plan_18-Jul-2026`, read on 15-Nov-2026. The office owner
+approved keeping these names in the repository (before, they were deliberately kept out and handed
+over as a CSV to import).
+
+- **A fresh hub** puts each name on its seat as part of Rev A. Nothing has to be imported, matched or
+  applied. On the plan a named seat looks like the seat of someone away: a tile with initials and
+  the name under it. **Find** finds it by name ("Shar" → Sharada · Seat W-A31), its callout says who
+  holds it and that they have not joined yet, and **Walk there** walks to it.
+- **Once only.** A meta flag (`seating.drawingNames`) records that the names were put on the plan.
+  They are never put there again: not on a restart, and not on a seat that was cleared, given to
+  someone else or made a hot desk since.
+- **A hub that was already running** gets the names once, on its next start, on the seats that are
+  still empty. Nobody is moved: a seat someone holds (or that is reserved or a hot desk) keeps its
+  holder, and a name is left out when someone already seated fits it (they were seated by hand). It
+  is a revision ("Names from the drawing … put on N empty seats") and in the audit log
+  (`seating.names`).
+
+**When people join, they take their seat.** When someone's first device is approved, when an
+administrator imports people, when someone is renamed (by themselves or an administrator), when a
+guest becomes a member, and at every start, the hub looks at the names still on seats. A person with
+no seat takes a named seat only when it is certain:
+
+- the drawing's name fits theirs word by word from the start, each word the same word or a single
+  letter their word starts with (an initial). Case, spaces and dots do not matter. "Sharada" fits
+  Sharada Venkat; "Logesh M" fits Logesh Murugan; "Karthikeyan A S" fits Karthikeyan A Senthil.
+  "Sam" does not fit Samuel (a word must be whole), and "Anand Pandey" does not fit plain Anand;
+- of all the names on the drawing that fit them, the longest is a single name, and that name is
+  still on exactly one seat. So Karthikeyan A Senthil takes "Karthikeyan A S", not "Karthikeyan A";
+  and once "Karthikeyan A S" is taken, a Karthikeyan A Suresh is not given "Karthikeyan A" either;
+- nobody else without a seat fits that name. Two people called Pavithra both wait.
+
+The seat becomes theirs at once: a revision ("W-A31 taken by Sharada Venkat ("Sharada" on the
+drawing)"), an audit entry (`seating.claim`, with `auto: true` and no actor), their directory Seat
+field follows, and they are told once, the way a move plan tells people: a line from Nib (or the
+system bot) with a link that walks them there, and the notice on the Floor sheet ("From today your
+seat is W-A31 · Left benches", **Walk there**, **Got it**).
+
+**Anything else waits to be matched.** Administrators and office managers see, at the top of
+**Arrange ▸ People**, **Waiting to be matched**: each named seat that someone without a seat might
+be, with the suggestion (or a choice of people). Suggestions are people whose first name is the
+drawing's, starts it or is one letter away ("Anand" for "Anandh"). **Confirm** gives them the seat
+in one click (`seating.claim`), audited with who confirmed, and the person is told. The **Arrange**
+button shows how many wait. A named seat whose person has left, or a name nobody will claim, is
+changed like any other seat: **Free it**, a reservation or a move plan.
 
 Booking a hot desk: click it on the plan; the seat's callout shows who has it today, a **Book for**
 day (today, then each working day up to two weeks ahead: the office's working week and holidays,

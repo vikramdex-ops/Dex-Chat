@@ -116,20 +116,22 @@ All of these are in the **Control room**, reached from your tile at the top righ
 | **08 Policies** | Read the defaults once: the edit window, upload limit, call recording, meetings, PC-to-PC fallback. |
 | **05 Guests**, **06 Compliance** | Who may invite guests; retention and legal holds, if the office has rules for them. |
 
-## 6. Seating (30 minutes)
+## 6. Seating (10 minutes)
 
 [SEATING.md](SEATING.md). The real floor plan (153 seats, from the 18-Jul-2026 drawing) is already
-in the app. The names on the drawing are **not** in the repository, because they are personal data.
+in the app, with the 40 names written on the drawing on their seats (the owner approved keeping
+them in the repository, `apps/hub/seed/floor-l01-names.json`). There is nothing to import.
 
-1. **Directory → Org chart → Floor → Arrange → Import.** Open the CSV of seat and name pairs read
-   from the drawing (kept outside the repository and handed over separately). Tick the suggested
-   matches where only a first name was on the drawing.
+1. As people join, each takes the seat the drawing names them on, automatically when it is
+   certainly them (a full name, or a first name only they have). **Directory → Org chart → Floor →
+   Arrange** shows the rest under **Waiting to be matched** (two people with the same first name,
+   a name that only nearly matches): **Confirm** the right person.
 2. Check the assumptions the plan makes (SEATING.md, "What was assumed from the drawing"):
    - rename "Room A (unlabelled)";
    - check which MD's cabin is MD-01;
    - check that the top of the sheet is north.
    Fix anything in the **Layout** tab.
-3. Set the hot desks. Then use **Apply** for the current arrangement, so it becomes Rev A.
+3. Set the hot desks with a move plan and **Apply** it. Later moves are move plans too.
 
 The drawing is not current. When people move, use a **Move plan** (it tells each person once and
 walks them there) rather than editing seats one by one.
