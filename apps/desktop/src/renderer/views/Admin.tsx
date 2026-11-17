@@ -1,4 +1,5 @@
 // Admin console (Phase 0): approve devices, manage devices and roles, read the audit trail.
+import { onAdminTab, takeAdminTab } from './admin-tab.ts';
 import { useCallback, useEffect, useState } from 'react';
 import type { AuditEntry, DeviceRecord, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
@@ -28,6 +29,7 @@ const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }
 };
 
 const AUDIT_TEXT: Record<string, string> = {
+  'holidays.circular': 'registered a holiday circular',
   'device.registered': 'registered a device',
   'device.approved': 'approved a device',
   'device.rejected': 'declined a device',
@@ -150,7 +152,9 @@ const auditWords = (action: string) => AUDIT_TEXT[action] ?? action.replace(/([a
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('approvals');
+  const [tab, setTab] = useState<Tab>(() => (takeAdminTab() as Tab | null) ?? 'approvals');
+  // a link to a part of the Control room while it is open ("Open Office holidays" in Nib's card)
+  useEffect(() => onAdminTab((t) => setTab(t as Tab)), []);
   const [openReports, setOpenReports] = useState(0);
   useEffect(() => {
     void window.dex.request('admin.reports.list', {}).then((r) => setOpenReports(new Set(r.map((x) => x.messageId)).size)).catch(() => {});

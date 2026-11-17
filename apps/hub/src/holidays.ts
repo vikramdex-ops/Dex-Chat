@@ -170,7 +170,7 @@ export class Holidays {
     let state = r.state;
     if (state === 'open' && plan?.already) state = 'already';
     return {
-      id: r.id, state, userId: r.user_id, file: r.file_name, hash: r.hash, ocr: !!r.ocr, error: r.error, read, plan,
+      id: r.id, state, userId: r.user_id, fileId: r.file_id, file: r.file_name, hash: r.hash, ocr: !!r.ocr, error: r.error, read, plan,
       canRegister: isAdmin(me) && state === 'open' && !!plan && plan.rows.length > 0, done,
     };
   }

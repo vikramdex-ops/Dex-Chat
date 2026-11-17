@@ -11,6 +11,7 @@ import { cardFor, forgetCard, openTray, setCard, useCardVersion, useNib } from '
 import { LEAVE_WORD, STATUS_WORD, dayLabel, firstName, qtyWords } from './words.ts';
 import { formatTime } from '../time.ts';
 import { act } from './Tray.tsx';
+import { HolidayCircularCard, HolidaysDoneCard } from './holidays.tsx';
 
 const go = (url: string) => window.dispatchEvent(new CustomEvent('dex-deeplink', { detail: url }));
 const writeTo = (id: string) => void window.dex.request('conv.create', { kind: 'direct', members: [id] }).then((c) => go(`dexconnect://conversation/${c.id}`)).catch(() => {});
@@ -34,6 +35,8 @@ export default function NibMessageCard({ m, meId, users }: { m: Message; meId: s
     case 'joiner': return <JoinerCard c={card} users={users} />;
     case 'hello': return <HelloCard />;
     case 'reply': return <ReplyCard c={card} users={users} />;
+    case 'holidays': return <HolidayCircularCard v={card.view} users={users} onChange={(view) => setCard('holidays', ref.ref, { kind: 'holidays', view })} />;
+    case 'holidaysDone': return <HolidaysDoneCard v={card.view} />;
   }
   return null;
 }

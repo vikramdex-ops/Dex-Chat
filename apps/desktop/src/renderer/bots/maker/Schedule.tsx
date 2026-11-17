@@ -181,7 +181,7 @@ function JobEditor({ def, job, onChange, spaces, users, me, cal }: { def: BotFlo
 export function ScheduleSection({ def, setDef, spaces, users, me, saved }: { def: BotFlowDefinition; setDef: (d: BotFlowDefinition) => void; spaces: Array<{ id: string; name: string }>; users: PublicUser[]; me: PublicUser; saved: boolean }) {
   const [open, setOpen] = useState<string | null>(def.jobs?.[0]?.id ?? null);
   const [cal, setCal] = useState<OfficeCalendar>(DEFAULT_CALENDAR);
-  useEffect(() => { void window.dex.request('botjob.calendar').then((c) => setCal({ workdays: c.workdays, holidays: c.holidays, tzOffset: c.tzOffset, hours: c.hours })).catch(() => {}); }, []);
+  useEffect(() => { void window.dex.request('botjob.calendar').then((c) => setCal({ workdays: c.workdays, holidays: c.holidays, extraWorkdays: c.extraWorkdays ?? [], tzOffset: c.tzOffset, hours: c.hours })).catch(() => {}); }, []);
   const jobs = def.jobs ?? [];
   const set = (i: number, j: BotJob | null) => { const next = j ? jobs.map((x, k) => (k === i ? j : x)) : jobs.filter((_, k) => k !== i); const { jobs: _j, ...rest } = def; setDef(next.length ? { ...rest, jobs: next } : rest); };
   const add = () => {

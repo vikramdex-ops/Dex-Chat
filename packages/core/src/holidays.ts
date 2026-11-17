@@ -395,6 +395,8 @@ export interface HolidayReadView {
   id: string;
   state: HolidayReadState;
   userId: string;
+  /** The PDF (the desktop reads a scan's pages from it). */
+  fileId: string | null;
   file: string;
   hash: string;
   /** The text came from the desktop's OCR of a scan. */

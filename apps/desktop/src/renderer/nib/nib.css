@@ -404,3 +404,43 @@ input[type='range'] { accent-color: var(--accent); width: 100%; }
   .nib-admin-row .input { grid-column: 2 / -1; }
 }
 html:is([lang='hi'], [lang='ta']) :is(.nib-ann::before, .nib-read-kind, .nib-state, .nib-carried, .nib-giver-scope) { letter-spacing: 0; }
+
+/* ------------------------------------------------------------------ a holiday circular (holidays.tsx) */
+.hol-source { display: flex; flex-wrap: wrap; gap: 4px 0; margin: 0; font-size: 11px; color: var(--text-2); }
+.hol-source > span + span::before { content: '·'; padding: 0 6px; color: var(--text-3); }
+.hol-counts { grid-template-columns: repeat(5, 1fr); }
+.hol-diff { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font-size: 12.5px; }
+.hol-diff > span:not(.faint) { font-weight: 600; }
+.hol-warnings, .hol-removed ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 12.5px; }
+.hol-warnings li { display: flex; gap: 6px; align-items: baseline; color: var(--amber-ink); }
+.hol-doubt { margin: 0; padding: 6px 8px; font-size: 12.5px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: var(--text); }
+.hol-rows { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--stroke-strong); }
+.hol-row { display: grid; grid-template-columns: 2.2em 9.5em minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; padding: 5px 2px; border-bottom: 1px solid var(--stroke); font-size: 13px; }
+.hol-row.bad { background: var(--amber-soft); }
+.hol-sl { font-size: 11px; color: var(--text-3); text-align: right; }
+.hol-when { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 12px; }
+.hol-when .mono { font-size: 11.5px; }
+.hol-what { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.hol-for { font-size: 11.5px; }
+.hol-problem { display: flex; gap: 5px; align-items: baseline; font-size: 12px; color: var(--amber-ink); }
+.hol-problem svg { flex: none; transform: translateY(1px); }
+.hol-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.hol-kind, .hol-check { font: 600 9.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .06em; text-transform: uppercase; padding: 3px 5px; border: 1px solid var(--stroke-strong); border-radius: 2px; white-space: nowrap; color: var(--text-2); }
+.hol-kind.k-holiday { color: var(--accent-ink); border-color: var(--accent); }
+.hol-kind.k-weekoff { background: repeating-linear-gradient(135deg, transparent 0 4px, var(--subtle-2) 4px 5px); }
+.hol-kind.k-compoff { border-style: dashed; }
+.hol-kind.k-compwork { color: var(--text); border-color: var(--text); }
+.hol-check { border-color: transparent; color: var(--text-3); }
+.hol-check.c-new { color: var(--accent-ink); }
+.hol-check.c-updated { color: var(--text); text-decoration: underline; }
+.hol-check.bad { color: var(--amber-ink); }
+.hol-more { justify-self: start; }
+.hol-removed { display: grid; gap: 4px; font-size: 12.5px; }
+.hol-removed li { text-decoration: line-through; color: var(--text-2); }
+.hol-stamp { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 13px; color: var(--accent-ink); }
+@media (max-width: 560px) {
+  .hol-counts { grid-template-columns: repeat(3, 1fr); }
+  .hol-row { grid-template-columns: 2em minmax(0, 1fr) auto; }
+  .hol-tags { grid-row: 1; grid-column: 3; }
+  .hol-what { grid-column: 2 / -1; }
+}

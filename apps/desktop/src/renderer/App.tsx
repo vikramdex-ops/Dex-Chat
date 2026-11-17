@@ -1,6 +1,7 @@
 // App frame in the "Drafting Table" design language (docs/DESIGN-LANGUAGE.md):
 // title bar with brand, the Lens bar (ending in the GO TO field) and your own tile; content below;
 // Preferences and the Control room slide in as sheets from the right. Phones get a bottom lens strip.
+import { requestAdminTab } from './views/admin-tab.ts';
 import { setAlertPrefs } from './alerts.ts';
 import { Pane } from './chat/Pane.tsx';
 import { formatTime, setTimeFormat } from './time.ts';
@@ -561,7 +562,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         return;
       }
       if (target === 'people' || target === 'directory') { setLens('directory'); if (m[2]) setFocusUser(m[2]); }
-      else if (target === 'admin' && isAdmin) setSheet('control');
+      else if (target === 'admin' && isAdmin) { if (m[2]) requestAdminTab(m[2]); setSheet('control'); }
       else if (target === 'settings') setSheet('preferences');
       else if (target === 'conversation' && m[2]) { const c = conversations.get(m[2]); if (c) openConversation(c.id, c.kind); }
       else if (target === 'file' && m[2]) void openFileLink(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })));

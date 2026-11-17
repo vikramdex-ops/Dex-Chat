@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import https from 'node:https';
-import type { BotFlowDefinition, FileInfo, NibCard } from '@dex/core';
+import type { BotFlowDefinition, FileInfo } from '@dex/core';
 import type { HubClient } from '@dex/core/client';
 import type { HolidayReadView } from '@dex/core/holidays';
 import { BOT_TEMPLATES } from '@dex/core/botmaker';
@@ -61,7 +61,7 @@ async function drop(hub: Hub, c: HubClient, name: string, data: Buffer): Promise
   const f = await upload(hub, c, name, data);
   await c.request('msg.send', { convId, body: '', clientId: `hp-${Date.now()}-${Math.random()}`, files: [f.id] });
   const m = await waitFor(async () => (await c.request('msg.list', { convId, limit: 200 })).messages.find((x) => !before.has(x.id) && x.authorId === nibId && x.nib?.kind === 'holidays'));
-  const card = await c.request('nib.card', { kind: 'holidays', ref: m.nib!.ref }) as Extract<NibCard, { kind: 'holidays' }>;
+  const card = await c.request('nib.card', { kind: 'holidays', ref: m.nib!.ref }) as { view: HolidayReadView };
   return { view: card.view, ref: m.nib!.ref };
 }
 

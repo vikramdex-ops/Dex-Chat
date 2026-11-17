@@ -71,7 +71,7 @@ function marksOf(lane: BotJobLane, from: number, to: number, width: number, now:
 
 const worst = (runs: BotJobRun[]): BotJobRun['outcome'] => (runs.some((r) => r.outcome === 'FAILED') ? 'FAILED' : runs.some((r) => r.outcome === 'RAN') ? 'RAN' : runs.some((r) => r.outcome === 'DRY') ? 'DRY' : 'SKIPPED');
 
-function Ruler({ range, from, to, width, tz, workdays, holidays, now }: { range: Range; from: number; to: number; width: number; tz: number; workdays: number[]; holidays: Array<{ date: string; name: string }>; now: number }) {
+function Ruler({ range, from, to, width, tz, workdays, holidays, extra, now }: { range: Range; from: number; to: number; width: number; tz: number; workdays: number[]; holidays: Array<{ date: string; name: string }>; extra: Set<string>; now: number }) {
   const x = (t: number) => ((t - from) / (to - from)) * width;
   const ticks: Array<{ x: number; label: string; major: boolean }> = [];
   const off: Array<{ x: number; w: number; why: string }> = [];
@@ -83,7 +83,7 @@ function Ruler({ range, from, to, width, tz, workdays, holidays, now }: { range:
     for (let t = from; t < to; t += DAY) {
       const p = officeParts(t + HOUR, tz);
       const hol = holidays.find((hd) => hd.date === p.date);
-      if (!workdays.includes(p.dow) || hol) off.push({ x: x(t), w: x(t + DAY) - x(t), why: hol?.name ?? '' });
+      if ((!workdays.includes(p.dow) && !extra.has(p.date)) || hol) off.push({ x: x(t), w: x(t + DAY) - x(t), why: hol?.name ?? '' });
       const label = range === 'week' ? new Date(Date.UTC(p.y, p.m - 1, p.d)).toLocaleDateString([], { weekday: 'short', day: 'numeric', timeZone: 'UTC' }).toUpperCase() : String(p.d);
       ticks.push({ x: x(t), label, major: range === 'week' || p.dow === 1 });
     }
@@ -110,8 +110,8 @@ function Ruler({ range, from, to, width, tz, workdays, holidays, now }: { range:
   );
 }
 
-function Lane({ lane, range, from, to, width, now, tz, workdays, holidays, onSelect, selected, onChanged, onDetail, onMove }: {
-  lane: BotJobLane; range: Range; from: number; to: number; width: number; now: number; tz: number; workdays: number[]; holidays: Array<{ date: string; name: string }>;
+function Lane({ lane, range, from, to, width, now, tz, workdays, holidays, extra, onSelect, selected, onChanged, onDetail, onMove }: {
+  lane: BotJobLane; range: Range; from: number; to: number; width: number; now: number; tz: number; workdays: number[]; holidays: Array<{ date: string; name: string }>; extra: Set<string>;
   onSelect: (k: string | null) => void; selected: string | null; onChanged: () => void; onDetail: (d: { title: string; run: BotJobRun }) => void; onMove: (l: BotJobLane) => void;
 }) {
   const toast = useToast();
@@ -164,7 +164,7 @@ function Lane({ lane, range, from, to, width, now, tz, workdays, holidays, onSel
             const offs: React.ReactNode[] = [];
             for (let t = from, i = 0; t < to; t += DAY, i++) {
               const p = officeParts(t + HOUR, tz);
-              if (!workdays.includes(p.dow) || holidays.some((h) => h.date === p.date)) offs.push(<rect key={i} x={x(t)} y={0} width={x(t + DAY) - x(t)} height={64} className="js-off" aria-hidden="true" />);
+              if ((!workdays.includes(p.dow) && !extra.has(p.date)) || holidays.some((h) => h.date === p.date)) offs.push(<rect key={i} x={x(t)} y={0} width={x(t + DAY) - x(t)} height={64} className="js-off" aria-hidden="true" />);
             }
             return offs;
           })()}
@@ -266,6 +266,8 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
   const [tick, setTick] = useState(Date.now());
   const now = tick + skew;
   const [sheet, setSheet] = useState<BotJobSheet | null>(null);
+  // compensatory working days (a Saturday worked when the week is Monday to Friday) are not hatched
+  const extra = useMemo(() => new Set((sheet?.extraWorkdays ?? []).map((d) => d.date)), [sheet]);
   const [cal, setCal] = useState<{ workdays: number[]; tzOffset: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<string | null>(null);
@@ -345,10 +347,10 @@ export default function JobSheet({ session, scope: first, flow, onClose }: { ses
               <div className="js-board" ref={board}>
                 <div className="js-ruler">
                   <div className="js-ruler-cap"><span className="net-cap">Job</span></div>
-                  <div><Ruler range={range} from={from} to={to} width={width} tz={tz} workdays={cal?.workdays ?? [1, 2, 3, 4, 5, 6]} holidays={sheet.holidays} now={now} /></div>
+                  <div><Ruler range={range} from={from} to={to} width={width} tz={tz} workdays={cal?.workdays ?? [1, 2, 3, 4, 5, 6]} holidays={sheet.holidays} extra={extra} now={now} /></div>
                 </div>
                 {lanes.map((l) => (
-                  <Lane key={`${l.flow}/${l.job}`} lane={l} range={range} from={from} to={to} width={width} now={now} tz={tz} workdays={cal?.workdays ?? [1, 2, 3, 4, 5, 6]} holidays={sheet.holidays}
+                  <Lane key={`${l.flow}/${l.job}`} lane={l} range={range} from={from} to={to} width={width} now={now} tz={tz} workdays={cal?.workdays ?? [1, 2, 3, 4, 5, 6]} holidays={sheet.holidays} extra={extra}
                     selected={sel} onSelect={setSel} onChanged={load} onDetail={setDetail} onMove={setMoving} />
                 ))}
               </div>
