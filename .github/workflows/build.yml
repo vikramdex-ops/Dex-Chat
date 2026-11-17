@@ -4,8 +4,9 @@ name: build
 # with scripts/release/Build-Release.cmd (docs/RELEASING.md), so pushes start nothing here.
 # When run: tests, then the Windows installer, macOS DMGs, Android APK and hub package (zip and
 # DexterityConnectHub-Setup.exe), into a draft release in the public repository; the hub setup is
-# installed, repaired, upgraded and removed on a clean Windows runner; the last job writes the
-# update feed and publishes.
+# installed, repaired, upgraded, updated by the hub itself (and rolled back after a broken update)
+# and removed on a clean Windows runner; the last job writes the update feed (the hub's entry is
+# its setup) and publishes.
 # main = stable channel (everyone), other branches = beta (opt-in).
 on:
   workflow_dispatch:
@@ -128,7 +129,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: node apps/hub/scripts/build.mjs --sea
+      - name: Build the hub (its version stamped in, so it can update itself)
+        run: node apps/hub/scripts/build.mjs --sea --version $env:VERSION
       - name: Assemble service package
         shell: pwsh
         run: |
@@ -156,14 +158,41 @@ jobs:
             hub-package/*.zip
             hub-package/*.exe
           retention-days: 7
+      # For the install test only, never published: the same hub stamped one version later (the
+      # update the hub installs itself), and one whose program cannot start (the update that must
+      # go back to the version before).
+      - name: Builds for the self-update test
+        shell: pwsh
+        run: |
+          $p = $env:VERSION.Split('.')
+          $next = "$($p[0]).$($p[1]).$([int64]$p[2] + 1)"
+          $broken = "$($p[0]).$($p[1]).$([int64]$p[2] + 2)"
+          node apps/hub/scripts/build.mjs --sea --no-cloud --version $next
+          if ($LASTEXITCODE -ne 0) { throw 'the next hub did not build' }
+          foreach ($b in @(@{ Name = 'next'; Version = $next }, @{ Name = 'broken'; Version = $broken })) {
+            $stage = "hub-smoke/$($b.Name)/DexterityConnectHub"
+            New-Item -ItemType Directory -Force $stage | Out-Null
+            Copy-Item hub-package/DexterityConnectHub/* $stage
+            if ($b.Name -eq 'next') { Copy-Item apps/hub/dist/DexterityConnectHub.exe $stage -Force }
+            else { Set-Content -LiteralPath "$stage/DexterityConnectHub.exe" -Value 'not a program' -NoNewline }
+            node apps/hub/scripts/build-setup.mjs --stage $stage --version $b.Version --out "hub-smoke/DexterityConnectHub-Setup-$($b.Version).exe"
+            if ($LASTEXITCODE -ne 0) { throw "the $($b.Name) setup did not build" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hub-smoke-builds
+          path: hub-smoke/*.exe
+          retention-days: 7
       - name: Upload to the release
         if: needs.prepare.outputs.publish == 'true'
         shell: bash
         run: gh release upload "v$VERSION" hub-package/*.zip hub-package/DexterityConnectHub-Setup-*.exe --repo "$PUBLIC_REPO" --clobber
 
   # The real test of the hub setup: install it silently on a clean Windows runner, check the service,
-  # firewall rules and /health, run it again (repair), uninstall and reinstall, and upgrade an install
-  # made the old way from the zip. A broken hub setup must not ship, so publishing waits for this.
+  # firewall rules and /health, run it again (repair), uninstall and reinstall, upgrade an install
+  # made the old way from the zip, then let the hub update itself to the next version and see a
+  # broken update go back to the version before. A broken hub setup must not ship, so publishing
+  # waits for this.
   hub-smoke:
     name: hub setup (install test)
     needs: hub
@@ -175,12 +204,18 @@ jobs:
         with:
           name: hub-package
           path: hub-package
-      - name: Install, repair, upgrade and remove the hub
+      - uses: actions/download-artifact@v4
+        with:
+          name: hub-smoke-builds
+          path: hub-smoke
+      - name: Install, repair, upgrade, update itself, go back after a bad update, and remove the hub
         shell: pwsh
         run: |
           $setup = (Get-ChildItem hub-package -Filter 'DexterityConnectHub-Setup-*.exe' | Select-Object -First 1).FullName
           $zip = (Get-ChildItem hub-package -Filter 'DexterityConnectHub-*-win-x64.zip' | Select-Object -First 1).FullName
-          ./apps/hub/installer/smoke-test.ps1 -Setup $setup -Zip $zip
+          # the two test builds, by version: the lower is the good next version, the higher the broken one
+          $smoke = @(Get-ChildItem hub-smoke -Filter 'DexterityConnectHub-Setup-*.exe' | Sort-Object { [version]($_.BaseName -replace '^DexterityConnectHub-Setup-', '') })
+          ./apps/hub/installer/smoke-test.ps1 -Setup $setup -Zip $zip -Next $smoke[0].FullName -Broken $smoke[1].FullName
       - name: Keep the logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -188,6 +223,7 @@ jobs:
           name: hub-smoke-logs
           path: |
             C:/ProgramData/Dexterity Connect Hub/setup.log
+            C:/ProgramData/Dexterity Connect Hub/hub-data/hub-update/result.json
             C:/Program Files/Dexterity Connect Hub/logs/
             ${{ runner.temp }}/hub-smoke/**/logs/
           if-no-files-found: ignore

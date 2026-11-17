@@ -94,7 +94,8 @@ Pop-Location
 Get-ChildItem apps/desktop/release -Filter "DexterityConnect-Setup-$Version.exe" | Copy-Item -Destination $dest
 
 Step 'Office hub (zip and DexterityConnectHub-Setup)'
-Run node @('apps/hub/scripts/build.mjs', '--sea')
+# the version goes into the hub, so it knows which build it is and can update itself (hub-update.ts)
+Run node @('apps/hub/scripts/build.mjs', '--sea', '--version', $Version)
 $hubDir = Join-Path $env:TEMP "DexterityConnectHub-$Version"
 Remove-Item -Recurse -Force $hubDir -ErrorAction SilentlyContinue
 $pkg = Join-Path $hubDir 'DexterityConnectHub'

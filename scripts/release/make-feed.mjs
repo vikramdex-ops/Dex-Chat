@@ -24,7 +24,9 @@ const PATTERNS = [
   [/^DexterityConnect-.*-mac-arm64\.dmg$/, 'mac-arm64'],
   [/^DexterityConnect-.*-mac-x64\.dmg$/, 'mac-x64'],
   [/^DexterityConnect-.*\.apk$/, 'android'],
-  [/^DexterityConnectHub-.*-win-x64\.zip$/, 'hub-win-x64'],
+  // the hub updates itself from its setup (apps/hub/src/hub-update.ts); the hub zip stays a
+  // release file for installing by hand, but is not in the feed
+  [/^DexterityConnectHub-Setup-\d+(\.\d+){1,3}\.exe$/, 'hub-win-x64'],
 ];
 
 const assets = [];
@@ -42,6 +44,9 @@ for (const file of fs.readdirSync(a.dir).sort()) {
   });
 }
 if (!assets.length) throw new Error(`no installers found in ${a.dir}`);
+const hub = assets.find((x) => x.platform === 'hub-win-x64');
+if (hub && hub.file !== `DexterityConnectHub-Setup-${a.version}.exe`) throw new Error(`the hub setup ${hub.file} is not this release's version (${a.version})`);
+if (!hub) console.warn('note: no DexterityConnectHub-Setup-<version>.exe in this release, so hubs will not update themselves to it');
 
 const feed = {
   schema: 1,

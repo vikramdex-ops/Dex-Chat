@@ -537,3 +537,44 @@ test('Windows: the setup runs from a one-off scheduled task as SYSTEM, so it out
   assert.match(selfUpdateSupport('C:\\Program Files\\nodejs\\node.exe', 'win32') ?? '', /runs from source/);
   assert.match(selfUpdateSupport('C:\\Hub\\DexterityConnectHub.exe', 'win32') ?? '', /does not run as the Windows service/);
 });
+
+test('the release feed lists the hub setup (not the zip) with its size and SHA-512, and a hub accepts it', async () => {
+  const dir = tmp();
+  const out = tmp();
+  const files: Record<string, Buffer> = {
+    'DexterityConnect-Setup-0.1.42.exe': crypto.randomBytes(3000),
+    'DexterityConnectHub-Setup-0.1.42.exe': Buffer.concat([Buffer.from('MZ'), crypto.randomBytes(5000)]),
+    'DexterityConnectHub-0.1.42-win-x64.zip': crypto.randomBytes(4000),
+    // the fixed-name copies (a re-run downloads them too) are not feed entries
+    'DexterityConnectHub-Setup.exe': crypto.randomBytes(100),
+    'DexterityConnect-Setup.exe': crypto.randomBytes(100),
+  };
+  for (const [n, b] of Object.entries(files)) fs.writeFileSync(path.join(dir, n), b);
+  const script = path.resolve(import.meta.dirname, '../../../scripts/release/make-feed.mjs');
+  const { execFileSync } = await import('node:child_process');
+  const make = (version: string) => execFileSync(process.execPath, [script, '--dir', dir, '--channel', 'stable', '--version', version, '--base-url', 'https://example.invalid/v0.1.42', '--out', path.join(out, 'stable.json')], { stdio: 'pipe' });
+  make('0.1.42');
+  const feed = JSON.parse(fs.readFileSync(path.join(out, 'stable.json'), 'utf8')) as UpdateFeed;
+  assert.deepEqual(feed.assets.map((a) => [a.platform, a.file]), [['win-x64', 'DexterityConnect-Setup-0.1.42.exe'], ['hub-win-x64', 'DexterityConnectHub-Setup-0.1.42.exe']]);
+  const hubAsset = feed.assets[1];
+  assert.equal(hubAsset.size, files['DexterityConnectHub-Setup-0.1.42.exe'].length);
+  assert.equal(hubAsset.sha512, sha(files['DexterityConnectHub-Setup-0.1.42.exe']));
+  assert.equal(hubAsset.url, 'https://example.invalid/v0.1.42/DexterityConnectHub-Setup-0.1.42.exe');
+  const sums = fs.readFileSync(path.join(dir, 'SHA256SUMS.txt'), 'utf8');
+  assert.match(sums, /DexterityConnectHub-0\.1\.42-win-x64\.zip/, 'the zip is still a release file, with its checksum');
+  assert.throws(() => make('0.1.43'), /not this release's version/);
+
+  // the feed as written, served: a hub on 0.1.40 takes it
+  const s = http.createServer((req, res) => {
+    if (req.url === '/stable.json') { res.end(JSON.stringify({ ...feed, assets: feed.assets.map((a) => ({ ...a, url: `http://127.0.0.1:${(s.address() as AddressInfo).port}/${a.file}` })) })); return; }
+    const f = files[(req.url ?? '').slice(1)];
+    if (f) res.end(f); else { res.writeHead(404); res.end(); }
+  });
+  await new Promise<void>((r) => s.listen(0, '127.0.0.1', r));
+  closers.push(() => s.close());
+  const base = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+  const t = host({ urls: { stable: `${base}/stable.json`, beta: `${base}/beta.json` } });
+  await t.tick(at(3, 0, 19));
+  assert.equal(t.launched.length, 1);
+  assert.deepEqual(fs.readFileSync(t.launched[0].setup), files['DexterityConnectHub-Setup-0.1.42.exe']);
+});
