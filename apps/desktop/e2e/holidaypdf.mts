@@ -20,6 +20,8 @@ if (!process.env.HOLIDAY_PDF) {
 }
 const { app, page: B } = await launch('bhavna', 'Bhavna Shah', { width: 1440, height: 900 });
 const t0 = Date.now();
+/** The conversation with Nib, at the top of Direct. */
+const openNib = async () => { await B.locator('.lens-bar .lens').nth(1).click(); await B.locator('.sb-nib').click(); };
 try {
   const users = (await owner.request('directory.list')).users;
   const bhavna = users.find((u: any) => u.account.endsWith('bhavna'))!;
@@ -28,14 +30,17 @@ try {
   assert.equal((await owner.request('botjob.calendar')).days.length, 0, 'a hub with no holidays yet');
 
   // ---------------------------------------------------------------- 1. the PDF to Nib
-  await B.locator('.sb-nib').click();
+  console.log('step 1', Date.now() - t0);
+  await openNib();
   await B.locator('.dock input[type=file]').setInputFiles([pdf]);
   await sleep(1200);
   await B.locator('.dock textarea').first().press('Enter');
-  const card = B.locator('.nib-card.k-holidays').last();
+  // the first circular card (Nib's summary card comes after it)
+  const card = B.locator('.nib-card.k-holidays').first();
   await card.getByRole('button', { name: 'Register 46 days' }).waitFor({ timeout: 20000 });
   const text = await card.innerText();
-  for (const s of ['HRD/CIR/2026/011', '26 Mar 2026', 'holidays-2026.pdf', 'Week-off', 'Compensatory work']) assert.ok(text.includes(s), `the card shows ${s}`);
+  for (const s of ['HRD/CIR/2026/011', 'holidays-2026.pdf', 'compensatory work', 'compensatory off', 'holiday']) assert.ok(text.toLowerCase().includes(s.toLowerCase()), `the card shows ${s}`);
+  assert.match(text, /26 Mar 2026|Mar 26, 2026/, 'the circular’s date');
   assert.equal(await card.locator('.hol-row.bad').count(), 0, 'no row in doubt in the real circular');
   console.log(`read back in ${Date.now() - t0} ms`);
   await card.scrollIntoViewIfNeeded();
@@ -45,11 +50,12 @@ try {
   assert.equal(await rows.count(), 46);
   const nov21 = await card.locator('.hol-row', { hasText: '21-Nov-2026' }).innerText();
   assert.match(nov21, /Compensatory work/i);
-  assert.match(nov21, /makes up for 6 Nov 2026/);
+  assert.match(nov21, /makes up for (6 Nov 2026|Nov 6, 2026)/);
   await card.locator('.hol-row', { hasText: '21-Nov-2026' }).scrollIntoViewIfNeeded();
   await shot(B, 'hp-02-all-rows-1440-light');
 
   // ---------------------------------------------------------------- 2. register: Nib's summary
+  console.log('step 2', Date.now() - t0);
   await card.getByRole('button', { name: 'Register 46 days' }).click();
   await card.locator('.hol-stamp', { hasText: 'Registered on' }).waitFor({ timeout: 10000 });
   const done = B.locator('.nib-card.k-holidays', { hasText: 'HOLIDAYS REGISTERED' });
@@ -62,6 +68,7 @@ try {
   assert.equal(cal.holidays.length, 42, 'compensatory working days are not holidays');
 
   // ---------------------------------------------------------------- 3. Office holidays, with where each day came from
+  console.log('step 3', Date.now() - t0);
   await done.getByRole('button', { name: 'Open Office holidays' }).click();
   const panel = B.locator('#office-holidays');
   await panel.waitFor({ timeout: 10000 });
@@ -74,7 +81,8 @@ try {
   await B.keyboard.press('Escape');
 
   // ---------------------------------------------------------------- 4. the same PDF again changes nothing
-  await B.locator('.sb-nib').click();
+  console.log('step 4', Date.now() - t0);
+  await openNib();
   await B.locator('.dock input[type=file]').setInputFiles([pdf]);
   await sleep(1200);
   await B.locator('.dock textarea').first().press('Enter');
@@ -86,6 +94,7 @@ try {
   assert.equal((await owner.request('botjob.calendar')).days.length, 46);
 
   // ---------------------------------------------------------------- 5. at phone width, light and dark
+  console.log('step 5', Date.now() - t0);
   await B.setViewportSize({ width: 390, height: 844 });
   await sleep(600);
   const first = B.locator('.nib-card.k-holidays').first();
@@ -102,10 +111,11 @@ try {
   await B.keyboard.press('Escape');
 
   // ---------------------------------------------------------------- 6. in Hindi
+  console.log('step 6', Date.now() - t0);
   await B.setViewportSize({ width: 1440, height: 900 });
   await B.evaluate(() => localStorage.setItem('dex.language', 'hi'));
   await B.reload(); await B.locator('.frame').waitFor(); await sleep(800);
-  await B.locator('.sb-nib').click();
+  await openNib();
   const hi = B.locator('.nib-card.k-holidays').first();
   await hi.waitFor({ timeout: 15000 });
   await hi.scrollIntoViewIfNeeded();

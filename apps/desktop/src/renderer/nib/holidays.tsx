@@ -138,6 +138,7 @@ export function HolidayCircularCard({ v, onChange, users }: { v: HolidayReadView
   const change = new Map(p.rows.map((x) => [`${x.sl}|${x.date}`, x.change] as const));
   const ordered = [...r.rows].sort((a, b) => Number(b.problems.length > 0) - Number(a.problems.length > 0));
   const shown = all ? ordered : ordered.slice(0, Math.max(6, p.exceptions.length));
+  // new, same or changed per row only when it says something (a revised circular, or some days already there)
   const revision = p.updated + p.removed.length > 0 || (p.unchanged > 0 && p.added > 0);
   const register = async () => {
     setBusy(true);
@@ -158,7 +159,7 @@ export function HolidayCircularCard({ v, onChange, users }: { v: HolidayReadView
       {r.warnings.length > 0 && <ul className="hol-warnings">{r.warnings.map((w, i) => <li key={i}><Icon name="warning" size={12} />{warningWords(w, r.year)}</li>)}</ul>}
       {p.exceptions.length > 0 && <p className="hol-doubt">{p.exceptions.length === 1 ? '1 row is in doubt and will not be registered. Add it by hand once it is checked.' : `${p.exceptions.length} rows are in doubt and will not be registered. Add them by hand once they are checked.`}</p>}
       <ol className="hol-rows" aria-label="Rows read">
-        {shown.map((x, i) => <Row key={`${x.sl}-${x.dateText}-${i}`} r={x} year={r.year} change={x.date ? change.get(`${x.sl}|${x.date}`) ?? null : null} />)}
+        {shown.map((x, i) => <Row key={`${x.sl}-${x.dateText}-${i}`} r={x} year={r.year} change={revision && x.date ? change.get(`${x.sl}|${x.date}`) ?? null : null} />)}
       </ol>
       {ordered.length > shown.length && <button className="btn ghost sm hol-more" onClick={() => setAll(true)}>{`Show all ${ordered.length} rows`}</button>}
       {p.removed.length > 0 && (
