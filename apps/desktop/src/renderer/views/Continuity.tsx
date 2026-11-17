@@ -120,7 +120,7 @@ function BackupsAdmin({ live }: { live: boolean }) {
 
   const last = s.lastRun;
   const failed = !!last && !last.ok && !s.running;
-  const state = s.running ? 'run' : s.warning || failed ? 'warn' : s.lastSuccess ? 'ok' : 'off';
+  const state = s.running ? 'busy' : s.warning || failed ? 'warn' : s.lastSuccess ? 'ok' : 'off';
   const dirtyKeep = keep.keepDaily !== s.config.keepDaily || keep.keepWeekly !== s.config.keepWeekly || keep.keepMonthly !== s.config.keepMonthly;
   const auto = s.auto;
   return (

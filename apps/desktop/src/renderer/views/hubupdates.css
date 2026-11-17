@@ -11,8 +11,11 @@
 .hu-channel { width: 136px; flex: none; }
 .hu-sheet .bk-cell .v.mono { font-family: var(--font-mono); font-size: 14px; }
 
+.hu-sheet .bk-head > div:first-child { flex: 1; min-width: 0; }
+
 @media (max-width: 760px) {
   .bk-head:has(.hu-actions) { flex-wrap: wrap; }
+  .hu-sheet .bk-head > div:first-child { flex-basis: 100%; }
   .hu-actions { justify-content: flex-start; }
   .hu-failed { flex-wrap: wrap; }
   .setting:has(.hu-channel) { flex-wrap: wrap; }

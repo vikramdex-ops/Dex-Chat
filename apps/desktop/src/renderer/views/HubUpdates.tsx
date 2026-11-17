@@ -64,7 +64,7 @@ export function HubUpdatesAdmin({ live }: { live: boolean }) {
 
   const a = v.available;
   const liveNow = v.waiting === 'meeting' || v.waiting === 'call' || v.waiting === 'webinar';
-  const state = v.installing || v.checking ? 'run' : v.failed || (v.waiting && v.waiting !== 'backing-up') ? 'warn' : v.supported ? 'ok' : 'off';
+  const state = v.installing || v.checking ? 'busy' : v.failed || (v.waiting && v.waiting !== 'backing-up') ? 'warn' : v.supported ? 'ok' : 'off';
   const updateNow = async () => {
     if (!a) return;
     if (!(await confirmAction({ title: `Update the hub to ${a.version} now?`, body: 'The hub is offline for about a minute while it installs; everyone reconnects by themselves. It backs up first, and waits for any meeting or call on the hub to end.', confirm: 'Update now' }))) return;
@@ -94,7 +94,7 @@ export function HubUpdatesAdmin({ live }: { live: boolean }) {
             <button className="btn sm" disabled={!live || busy || v.checking || !!v.installing} onClick={() => void act(() => window.dex.request('admin.hubUpdate.get', { check: true }))}>
               <Icon name="refresh" size={14} />Look now
             </button>
-            {v.supported && a && !v.installing && !v.requested && (
+            {v.supported && a && !v.installing && !v.requested && v.failed?.version !== a.version && (
               <button className="btn primary sm" disabled={!live || busy} onClick={() => void updateNow()}><Icon name="download" size={14} />Update now</button>
             )}
           </div>

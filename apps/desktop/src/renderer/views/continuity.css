@@ -6,7 +6,8 @@
 .bk-sheet { position: relative; overflow: hidden; padding-left: 22px; }
 .bk-sheet::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--stroke-strong); }
 .bk-sheet.ok::before { background: var(--accent); }
-.bk-sheet.run::before { background: repeating-linear-gradient(180deg, var(--accent) 0 8px, transparent 8px 14px); }
+/* 'busy', not 'run': the chat's message runs (chat.css .run) are a grid */
+.bk-sheet.busy::before { background: repeating-linear-gradient(180deg, var(--accent) 0 8px, transparent 8px 14px); }
 .bk-sheet.warn::before { background: var(--amber); }
 .bk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .bk-head .eyebrow { margin-bottom: 6px; }
