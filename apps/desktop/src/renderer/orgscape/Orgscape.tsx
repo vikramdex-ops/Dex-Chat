@@ -1053,7 +1053,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                 </div>
                 <dl className="os-co-cells">
                   <div><dt className="tb-k">Held by</dt><dd>{h?.kind === 'person' ? <span translate="no">{users.get(h.userId)?.displayName ?? ''}</span> : h?.kind === 'reserved' ? <span translate="no">{h.label}</span> : h?.kind === 'named' ? <span translate="no">{h.name}</span> : h?.kind === 'hot' ? tr('Hot desk') : tr('Nobody: free')}</dd></div>
-                  {h?.kind === 'named' && <div><dt className="tb-k">Note</dt><dd>On the office drawing. Not joined yet: the seat becomes theirs when they do.</dd></div>}
+                  {h?.kind === 'named' && <div className="seat-named-note"><dt className="tb-k">Note</dt><dd>On the office drawing. Not joined yet: the seat becomes theirs when they do.</dd></div>}
                   {h?.kind === 'person' && q.away && <div><dt className="tb-k">Today</dt><dd>{modeOf(h.userId) === 'home' ? 'Working from home' : modeOf(h.userId) === 'site' ? 'On site' : 'At a client'}</dd></div>}
                   {h?.kind === 'hot' && <div><dt className="tb-k">Today</dt><dd>{q.booked ? <span translate="no">{users.get(q.booked)?.displayName ?? ''}</span> : tr('Not booked')}</dd></div>}
                   {(h?.kind === 'reserved' || h?.kind === 'hot') && h.departmentId && <div><dt className="tb-k">Dept</dt><dd translate="no">{deptName(h.departmentId)}</dd></div>}

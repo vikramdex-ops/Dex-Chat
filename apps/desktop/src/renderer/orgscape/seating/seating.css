@@ -18,7 +18,7 @@
 .seat-tabs button + button { box-shadow: inset 1px 0 0 var(--stroke); }
 .seat-tabs button.on { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
 .seat-tabs button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
-.seat-count { display: inline-grid; place-items: center; min-width: 18px; height: 16px; padding: 0 4px; border-radius: 2px; background: var(--amber); color: var(--amber-ink, #3d2600); font-size: 10.5px; }
+.seat-count { display: inline-grid; place-items: center; min-width: 18px; height: 16px; padding: 0 4px; border-radius: 2px; background: var(--amber); color: #3d2600; font-size: 10.5px; }
 .seat-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 16px; display: grid; align-content: start; gap: 10px; font-size: 13px; }
 .seat-body section { display: grid; gap: 8px; }
 .seat-body h4 { margin: 6px 0 0; }
@@ -153,7 +153,7 @@ html:is([lang='hi'], [lang='ta']) .seat-import th { letter-spacing: 0; text-tran
 @media (max-width: 720px) { .seat-washkey { left: 26px; bottom: 64px; max-height: 30%; } }
 
 /* booking a hot desk ahead: the day, and who has the seat on which days */
-.seat-callout .os-co-cells > .seat-book, .seat-callout .os-co-cells > .seat-bookings { grid-column: span 2; }
+.seat-callout .os-co-cells > .seat-book, .seat-callout .os-co-cells > .seat-bookings, .seat-callout .os-co-cells > .seat-named-note, .seat-callout .os-co-cells > .seat-named-note + div { grid-column: span 2; }
 .seat-book select { width: 100%; min-width: 0; }
 .seat-bookings ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
 .seat-bookings li { display: flex; gap: 8px; min-width: 0; }

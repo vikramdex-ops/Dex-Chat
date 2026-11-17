@@ -572,6 +572,20 @@ export function drawingNameFits(drawing: string, displayName: string): boolean {
 }
 
 /**
+ * How likely a person is the name on the drawing, for a suggestion (0: not at all). Their first name
+ * must be the drawing's, start it, or be one letter away ("Anand" for "Anandh"): a surname that
+ * happens to look like a first name ("Suresh" and "Mukesh") suggests nobody.
+ */
+function drawingSuggestion(drawing: string, p: { displayName: string; account?: string }): number {
+  if (drawingNameFits(drawing, p.displayName)) return Math.max(0.9, nameScore(drawing, p));
+  if (drawingNameFits(p.displayName, drawing)) return 0.7;
+  const a = words(drawing)[0] ?? '', b = words(p.displayName)[0] ?? '';
+  const short = Math.min(a.length, b.length);
+  const near = !!a && !!b && (a === b || (short >= 4 && (a.startsWith(b) || b.startsWith(a) || editDistance(a, b) <= 1)));
+  return near ? Math.max(0.55, nameScore(drawing, p)) : 0;
+}
+
+/**
  * Who takes which named seat from the drawing (docs/SEATING.md, "Names from the drawing"). A person
  * with no seat takes a named seat only when it is certain: of every name on the drawing (`drawing`,
  * taken or not), the longest that fits them is one name, it is still on exactly one seat, and no
@@ -611,8 +625,7 @@ export function drawingClaims(named: Array<{ seatId: string; name: string }>, dr
   for (const n of named) {
     if (took.has(n.seatId)) continue;
     const suggestions = free.filter((p) => !placed.has(p.id))
-      // their name fits the drawing's, or starts it ("Anand" for "Anand Pandey"), or is close to it
-      .map((p) => ({ userId: p.id, score: Math.round((drawingNameFits(n.name, p.displayName) ? Math.max(0.9, nameScore(n.name, p)) : Math.max(drawingNameFits(p.displayName, n.name) ? 0.7 : 0, nameScore(n.name, p))) * 100) / 100 }))
+      .map((p) => ({ userId: p.id, score: Math.round(drawingSuggestion(n.name, p) * 100) / 100 }))
       .filter((x) => x.score >= 0.45).sort((a, b) => b.score - a.score).slice(0, 4);
     if (suggestions.length) waiting.push({ seatId: n.seatId, name: n.name, suggestions });
   }
