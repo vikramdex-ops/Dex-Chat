@@ -865,6 +865,8 @@ await part('nib', async () => {
     managers: [id('vikram'), id('meera'), id('arjun')],
     projects: [{ code: 'P-12', name: 'Hydrotreater revamp, Jamnagar' }, { code: 'P-14', name: 'Pipe rack and platforms' }, { code: 'J-0412', name: 'Pump house upgrade' }],
     workdays: [1, 2, 3, 4, 5, 6],
+    // the walk below is timed to these (a new hub's defaults are now register 18:30, follow-up 19:00)
+    digestAt: '19:00', followUpAt: '21:00',
   };
   await owner.request('admin.nib.set' as never, nibCfg as never);
   const V = (await appOf('vikram', 'Vikram Shah')).page;

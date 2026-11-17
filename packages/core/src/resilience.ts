@@ -3,6 +3,7 @@
 // each person can add to Outlook or a phone. The types extend the hub protocol (protocol.ts) by
 // declaration merging, so the request and event maps stay one map.
 import type { PublicUser } from './protocol.ts';
+import type { BackupAuto } from './setupcheck.ts';
 
 // ---------------------------------------------------------------- backups
 export interface BackupConfig {
@@ -74,6 +75,11 @@ export interface BackupStatus {
   /** Everything in the backup folder: the copies' databases and the shared files. */
   folderBytes: number | null;
   history: BackupRun[];
+  /**
+   * How the hub chose (or could not choose) a backup folder on its first start, while no folder
+   * is set by an administrator; null once an administrator has chosen.
+   */
+  auto: BackupAuto | null;
 }
 
 // ---------------------------------------------------------------- offboarding

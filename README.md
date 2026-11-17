@@ -86,7 +86,7 @@ Step by step, every manual setting from the server to Dexterity Meet links: [`do
 1. **Hub PC:** download and run [`DexterityConnectHub-Setup.exe`](https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe) and click **Yes** when Windows asks. It checks the PC (64-bit Windows 10/11, free space, ports 47900/47901), installs the hub as a service (delayed automatic start, restarts after a failure), opens its firewall ports, keeps the PC from sleeping while plugged in, starts the hub and waits until it answers. Programs go to `C:\Program Files\Dexterity Connect Hub`, data to `C:\ProgramData\Dexterity Connect Hub\hub-data` (or a folder you choose); running it again repairs or upgrades, and it upgrades a hub installed from the zip where it is. The zip with `Install-Hub.cmd` still works and does the same. Log: `C:\ProgramData\Dexterity Connect Hub\setup.log`.
 2. **Your PC:** install Dexterity Connect, open it, and click **Request access**. As the first person, you become the owner.
 3. **Everyone else:** they install and open the app, then approve them in **Control room → Approvals** (click your tile at the top right).
-4. **Backups:** choose a backup folder on a second disk or a network share in **Control room → Backups & leavers** (see [`docs/BACKUP.md`](docs/BACKUP.md)).
+4. **Backups:** on its first start the hub chooses a backup folder on a second internal disk by itself when one is safely there; otherwise choose one on a second disk or a network share in **Control room → Backups & leavers** (see [`docs/BACKUP.md`](docs/BACKUP.md)). The **Setup check** at the top of the Control room shows what is still to do.
 
 ## Development
 

@@ -93,9 +93,28 @@ example an IT mailbox), not a personal one, so handing over means sharing that l
 - the GitHub accounts that hold the source and publish the releases and this landing page;
 - the hub PC's Windows login, and the backup share's permissions.
 
+## The office's defaults, set by the hub on its first start
+
+A new hub sets these itself, once (`apps/hub/src/firstrun.ts`); nobody has to:
+
+- **Nib & day sheets**: start of day 09:45, wrap-up 18:00, register 18:30, follow-up 19:00,
+  Monday to Saturday, day sheets private, no job codes, nobody receiving the register yet;
+- **Notice desks**: Admin, HR, IT and Management, with no issuers (administrators issue for them);
+- **Policies**: their defaults apply without anyone opening Policies; the audit log is always on;
+- **Backups**: a folder on a second disk of the hub PC, made private, at 02:00, with a first backup
+  checked at once, only when such a disk is there (section 4).
+
+Each is applied once and never again, so whatever an administrator changes stays changed, and a hub
+upgraded from an older version keeps its settings.
+
 ## 4. Backups (5 minutes, do this on day one)
 
-**Control room → 16 Backups & leavers → Backups** ([BACKUP.md](BACKUP.md)):
+**Control room → 16 Backups & leavers → Backups** ([BACKUP.md](BACKUP.md)).
+
+If the hub PC has a second internal disk with room, the hub has already chosen
+`<drive>:\DexConnectBackup`, made it private and backed up to it: the sheet says **Chosen by the hub
+on its first start**, and steps 1 to 3 are done. If it says **Backups need a second disk or a network
+share**, the hub found only one disk (or only another part of the same disk) and chose nothing:
 
 1. Set the **backup folder** on a different disk or a network share (`\\NAS\backups\dexconnect`),
    never the hub's own disk. For a share, give the hub PC's computer account
@@ -116,7 +135,7 @@ All of these are in the **Control room**, reached from your tile at the top righ
 | **03 People & roles → IT desk** | The IT people who get Help me requests and run support sessions. |
 | **Notice desks** | The issuing desks (Admin, HR, IT, Management) and who issues for each. |
 | **13 Bots & tools → Office holidays** | This year's holidays. Nib, scheduled bot jobs and hot-desk booking skip them. |
-| **14 Nib & day sheets** | 01 the activity givers (**Add the department heads** fills it); 02 who receives the management register; 03 times and workdays (defaults 09:45, 18:00, 19:00, 21:00, Mon–Sat); 04 the job codes, one per line (`P-12 Refinery revamp`), and whether day sheets are private (default) or open. Then **Send me a register now** to see it before the first evening. |
+| **14 Nib & day sheets** | 01 the activity givers (**Add the department heads** fills it); 02 who receives the management register; 03 times and workdays (defaults 09:45, 18:00, 18:30, 19:00, Mon–Sat); 04 the job codes, one per line (`P-12 Refinery revamp`), and whether day sheets are private (default) or open. Then **Send me a register now** to see it before the first evening. |
 | **08 Policies** | Read the defaults once: the edit window, upload limit, call recording, meetings, PC-to-PC fallback. |
 | **05 Guests**, **06 Compliance** | Who may invite guests; retention and legal holds, if the office has rules for them. |
 
@@ -173,7 +192,27 @@ No administrator is needed:
   the phone; it installs the Android app and signs in.
 - **Laptop:** **Add my laptop** shows a code to paste into the app on the laptop.
 
-## 9. Check it on real hardware before telling everyone
+## 9. The setup check
+
+At the top of the **Control room**, the **Setup check** shows, live from the hub, what it can check
+about itself, each as **Pass**, **Failed** or **To do** with the one thing to do:
+
+- the hub service is running, and for how long;
+- the database: SQLite's quick check, and every table and column this version needs;
+- free space on the hub's disk;
+- backups: the destination, the nightly schedule, the last good backup with its size and its check;
+- the seating plan, the notice desks, Nib's times and private day sheets, who receives the register;
+- the audit log;
+- working from outside (the gateway connected and pinned), and the relay for calls.
+
+Things only a person can check are listed **By hand**, with what to do, and are never shown as
+passed: two PCs messaging, a call between two PCs, a phone on mobile data, a meeting link with a
+guest. **Copy report** and **Download** give the whole check as text, to keep or send.
+
+Other parts of the hub add their own checks with `hub.health.register(id, fn)`
+(`apps/hub/src/setupcheck.ts`); they appear on the same sheet.
+
+## 10. Check it on real hardware before telling everyone
 
 These were tested automatically on the development machine but have not yet run for real:
 
@@ -187,9 +226,11 @@ These were tested automatically on the development machine but have not yet run 
 - [ ] Share paths: a link on a mapped drive opens for a colleague who maps that share to a
       different letter.
 - [ ] One nightly backup on the chosen disk or share, and one restore on a spare PC.
+- [ ] The hub choosing its backup disk on the office PC: the PowerShell disk map, `icacls` on the
+      folder, and the amber "needs a second disk" sheet on a one-disk PC.
 - [ ] An update: publish a newer build and see an installed app update itself.
 
-## 10. People to ask
+## 11. People to ask
 
 - **The user guide:** `docs/Dexterity-Connect-User-Guide.pdf` (Rev 2) says *Approved by: Pending
   approval*. Have the person who signs off documents read it and give their name for that line.

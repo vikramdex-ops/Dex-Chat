@@ -119,6 +119,11 @@ sections. Every change is saved on the server for the whole office, not on your 
 
 **C1. Backups (do this first).** Go to **16 Backups & leavers → Backups**.
 
+If the server PC has a second internal disk with room, the hub has already chosen
+`<drive>:\DexConnectBackup` on it, made it private to administrators, set 02:00 and made a first
+backup: the sheet says **Chosen by the hub on its first start**. Check the last good backup is there
+and go on to C2. If it says **Backups need a second disk or a network share**, do the steps below.
+
 1. **Backup folder**: enter a folder on a second disk of the server PC (`E:\DexConnectBackup`) or a network share
    (`\\NAS\backups\dexconnect`). Never use the server's own C: drive. Click **Save folder**; the hub checks it can
    write there and tells you if it cannot.
@@ -162,8 +167,8 @@ HR). A desk with no issuers is issued for by administrators only.
 3. **03 Times**: leave the defaults or change them:
    - start of day 09:45;
    - wrap-up 18:00;
-   - register 19:00;
-   - follow-up 21:00;
+   - register 18:30;
+   - follow-up 19:00;
    - workdays Mon–Sat.
 4. **04 Jobs and privacy**: enter **Job codes**, one per line (`P-12 Hydrotreater revamp`). Leave day sheets
    **Private** unless management wants them open to everyone.
@@ -366,6 +371,11 @@ Owners and admins can both configure everything. Only owners choose who the owne
 ---
 
 ## Part G. Final checks
+
+Open **Control room**: the **Setup check** at the top checks the hub, the database, storage, backups,
+seating, notice desks, Nib, the audit log, outside access and the call relay by itself. It should
+show **0 Failed** and nothing **To do** that you have not decided to leave. **Copy report** keeps it.
+The ones below that it lists **By hand** need a person:
 
 - [ ] `services.msc` on the server shows **Dexterity Connect Hub: Running**.
 - [ ] **Control room → 16 Backups & leavers** shows a good backup from today.

@@ -38,7 +38,7 @@ export interface NibConfig {
 
 export const NIB_DEFAULTS: NibConfig = {
   enabled: true, givers: [], managers: [], exempt: null,
-  startPromptAt: '09:45', wrapAt: '18:00', digestAt: '19:00', followUpAt: '21:00',
+  startPromptAt: '09:45', wrapAt: '18:00', digestAt: '18:30', followUpAt: '19:00',
   nudgeLimit: 3, workdays: [1, 2, 3, 4, 5, 6], projects: [], openSheets: false,
 };
 

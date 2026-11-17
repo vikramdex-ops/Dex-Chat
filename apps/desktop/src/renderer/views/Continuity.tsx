@@ -2,11 +2,12 @@
 // how the last ones went, "Back up now") and offboarding someone who leaves the office (what
 // they look after, who takes over, people who left and giving access back).
 // See docs/BACKUP.md and apps/hub/src/offboard.ts.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BackupRun, BackupStatus, Departure, MeetingHandover, OffboardPreview, PublicUser, Session } from '@dex/core';
 import { Avatar, Icon, Segmented, relativeTime, useToast } from '../ui.tsx';
 import { tr } from '../i18n/index.ts';
 import './continuity.css';
+import './setupcheck.css';
 import { formatDateTime, formatTime } from '../time.ts';
 
 /** Audit log wording for these actions (Control room ▸ Audit log). */
@@ -90,9 +91,16 @@ function BackupsAdmin({ live }: { live: boolean }) {
   const [time, setTime] = useState('02:00');
   const [keep, setKeep] = useState({ keepDaily: 14, keepWeekly: 8, keepMonthly: 12 });
   const [saving, setSaving] = useState(false);
+  const shown = useRef<BackupStatus['config'] | null>(null);
   const adopt = useCallback((x: BackupStatus, fresh = false) => {
     setS(x);
-    if (fresh) { setFolder(x.config.folder ?? ''); setTime(x.config.time); setKeep({ keepDaily: x.config.keepDaily, keepWeekly: x.config.keepWeekly, keepMonthly: x.config.keepMonthly }); }
+    const before = shown.current;
+    shown.current = x.config;
+    if (fresh) { setFolder(x.config.folder ?? ''); setTime(x.config.time); setKeep({ keepDaily: x.config.keepDaily, keepWeekly: x.config.keepWeekly, keepMonthly: x.config.keepMonthly }); return; }
+    // changed elsewhere (another administrator, or the hub choosing a folder on its first start):
+    // follow it, unless this administrator is in the middle of typing something else
+    if (before && before.folder !== x.config.folder) setFolder((cur) => (cur.trim() === (before.folder ?? '') ? x.config.folder ?? '' : cur));
+    if (before && before.time !== x.config.time) setTime(x.config.time);
   }, []);
   useEffect(() => {
     if (!live) return;
@@ -112,8 +120,25 @@ function BackupsAdmin({ live }: { live: boolean }) {
   const failed = !!last && !last.ok && !s.running;
   const state = s.running ? 'run' : s.warning || failed ? 'warn' : s.lastSuccess ? 'ok' : 'off';
   const dirtyKeep = keep.keepDaily !== s.config.keepDaily || keep.keepWeekly !== s.config.keepWeekly || keep.keepMonthly !== s.config.keepMonthly;
+  const auto = s.auto;
   return (
     <>
+      {auto && auto.state !== 'picked' && (
+        <section className="card bk-auto" aria-labelledby="bk-auto-title">
+          <div className="eyebrow">Backup folder</div>
+          <div className="bk-auto-title" id="bk-auto-title"><Icon name="warning" size={18} />{auto.state === 'needs-disk' ? 'Backups need a second disk or a network share' : 'The hub did not choose a backup folder'}</div>
+          <p>{auto.message}</p>
+          {auto.action && <div className="sc-fix"><Icon name="forward" size={13} /><span>{auto.action}</span></div>}
+        </section>
+      )}
+      {auto && auto.state === 'picked' && (
+        <section className="card bk-auto picked" aria-labelledby="bk-auto-title">
+          <div className="eyebrow">Backup folder</div>
+          <div className="bk-auto-title" id="bk-auto-title"><Icon name="check" size={18} />Chosen by the hub on its first start</div>
+          <p>{auto.message}</p>
+          {auto.first && <p className="mono">{auto.first.ok ? (auto.first.verified ? `First backup ${bytes(auto.first.bytes)}, checked` : `First backup ${bytes(auto.first.bytes)}`) : `The first backup did not work: ${auto.first.error ?? ''}`}</p>}
+        </section>
+      )}
       <section className={`card bk-sheet ${state}`} aria-label="Backup status">
         <div className="bk-head">
           <div>

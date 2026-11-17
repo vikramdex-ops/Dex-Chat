@@ -169,6 +169,10 @@ export class Nib {
     this.cfgCache = cfg;
     return cfg;
   }
+  /** Has an administrator (or the first start) saved a configuration? */
+  hasSavedConfig(): boolean { return this.d.store.meta('nib_config', () => '') !== ''; }
+  /** The first start's defaults (firstrun.ts): written once, so later changes to NIB_DEFAULTS do not move an office's times. */
+  seedConfig(cfg: NibConfig): void { this.setConfig(cfg); }
   private setConfig(cfg: NibConfig): void {
     this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('nib_config', JSON.stringify(cfg));
     this.cfgCache = cfg;
