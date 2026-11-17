@@ -12,10 +12,18 @@
      upgraded in place by the setup without a second service or a new data folder, then uninstalled.
   3. The zip's own Install-Hub.ps1 (what Install-Hub.cmd runs) from another folder: it finds the
      data the uninstalled hub kept, repairs, and removes.
+  4. With -Next and -Broken (two test builds of the setup, one and two versions later; the broken
+     one's hub program cannot start): the hub updates itself the way it does on its own (a
+     scheduled task as SYSTEM running the setup with /S /SELFUPDATE) to -Next, and comes back
+     healthy as that version; then the update to -Broken goes back to -Next by itself.
+
+    pwsh apps/hub/installer/smoke-test.ps1 -Setup ... -Zip ... -Next .\DexterityConnectHub-Setup-0.1.43.exe -Broken .\DexterityConnectHub-Setup-0.1.44.exe
 #>
 param(
   [Parameter(Mandatory)] [string] $Setup,
   [Parameter(Mandatory)] [string] $Zip,
+  [string] $Next = '',
+  [string] $Broken = '',
   [string] $Work = (Join-Path $env:RUNNER_TEMP 'hub-smoke')
 )
 $ErrorActionPreference = 'Stop'
@@ -29,6 +37,9 @@ $UninstKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Dexterit
 $PS51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $Setup = (Resolve-Path $Setup).Path
 $Zip = (Resolve-Path $Zip).Path
+if ($Next) { $Next = (Resolve-Path $Next).Path }
+if ($Broken) { $Broken = (Resolve-Path $Broken).Path }
+$TaskName = 'Dexterity Connect Hub update'
 
 function Step($t) { Write-Host ''; Write-Host "== $t" -ForegroundColor Cyan }
 function Check([bool] $ok, [string] $what) {
@@ -95,6 +106,27 @@ function Assert-Removed([string] $dir) {
          @(Get-NetFirewallRule -DisplayName 'Dexterity Connect Hub (connections)' -ErrorAction SilentlyContinue).Count -eq 0) 'no hub firewall rules left'
   Check ($null -eq (Get-Health)) 'nothing answers on 47900'
   Check (-not (Test-Path -LiteralPath (Join-Path $dir 'DexterityConnectHub.exe'))) "the programs are gone from $dir"
+}
+
+function Get-SetupVersion([string] $file) { return ([IO.Path]::GetFileNameWithoutExtension($file) -replace '^DexterityConnectHub-Setup-', '') }
+
+# Runs a setup the way the hub's own update does (DexterityConnectHub.exe --apply-update: a one-off
+# scheduled task as SYSTEM), then waits for what the setup reports in the data folder.
+function Invoke-SelfUpdate([string] $setupFile, [string] $data, [int] $seconds) {
+  $result = Join-Path $data 'hub-update\result.json'
+  Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue
+  & (Join-Path $ProgramDir 'DexterityConnectHub.exe') --apply-update $setupFile
+  Check ($LASTEXITCODE -eq 0) "the hub started $(Split-Path -Leaf $setupFile) through Task Scheduler"
+  & schtasks.exe /Query /TN $TaskName | Out-Null
+  Check ($LASTEXITCODE -eq 0) "the task '$TaskName' is registered"
+  $deadline = (Get-Date).AddSeconds($seconds)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Path -LiteralPath $result) {
+      try { return (Get-Content -Raw -LiteralPath $result | ConvertFrom-Json) } catch { }
+    }
+    Start-Sleep -Seconds 3
+  }
+  return $null
 }
 
 function Show-Logs {
@@ -194,8 +226,57 @@ try {
   Check ((Get-HubServices).Count -eq 0) 'no hub service left'
   Check (Test-Path -LiteralPath "$old\hub-data\smoke-marker.txt") 'the data is kept'
 
+  # ---------------------------------------------------------------- 4. the hub updates itself
+  if ($Next -and $Broken) {
+    $vNext = Get-SetupVersion $Next
+    $vBroken = Get-SetupVersion $Broken
+    Step "The hub updates itself: this build, then $vNext the way the hub runs it (scheduled task, /SELFUPDATE)"
+    $code = Invoke-Setup @('/S', '/NOPOWER')
+    Check ($code -eq 0) "setup exit code 0 (got $code)"
+    $u1 = Assert-Hub $ProgramDir $DefaultData
+    $v1 = [string] $u1.hub.version
+    $exeVersion = (& (Join-Path $ProgramDir 'DexterityConnectHub.exe') --version | Select-Object -First 1)
+    Check ($exeVersion -eq $v1) "DexterityConnectHub.exe --version and /health agree ($exeVersion, $v1)"
+    Check ((Get-ItemProperty $UninstKey).DisplayVersion -eq $v1) "Apps & features shows $v1"
+    Check ($v1 -ne $vNext) "the test build is another version ($v1 then $vNext)"
+    Set-Content -LiteralPath (Join-Path $DefaultData 'smoke-marker.txt') 'keep me'
+    $r = Invoke-SelfUpdate $Next $DefaultData 600
+    Check ($null -ne $r) 'the setup reported what it did (hub-update\result.json)'
+    Check ($r.code -eq 0) "the update worked (code $($r.code): $($r.message))"
+    $u2 = Assert-Hub $ProgramDir $DefaultData
+    Check ([string] $u2.hub.version -eq $vNext) "the hub answers as $vNext ($($u2.hub.version))"
+    Check ($u2.fingerprint -eq $u1.fingerprint) 'the same hub (certificate fingerprint unchanged)'
+    Check (Test-Path -LiteralPath (Join-Path $DefaultData 'smoke-marker.txt')) 'the data was not touched'
+    Check ((Get-ItemProperty $UninstKey).DisplayVersion -eq $vNext) "Apps & features shows $vNext"
+    Check (Test-Path -LiteralPath (Join-Path $ProgramDir 'previous\DexterityConnectHub.exe')) 'the version before is kept in previous\'
+    Check ((Get-Content -LiteralPath (Join-Path $ProgramDir 'previous\PREVIOUS-VERSION.txt') | Select-Object -First 1) -eq $v1) "previous\ is $v1"
+
+    Step "A broken update ($($vBroken): its hub program cannot start) goes back to $($vNext) by itself"
+    $r = Invoke-SelfUpdate $Broken $DefaultData 900
+    Check ($null -ne $r) 'the setup reported what it did'
+    Check ($r.code -eq 3) "it went back (code $($r.code): $($r.message))"
+    Check ($r.previous -eq $vNext -and $r.version -eq $vBroken) "from $vBroken to $vNext ($($r.version) -> $($r.previous))"
+    $u3 = Assert-Hub $ProgramDir $DefaultData
+    Check ([string] $u3.hub.version -eq $vNext) "the hub runs $vNext again ($($u3.hub.version))"
+    Check ($u3.fingerprint -eq $u1.fingerprint) 'the same hub (certificate fingerprint unchanged)'
+    Check ((Get-Item -LiteralPath (Join-Path $ProgramDir 'DexterityConnectHub.exe')).Length -gt 1MB) 'the real hub program is back'
+    Check ((Get-ItemProperty $UninstKey).DisplayVersion -eq $vNext) "Apps & features shows $vNext again"
+    Check (Test-Path -LiteralPath (Join-Path $DefaultData 'smoke-marker.txt')) 'the data was not touched'
+    Check ((Get-Content -Raw (Join-Path $env:ProgramData 'Dexterity Connect Hub\setup.log')) -match 'Going back to') 'setup.log says it went back'
+
+    Step 'Uninstall removes the kept copy too'
+    $code = Invoke-Uninstall $ProgramDir @('/REMOVEDATA')
+    Check ($code -eq 0) "uninstall exit code 0 (got $code)"
+    Assert-Removed $ProgramDir
+    Check (-not (Test-Path -LiteralPath (Join-Path $ProgramDir 'previous'))) 'no previous\ left'
+    & schtasks.exe /Delete /TN $TaskName /F | Out-Null
+  } else {
+    Write-Host ''
+    Write-Host 'Skipped the self-update test (no -Next and -Broken builds given).' -ForegroundColor Yellow
+  }
+
   Write-Host ''
-  Write-Host 'The hub setup works: install, repair, uninstall, reinstall, upgrade from the zip, and the zip fallback.' -ForegroundColor Green
+  Write-Host 'The hub setup works: install, repair, uninstall, reinstall, upgrade from the zip, the zip fallback, and the hub updating itself with a rollback.' -ForegroundColor Green
 } catch {
   Write-Host $_ -ForegroundColor Red
   Show-Logs

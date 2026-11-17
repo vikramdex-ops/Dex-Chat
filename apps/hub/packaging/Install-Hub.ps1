@@ -13,12 +13,24 @@
     Install-Hub.ps1 -StopOnly               only stop the hub service (before files are replaced)
     Install-Hub.ps1 -Uninstall [-RemoveData]  remove the service and firewall rules; the data is
                                             kept unless -RemoveData
+    -SelfUpdate                             the hub updating itself (DexterityConnectHub-Setup.exe
+                                            /S /SELFUPDATE, started by the hub; src/hub-update.ts):
+                                            with -StopOnly it also keeps a copy of the running
+                                            version's programs in <install>\previous; with an
+                                            install, a new version that does not start or answer
+                                            /health with its own version is replaced by that copy
+                                            again (a rollback), and the old hub is started. What
+                                            happened goes to <data>\hub-update\result.json, which
+                                            the hub reads when it is running again.
+    -SelfUpdate -Rollback                   only put the kept copy back and start it (the setup
+                                            runs this if it could not finish copying the programs)
 
   Running it again is safe: it repairs and upgrades without a second service, without duplicate
   firewall rules and without touching the data. Everything it does goes to
   %ProgramData%\Dexterity Connect Hub\setup.log.
 
-  Exit codes: 0 done, 1 failed, 2 refused (this PC does not meet a requirement; nothing changed).
+  Exit codes: 0 done, 1 failed, 2 refused (this PC does not meet a requirement; nothing changed),
+  3 a self-update did not work and the version before is running again.
   The last message is also written to -ResultFile when given (the installer shows it).
   Keep this file ASCII: Windows PowerShell 5.1 reads scripts without a BOM as ANSI.
 #>
@@ -32,6 +44,8 @@ param(
   [switch] $StopOnly,
   [switch] $Uninstall,
   [switch] $RemoveData,
+  [switch] $SelfUpdate,
+  [switch] $Rollback,
   [int] $HealthTimeoutSec = 150,
   [string] $ResultFile = '',
   [string] $LogFile = ''
@@ -52,6 +66,14 @@ $HubExeName = 'DexterityConnectHub.exe'
 $WorkerName = 'mediasoup-worker.exe'
 $ProgramDataDir = Join-Path $env:ProgramData $ServiceName
 $Rules = @('Dexterity Connect Hub (connections)', 'Dexterity Connect Hub (discovery)', 'Dexterity Connect Hub (large Rooms)')
+# self-update: the running version's programs, kept before they are replaced, and its version
+$PreviousDir = 'previous'
+$PreviousVersionFile = 'PREVIOUS-VERSION.txt'
+$UninstKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\DexterityConnectHub'
+$script:RollbackArmed = $false
+$script:PrevVersion = ''
+$mode = 'install'
+$data = ''
 
 if (-not $InstallDir) { $InstallDir = $PSScriptRoot }
 # "D:\Hub\." (from Install-Hub.cmd) becomes "D:\Hub": firewall rules must name the exact program path
@@ -86,6 +108,20 @@ function Log([string] $text, [string] $color = '') {
 }
 
 function Finish([int] $code, [string] $message) {
+  # a self-update whose new version did not work: put the version before back, and start it
+  if ($script:RollbackArmed -and $code -ne 0) {
+    $script:RollbackArmed = $false
+    $back = $false
+    try { $back = Restore-PreviousVersion } catch { Log ("Going back did not work: {0}" -f $_.Exception.Message) 'Red' }
+    $was = if ($script:PrevVersion) { $script:PrevVersion } else { 'the version before' }
+    if ($back) {
+      $code = 3
+      $message = "The update to $Version did not work, so the hub went back to $was and is running. What went wrong: $message"
+    } else {
+      $code = 1
+      $message = "The update to $Version did not work, and going back to $was did not work either: $message The programs of $was are in $(Join-Path $InstallDir $PreviousDir); run the setup of $was again, or copy them back and start the service."
+    }
+  }
   $color = if ($code -eq 0) { 'Green' } else { 'Red' }
   Log '' ; Log $message $color
   if ($code -ne 0) { Log "Setup log: $LogFile" }
@@ -95,8 +131,25 @@ function Finish([int] $code, [string] $message) {
     # UTF-16 without a byte-order mark: the installer reads it with FileReadUTF16LE
     try { [IO.File]::WriteAllText($ResultFile, $text, (New-Object Text.UnicodeEncoding $false, $false)) } catch { }
   }
+  Write-UpdateResult $code $message
   Log "-- finished with exit code $code"
   exit $code
+}
+
+# What a self-update did, for the hub to read when it runs again (src/hub-update.ts). A check or a
+# stop that went well is not an outcome yet, so nothing is written for those.
+function Write-UpdateResult([int] $code, [string] $message) {
+  if (-not $SelfUpdate) { return }
+  if ($code -eq 0 -and $mode -ne 'install') { return }
+  try {
+    $dir = $data
+    if (-not $dir) { $dir = Read-RegistryDataDir }
+    if (-not $dir) { return }
+    $folder = Join-Path $dir 'hub-update'
+    if (-not (Test-Path -LiteralPath $folder)) { New-Item -ItemType Directory -Force -Path $folder | Out-Null }
+    $result = [ordered]@{ mode = $mode; code = $code; version = $Version; previous = $script:PrevVersion; message = $message; log = $LogFile; at = (Get-Date).ToUniversalTime().ToString('o') }
+    [IO.File]::WriteAllText((Join-Path $folder 'result.json'), ($result | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+  } catch { Log ("Could not write the update result: {0}" -f $_.Exception.Message) 'Yellow' }
 }
 
 # Runs a program, logs what it printed, and returns its exit code. Native programs that write to
@@ -331,6 +384,59 @@ function Write-HubLogTail([string] $installDir) {
   }
 }
 
+# /health until it answers, or $null after $seconds
+function Wait-Healthy([int] $seconds) {
+  $deadline = (Get-Date).AddSeconds($seconds)
+  $script:LastHealthError = $null
+  while ((Get-Date) -lt $deadline) {
+    $h = Get-Health
+    if ($h) { return $h }
+    $svc = Get-HubService
+    if (-not $svc -or $svc.Status -ne 'Running') { Start-Sleep -Seconds 2 } else { Start-Sleep -Seconds 1 }
+  }
+  return $null
+}
+
+# ------------------------------------------------------------------ self-update: the version before
+# Before a self-update replaces the programs: a copy of every file in the program folder (the folder
+# is flat; hub-data or logs folders beside the programs, from the old zip layout, are not copied)
+# and the installed version, so a new version that does not work can be replaced by this one.
+function Save-PreviousVersion {
+  $prev = Join-Path $InstallDir $PreviousDir
+  if (-not (Test-Path -LiteralPath (Join-Path $InstallDir $HubExeName))) { throw "$HubExeName is not in $InstallDir, so there is nothing to keep." }
+  if (Test-Path -LiteralPath $prev) { Remove-Item -LiteralPath $prev -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $prev | Out-Null
+  $files = @(Get-ChildItem -LiteralPath $InstallDir -File)
+  foreach ($f in $files) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $prev $f.Name) -Force }
+  $script:PrevVersion = ''
+  try { $script:PrevVersion = [string] (Get-ItemProperty -Path $UninstKey -Name DisplayVersion -ErrorAction Stop).DisplayVersion } catch { }
+  Set-Content -LiteralPath (Join-Path $prev $PreviousVersionFile) -Encoding ASCII -Value $script:PrevVersion
+  Log ("Kept a copy of the running version {0} ({1} files) in {2}" -f $script:PrevVersion, $files.Count, $prev)
+}
+
+# Puts the kept programs back and starts them; true when the hub answers /health again.
+function Restore-PreviousVersion {
+  $prev = Join-Path $InstallDir $PreviousDir
+  Log ''
+  Log "The new version did not work. Going back to $($script:PrevVersion) from $prev ..." 'Yellow'
+  Write-HubLogTail $InstallDir
+  Stop-Hub @($InstallDir)
+  $keep = @(Get-ChildItem -LiteralPath $prev -File | ForEach-Object { $_.Name } | Where-Object { $_ -ne $PreviousVersionFile })
+  if (-not ($keep -contains $HubExeName)) { Log "$prev has no $HubExeName." 'Red'; return $false }
+  foreach ($f in @(Get-ChildItem -LiteralPath $InstallDir -File)) {
+    if (-not ($keep -contains $f.Name)) { Remove-Item -LiteralPath $f.FullName -Force; Log "Removed $($f.Name) (the version before did not have it)" }
+  }
+  foreach ($name in $keep) { Copy-Item -LiteralPath (Join-Path $prev $name) -Destination (Join-Path $InstallDir $name) -Force }
+  Log "Put back the $($keep.Count) files of $($script:PrevVersion)."
+  if ($script:PrevVersion) { try { Set-ItemProperty -Path $UninstKey -Name DisplayVersion -Value $script:PrevVersion } catch { } }
+  $null = Invoke-Native 'sc.exe' @('start', $ServiceId)
+  if (-not (Wait-ServiceRunning 60)) { Write-HubLogTail $InstallDir; Log 'The version before did not start either.' 'Red'; return $false }
+  $h = Wait-Healthy $HealthTimeoutSec
+  if (-not $h) { Write-HubLogTail $InstallDir; Log "The version before did not answer at https://127.0.0.1:$HubPort/health either." 'Red'; return $false }
+  Log ("Health: ok again. Hub version {0}, fingerprint {1}." -f $h.hub.version, $h.fingerprint) 'Green'
+  return $true
+}
+
 # ------------------------------------------------------------------ firewall
 function Remove-HubFirewallRules {
   foreach ($name in $Rules) {
@@ -365,8 +471,8 @@ trap {
   Finish 1 "Setup did not finish: $($_.Exception.Message)"
 }
 Initialize-Log
-$mode = if ($Uninstall) { 'uninstall' } elseif ($CheckOnly) { 'check' } elseif ($StopOnly) { 'stop' } else { 'install' }
-Log "== Dexterity Connect Hub setup ($mode)$(if ($Version) { " $Version" })"
+$mode = if ($Uninstall) { 'uninstall' } elseif ($CheckOnly) { 'check' } elseif ($StopOnly) { 'stop' } elseif ($Rollback) { 'rollback' } else { 'install' }
+Log "== Dexterity Connect Hub setup ($mode)$(if ($Version) { " $Version" })$(if ($SelfUpdate) { ', started by the hub to update itself' })"
 Log "Program folder: $InstallDir"
 
 Assert-Admin
@@ -430,7 +536,38 @@ if ($CheckOnly) {
 }
 if ($StopOnly) {
   Stop-Hub $dirs
+  if ($SelfUpdate) {
+    try { Save-PreviousVersion } catch {
+      # without the copy a failed update could not go back: nothing is replaced, the hub runs on
+      Log ("Could not keep a copy of the running version: {0}" -f $_.Exception.Message) 'Red'
+      $null = Invoke-Native 'sc.exe' @('start', $ServiceId)
+      Finish 1 "The update did not start: a copy of the running version could not be kept ($($_.Exception.Message)). Nothing was changed; the hub is running as before."
+    }
+  }
   Finish 0 'The hub is stopped.'
+}
+
+if ($Rollback) {
+  if (-not $SelfUpdate) { Finish 2 '-Rollback goes with -SelfUpdate.' }
+  $prev = Join-Path $InstallDir $PreviousDir
+  try { $script:PrevVersion = ([string] (Get-Content -LiteralPath (Join-Path $prev $PreviousVersionFile) -ErrorAction Stop | Select-Object -First 1)).Trim() } catch { }
+  $was = if ($script:PrevVersion) { $script:PrevVersion } else { 'the version before' }
+  $back = $false
+  try { $back = Restore-PreviousVersion } catch { Log ("Going back did not work: {0}" -f $_.Exception.Message) 'Red' }
+  if ($back) { Finish 3 "The update to $Version could not replace the hub's programs, so the hub went back to $was and is running." }
+  Finish 1 "The update to $Version could not replace the hub's programs, and going back to $was did not work either. The programs of $was are in $prev; run the setup of $was again."
+}
+
+if ($SelfUpdate) {
+  $prev = Join-Path $InstallDir $PreviousDir
+  if (Test-Path -LiteralPath (Join-Path $prev $HubExeName)) {
+    $script:PrevVersion = ''
+    try { $script:PrevVersion = ([string] (Get-Content -LiteralPath (Join-Path $prev $PreviousVersionFile) -ErrorAction Stop | Select-Object -First 1)).Trim() } catch { }
+    $script:RollbackArmed = $true
+    Log "Self-update from $($script:PrevVersion) to $Version. If $Version does not answer, the programs in $prev are put back."
+  } else {
+    Log "Warning: there is no copy of the version before in $prev, so a failed update cannot go back." 'Yellow'
+  }
 }
 
 foreach ($f in @($hubExe, $wrapper, (Join-Path $InstallDir 'DexterityConnectHubService.xml'))) {
@@ -526,19 +663,17 @@ try {
     Write-HubLogTail $InstallDir
     Finish 1 "The hub service did not start. The hub's own logs are in $(Join-Path $InstallDir 'logs')."
   }
-  $deadline = (Get-Date).AddSeconds($HealthTimeoutSec)
-  $health = $null
-  $script:LastHealthError = $null
-  while ((Get-Date) -lt $deadline) {
-    $health = Get-Health
-    if ($health) { break }
-    $svc = Get-HubService
-    if (-not $svc -or $svc.Status -ne 'Running') { Start-Sleep -Seconds 2 } else { Start-Sleep -Seconds 1 }
-  }
+  $health = Wait-Healthy $HealthTimeoutSec
   if (-not $health) {
     if ($script:LastHealthError) { Log "Last answer from the hub: $($script:LastHealthError.Message)" }
     Write-HubLogTail $InstallDir
     Finish 1 "The hub was installed but did not answer at https://127.0.0.1:$HubPort/health within $HealthTimeoutSec seconds. The hub's own logs are in $(Join-Path $InstallDir 'logs')."
+  }
+  # an update is done only when the new version itself answers
+  $running = ''
+  try { $running = [string] $health.hub.version } catch { }
+  if ($SelfUpdate -and $Version -and $running -ne $Version) {
+    Finish 1 "The hub answered, but as version $running, not $Version."
   }
 } catch {
   Log ("Error: {0}" -f $_.Exception.Message) 'Red'
@@ -555,6 +690,10 @@ $hubName = ''
 try { $hubName = [string] $health.hub.name } catch { }
 Log ("Health: ok. Hub '{0}', fingerprint {1}, {2} people." -f $hubName, $health.fingerprint, $health.users)
 $message = "Dexterity Connect Hub is installed and running. It starts with Windows, before anyone signs in, and restarts itself if it stops."
+if ($SelfUpdate) {
+  $script:RollbackArmed = $false
+  Finish 0 "Dexterity Connect Hub updated itself from $($script:PrevVersion) to $Version and is running. Data: $data"
+}
 if ($addresses.Count) { $message += "`r`nThis PC's address: $($addresses -join ', ') (port $HubPort)." }
 $message += "`r`nData: $data"
 if ($firewallNote) { $message += "`r`n`r`n$firewallNote" }

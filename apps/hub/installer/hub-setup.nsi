@@ -9,9 +9,14 @@
 ;   ... /S /DATA=E:\HubData                        a new hub's data folder (an existing hub's data stays)
 ;   ... /S /NOPOWER                                leave the PC's sleep settings alone
 ;   ... /S /D=D:\Hub                               program folder for a new install (must be last)
+;   ... /S /SELFUPDATE                             the hub updating itself (it runs this from a
+;                                                  scheduled task; apps/hub/src/hub-update.ts): keeps
+;                                                  the running version in <install>\previous and
+;                                                  puts it back if the new one does not answer
 ;   "Uninstall Dexterity Connect Hub.exe" /S [/REMOVEDATA]
 ;
-; Exit codes: 0 done, 1 failed, 2 refused (this PC does not meet a requirement).
+; Exit codes: 0 done, 1 failed, 2 refused (this PC does not meet a requirement), 3 a self-update
+; did not work and the version before is running again.
 
 !ifndef STAGE
   !error "Define STAGE: the assembled hub folder"
@@ -74,6 +79,8 @@ Var RemoveData
 Var DataField
 Var RemoveBox
 Var Extra
+Var SelfUpdate    ; "-SelfUpdate" when the hub runs this to update itself, else empty
+Var Stage         ; "files" while the programs are being replaced
 
 ; ------------------------------------------------------------------ pages
 !define MUI_ABORTWARNING
@@ -244,7 +251,7 @@ Section "Dexterity Connect Hub service" SecHub
 
   ; 1. check this PC (Windows, free space, ports) before changing anything
   DetailPrint "Checking this PC..."
-  !insertmacro RunSetupScript "$PLUGINSDIR\Install-Hub.ps1" "-CheckOnly $Extra"
+  !insertmacro RunSetupScript "$PLUGINSDIR\Install-Hub.ps1" "-CheckOnly $Extra $SelfUpdate"
   ${If} $0 != 0
     ${If} $ResultText == ""
       StrCpy $ResultText "Setup could not check this PC (error $0). See $APPDATA\${PRODUCT}\setup.log"
@@ -254,14 +261,22 @@ Section "Dexterity Connect Hub service" SecHub
     Abort
   ${EndIf}
 
-  ; 2. stop an installed hub so its programs can be replaced
+  ; 2. stop an installed hub so its programs can be replaced (a self-update also keeps a copy of
+  ;    them first, and stops here, with the hub running again, if it cannot)
   ${If} $Existing != ""
     DetailPrint "Stopping the hub..."
-    !insertmacro RunSetupScript "$PLUGINSDIR\Install-Hub.ps1" "-StopOnly"
+    !insertmacro RunSetupScript "$PLUGINSDIR\Install-Hub.ps1" "-StopOnly $SelfUpdate"
+    ${If} $SelfUpdate != ""
+    ${AndIf} $0 != 0
+      MessageBox MB_ICONSTOP|MB_OK "$ResultText" /SD IDOK
+      SetErrorLevel 1
+      Abort
+    ${EndIf}
   ${EndIf}
 
   ; 3. the programs (the data folder is never part of this)
   DetailPrint "Copying the hub's programs to $INSTDIR"
+  StrCpy $Stage "files"
   SetOutPath "$INSTDIR"
   SetOverwrite on
   !include "${GENERATED}\files.nsh"
@@ -280,18 +295,23 @@ Section "Dexterity Connect Hub service" SecHub
   ${GetSize} "$INSTDIR" "/S=0K /M=*.exe /G=0" $1 $2 $3
   WriteRegDWORD HKLM "${UNINST_KEY}" "EstimatedSize" $1
 
+  StrCpy $Stage ""
   ; 4. service, firewall, sleep settings, start, and wait for /health
   ${If} $KeepAwake != 1
     StrCpy $Extra "$Extra -NoKeepAwake"
   ${EndIf}
   DetailPrint "Setting up the hub service..."
-  !insertmacro RunSetupScript "$INSTDIR\Install-Hub.ps1" "$Extra"
+  !insertmacro RunSetupScript "$INSTDIR\Install-Hub.ps1" "$Extra $SelfUpdate"
   ${If} $0 != 0
     ${If} $ResultText == ""
       StrCpy $ResultText "Setup did not finish (error $0). See $APPDATA\${PRODUCT}\setup.log"
     ${EndIf}
     MessageBox MB_ICONSTOP|MB_OK "$ResultText" /SD IDOK
-    SetErrorLevel 1
+    ${If} $0 == 3
+      SetErrorLevel 3 ; a self-update went back to the version before, which is running
+    ${Else}
+      SetErrorLevel 1
+    ${EndIf}
     Abort
   ${EndIf}
 SectionEnd
@@ -373,6 +393,32 @@ Function .onInit
   ${IfNot} ${Errors}
     !insertmacro UnselectSection ${SecAwake}
   ${EndIf}
+  ; the hub updating itself: only an installed hub, and only silently
+  StrCpy $SelfUpdate ""
+  ClearErrors
+  ${GetOptions} $R0 "/SELFUPDATE" $1
+  ${IfNot} ${Errors}
+    ${If} $Existing == ""
+      MessageBox MB_ICONSTOP|MB_OK "/SELFUPDATE updates an installed hub, and there is none on this PC." /SD IDOK
+      SetErrorLevel 2
+      Abort
+    ${EndIf}
+    StrCpy $SelfUpdate "-SelfUpdate"
+  ${EndIf}
+FunctionEnd
+
+; a self-update that stopped while replacing the programs: put the kept copy back and start it
+Function .onInstFailed
+  ${If} $SelfUpdate != ""
+  ${AndIf} $Stage == "files"
+    DetailPrint "Going back to the version before..."
+    !insertmacro RunSetupScript "$PLUGINSDIR\Install-Hub.ps1" "-SelfUpdate -Rollback"
+    ${If} $0 == 3
+      SetErrorLevel 3
+    ${Else}
+      SetErrorLevel 1
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 ; ------------------------------------------------------------------ uninstall
@@ -427,6 +473,8 @@ Section "Uninstall"
   ${EndIf}
   !include "${GENERATED}\unfiles.nsh"
   Delete "$INSTDIR\hub-data-location.txt"
+  ; the copy a self-update kept of the version before (programs only; never the data)
+  RMDir /r "$INSTDIR\previous"
   Delete "$INSTDIR\${UNINSTALLER}"
   ; removed only when empty: a hub-data or logs folder from the old zip layout stays
   RMDir "$INSTDIR"
