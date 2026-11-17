@@ -309,7 +309,7 @@ test('plot request: the lead from the directory and job numbers from Spaces as o
   await priya.request('botflow.act', { itemId: one.itemId, action: 'got' });
   assert.equal((await priya.request('botflow.item', { itemId: one.itemId })).track.stamp, 'COLLECTED');
   // Ravi away, Vikram covering: a new request for the plot room goes to Vikram, and says why
-  await ravi.request('me.update', { ooo: { until: Date.now() + 3 * 86400_000, message: 'On site', delegateId: me(owner) } });
+  await ravi.request('me.update', { ooo: { until: monday() + 3 * 86400_000, message: 'On site', delegateId: me(owner) } }); // away by the hub's clock, which the test sets to next Monday
   await owner.request('botflow.act', { itemId: two.itemId, action: 'cannot', note: 'Out of A3 paper' }).catch(() => {});
   const r3 = await run(priya, made.name, [['job', 'P-12513'], ['drawings', 'ISO-1002'], ['size', 'A1'], ['sets', '1'], ['due', dayStr(2)], ['lead', me(owner)], ['ok', 'yes']]);
   const three = (await newest(priya, r3.convId, 'done')).botflow.track!;
