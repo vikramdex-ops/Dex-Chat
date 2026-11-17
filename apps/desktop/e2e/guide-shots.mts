@@ -917,7 +917,7 @@ await part('admin', async () => {
   await V.getByRole('group', { name: 'Admin section' }).getByRole('button', { name: /^Approvals/ }).click();
   await sleep(1200);
   await toRegister(V);
-  await shot(V, 'cr-approvals', { x: W - 988, y: 0, width: 988, height: 360 });
+  { const rb = await V.locator('.toolbar:has(.seg-register)').first().boundingBox(); const y = Math.max(0, rb.y - 12); await shot(V, 'cr-approvals', { x: W - 988, y, width: 988, height: Math.min(H - y, 380) }); }
   await sec('Devices', 'cr-devices');
   await sec('People & roles', 'cr-roles');
   await sec('Organisation', 'cr-organisation');
