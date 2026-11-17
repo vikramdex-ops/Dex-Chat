@@ -17,7 +17,9 @@ try {
   await page.getByRole('dialog').getByRole('button', { name: 'Share' }).click();
   await page.getByText('Shared').first().waitFor();
   await sleep(800);
-  const dm = (await owner.request('conv.list')).find((c: any) => c.kind === 'direct');
+  // the direct conversation with the colleague who shared, not one with a bot (the system bot tells the owner their seat)
+  const bots = new Set((await owner.request('directory.list')).users.filter((u: any) => u.role === 'bot').map((u: any) => u.id));
+  const dm = (await owner.request('conv.list')).find((c: any) => c.kind === 'direct' && c.members.every((m: string) => !bots.has(m)));
   const msgs = (await owner.request('msg.list', { convId: dm.id })).messages;
   const last = msgs.at(-1);
   assert.match(last.body.startsWith('e2e1:') ? 'sealed' : last.body, /sealed|Rev B of ISO-1001/);
