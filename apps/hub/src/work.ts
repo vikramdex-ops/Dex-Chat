@@ -114,7 +114,7 @@ export class Work {
       return;
     }
     const seen = this.lastSeen(s.user_id);
-    const end = seen && seen > s.start_at && seen < now ? Math.min(seen, s.start_at + STALE_WORK) : s.start_at + 9 * HOUR;
+    const end = seen && seen >= s.start_at && seen < now ? Math.min(seen, s.start_at + STALE_WORK) : s.start_at + 9 * HOUR;
     this.close(s.id, Math.min(end, now), true);
   }
 
