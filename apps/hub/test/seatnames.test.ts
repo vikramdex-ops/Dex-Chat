@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createIdentity } from '@dex/core';
-import type { Conversation, Holders, Identity } from '@dex/core';
+import type { Conversation, DeviceIdentity as Identity, Holders } from '@dex/core';
 import { HubClient } from '@dex/core/client';
 import { Hub } from '../src/hub.ts';
 import { cleanups, me, until } from './office.ts';
