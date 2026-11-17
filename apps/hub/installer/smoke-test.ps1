@@ -248,6 +248,10 @@ try {
     $vNext = Get-SetupVersion $Next
     $vBroken = Get-SetupVersion $Broken
     Step "The hub updates itself: this build, then $vNext the way the hub runs it (scheduled task, /SELFUPDATE)"
+    # start from a PC that never had a hub: forget the data folder the hubs above kept (the setup
+    # would rightly carry on with it), so this install uses the default one
+    Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Dexterity Connect Hub' -Name DataDir -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force -LiteralPath "$old\hub-data" -ErrorAction SilentlyContinue
     $code = Invoke-Setup @('/S', '/NOPOWER')
     Check ($code -eq 0) "setup exit code 0 (got $code)"
     $u1 = Assert-Hub $ProgramDir $DefaultData
