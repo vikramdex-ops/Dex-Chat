@@ -1,418 +1,227 @@
-# Dexterity Connect: office setup, step by step
+# Dexterity Connect: what you still do by hand
 
-Follow this from top to bottom once. Each part says where to do it, and how to check it worked.
+Everything that can happen on its own now does. This page lists only what needs a person: the hardware, your
+own accounts, decisions, and the checks that need a second device. Each step says where, and how to tell it
+worked.
 
-**What it ends with:**
+## Already done for you
 
-- the server running;
-- you as owner, with everything configured;
-- working from outside the office;
-- clean Dexterity Meet links;
-- management and IT in charge, and you stepped back.
+You do **not** need to do any of the following. Each is set up automatically, once, and never overwrites a change
+you make later.
 
-| Part | Where | Time |
-| --- | --- | --- |
-| A. The server (office hub) | The server PC | 10 min |
-| B. Your app, and becoming the owner | Your own PC | 10 min |
-| C. Configure the office | Your PC, in the app's Control room | 45 min |
-| D. Working from outside, and Dexterity Meet links | Cloudflare website + your PC | 15 min |
-| E. Bring everyone in | Each person's PC and phone | 5 min each |
-| F. Hand over to management and IT, and step back | Your PC | 10 min |
-| G. Final checks | Office and a phone on mobile data | 15 min |
-
-## Before you start
-
-- [ ] **One server PC** that can stay on day and night. It must be Windows 10 or 11 (64-bit), plugged into the
-      office network by cable if possible, with a second disk or a network share (NAS) for backups.
-- [ ] **An office email address** that is not anyone's personal one (for example an IT mailbox). You will make the
-      Cloudflare account with it, so that whoever looks after the system later can sign in.
-- [ ] **The two download links** (they always give the newest version):
-  - Office hub (server): <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe>
-  - App for Windows (everyone): <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnect-Setup.exe>
-  - The same links are on the landing page: <https://dexterity-admin.github.io/dexterity-connect/#start>
-
-> **The server is not a person.** It does not log in, has no role and is not in the people list. In the app it appears
-> as **Dexterity Office Hub**: in the title bar (top right) and in the **Office hub** card on Pulse, with its
-> address. You do not need the app on the server PC: you configure everything from your own PC.
-
----
-
-## Part A. The server (office hub)
-
-*On the server PC, signed in to Windows as a user with administrator rights.*
-
-**A1. Give it a fixed address.** Ask whoever manages the office router to make a **DHCP reservation** for this
-PC, so its IP address never changes (for example `192.168.1.20`). Write the address down. The apps find the
-hub on their own, but a fixed address makes it dependable and lets people type it in if they ever need to.
-
-**A2. Install the hub.**
-
-1. Download the **Office hub** setup (link above) and double-click **`DexterityConnectHub-Setup.exe`**.
-   - If Windows says **"Windows protected your PC"**, click **More info → Run anyway** (the setup is not
-     code-signed yet).
-2. Click **Yes** when Windows asks for permission.
-3. Click **Next** through the pages. The defaults are right for most offices:
-   - programs in `C:\Program Files\Dexterity Connect Hub`;
-   - data in `C:\ProgramData\Dexterity Connect Hub\hub-data`. If drive C: is small, choose a folder on
-     another disk of this PC (not a network share). Messages and shared files are kept here.
-   - **Keep this PC awake while plugged in**: leave it ticked. The screen may still turn off; the PC must not
-     sleep.
-4. Setup checks the PC (64-bit Windows 10 or 11, free space, that nothing else uses the hub's ports), installs
-   the hub as a Windows service that starts with the PC and restarts itself, opens the ports it needs in
-   Windows Firewall, starts the hub and waits until it answers:
-   - TCP 47900 for the apps;
-   - UDP 47901 for finding the hub;
-   - 47910–47999 for meetings of more than 8 people.
-
-**Check it worked:** the last page says **The hub is running**, with this PC's address. If something stopped
-it, setup says what, and the details are in `C:\ProgramData\Dexterity Connect Hub\setup.log`.
-
-Running the setup again is always safe: it repairs or upgrades the hub and never touches its data. To upgrade the
-hub later, download and run the newest setup the same way. A hub installed earlier from the zip
-(`Install-Hub.cmd`) is found and upgraded where it is, with its data.
-
-**No setup allowed on the server?** The zip
-(<https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-win-x64.zip>)
-does the same: extract it to where the hub should live (for example `D:\DexterityConnectHub`; its data is kept
-in `hub-data` inside it) and double-click **`Install-Hub.cmd`**.
-
-**A3. Only if your office network is split.** If PCs are on different network segments (VLANs, a separate staff
-Wi-Fi), ask whoever manages the network to let those PCs reach the server PC on **TCP 47900**, **UDP 47901**
-and **TCP/UDP 47910–47999**. On a simple office network there is nothing to do.
-
-**A4. Optional: live-streaming webinars to YouTube.** This needs ffmpeg on the server PC. Skip it if you will not
-stream webinars.
-
-1. Click Start and type `PowerShell`. Right-click **Windows PowerShell** and choose **Run as administrator**.
-2. Run:
-
-   ```
-   winget install --id Gyan.FFmpeg -e --scope machine
-   ```
-
-3. In `services.msc`, right-click **Dexterity Connect Hub** and choose **Restart**.
+- **The server.** `DexterityConnectHub-Setup.exe` does all of this:
+  - checks the PC;
+  - installs the background service, which starts with the PC and restarts itself if it stops;
+  - opens the firewall;
+  - stops the PC sleeping;
+  - checks that the server answers.
+- **Backups.** On first start the server looks for a second disk:
+  - if it finds one, it makes a private backup folder, schedules 02:00 nightly backups (keeping 14 daily, 8 weekly
+    and 12 monthly), runs the first backup and checks it;
+  - if there is no safe second disk, it says so in the Setup check (step 3).
+- **Seating.** The office floor plan with the 40 names from the drawing is there from the start. People take their
+  seat automatically when they join and their name clearly matches. You only confirm the few that are unclear.
+- **Holidays.** 2026's days off, from circular HRD/CIR/2026/011, are registered:
+  - holidays, week-offs and compensatory offs are days off;
+  - compensatory working days are working days.
+- **Nib.** Start of day 09:45, wrap-up 18:00, register 18:30, follow-up 19:00, Monday to Saturday, day sheets
+  private.
+- **Notice desks.** Admin, HR, IT and Management.
+- **Policies.** The standard policies apply.
+- **Audit log.** Always on.
+- **Remote access and Dexterity Meet.** You paste one Cloudflare token (step 4). The server then:
+  - deploys the gateway and the meeting site;
+  - pins the gateway to itself;
+  - creates the call relay;
+  - turns on access from outside;
+  - checks it all.
+- **Zoho Calendar.** Ready for everyone once the office's Zoho app is registered (step 5). Each person then
+  connects their own calendar.
+- **The final checks.** A live **Setup check** at the top of the Control room replaces the old checklist.
 
 ---
 
-## Part B. Your app, and becoming the owner
+## 1. The server PC (physical setup)
 
-*On your own PC (not the server).*
+1. Put the server PC where it stays: on mains power, on the office network (a cable is best).
+2. **For automatic backups:** fit a second internal disk, or have a network share (NAS) ready. A second part of the
+   same disk is not enough: if that disk fails, the backup goes with it.
+3. **Ask whoever manages the office router** to give this PC a fixed address (a *DHCP reservation*).
+4. On the server PC:
+   1. Download <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe>
+      and run it.
+   2. Click **Yes** when Windows asks for permission.
+   3. Click through the pages; the defaults are right.
+   4. If Windows says "Windows protected your PC", click **More info → Run anyway**.
 
-1. Download the **App for Windows** (link above) and run it.
-   - If Windows says **"Windows protected your PC"**, click **More info → Run anyway**. The installer is not
-     code-signed yet; it is the genuine file.
-2. Dexterity Connect opens on **Welcome to Dexterity Connect**:
-   - **Your name, as colleagues will see it**: type your name.
-   - **Office hub**: pick the hub shown with **Secure**. If none appears, click **Enter the hub address yourself**
-     and type the server's address from A1, for example `192.168.1.20`.
-   - Click **Request access**.
-3. You are the first person, so you become the **owner** at once.
+**It worked when** the last page says **The hub is running** and shows the PC's address. If it fails, the
+message gives the reason and the log file's location.
 
-**Check it worked:** click your picture (top right). The menu has **Control room**.
+## 2. Your PC: become the owner
 
----
+1. Download <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnect-Setup.exe>
+   and install it.
+2. Type your name, pick the office hub (shown with **Secure**), and click **Request access**.
+3. You are the first, so you are the **owner**.
 
-## Part C. Configure the office
+Stay the owner until everything below is done and checked (step 9 is the hand-over).
 
-*In the app on your PC: click your picture (top right) → **Control room**. The Control room has 17 numbered
-sections. Every change is saved on the server for the whole office, not on your PC or under your name.*
+## 3. Look at the Setup check
 
-**C1. Backups (do this first).** Go to **16 Backups & leavers → Backups**.
+Click your picture (top right) → **Control room**. The **Setup check** at the top lists what is passed and what
+is left, each with the one thing to do.
 
-If the server PC has a second internal disk with room, the hub has already chosen
-`<drive>:\DexConnectBackup` on it, made it private to administrators, set 02:00 and made a first
-backup: the sheet says **Chosen by the hub on its first start**. Check the last good backup is there
-and go on to C2. If it says **Backups need a second disk or a network share**, do the steps below.
+- **Copy report** and **Download** give it as text.
+- **Check again** refreshes it after you fix something.
 
-1. **Backup folder**: enter a folder on a second disk of the server PC (`E:\DexConnectBackup`) or a network share
-   (`\\NAS\backups\dexconnect`). Never use the server's own C: drive. Click **Save folder**; the hub checks it can
-   write there and tells you if it cannot.
-   - **For a network share**, the hub runs as the server PC's computer account. Ask whoever manages the NAS to
-     give the server PC itself (it appears as `DOMAIN\SERVER-PC$`) permission to change files in that folder.
-2. **Every night at**: leave **02:00**, or choose another time. **Keep**: leave the numbers (14 daily, 8 weekly,
-   12 monthly). Click **Save**.
-3. Click **Back up now**. After a moment the sheet shows the last good backup and its size.
-4. Make sure only administrators can open the backup folder: it holds all messages and the hub's key.
+What you will probably see there:
 
-**C2. Organisation.** Go to **04 Organisation**.
-
-1. **Departments**: type each department in **New department, for example Piping**. Choose **Part of** to nest it
-   under another, and **Led by** for its head.
-2. **People**: under **Import people**, click **Template** to download `dexterity-connect-people.csv`.
-   1. Open it in Excel. It has these columns: **Account** (each person's Windows user name, for example `priya`),
-      **Name, Designation, Department, Reports to** (the manager's Windows user name), **Extension, Phone,
-      Email, Seat, Employee ID, Date of joining, Birthday**.
-   2. Fill in one row per person and save it as **CSV**.
-   3. Click **Choose CSV file** and pick it. The app shows what it will do (who is updated, who gets their
-      details when they join, which new departments are created) before you confirm.
-
-   People who have not installed the app yet are included: they get their details as soon as they join.
-3. **Office managers** (people who may move seats): type a name in **Add an office manager…** and pick them.
-4. **Conference rooms and cabins**: add each room with its number of seats, so meetings can book them.
-
-**C3. Office holidays.** The 2026 holidays from management's circular (Ref HRD/CIR/2026/011) are already
-registered on a new hub. Each year, give the new holiday circular's PDF to Nib (drop it into your conversation
-with Nib), or go to **13 Bots & tools → Office holidays → Read a holiday circular…**. Check what Nib read (any
-row in doubt is listed and left out) and click **Register N days**. Week-offs and compensatory days off are days
-off; a compensatory working day is worked. Nib, scheduled bot jobs and hot-desk booking skip the days off. A day
-can still be added by hand there (date, name, kind, **Add day**). See [`HOLIDAYS.md`](HOLIDAYS.md).
-
-**C4. Notice desks.** Go to **15 Notice desks**. The desks **Admin, HR, IT and Management** are already there.
-Under each desk, use **Add an issuer…** to choose who issues notices for it (for example the HR manager under
-HR). A desk with no issuers is issued for by administrators only.
-
-**C5. Nib and day sheets.** Go to **14 Nib & day sheets**.
-
-1. **01 Activity givers**: click **Add the department heads**, or add each lead with **Add someone** and a scope
-   (for example *Piping* or *Area 4*).
-2. **02 Management**: under **Who receives the register**, add the directors or managers who should get the
-   evening register.
-3. **03 Times**: leave the defaults or change them:
-   - start of day 09:45;
-   - wrap-up 18:00;
-   - register 18:30;
-   - follow-up 19:00;
-   - workdays Mon–Sat.
-4. **04 Jobs and privacy**: enter **Job codes**, one per line (`P-12 Hydrotreater revamp`). Leave day sheets
-   **Private** unless management wants them open to everyone.
-5. Click **Save**. Then click **Send me a register now** to see the evening register before the first real one.
-
-**C6. Policies.** Go to **08 Policies** and read through once. The defaults are:
-
-- guest links for meetings allowed (**Meetings**);
-- people may add their own phones;
-- lobby for people joining from outside.
-
-Change only what the office decides (for example the largest file people can share, or whether calls may be
-recorded).
-
-**C7. Seating (the real floor plan of Level 01 is already in the app).**
-
-The 40 names written on your seating drawing are already on their seats; there is nothing to import. Each
-person takes their seat when they join: at once when it is certainly them (their full name, or a first name
-nobody else has), otherwise it waits for you.
-
-1. In the app, open **Directory → Org chart → Floor → Arrange**. The number on **Arrange** is how many names
-   wait.
-2. Under **Waiting to be matched**, check each suggestion (pick the right person where there are two) and click
-   **Confirm**.
-3. In **Layout**, rename **Room A (unlabelled)** and check that the two MD cabins are the right way round.
-
-After that, seat changes are real moves: use a **Move plan**.
-
-**Check it worked:** the floor plan shows the names on their seats, and people at theirs as they join;
-**17 Audit log** lists each seat taken (`seating.claim`) and every change you made.
-
-**C8. Zoho Calendar (one step for the whole office).** The office uses Zoho Mail. Zoho lets an app reach
-someone's calendar only through an OAuth client owned by a Zoho account, so the office registers one, once.
-After that, each person connects their own calendar themselves (E6). Details: [`ZOHO-CALENDAR.md`](ZOHO-CALENDAR.md).
-
-1. Sign in at **https://api-console.zoho.in** with the office's Zoho administrator account.
-2. Choose **Add Client → Server-based Applications**.
-   - Name: `Dexterity Connect`. Homepage URL: the office's website.
-   - **Authorized Redirect URIs**: `http://127.0.0.1:47917/zoho/callback`, exactly as written.
-3. Click **Create**. If some colleagues' Zoho accounts are in another region, turn on **Multi-DC** in the
-   client's settings.
-4. In the app: **Control room → 11 Integrations → Zoho Calendar**.
-   - Leave **Zoho data centre** on **India**.
-   - Paste the **Client ID** and **Client secret**.
-   - Click **Save and invite everyone**.
-
-   Everyone gets one message telling them how to connect. The secret is never shown again.
-
-
----
-
-## Part D. Working from outside the office, and Dexterity Meet links
-
-*This gives staff the app at home and on mobile data, and gives meetings clean links that clients can open in a
-browser, for example `https://dexterity-meet.pages.dev/p12-design-review`. It uses a free Cloudflare account.
-The office opens no ports to the internet.*
-
-**D1. Make the Cloudflare account.**
-
-1. Go to <https://dash.cloudflare.com/sign-up> and sign up with the **office email address**. The free plan is
-   enough.
-2. Verify the email address (Cloudflare sends a link).
-
-That is all on Cloudflare's side. The server makes the workers.dev address, the gateway, the meeting site and
-the call relay itself in D3.
-
-**D2. Make the API token.** In the app: **Control room → 09 Outside the office**. The first card is
-**Set up with Cloudflare**.
-
-1. Click **Open the token form**. Cloudflare's **Create API Token** page opens (sign in if asked) with three
-   permissions already filled in: **Workers Scripts · Edit**, **Cloudflare Pages · Edit** and **Account Settings ·
-   Read**.
-2. Add the fourth permission yourself: **+ Add more** → **Account** → **Cloudflare Realtime** (it may be called
-   **Calls**) → **Edit**. It lets the server make the relay for calls.
-3. Under **Account Resources**, leave **All accounts**, or choose the office's account.
-4. Click **Continue to summary** → **Create Token**, then **Copy**.
-
-**D3. Paste it, once.** Back in the **Set up with Cloudflare** card:
-
-1. Paste the token into **Cloudflare API token**.
-2. Tick **Keep it on the hub for gateway updates** if you want later hub updates to update the gateway with one
-   click. Otherwise the server forgets the token when the setup finishes, and you paste a token again for an
-   update.
-3. Click **Set up**. The card ticks off each step as the server does it: the token, the account, the workers.dev
-   address, the gateway, pinning it to this server, the meeting site, turning on access from outside, checking
-   that the gateway, the pin and the meeting site all answer, and the relay for calls. It takes a minute or two.
-4. If the token can use more than one Cloudflare account, the card asks which one is the office's.
-5. If a step stops, the card says why in plain words, for example which permission the token is missing. Fix
-   that in Cloudflare (edit the same token) and click **Retry**: it carries on from that step. Nothing is made
-   twice.
-
-When it is done, the card shows the Cloudflare account, the gateway, the meeting site and **Calls: Cloudflare
-TURN**, and the status below it says **Connected … gateway pinned to this hub**. The gateway and meeting site
-addresses are filled in on the page; there is nothing to copy.
-
-**D4. Who may use it.** On the same page, under **Who may use it** (the setup does not change these):
-
-- leave **New devices may ask to join from outside** on (an administrator still approves each one);
-- turn on **The Control room works from outside** only if owners and IT should manage it from home;
-- leave **Name on meeting pages** as *Dexterity Design Services*, or change it and click **Save name**.
-
-**D5. Check it.**
-
-1. Open the meeting site address (shown in the card) in a browser. It says **Join a meeting with Dexterity
-   Design Services**.
-2. In the app, open **Meet**, copy your personal room's link, and open it on a phone **using mobile data** (Wi-Fi
-   off). The meeting page opens.
-
-When a later version of the server carries a newer gateway, the card says so and offers **Update the gateway**.
-
-*Without the card (a server built without the Cloudflare parts, or if you prefer the command line): the manual
-way, with `scripts\release\Deploy-Gateway.cmd`, is in [REMOTE-ACCESS.md](REMOTE-ACCESS.md), "Setting it up by
-hand".*
-
-**D6. Optional: your own domain for meeting links** (for example `meet.dexteritydesign.co.in`).
-
-1. In Cloudflare: **Workers & Pages → dexterity-meet → Custom domains → Set up a custom domain**. Enter
-   `meet.dexteritydesign.co.in` and continue.
-2. If your domain's DNS is on Cloudflare, it adds the record itself. If not, Cloudflare shows a **CNAME** record:
-   `meet` pointing to `dexterity-meet.pages.dev`. Add exactly that record at your domain's DNS provider
-   (GoDaddy, BigRock or whoever holds `dexteritydesign.co.in`), or ask whoever manages the website.
-3. Wait until Cloudflare shows the domain as **Active** (minutes to a few hours).
-4. In the app: **Outside the office → Meeting site address** → enter `https://meet.dexteritydesign.co.in` →
-   **Save address**.
-
-   New links use it at once. Links already sent keep working.
-
----
-
-## Part E. Bring everyone in
-
-**E1. Each person's PC.**
-
-1. They install the app from the **App for Windows** link (the same *More info → Run anyway* if Windows asks).
-2. They type their name, pick the hub and click **Request access**.
-3. Their screen shows a **device code**. In **Control room → 01 Approvals**, you see the same code: ask them to read
-   it out, and click **Approve** if it matches.
-
-**E2. Roles.** In **Control room → 03 People & roles**:
-
-| Who | What to set |
+| Setup check says | What to do |
 | --- | --- |
-| The 2 management users | **Role → Owner**, then confirm **Make owner** |
-| The 2 IT users | **Role → Admin**, then add them at the top under **IT desk → Add someone to the IT desk…** so they receive Help me requests |
-| Everyone else | **Member** (the default) |
+| **Backups need a second disk or a network share** | Fit a second disk and restart the server PC (it looks again on every start). Or enter a network share in **Control room → 16 Backups & leavers → Backups → Backup folder**, and give the server PC's computer account (`DOMAIN\SERVER-PC$`) write access to it. |
+| **Working from outside is not set up** | Step 4. |
+| **Zoho Calendar is not set up for the office** | Step 5. |
+| **Nobody receives the evening register** | A decision for later (step 7). |
+| **Names to confirm on the floor plan** | Step 7. |
+| Four rows marked **By hand** | Step 8. |
 
-Owners and admins can both configure everything. Only owners choose who the owners and admins are.
+## 4. Working from outside, and Dexterity Meet links (about 10 minutes)
 
-**E3. Phones (each person, no administrator needed).**
+This is your Cloudflare account, so these steps are yours.
 
-1. On their office PC: **Preferences → Your devices → Add my phone**. A QR code appears.
-2. They point the phone camera at it and tap the link, then **Download for Android**. The app installs and signs
-   them in as themselves.
-3. There is no iPhone app.
+1. **Make the account:** go to <https://dash.cloudflare.com/sign-up>, sign up with the **office email address**
+   (not a personal one), and click the link in Cloudflare's email. The free plan is enough.
+2. **Make the token:** in the app, open **Control room → 09 Outside the office**. The first card is **Set up with
+   Cloudflare**.
+   1. Click **Open the token form**. Cloudflare's token page opens with three permissions already filled in.
+   2. Add one more yourself: **+ Add more → Account → Cloudflare Realtime** (it may be called **Calls**) **→
+      Edit**. This one is for calls from outside.
+   3. Click **Continue to summary → Create Token → Copy**.
+3. **Paste it once:**
+   1. Paste the token into the card.
+   2. Tick **Keep it on the hub for gateway updates**, so later updates are one click.
+   3. Click **Set up**.
 
-**E4. Home laptops.**
+   The card ticks off each step. If one stops, it says why (for example a missing permission): fix that on the same
+   token in Cloudflare, then click **Retry**.
 
-1. On their office PC: **Preferences → Your devices → Add my laptop** shows a code starting with `DXP1-`.
-2. They click **Email it to me**.
-3. On the laptop they install the app, choose **I have a pairing code** and paste it.
+**It worked when** the card shows the gateway, the meeting site and **Calls: Cloudflare TURN**, and the status
+says **gateway pinned to this hub**. Your meeting links then look like
+`https://dexterity-meet.pages.dev/p12-design-review`.
 
-**E5. Optional: meetings in Outlook or a phone calendar.**
+*Optional, any time later: an office domain for meeting links* (`meet.dexteritydesign.co.in`).
 
-1. In **Preferences → Calendar**, each person can click **Show my meetings in Outlook or on my phone**.
-2. In Outlook, they paste the address under **Add calendar → Subscribe from web**.
+1. In Cloudflare, go to **Workers & Pages → dexterity-meet → Custom domains → Set up a custom domain**.
+2. If the domain's DNS is elsewhere (GoDaddy, BigRock…), add the one **CNAME** record Cloudflare shows there.
+3. When the domain shows **Active**, enter it in **Control room → 09 Outside the office → Meeting site address**.
 
-**E6. Zoho Calendar (each person, once, no administrator needed).** After C8, each person clicks
-**Connect Zoho Calendar**:
+## 5. Zoho Calendar for the office (one form, about 5 minutes)
 
-- where: on the card at the top of the **Calendar** lens, or in **Preferences → Calendar**;
-- on: their office PC;
-- then: they sign in to Zoho in the browser and allow access.
+Zoho only lets an app read a person's calendar through an app registered by a Zoho account. You register it once
+for the whole office; nobody registers anything per person.
 
-The app shows **Connected as … · last synced …**. Their meetings then appear in Zoho, and their Zoho appointments
-show as busy time in Dexterity Connect.
+1. Sign in at <https://api-console.zoho.in> with the office's Zoho account.
+2. Click **Add Client → Server-based Applications**, and fill in:
+   - **Client Name:** `Dexterity Connect`
+   - **Homepage URL:** `https://www.dexteritydesign.co.in`
+   - **Authorized Redirect URIs:** `http://127.0.0.1:47917/zoho/callback`, exactly as written.
+
+   The same address is shown with a **Copy** button in the app.
+3. Click **Create**. Zoho shows a **Client ID** and **Client Secret**.
+   - If any colleague's Zoho account is in another region, turn on **Multi-DC** in the client's settings.
+4. In the app, open **Control room → 11 Integrations → Zoho Calendar**:
+   1. Leave **India**.
+   2. Paste the **Client ID** and **Client Secret**.
+   3. Click **Save and invite everyone**.
+
+**It worked when** the Setup check shows **Zoho Calendar is ready for everyone**, and the people list in that form
+fills up as colleagues connect.
+
+**If Zoho refuses the redirect address in step 2,** tell IT. The app then needs a small change to send Zoho
+through the office gateway instead.
+
+## 6. Bring people in
+
+**Each person's PC:**
+
+1. They install the app from the second link in step 2, type their name and click **Request access**.
+2. In **Control room → 01 Approvals** you see a code: ask them to read out the one on their screen, and click
+   **Approve** if it matches.
+
+Their seat is given automatically if their name matches the drawing.
+
+**Phones and home laptops (each person does this; no administrator needed):** **Preferences → Your devices →
+Add my phone** (scan the QR code) or **Add my laptop** (a code to paste).
+
+**Zoho Calendar (each person does this):** they click **Connect Zoho Calendar**:
+
+- where it appears: in their Calendar or in **Preferences → Calendar**;
+- what happens: they sign in to Zoho in the browser, then see **Connected as … · last synced …**;
+- what they need from you: nothing.
+
+## 7. Decisions, whenever you are ready
+
+None of these blocks anything; the office works without them.
+
+| Decision | Where |
+| --- | --- |
+| Who receives Nib's evening register (directors, managers) | **Control room → 14 Nib & day sheets → 02 Management** |
+| Who hands out work and the job codes | **14 Nib & day sheets → 01 Activity givers** (**Add the department heads**) and **04 Job codes** |
+| Who issues notices for each desk | **15 Notice desks → Add an issuer…** |
+| Names the server could not match for certain | **Directory → Org chart → Floor → Arrange → Waiting to be matched → Confirm** |
+| Departments, managers, rooms, more employee details (later, for company-wide use) | **04 Organisation → Import people → Template** (a CSV from Excel) |
+| Anything in the policies | **08 Policies** |
+
+**Every year:** when management issues the next holiday circular, drop the PDF into your conversation with Nib.
+
+1. Check any rows Nib marks in doubt.
+2. Click **Register**.
+
+The same file twice changes nothing, and a revised circular shows what changed.
+
+## 8. The checks only a person can do
+
+These are listed as **By hand** in the Setup check, and are never marked passed by themselves.
+
+- [ ] Two PCs message each other, and a call between them works.
+- [ ] A phone on **mobile data** (Wi-Fi off) sends a message.
+- [ ] A meeting link opened on that phone reaches the meeting page, and a test guest joins from the lobby.
+- [ ] A call from outside the office has sound and video both ways.
+- [ ] **On the first real Cloudflare run:** every step in the card ticked, and the status says **gateway pinned to
+      this hub**.
+- [ ] **On the first real Zoho connection:** a test meeting appears in that person's Zoho Calendar at the right
+      time, and moving it in Dexterity Connect moves it in Zoho.
+- [ ] After the first working evening: the management received Nib's register.
+
+## 9. Hand over (only when everything above is done)
+
+1. In **Control room → 03 People & roles**:
+   - management users: **Role → Owner**, confirm **Make owner**;
+   - IT users: **Role → Admin**, and add them at the top under **IT desk → Add someone to the IT desk…**.
+2. Check that they can open the Control room.
+3. On your own row: **Role → Admin**, confirm **Step down**.
+
+Every setting, seat, backup and connection stays as it is.
+
+Then hand over the accounts that live outside the app:
+
+- the Cloudflare login (office email);
+- the Zoho account that owns the client;
+- the GitHub accounts;
+- the server PC's Windows login.
 
 ---
 
-## Part F. Hand over to management and IT, and step back
-
-1. Make sure E2 is done: management are **Owners**, IT are **Admins**.
-2. In **Control room → 03 People & roles**, on **your own row**, change **Role** to **Admin** and confirm **Step
-   down**. You are no longer an owner.
-3. Everything you configured stays exactly as it is:
-   - backups, Nib, seating, notice desks, holidays and policies;
-   - the gateway, the Meet site and the call keys (the Cloudflare account; the server keeps the call key's token).
-
-   It all belongs to the office, so nobody has to re-enter anything.
-4. If you leave the office entirely: one of the owners opens **Control room → 16 Backups & leavers → Someone
-   leaving** and chooses you and who takes over your items. Your devices are signed out.
-5. Hand over the **outside accounts**: these are logins, not app settings.
-   - **The Cloudflare account**, made with the office email: give the login to IT or management.
-     - The API token is not stored anywhere and is not needed day to day.
-     - It is only needed to deploy again, using D2 and D4.
-   - **The GitHub accounts** (`vikramdex-ops` for the source, `dexterity-admin` for releases and the landing
-     page).
-   - **The server PC's Windows login**, and who manages the backup share.
-
----
-
-## Part G. Final checks
-
-Open **Control room**: the **Setup check** at the top checks the hub, the database, storage, backups,
-seating, notice desks, Nib, the audit log, outside access and the call relay by itself. It should
-show **0 Failed** and nothing **To do** that you have not decided to leave. **Copy report** keeps it.
-The ones below that it lists **By hand** need a person:
-
-- [ ] `services.msc` on the server shows **Dexterity Connect Hub: Running**.
-- [ ] **Control room → 16 Backups & leavers** shows a good backup from today.
-- [ ] Two PCs can message each other, and a call between them works.
-- [ ] A phone on **mobile data** can send a message.
-- [ ] A meeting link opened on a phone on mobile data reaches the meeting page, and a test guest can join from the
-      lobby.
-- [ ] **Outside the office** shows green and **gateway pinned to this hub**.
-- [ ] **03 People & roles** shows 2 owners (management) and 2 admins (IT), with IT on the **IT desk**.
-- [ ] An evening has passed and the management received Nib's register.
-- [ ] The app updates itself: **Preferences → Updates** shows the newest version. Installed apps check on start and
-      every 4 hours.
-
----
-
-## If something goes wrong
+### If something goes wrong
 
 | What you see | What to do |
 | --- | --- |
-| "Windows protected your PC" when installing | **More info → Run anyway**. The installers are not code-signed yet. |
-| The app keeps looking for the office hub | Check the PC is on the office network, not guest Wi-Fi. Click **Enter the hub address yourself** and type the server's address (A2). Check `services.msc` on the server. |
-| A PC on another floor or Wi-Fi cannot find the hub | Part A3: the network must let it reach the server's ports. |
-| **Set up with Cloudflare** says the token is missing a permission | Edit the same token in Cloudflare (**My Profile → API Tokens → Edit**), add the permission it names, then **Retry**. |
-| It stops at **Relay for calls** | The token lacks **Cloudflare Realtime (Calls) · Edit** (D2 step 2). Everything else already works; add it and **Retry**. |
-| *The new address does not answer yet* | A new Cloudflare account takes a few minutes to publish its workers.dev address. **Retry** after five minutes. |
-| *The hub PC could not reach Cloudflare* | The server needs internet for this part. Check it, then **Retry**. |
-| **Outside the office** status is not green | Check **Allow access from outside the office** is on. The server needs internet for this part only. |
-| Calls from home connect but have no sound or video | Check the card shows **Calls: Cloudflare TURN**; if it stopped at **Relay for calls**, see above. |
-| The backup says it cannot write to the share | Give the server PC's computer account write access to that folder (C1). |
-| An update is waiting | Nothing to do: apps update themselves. The hub keeps a copy of the newest installers for PCs without internet. |
+| Setup on the server says a port is in use | It names the program using it. Close or uninstall that program, then run setup again. Running it again is always safe. |
+| The app keeps looking for the office hub | Check the PC is on the office network, not guest Wi-Fi. Click **Enter the hub address yourself** and type the server's address (step 1). |
+| A PC on another floor or Wi-Fi cannot find the hub | Ask whoever manages the network to let it reach the server on TCP 47900, UDP 47901 and TCP/UDP 47910–47999. |
+| **Set up with Cloudflare** stops at a step | Read the reason on the card, fix it on the same token in Cloudflare, then **Retry**. |
+| Someone's Zoho shows **Reconnect Zoho Calendar** | They click it and sign in again; nothing is duplicated. |
+| Nib marks a holiday row in doubt | Check it against the circular. Rows in doubt are never registered by themselves. |
 
-## Optional, later
-
-- **Code-signing certificate** (about US$200–400 a year): removes the "Windows protected your PC" warning.
-- **Hindi and Tamil**: a native speaker of each reads the app in their language (**Preferences → Appearance →
-  Language**) and notes any wording to change.
-- **User guide approval**: `Dexterity-Connect-User-Guide.pdf` says *Approved by: Pending approval* until the person
-  who signs off documents gives their name.
+Details for IT: [RELEASING.md](RELEASING.md) (the hub setup), [BACKUP.md](BACKUP.md), [SEATING.md](SEATING.md),
+[HOLIDAYS.md](HOLIDAYS.md), [ZOHO-CALENDAR.md](ZOHO-CALENDAR.md), [REMOTE-ACCESS.md](REMOTE-ACCESS.md).
