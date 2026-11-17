@@ -10,10 +10,20 @@
 // Restoring a backup (the hub service stopped first; see docs/BACKUP.md):
 //   DexterityConnectHub.exe --restore "E:\DexConnectBackup"            the newest copy there
 //   DexterityConnectHub.exe --restore "E:\DexConnectBackup\snapshots\2026-11-15_0200"   that copy
+//
+//   DexterityConnectHub.exe --version          prints the hub's version
+//   DexterityConnectHub.exe --apply-update <DexterityConnectHub-Setup-x.exe>
+//                                              runs a setup the way the hub's own updates do (a
+//                                              scheduled task as SYSTEM, /S /SELFUPDATE): for the
+//                                              install test (apps/hub/installer/smoke-test.ps1).
+//                                              Needs an administrator; checks nothing about the file.
+import path from 'node:path';
 import { DEFAULT_HUB_PORT } from '@dex/core';
 import { Hub } from './hub.ts';
 import { restoreBackup } from './backup.ts';
 import { resolveDataDir } from './data-dir.ts';
+import { HUB_VERSION } from './version.ts';
+import { windowsLauncher } from './hub-update.ts';
 
 // node:sqlite prints an "experimental" notice on every start; it is stable for our use.
 process.removeAllListeners('warning');
@@ -32,7 +42,22 @@ function log(level: Level, msg: string, extra?: Record<string, unknown>): void {
 const baseDir = resolveDataDir({ env: process.env, execPath: process.execPath, cwd: process.cwd() });
 
 const restoreAt = process.argv.indexOf('--restore');
-if (restoreAt >= 0) {
+const applyAt = process.argv.indexOf('--apply-update');
+if (process.argv.includes('--version')) {
+  console.log(HUB_VERSION);
+  process.exit(0);
+} else if (applyAt >= 0) {
+  const setup = process.argv[applyAt + 1];
+  if (!setup || setup.startsWith('--')) {
+    console.error('Give the setup: --apply-update "C:\\path\\DexterityConnectHub-Setup-0.1.42.exe"');
+    process.exit(2);
+  }
+  const dir = path.join(baseDir, 'hub-update');
+  windowsLauncher(dir)({ setup: path.resolve(setup), args: ['/S', '/SELFUPDATE', '/NOPOWER'], version: 'test', from: HUB_VERSION, result: path.join(dir, 'result.json') }).then(
+    () => { console.log(`Started ${setup} as the hub's update does. It reports in ${path.join(dir, 'result.json')}.`); process.exit(0); },
+    (err: Error) => { console.error(`The setup could not be started: ${err.message}`); process.exit(1); },
+  );
+} else if (restoreAt >= 0) {
   const from = process.argv[restoreAt + 1];
   if (!from || from.startsWith('--')) {
     console.error('Give the backup folder: --restore "E:\\DexConnectBackup" (the newest copy there) or one of the folders inside its "snapshots" folder.');

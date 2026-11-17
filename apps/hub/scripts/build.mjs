@@ -4,6 +4,8 @@
 // meeting site the Control room's "Set up with Cloudflare" deploys. The hub reads it from beside
 // hub.cjs, and the single executable carries it inside (a SEA asset), so the package is unchanged.
 //   --no-cloud   skip the Cloudflare parts (the hub then offers the manual setup only)
+//   --version 0.1.26111712   the release's version, stamped into the hub (src/version.ts): the hub
+//                reports it, and its own updates (src/hub-update.ts) compare the feed against it
 import { build } from 'esbuild';
 import { buildCloudBundle } from './build-cloud.mjs';
 import { execFileSync } from 'node:child_process';
@@ -11,6 +13,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
+const vAt = process.argv.indexOf('--version');
+const version = vAt >= 0 ? process.argv[vAt + 1] : null;
+if (vAt >= 0 && !/^\d+(\.\d+){1,3}$/.test(version ?? '')) throw new Error(`--version must look like 0.1.42 (got ${version})`);
 const dist = path.join(root, 'dist');
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
@@ -23,6 +28,7 @@ await build({
   format: 'cjs',
   target: 'node22',
   external: ['bufferutil', 'utf-8-validate'],
+  ...(version ? { define: { 'process.env.DEX_HUB_BUILD_VERSION': JSON.stringify(version) } } : {}),
   logLevel: 'info',
 });
 
@@ -39,5 +45,5 @@ if (process.argv.includes('--sea')) {
   const args = ['postject', exe, 'NODE_SEA_BLOB', blob, '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'];
   if (process.platform === 'darwin') args.push('--macho-segment-name', 'NODE_SEA');
   execFileSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['--no-install', ...args], { stdio: 'inherit', shell: process.platform === 'win32' });
-  console.log(`built ${exe}`);
+  console.log(`built ${exe}${version ? ` (version ${version})` : ''}`);
 }

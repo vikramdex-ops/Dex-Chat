@@ -396,6 +396,12 @@ export class Backups {
     };
   }
 
+  /** A run is going on now. */
+  isRunning(): boolean { return this.current !== null; }
+
+  /** When the last backup that worked finished, or null. */
+  lastSuccessAt(): number | null { return this.state().lastSuccess?.finishedAt ?? null; }
+
   /** Called on the hub's timer: start the nightly run when it is due; tell administrators when backups need them. */
   tick(now = Date.now()): void {
     const w = this.warning(now);
