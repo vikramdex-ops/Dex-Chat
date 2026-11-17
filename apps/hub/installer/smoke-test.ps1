@@ -46,18 +46,31 @@ function Check([bool] $ok, [string] $what) {
   if ($ok) { Write-Host "  ok    $what" } else { Write-Host "  FAIL  $what" -ForegroundColor Red; throw "Check failed: $what" }
 }
 
-function Invoke-Setup([string[]] $argv) {
-  $p = Start-Process -FilePath $Setup -ArgumentList $argv -Wait -PassThru
+# Runs a program and waits for its exit code through .NET directly: Start-Process -Wait -PassThru threw
+# "Object reference not set to an instance of an object" for the uninstaller on the Windows runner even
+# though the uninstaller ran and finished.
+function Invoke-Program([string] $exe, [string] $arguments) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  $psi.Arguments = $arguments
+  $psi.UseShellExecute = $false
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $p.WaitForExit()
   return $p.ExitCode
+}
+
+function Invoke-Setup([string[]] $argv) {
+  return Invoke-Program $Setup ($argv -join ' ')
 }
 
 function Invoke-Uninstall([string] $dir, [string[]] $more = @()) {
   # _?= runs the uninstaller in place and waits for it (it then cannot delete itself)
   $exe = Join-Path $dir $Uninstaller
-  $p = Start-Process -FilePath $exe -ArgumentList (@('/S') + $more + @("_?=$dir")) -Wait -PassThru
+  # _?= must come last and takes the rest of the line as the folder, unquoted (NSIS rule)
+  $code = Invoke-Program $exe ((@('/S') + $more + @("_?=$dir")) -join ' ')
   Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue   # only when now empty
-  return $p.ExitCode
+  return $code
 }
 
 function Get-Health {

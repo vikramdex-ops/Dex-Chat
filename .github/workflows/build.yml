@@ -216,16 +216,21 @@ jobs:
           # the two test builds, by version: the lower is the good next version, the higher the broken one
           $smoke = @(Get-ChildItem hub-smoke -Filter 'DexterityConnectHub-Setup-*.exe' | Sort-Object { [version]($_.BaseName -replace '^DexterityConnectHub-Setup-', '') })
           ./apps/hub/installer/smoke-test.ps1 -Setup $setup -Zip $zip -Next $smoke[0].FullName -Broken $smoke[1].FullName
+      # the upload takes files from the workspace only: copy the logs in first
+      - name: Gather the logs
+        if: failure()
+        shell: pwsh
+        run: |
+          $dest = New-Item -ItemType Directory -Force hub-smoke-logs
+          foreach ($src in @('C:/ProgramData/Dexterity Connect Hub/setup.log', 'C:/ProgramData/Dexterity Connect Hub/hub-data/hub-update/result.json', 'C:/Program Files/Dexterity Connect Hub/logs', "$env:RUNNER_TEMP/hub-smoke")) {
+            if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $dest -Recurse -Force -ErrorAction SilentlyContinue }
+          }
       - name: Keep the logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: hub-smoke-logs
-          path: |
-            C:/ProgramData/Dexterity Connect Hub/setup.log
-            C:/ProgramData/Dexterity Connect Hub/hub-data/hub-update/result.json
-            C:/Program Files/Dexterity Connect Hub/logs/
-            ${{ runner.temp }}/hub-smoke/**/logs/
+          path: hub-smoke-logs
           if-no-files-found: ignore
 
   android:
