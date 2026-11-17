@@ -68,6 +68,25 @@ the release page lists `SHA256SUMS.txt`.
    - **To hand over**: once someone else is an owner, pick **Admin** on your own row and confirm
      **Step down**.
 
+## Handing the office over
+
+Everything set in the Control room belongs to the office, not to the person who entered it:
+
+- the gateway and Meet addresses, and the call (TURN) keys;
+- backups, policies, Nib, holidays, notice desks, the seating plan and integrations.
+
+Making someone an owner or administrator, stepping down, or offboarding the person who set it all
+up changes none of it. The new owners find it working, with nothing to re-enter. A test checks this
+(`apps/hub/test/handover.test.ts`).
+
+A few things live outside the app, in accounts. Create these with an office email address (for
+example an IT mailbox), not a personal one, so handing over means sharing that login:
+
+- the Cloudflare account that runs the gateway and the Meet site. Its API token is never stored;
+  it is only needed to deploy again;
+- the GitHub accounts that hold the source and publish the releases and this landing page;
+- the hub PC's Windows login, and the backup share's permissions.
+
 ## 4. Backups (5 minutes, do this on day one)
 
 **Control room → 16 Backups & leavers → Backups** ([BACKUP.md](BACKUP.md)):
