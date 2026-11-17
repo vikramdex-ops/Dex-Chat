@@ -45,6 +45,7 @@ const bridge: DexBridge = {
   saveCopy: (name, src) => unwrap(ipcRenderer.invoke('file:saveCopy', name, src)),
   openMailDraft: (name, eml) => unwrap(ipcRenderer.invoke('mail:draft', name, eml)),
   openMailto: (url) => unwrap(ipcRenderer.invoke('mail:to', url)),
+  zohoSignIn: (authUrl, state) => unwrap(ipcRenderer.invoke('zoho:signIn', authUrl, state)),
   searchIndexKey: (scope) => unwrap(ipcRenderer.invoke('search:key', scope)),
   dropSearchIndexKey: (scope) => unwrap(ipcRenderer.invoke('search:dropKey', scope)),
   editInSlate: (noteId, title, body) => unwrap(ipcRenderer.invoke('slate:edit', noteId, title, body)),

@@ -239,6 +239,8 @@ export interface DexBridge {
   openMailDraft?(name: string, eml: string): Promise<string>;
   /** Desktop: open a mailto: link in the PC's mail program. */
   openMailto?(url: string): Promise<void>;
+  /** Desktop: sign in to Zoho in the browser and wait for its answer on this PC's loopback address (Connect Zoho Calendar). */
+  zohoSignIn?(authUrl: string, state: string): Promise<import('@dex/core/zoho').ZohoCallback>;
   /**
    * The key (base64, 256 bits) that encrypts this office's on-device search index of end-to-end
    * encrypted Direct messages, held by the system's secure storage; null when there is none.

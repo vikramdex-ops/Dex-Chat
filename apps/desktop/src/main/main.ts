@@ -22,6 +22,7 @@ import { wireAssist } from './assist/index.ts';
 import { dropIndexKey, indexKey } from './localindex.ts';
 import { openTempCopy, pruneTempCopies, saveBytes } from './viewer.ts';
 import { mailtoOk, openMailDraft, pruneMailDrafts } from './maildraft.ts';
+import { fetchLikeBrowser, zohoSignIn } from './zoho.ts';
 
 const APP_ID = 'in.co.dexteritydesign.connect';
 const PROTOCOL = 'dexconnect';
@@ -317,6 +318,13 @@ function wireIpc(c: Controller): void {
     open: (p) => shell.openPath(p),
     record: readTestHook(process.env.DEXCONNECT_TEST_DRIVES, app.isPackaged) ? (p) => drives.testShell.push({ kind: 'file', path: p }) : null,
   })));
+  // Connect Zoho Calendar: the browser signs in, Zoho returns to a short-lived loopback address (zoho.ts)
+  ipcMain.handle('zoho:signIn', (_e, authUrl: unknown, state: unknown) => wrap(async () => {
+    const test = !app.isPackaged && process.env.DEXCONNECT_TEST_ZOHO_BROWSER === 'fetch';
+    const answer = await zohoSignIn(String(authUrl), String(state), test ? fetchLikeBrowser : (u) => shell.openExternal(u), test);
+    showWindow();
+    return answer;
+  }));
   ipcMain.handle('mail:to', (_e, url: unknown) => wrap(async () => { if (!mailtoOk(url)) throw new Error('That is not a mail link.'); await shell.openExternal(url); }));
   ipcMain.handle('file:saveCopy', (_e, name: string, src: { id?: unknown; data?: unknown }) => wrap(async () => saveBytes(String(name), await viewerSource(String(name), src))));
   // the key of this office's on-device search index (sealed by the system's secure storage)
