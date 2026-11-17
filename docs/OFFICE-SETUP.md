@@ -15,7 +15,7 @@ Follow this from top to bottom once. Each part says where to do it, and how to c
 | A. The server (office hub) | The server PC | 20 min |
 | B. Your app, and becoming the owner | Your own PC | 10 min |
 | C. Configure the office | Your PC, in the app's Control room | 45 min |
-| D. Working from outside, and Dexterity Meet links | Cloudflare website + your PC | 45 min |
+| D. Working from outside, and Dexterity Meet links | Cloudflare website + your PC | 15 min |
 | E. Bring everyone in | Each person's PC and phone | 5 min each |
 | F. Hand over to management and IT, and step back | Your PC | 10 min |
 | G. Final checks | Office and a phone on mobile data | 15 min |
@@ -198,88 +198,59 @@ The office opens no ports to the internet.*
 1. Go to <https://dash.cloudflare.com/sign-up> and sign up with the **office email address**. The free plan is
    enough.
 2. Verify the email address (Cloudflare sends a link).
-3. In the dashboard, open **Workers & Pages** once (left menu, under *Compute*). If Cloudflare asks you to choose a
-   **workers.dev subdomain**, pick a short one such as `dexterity`. Your gateway's address will contain it.
-4. On the **Workers & Pages** page, copy your **Account ID** (on the right side) into Notepad.
 
-**D2. Make the API token.** It lets the deploy script create the gateway and the meeting site.
+That is all on Cloudflare's side. The server makes the workers.dev address, the gateway, the meeting site and
+the call relay itself in D3.
 
-1. Click the person icon (top right) → **My Profile** → **API Tokens** → **Create Token**.
-2. Next to **Edit Cloudflare Workers**, click **Use template**.
-3. Under **Permissions**, click **+ Add more** and set **Account · Cloudflare Pages · Edit**. The template alone
-   cannot deploy the meeting site.
-4. Under **Account Resources**, choose your account. Under **Zone Resources**, choose **All zones** (or your
-   domain).
-5. Click **Continue to summary** → **Create Token**. Copy the token into Notepad now: Cloudflare shows it only
-   once.
+**D2. Make the API token.** In the app: **Control room → 09 Outside the office**. The first card is
+**Set up with Cloudflare**.
 
-**D3. Prepare your PC to run the deploy script (once).**
+1. Click **Open the token form**. Cloudflare's **Create API Token** page opens (sign in if asked) with three
+   permissions already filled in: **Workers Scripts · Edit**, **Cloudflare Pages · Edit** and **Account Settings ·
+   Read**.
+2. Add the fourth permission yourself: **+ Add more** → **Account** → **Cloudflare Realtime** (it may be called
+   **Calls**) → **Edit**. It lets the server make the relay for calls.
+3. Under **Account Resources**, leave **All accounts**, or choose the office's account.
+4. Click **Continue to summary** → **Create Token**, then **Copy**.
 
-1. Install **Node.js 22 LTS** from <https://nodejs.org> with the default options.
-2. Sign in to GitHub as **vikramdex-ops**, the owner of the source code. Open this link to download the source as a
-   zip: <https://github.com/vikramdex-ops/Dex-Chat/archive/refs/heads/claude/epic-fermi-h7zdk1.zip>
-3. Extract it to **`D:\Dexterity\`**. You get a folder like `D:\Dexterity\Dex-Chat-claude-epic-fermi-h7zdk1`.
+**D3. Paste it, once.** Back in the **Set up with Cloudflare** card:
 
-**D4. Deploy the gateway and the meeting site.**
+1. Paste the token into **Cloudflare API token**.
+2. Tick **Keep it on the hub for gateway updates** if you want later hub updates to update the gateway with one
+   click. Otherwise the server forgets the token when the setup finishes, and you paste a token again for an
+   update.
+3. Click **Set up**. The card ticks off each step as the server does it: the token, the account, the workers.dev
+   address, the gateway, pinning it to this server, the meeting site, turning on access from outside, checking
+   that the gateway, the pin and the meeting site all answer, and the relay for calls. It takes a minute or two.
+4. If the token can use more than one Cloudflare account, the card asks which one is the office's.
+5. If a step stops, the card says why in plain words, for example which permission the token is missing. Fix
+   that in Cloudflare (edit the same token) and click **Retry**: it carries on from that step. Nothing is made
+   twice.
 
-1. In that folder, open `scripts\release` and double-click **`Deploy-Gateway.cmd`**.
-2. When it asks for the token, paste it (right-click pastes; nothing shows while you paste) and press Enter.
-3. When it asks for the **Account ID**, paste it and press Enter.
-4. The first run downloads its tools, so it takes a few minutes. At the end it prints:
+When it is done, the card shows the Cloudflare account, the gateway, the meeting site and **Calls: Cloudflare
+TURN**, and the status below it says **Connected … gateway pinned to this hub**. The gateway and meeting site
+addresses are filled in on the page; there is nothing to copy.
 
-   ```
-   Gateway address:       https://dexconnect-gateway.<your-subdomain>.workers.dev
-   Meeting site address:  https://dexterity-meet.pages.dev
-   ```
+**D4. Who may use it.** On the same page, under **Who may use it** (the setup does not change these):
 
-   Copy both into Notepad.
-5. If it says the name **dexterity-meet** is taken, run it again with another name:
-   1. Click in the folder's address bar, type `cmd` and press Enter.
-   2. Run `Deploy-Gateway.cmd -SiteName dexmeet-office`.
+- leave **New devices may ask to join from outside** on (an administrator still approves each one);
+- turn on **The Control room works from outside** only if owners and IT should manage it from home;
+- leave **Name on meeting pages** as *Dexterity Design Services*, or change it and click **Save name**.
 
-   The meeting site is then `https://dexmeet-office.pages.dev`.
+**D5. Check it.**
 
-**D5. Tell the hub.** In the app: **Control room → 09 Outside the office**.
-
-1. **Gateway address**: paste the gateway address and click **Save address**.
-2. Switch on **Allow access from outside the office**. The status turns green within seconds.
-3. Under **Who may use it**:
-   - leave **New devices may ask to join from outside** on (an administrator still approves each one);
-   - turn on **The Control room works from outside** only if owners and IT should manage it from home.
-4. Under **Meeting site · Dexterity Meet**:
-   - paste the meeting site address into **Meeting site address** and click **Save address**;
-   - leave **Name on meeting pages** as *Dexterity Design Services*, or change it and click **Save name**.
-
-**D6. Lock the gateway to your server (recommended).**
-
-1. On the same page, under **This hub**, copy the **Fingerprint**.
-2. In `scripts\release`, click the address bar, type `cmd`, press Enter, and run:
-
-   ```
-   Deploy-Gateway.cmd -Fingerprint PASTE-THE-FINGERPRINT-HERE
-   ```
-
-   Paste the token and Account ID again when asked.
-3. Back in **Outside the office**, the status says **gateway pinned to this hub**.
-
-**D7. Calls from outside (recommended).** Without this, calls from some mobile networks cannot connect.
-
-1. In Cloudflare, open **Realtime → TURN Server** (left menu) → **Create**. Give it a name.
-2. Copy its **Turn Token ID** (32 characters) and **API Token**.
-3. In the app: **Outside the office → Calls across networks**:
-   1. Set **Relay for calls** to **Cloudflare TURN**.
-   2. Paste the **TURN key id** and the **API token**, and save.
-
-   The token stays on the server; each call gets short-lived credentials. Cloudflare's free allowance is plenty
-   for an office.
-
-**D8. Check it.**
-
-1. Open the meeting site address in a browser. It says **Join a meeting with Dexterity Design Services**.
+1. Open the meeting site address (shown in the card) in a browser. It says **Join a meeting with Dexterity
+   Design Services**.
 2. In the app, open **Meet**, copy your personal room's link, and open it on a phone **using mobile data** (Wi-Fi
    off). The meeting page opens.
 
-**D9. Optional: your own domain for meeting links** (for example `meet.dexteritydesign.co.in`).
+When a later version of the server carries a newer gateway, the card says so and offers **Update the gateway**.
+
+*Without the card (a server built without the Cloudflare parts, or if you prefer the command line): the manual
+way, with `scripts\release\Deploy-Gateway.cmd`, is in [REMOTE-ACCESS.md](REMOTE-ACCESS.md), "Setting it up by
+hand".*
+
+**D6. Optional: your own domain for meeting links** (for example `meet.dexteritydesign.co.in`).
 
 1. In Cloudflare: **Workers & Pages → dexterity-meet → Custom domains → Set up a custom domain**. Enter
    `meet.dexteritydesign.co.in` and continue.
@@ -340,7 +311,7 @@ Owners and admins can both configure everything. Only owners choose who the owne
    down**. You are no longer an owner.
 3. Everything you configured stays exactly as it is:
    - backups, Nib, seating, notice desks, holidays and policies;
-   - the gateway, the Meet site and the call keys.
+   - the gateway, the Meet site and the call keys (the Cloudflare account; the server keeps the call key's token).
 
    It all belongs to the office, so nobody has to re-enter anything.
 4. If you leave the office entirely: one of the owners opens **Control room → 16 Backups & leavers → Someone
@@ -378,11 +349,12 @@ Owners and admins can both configure everything. Only owners choose who the owne
 | "Windows protected your PC" when installing | **More info → Run anyway**. The installers are not code-signed yet. |
 | The app keeps looking for the office hub | Check the PC is on the office network, not guest Wi-Fi. Click **Enter the hub address yourself** and type the server's address (A2). Check `services.msc` on the server. |
 | A PC on another floor or Wi-Fi cannot find the hub | Part A5: the network must let it reach the server's ports. |
-| `Deploy-Gateway.cmd` says *Install Node.js 22* | Do D3 step 1, then run it again. |
-| It fails at the meeting site with a Pages message | The token is missing **Account · Cloudflare Pages · Edit** (D2 step 3). Edit the token in Cloudflare, add it, run again. |
-| *Cloudflare would not create the Pages project* | The name is taken: run `Deploy-Gateway.cmd -SiteName dexmeet-office`. |
-| **Outside the office** status is not green | Check the gateway address was pasted exactly and **Allow access from outside the office** is on. The server needs internet for this part only. |
-| Calls from home connect but have no sound or video | Set up **Cloudflare TURN** (D7). |
+| **Set up with Cloudflare** says the token is missing a permission | Edit the same token in Cloudflare (**My Profile → API Tokens → Edit**), add the permission it names, then **Retry**. |
+| It stops at **Relay for calls** | The token lacks **Cloudflare Realtime (Calls) · Edit** (D2 step 2). Everything else already works; add it and **Retry**. |
+| *The new address does not answer yet* | A new Cloudflare account takes a few minutes to publish its workers.dev address. **Retry** after five minutes. |
+| *The hub PC could not reach Cloudflare* | The server needs internet for this part. Check it, then **Retry**. |
+| **Outside the office** status is not green | Check **Allow access from outside the office** is on. The server needs internet for this part only. |
+| Calls from home connect but have no sound or video | Check the card shows **Calls: Cloudflare TURN**; if it stopped at **Relay for calls**, see above. |
 | The backup says it cannot write to the share | Give the server PC's computer account write access to that folder (C1). |
 | An update is waiting | Nothing to do: apps update themselves. The hub keeps a copy of the newest installers for PCs without internet. |
 

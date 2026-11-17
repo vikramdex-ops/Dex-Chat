@@ -329,3 +329,19 @@ test('migrations: only those the Worker does not have yet, as wrangler sends the
   assert.equal(cfSlug('Dexterity Design Services'), 'dexterity-design-services');
   assert.equal(cfSlug('ॐ 42'), 'dexconnect-42');
 });
+
+test('the site\'s files are hashed exactly as wrangler pages deploy hashes them', async (t) => {
+  const { createRequire } = await import('node:module');
+  const path = await import('node:path');
+  const req = createRequire(import.meta.url);
+  let wranglerHash: (s: string) => { toString(enc: string): string };
+  try {
+    const wranglerDir = path.dirname(req.resolve('wrangler/package.json'));
+    wranglerHash = (createRequire(path.join(wranglerDir, 'x.js'))('blake3-wasm') as { hash: typeof wranglerHash }).hash;
+  } catch { t.skip('wrangler\'s blake3-wasm is not installed here'); return; }
+  const { pagesHash } = await import('../scripts/build-cloud.mjs' as string) as { pagesHash: (data: Buffer, name: string) => string };
+  for (const [name, data] of [['assets/landing.08488eeddf.js', Buffer.from('console.log("dexterity")')], ['assets/mark.svg', Buffer.from('<svg/>')], ['assets/font.woff2', Buffer.from([0, 1, 2, 255])]] as const) {
+    const ext = path.extname(name).slice(1);
+    assert.equal(pagesHash(data, name), wranglerHash(data.toString('base64') + ext).toString('hex').slice(0, 32), name);
+  }
+});
