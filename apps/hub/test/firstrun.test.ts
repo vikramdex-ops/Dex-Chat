@@ -322,6 +322,27 @@ test('an administrator\'s backup folder is never replaced, and a picked one is n
 });
 
 // ---------------------------------------------------------------- the setup check
+test('the setup report on a fresh office: the drawing\'s names, this year\'s days off, Zoho waiting for its client, Cloudflare as the fix', async () => {
+  const hub = await boot(tmp('dexfr-'), { firstRun: false, holidaySeed: true });
+  const c = await owner(hub);
+  const r: SetupReport = await c.request('admin.setup.report');
+  const by = new Map(r.checks.map((x) => [x.id, x] as const));
+  // the names from the drawing count as a seating plan: nothing to import
+  assert.equal(by.get('seating.plan')!.state, 'pass');
+  assert.match(by.get('seating.plan')!.detail, /names from the drawing wait for their people to join/);
+  // the 2026 circular is built in: this year passes in 2026; in another year the check asks for that year's circular
+  const year = new Date().getFullYear();
+  assert.equal(by.get('holidays.year')!.state, year === 2026 ? 'pass' : 'action');
+  if (year === 2026) assert.match(by.get('holidays.year')!.detail, /HRD\/CIR\/2026\/011/);
+  // Zoho needs its one client before anyone can connect
+  assert.equal(by.get('zoho.client')!.state, 'action');
+  assert.match(by.get('zoho.client')!.fix!, /Integrations ▸ Zoho Calendar/);
+  // outside access points at Set up with Cloudflare, not at a script
+  assert.match(by.get('remote.access')!.fix!, /Set up with Cloudflare/);
+  c.disconnect();
+  await stop(hub);
+});
+
 test('the setup report: every area, manual checks never passed, administrators only, as text', async () => {
   const hub = await boot(tmp('dexfr-'), { firstRun: pretend(layout(vol({ letter: 'D' })), tmp('dexfr-disk-')) });
   await hub.firstRunBackup;

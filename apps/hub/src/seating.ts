@@ -200,6 +200,9 @@ export class Seating {
   }
 
   /** Who might be each name still on a seat (editors see this as "Waiting to be matched"). */
+  /** Names from the drawing that may be someone who has joined (Setup check). */
+  waitingCount(): number { return this.waiting().length; }
+
   private waiting(): SeatingView['waiting'] {
     const h = this.holders();
     const named = this.namedSeats(h);

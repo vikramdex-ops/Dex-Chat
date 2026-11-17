@@ -14,7 +14,8 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { DatabaseSync } from 'node:sqlite';
 import { minutesOf, summarize, uptimeText } from '@dex/core';
-import type { NibConfig, NoticeDesk, RemoteView, SetupCheck, SetupReport } from '@dex/core';
+import type { NibConfig, NoticeDesk, RemoteView, SetupCheck, SetupReport, ZohoAdminView } from '@dex/core';
+import type { OfficeDay } from '@dex/core/holidays';
 import type { Backups } from './backup.ts';
 import { folderThere } from './firstrun.ts';
 
@@ -129,7 +130,11 @@ export interface SetupDeps {
   desks: () => NoticeDesk[];
   defaultDesks: string[];
   /** Seats on the floor plan and people at them; null without a floor plan. */
-  seats: () => { seats: number; seated: number } | null;
+  seats: () => { seats: number; seated: number; named?: number; waiting?: number } | null;
+  /** The office's registered days (holidays.ts). */
+  holidays: () => OfficeDay[];
+  /** Zoho Calendar's office setup and who is connected (zoho.ts). */
+  zoho: () => ZohoAdminView;
   remote: () => RemoteView;
   ice: () => { mode: 'auto' | 'cloudflare' | 'custom'; keyId: string | null; hasToken: boolean; servers: number };
 }
@@ -216,9 +221,17 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
   health.register('seating', () => {
     const s = d.seats();
     if (!s || !s.seats) return C('seating.plan', 'Seating', 'There is no floor plan', 'action', 'The floor plan has no seats.', 'Open Directory ▸ Org chart ▸ Floor ▸ Arrange and draw or import the floor plan.');
-    return s.seated
-      ? C('seating.plan', 'Seating', 'The seating plan is there', 'pass', `${s.seats} seats on the floor plan; ${s.seated === 1 ? '1 person is' : `${s.seated} people are`} at a seat.`)
-      : C('seating.plan', 'Seating', 'Nobody is at a seat yet', 'action', `${s.seats} seats on the floor plan, nobody at one.`, 'Open Directory ▸ Org chart ▸ Floor ▸ Arrange ▸ Import and give people their seats.');
+    const named = s.named ?? 0;
+    const waiting = s.waiting ?? 0;
+    const out: SetupCheck[] = [];
+    if (s.seated || named) {
+      const parts = [`${s.seats} seats on the floor plan`];
+      if (s.seated) parts.push(s.seated === 1 ? '1 person is at their seat' : `${s.seated} people are at their seats`);
+      if (named) parts.push(named === 1 ? '1 name from the drawing waits for its person to join' : `${named} names from the drawing wait for their people to join`);
+      out.push(C('seating.plan', 'Seating', 'The seating plan is there', 'pass', parts.join('; ') + '.'));
+    } else out.push(C('seating.plan', 'Seating', 'Nobody is at a seat yet', 'action', `${s.seats} seats on the floor plan, nobody at one.`, 'Open Directory ▸ Org chart ▸ Floor ▸ Arrange and give people their seats.'));
+    if (waiting) out.push(C('seating.waiting', 'Seating', 'Names to confirm on the floor plan', 'action', waiting === 1 ? '1 name from the drawing may be someone who has joined.' : `${waiting} names from the drawing may be people who have joined.`, 'Open Directory ▸ Org chart ▸ Floor ▸ Arrange and confirm them under Waiting to be matched.'));
+    return out;
   });
 
   health.register('notices', () => {
@@ -257,10 +270,10 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
   health.register('remote', () => {
     const v = d.remote();
     const c = v.config;
-    if (!c.url) return C('remote.access', 'Outside the office', 'Working from outside is not set up', 'action', 'No gateway address is saved, so phones on mobile data and home PCs cannot reach the hub.', 'Set up the gateway, then enter its address in Control room ▸ Outside the office.');
+    if (!c.url) return C('remote.access', 'Outside the office', 'Working from outside is not set up', 'action', 'No gateway address is saved, so phones on mobile data and home PCs cannot reach the hub.', 'Use Set up with Cloudflare in Control room ▸ Outside the office: paste one Cloudflare token and the hub does the rest.');
     if (!c.enabled) return C('remote.access', 'Outside the office', 'Access from outside is switched off', 'action', `The gateway ${c.url} is saved but switched off.`, 'Switch on Allow access from outside the office in Control room ▸ Outside the office.');
     if (!v.status.connected) return C('remote.access', 'Outside the office', 'The hub is not connected to the gateway', 'fail', v.status.error ? `${c.url}: ${v.status.error}` : `${c.url} is not answering.`, 'Check that the hub PC has internet access and that the gateway address is right (Control room ▸ Outside the office).');
-    return C('remote.access', 'Outside the office', 'Working from outside works', v.status.pinned ? 'pass' : 'action', `Connected to ${c.url}${v.status.connected && v.status.since ? ` since ${when(v.status.since)}` : ''}; ${v.status.pinned ? 'the gateway is pinned to this hub' : 'the gateway is not pinned to this hub'}.`, v.status.pinned ? null : 'Pin the gateway to this hub: deploy it again with this hub\'s fingerprint (Control room ▸ Outside the office ▸ This hub).');
+    return C('remote.access', 'Outside the office', 'Working from outside works', v.status.pinned ? 'pass' : 'action', `Connected to ${c.url}${v.status.connected && v.status.since ? ` since ${when(v.status.since)}` : ''}; ${v.status.pinned ? 'the gateway is pinned to this hub' : 'the gateway is not pinned to this hub'}.`, v.status.pinned ? null : 'Run Set up with Cloudflare again (Control room ▸ Outside the office): it pins the gateway to this hub.');
   });
 
   health.register('calls', () => {
@@ -276,7 +289,32 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
         ? C('calls.relay', 'Calls', 'Calls across networks have a relay', 'pass', `${i.servers === 1 ? '1 relay server' : `${i.servers} relay servers`} set by an administrator.`)
         : C('calls.relay', 'Calls', 'No relay server is set', 'fail', 'Your own relay servers are chosen, but none is listed.', 'Add the relay server in Control room ▸ Outside the office ▸ Calls across networks.');
     }
-    return C('calls.relay', 'Calls', 'No relay for calls from outside', outside ? 'action' : 'info', 'Calls inside the office need no relay. From some mobile networks, calls cannot connect without one.', 'Set Relay for calls to Cloudflare TURN in Control room ▸ Outside the office ▸ Calls across networks.');
+    return C('calls.relay', 'Calls', 'No relay for calls from outside', outside ? 'action' : 'info', 'Calls inside the office need no relay. From some mobile networks, calls cannot connect without one.', 'Set up with Cloudflare (Control room ▸ Outside the office) creates the relay key, if the token includes Cloudflare Realtime · Edit.');
+  });
+
+  // the office's days off, from management's holiday circular (holidays.ts)
+  health.register('holidays', () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const days = d.holidays();
+    const thisYear = days.filter((x) => x.date.startsWith(`${year}-`));
+    const nextYear = days.filter((x) => x.date.startsWith(`${year + 1}-`));
+    const refs = [...new Set(thisYear.map((x) => x.source?.ref).filter((r): r is string => !!r))];
+    const out: SetupCheck[] = [thisYear.length
+      ? C('holidays.year', 'Office holidays', 'This year\'s days off are registered', 'pass', `${year}: ${thisYear.length} days${refs.length ? ` from ${refs.join(', ')}` : ''}; Nib, scheduled jobs and hot-desk booking skip the days off.`)
+      : C('holidays.year', 'Office holidays', 'No days off registered for this year', 'action', `The office calendar has no holidays for ${year}.`, 'Drop management\'s holiday circular (PDF) into your conversation with Nib and click Register.')];
+    if (now.getMonth() === 11 && !nextYear.length) out.push(C('holidays.next', 'Office holidays', 'Next year\'s holidays are not in yet', 'info', `Nothing is registered for ${year + 1}.`, 'When management issues next year\'s holiday circular, drop the PDF into your conversation with Nib and click Register.'));
+    return out;
+  });
+
+  // Zoho Calendar (zoho.ts): the office's one-time Zoho client, then each person connects themselves
+  health.register('zoho', () => {
+    const v = d.zoho();
+    if (!v.configured) return C('zoho.client', 'Zoho Calendar', 'Zoho Calendar is not set up for the office', 'action', 'People see Connect Zoho Calendar greyed out until the office\'s Zoho client is saved.', 'Register the office\'s Zoho client once, then paste its id and secret in Control room ▸ Integrations ▸ Zoho Calendar.');
+    if (!v.enabled) return C('zoho.client', 'Zoho Calendar', 'Zoho Calendar is switched off', 'info', 'The office\'s Zoho client is saved but switched off, so nobody can connect.', 'Switch it on in Control room ▸ Integrations ▸ Zoho Calendar.');
+    const connected = v.people.filter((p) => p.state === 'connected').length;
+    const reconnect = v.people.filter((p) => p.state === 'reconnect').length;
+    return C('zoho.client', 'Zoho Calendar', 'Zoho Calendar is ready for everyone', 'pass', `${connected === 1 ? '1 person has' : `${connected} people have`} connected their own Zoho Calendar${reconnect ? `; ${reconnect === 1 ? '1 needs' : `${reconnect} need`} to reconnect` : ''}. Each person connects from their Calendar or Preferences.`);
   });
 
   // what only a person can check: listed, never passed

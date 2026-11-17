@@ -607,11 +607,14 @@ export class Hub {
       seats: () => {
         try {
           const seats = this.seating.layout().plan.seats.length;
-          return { seats, seated: Object.values(this.seating.holders()).filter((h) => h.kind === 'person').length };
+          const held = Object.values(this.seating.holders());
+          return { seats, seated: held.filter((h) => h.kind === 'person').length, named: held.filter((h) => h.kind === 'named').length, waiting: this.seating.waitingCount() };
         } catch { return null; }
       },
       remote: () => this.remoteView(),
       ice: () => { const c = this.iceConfig(); return { mode: c.mode, keyId: c.keyId ?? null, hasToken: !!c.token, servers: c.servers.length }; },
+      holidays: () => this.holidays.list(),
+      zoho: () => this.zoho.adminView(),
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
