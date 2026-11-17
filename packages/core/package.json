@@ -42,7 +42,8 @@
     "./nib": "./src/nib.ts",
     "./meet-threads": "./src/meet-threads.ts",
     "./notices": "./src/notices.ts",
-    "./zoho": "./src/zoho.ts"
+    "./zoho": "./src/zoho.ts",
+    "./cfsetup": "./src/cfsetup.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

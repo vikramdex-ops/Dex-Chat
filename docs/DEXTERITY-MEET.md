@@ -26,57 +26,56 @@ Staff instructions are in [MEETINGS.md](MEETINGS.md). The gateway itself is desc
 > **[not tested]**: written from Cloudflare's documentation, not yet run against the real
 > service. See section 9.
 
-## 1. Setup: four steps, about fifteen minutes
+## 1. Setup
 
-The office does this once, on any PC with Node.js 22 and a copy of this repository. The gateway
-must already be set up ([REMOTE-ACCESS.md](REMOTE-ACCESS.md), "Setting it up"); these steps add the
-meeting site next to it.
+**Set up with Cloudflare** (Control room → Outside the office) puts the meeting site in place
+together with the gateway, from one pasted token ([REMOTE-ACCESS.md](REMOTE-ACCESS.md), "Set up with
+Cloudflare"). For the meeting site it:
 
-1. **Allow Pages in the Cloudflare token.**
-   1. Go to dash.cloudflare.com and open **My Profile → API Tokens**.
-   2. Edit the token you made for the gateway, or make a new one with the **Edit Cloudflare
-      Workers** template.
-   3. Under **Permissions**, choose **+ Add more**, then **Account · Cloudflare Pages · Edit**.
-   4. Choose **Continue to summary**, then **Update token** (or **Create token**). Copy the token
-      if Cloudflare shows it; it is shown only once.
+1. finds or makes the Pages project `dexterity-meet` in the office's account (if Cloudflare will not
+   make that name, `dexterity-meet-<suffix>`), and remembers it;
+2. publishes the site as `wrangler pages deploy` does from `apps/meet-site`: the files by content hash
+   (only those Cloudflare does not have yet), `_headers`, and the front door `_worker.js` with its
+   `GATEWAY` service binding to `dexconnect-gateway`, sent with the deployment the way wrangler
+   sends bindings from `wrangler.jsonc`;
+3. saves the address Cloudflare gave the project (`https://dexterity-meet.pages.dev`, or a suffixed
+   `*.pages.dev` when another account has the name) as **Meeting site address**;
+4. checks it: the site's own files load, and its `/health` reaches the gateway through the binding.
 
-   **[not tested]**: the template's own permissions do not include Pages.
-2. **Deploy both parts.** Double-click `scripts\release\Deploy-Gateway.cmd`.
-   1. Paste the token when it asks (nothing is shown as you paste; the token is not saved).
-   2. Paste the **Account ID** (on Cloudflare's **Workers & Pages** overview, on the right).
+Then check it yourself:
 
-   The script deploys the gateway Worker, then creates the free Pages project `dexterity-meet` and
-   deploys the meeting site to it. At the end it prints two addresses:
+1. Open the meeting site's address (shown in the card) in a browser. It should say *Join a meeting
+   with Dexterity Design Services*.
+2. In the Meet lens, copy your personal room's link (it ends in your first name).
+3. Open it on a phone using mobile data.
 
-   ```
-   Gateway address:       https://dexconnect-gateway.<your-subdomain>.workers.dev
-   Meeting site address:  https://dexterity-meet.pages.dev
-   ```
+Leave **Name on meeting pages** as *Dexterity Design Services* (or change it).
 
-   If Cloudflare says the name `dexterity-meet` is taken by another account, run
-   `Deploy-Gateway.cmd -SiteName dexmeet-<something>`. The address then becomes
-   `https://dexmeet-<something>.pages.dev`.
+### By hand (fallback)
 
-   The GitHub workflow **Actions → gateway → Run workflow** does the same, with the token and
-   account id as repository secrets.
-3. **Tell the hub.** In the app, open **Control room → Outside the office**.
-   1. Under **Meeting site · Dexterity Meet**, paste the meeting site address and choose
-      **Save address**.
-   2. Leave **Name on meeting pages** as *Dexterity Design Services* (or change it).
-4. **Check it.**
-   1. Open the meeting site's address in a browser. It should say *Join a meeting with Dexterity
-      Design Services*.
-   2. In the Meet lens, copy your personal room's link (it ends in your first name).
-   3. Open it on a phone using mobile data.
+On a PC with Node.js 22 and a copy of this repository, with a token that has **Account · Cloudflare
+Pages · Edit** as well as the Workers permissions: double-click `scripts\release\Deploy-Gateway.cmd`,
+paste the token and the **Account ID**. It deploys the gateway Worker, creates the Pages project
+`dexterity-meet` and deploys the site, then prints both addresses:
 
-Until step 3 is done, meeting pages are served on the gateway's own address
+```
+Gateway address:       https://dexconnect-gateway.<your-subdomain>.workers.dev
+Meeting site address:  https://dexterity-meet.pages.dev
+```
+
+If Cloudflare says the name is taken, run `Deploy-Gateway.cmd -SiteName dexmeet-<something>`. The
+GitHub workflow **Actions → gateway → Run workflow** does the same with repository secrets. Paste
+the meeting site address into **Control room → Outside the office → Meeting site address** and
+**Save address**.
+
+Until the site's address is saved, meeting pages are served on the gateway's own address
 (`https://dexconnect-gateway…workers.dev/482-913-207`), so nothing breaks while you set up.
 
 What ends up where:
 
 | What | Where | Secret? |
 |---|---|---|
-| The Cloudflare token | Typed into the deploy script, or a GitHub repository secret; never in the repository | Yes |
+| The Cloudflare token | Pasted into **Set up with Cloudflare** and forgotten after the run (or kept in the hub's database with **Keep it on the hub for gateway updates**, never sent to a device); or typed into the deploy script, or a GitHub repository secret; never in the repository | Yes |
 | The meeting site's address and the name on pages | The hub's database (Control room), sent to the gateway when the hub connects | No |
 | Meeting names, "show the title", the note for afterwards | The hub's database | No |
 | Passcodes | The hub's database; in guest links only after `#` | Yes |
@@ -396,8 +395,10 @@ the app (`dexconnect://meet/<ID>`).
 
 | What you see | What to do |
 |---|---|
-| The deploy script stops at the meeting site: "Authentication error" or "not allowed" | The token lacks **Cloudflare Pages · Edit**. Add it (section 1, step 1) and run the script again |
-| "Cloudflare would not create the Pages project" | The name `dexterity-meet` is taken by another account. Run `Deploy-Gateway.cmd -SiteName <another>` and paste that address |
+| **Set up with Cloudflare** stops at *Meeting site project* with a missing permission | The token lacks **Cloudflare Pages · Edit**. Edit the token in Cloudflare, add it, then **Retry** |
+| It stops at *Check* with "The meeting site does not reach the gateway yet" | A new project can take a minute to go live. **Retry** in a few minutes; if it persists, check the gateway `dexconnect-gateway` is in the same account |
+| The deploy script stops at the meeting site: "Authentication error" or "not allowed" | The token lacks **Cloudflare Pages · Edit**. Add it and run the script again |
+| "Cloudflare would not create the Pages project" (deploy script) | The name `dexterity-meet` is taken by another account. Run `Deploy-Gateway.cmd -SiteName <another>` and paste that address |
 | The site says "This meeting site is not connected to the office's gateway yet" | The Pages project has no binding to the Worker. Check that the gateway was deployed in the **same** Cloudflare account under the name `dexconnect-gateway`, then run the script again |
 | The site says "The office is not connected right now" | The hub is off, or access from outside is switched off. See Control room → Outside the office |
 | Links still show `…workers.dev` | The meeting site address is not saved in the Control room |
@@ -444,13 +445,20 @@ Automated, on the development PC (15 November 2026):
   room, an old link, a cancellation, nothing here, and the lockout. Screenshots at 1440 and 390,
   light and dark.
 
+- **Set up with Cloudflare** (17 November 2026): the hub's deployment of the site to a stand-in for
+  Cloudflare's API (`apps/hub/test/cfdeploy.test.ts`: manifest and hashes, the bundle's `GATEWAY`
+  binding, taken names, an existing project reused, a failed deployment retried without a second
+  project), and what it uploaded run in `wrangler dev` with the gateway it deployed
+  (`cfdeploy-workerd.test.ts`: the site's files, `/health` through the binding, a meeting page with
+  its CSP). The card in the app: `apps/desktop/e2e/cfsetup.mts`.
+
 **Not yet run for real:**
 
 - an actual Cloudflare Pages deployment and its service binding in production;
-- `wrangler pages project create` and `pages deploy` with a real token;
+- `wrangler pages project create` and `pages deploy`, and the hub's own Pages direct upload, with a real token;
 - the token's Pages permission;
 - a custom domain;
 - Safari and Firefox, other than by feature checks (the tests use Chromium);
 - the PowerShell script on Windows.
 
-Do steps 1–4 of section 1, then join a meeting from a phone on mobile data, before telling staff.
+Run **Set up with Cloudflare** (or section 1 by hand), then join a meeting from a phone on mobile data, before telling staff.

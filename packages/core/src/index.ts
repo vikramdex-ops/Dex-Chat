@@ -17,3 +17,4 @@ export * from './meet-threads.ts';
 export * from './notices.ts';
 export * from './seating.ts';
 export * from './zoho.ts';
+export * from './cfsetup.ts';

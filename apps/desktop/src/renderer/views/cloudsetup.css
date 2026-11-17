@@ -1,0 +1,88 @@
+/* Control room ▸ Outside the office ▸ Set up with Cloudflare (CloudSetup.tsx).
+   The same sheet grammar as the backup status: a state rule down the left edge (teal when set up,
+   dashed while it runs, amber only when the owner must act), numbered ruled rows for what the
+   owner does, a schedule of steps with mono captions, and title-block cells for the result. */
+.cf-sheet { position: relative; overflow: hidden; padding-left: 22px; }
+.cf-sheet::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--stroke-strong); }
+.cf-sheet.ok::before { background: var(--accent); }
+.cf-sheet.run::before { background: repeating-linear-gradient(180deg, var(--accent) 0 8px, transparent 8px 14px); }
+.cf-sheet.warn::before { background: var(--amber); }
+@media (prefers-reduced-motion: no-preference) {
+  .cf-sheet.run::before { animation: cf-march 1.2s linear infinite; background-size: 100% 14px; }
+}
+@keyframes cf-march { to { background-position: 0 14px; } }
+.cf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.cf-head .eyebrow { margin-bottom: 6px; }
+.cf-state { display: flex; align-items: center; gap: 8px; font: 600 19px/1.25 var(--font-display); letter-spacing: -.01em; }
+.cf-sheet.ok .cf-state svg { color: var(--accent); }
+.cf-sheet.warn .cf-state svg { color: var(--amber); }
+.cf-lead { margin: 10px 0 0; }
+
+/* what the owner does: three ruled rows */
+.cf-todo { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); }
+.cf-todo > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px; }
+.cf-todo > li + li { border-top: 1px solid var(--stroke); }
+.cf-todo .txt { display: grid; gap: 6px; min-width: 0; font-size: 13.5px; }
+.cf-todo .txt .faint { font-size: 12.5px; }
+.cf-todo .cf-grow { grid-column: 2 / 4; }
+.cf-n { font-size: 11px; color: var(--accent-ink, var(--accent)); padding-top: 2px; letter-spacing: .06em; }
+.cf-todo .btn { white-space: nowrap; gap: 6px; text-decoration: none; }
+.cf-perms { list-style: none; margin: 0; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--subtle); font-size: 12px; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.cf-token .field-label { margin-top: 0; }
+.cf-keep { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+.cf-keep input { width: 16px; height: 16px; accent-color: var(--accent); }
+.cf-hint { margin: 6px 0 0; font-size: 12px; }
+
+/* the steps, as they happen */
+.cf-steps { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--stroke-strong); }
+.cf-step { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 34px; padding: 4px 2px; border-bottom: 1px solid var(--stroke); font-size: 13px; color: var(--text-3); }
+.cf-step.done, .cf-step.running, .cf-step.failed { color: var(--text); }
+.cf-step .cf-mark { display: grid; place-items: center; width: 20px; height: 20px; }
+.cf-step .cf-mark .spinner { width: 14px; height: 14px; }
+.cf-step.done .cf-mark { color: var(--accent); }
+.cf-step.failed .cf-mark { color: var(--amber); }
+.cf-step.todo .cf-mark::before { content: ''; width: 9px; height: 1px; background: var(--stroke-strong); }
+.cf-st { font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-3); }
+.cf-step.failed .cf-st { color: var(--amber-ink); }
+
+.cf-problem { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-m); background: var(--amber-soft); color: var(--amber-ink); font-size: 13px; }
+.cf-problem svg { flex: none; margin-top: 2px; }
+.cf-detail { display: block; margin-top: 4px; font-size: 11.5px; overflow-wrap: anywhere; opacity: .9; }
+.cf-sheet .row-actions { justify-content: flex-end; margin-top: 10px; flex-wrap: wrap; }
+
+.cf-choose { margin: 12px 0 0; padding: 0; border: 0; }
+.cf-choose legend { font-size: 13.5px; margin-bottom: 8px; }
+.cf-acct { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--stroke); border-radius: var(--radius-m); margin-top: 6px; font-size: 13.5px; cursor: pointer; }
+.cf-acct:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.cf-acct input { accent-color: var(--accent); }
+
+/* the result: title-block cells */
+.cf-block { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); overflow: hidden; }
+.cf-cell { display: grid; gap: 4px; align-content: start; padding: 10px 12px; min-width: 0; }
+.cf-cell + .cf-cell { border-left: 1px solid var(--stroke-strong); }
+.cf-cell .label { font-size: 10px; }
+.cf-cell .v { font: 600 14px/1.3 var(--font-display); overflow-wrap: anywhere; }
+.cf-cell .v.mono { font: 500 12px/1.4 var(--font-mono); }
+.cf-update .row-actions { margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .cf-block { grid-template-columns: 1fr 1fr; }
+  .cf-cell:nth-child(3) { border-left: 0; }
+  .cf-cell:nth-child(n + 3) { border-top: 1px solid var(--stroke-strong); }
+  .cf-head { flex-direction: column; gap: 10px; }
+}
+@media (max-width: 520px) {
+  .cf-todo > li { grid-template-columns: 24px minmax(0, 1fr); }
+  .cf-todo > li > .btn { grid-column: 2; justify-self: start; }
+  .cf-todo .cf-grow { grid-column: 2; }
+  .cf-sheet .gw-url-row { flex-direction: column; }
+  .cf-sheet .gw-url-row .input { flex: none; }
+  .cf-block { grid-template-columns: 1fr; }
+  .cf-cell + .cf-cell { border-left: 0; border-top: 1px solid var(--stroke-strong); }
+}
+.cf-fold { margin-top: 10px; }
+.cf-fold > summary { cursor: pointer; width: fit-content; font-size: 12.5px; color: var(--text-2); }
+.cf-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.cf-fold .cf-steps { margin-top: 8px; }
+.cf-problem .cf-then { display: block; margin-top: 4px; }
+.cf-clicks { border-left-color: var(--stroke-strong); }

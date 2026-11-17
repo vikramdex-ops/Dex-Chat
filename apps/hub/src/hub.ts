@@ -32,6 +32,8 @@ import { pairCode, pairLink } from '@dex/core/remote';
 import { Emoji, EmojiError } from './emoji.ts';
 import { RemoteGateway } from './remote.ts';
 import { Ice } from './ice.ts';
+import { CfSetup, CfSetupError, cloudflareEndpoints } from './cfdeploy.ts';
+import type { CfEndpoints, CfSetupOptions, CloudBundle } from './cfdeploy.ts';
 import { slackToMarkdown } from './slack.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
@@ -98,6 +100,8 @@ export interface HubOptions {
   firstRun?: BackupPickOptions | false;
   /** Zoho Calendar against a mock server (tests only; also DEX_ZOHO_TEST_DCS and DEX_ZOHO_CALLBACK_PORT). */
   zoho?: ZohoTestOptions;
+  /** "Set up with Cloudflare": where Cloudflare is and what to deploy (tests use a stand-in; src/cfdeploy.ts). */
+  cloudflare?: { endpoints?: CfEndpoints; bundle?: () => CloudBundle | null; fetch?: typeof fetch; waits?: CfSetupOptions['waits'] };
 }
 
 /** Test-only Zoho addresses from the environment (the e2e scripts' mock server); never set in an office. */
@@ -639,6 +643,37 @@ export class Hub {
       web: (op, ref, ip, body) => (op.startsWith('page.') ? this.meetPublic.request(op, ref, ip, body) : this.webinars.webRequest(op, this.meetPublic.resolveId(ref) ?? ref, ip, body)),
       calendar: (token, ip) => this.feeds.fetch(token, ip),
     });
+    // "Set up with Cloudflare": the gateway and the meeting site deployed from the Control room (cfdeploy.ts)
+    this.cloudflare = new CfSetup({
+      hubId: id, hubName: () => this.info.name, fingerprint: this.fingerprint, version: HUB_VERSION,
+      meta: { get: (k) => this.store.meta(k, () => ''), set: (k, v) => this.setMeta(k, v) },
+      ...(opts.cloudflare?.bundle ? { bundle: opts.cloudflare.bundle } : {}),
+      ...(opts.cloudflare?.endpoints ? { endpoints: opts.cloudflare.endpoints } : {}),
+      ...(opts.cloudflare?.fetch ? { fetch: opts.cloudflare.fetch } : {}),
+      ...(opts.cloudflare?.waits ? { waits: opts.cloudflare.waits } : {}),
+      connect: (url, site) => {
+        // the addresses and outside access on; who may join and the Control room from outside stay as they are
+        this.setMeta('remote_url', url);
+        this.setMeta('meet_site_url', site);
+        this.setMeta('remote_enabled', '1');
+        this.store.audit(null, 'remote.set', null, { ...this.remoteConfig(), by: 'cloudflare-setup' });
+        this.applyRemote();
+      },
+      reconnect: () => { this.gateway.stop(); this.applyRemote(); },
+      gatewayStatus: () => this.gateway.status,
+      turnConfig: () => { const c = this.iceConfig(); return { mode: c.mode, keyId: c.keyId ?? null, token: c.token ?? null }; },
+      setTurn: (keyId, token) => {
+        this.setMeta('ice_mode', 'cloudflare');
+        this.setMeta('ice_key', keyId);
+        this.setMeta('ice_token', token);
+        this.setMeta('ice_servers', '[]');
+        this.ice.clear();
+        this.store.audit(null, 'ice.set', null, { mode: 'cloudflare', keyId, by: 'cloudflare-setup' });
+      },
+      changed: (view) => this.emit('admin.cloudflare', view, (c) => this.isAdminConn(c)),
+      audit: (actor, action, detail) => this.store.audit(actor || null, action, null, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
   }
 
@@ -747,7 +782,8 @@ export class Hub {
   }
 
   // ------------------------------------------------------------ outside the office
-  readonly ice = new Ice(() => this.iceConfig(), () => this.remoteConfig().enabled);
+  readonly ice = new Ice(() => this.iceConfig(), () => this.remoteConfig().enabled, fetch, cloudflareEndpoints().rtc);
+  readonly cloudflare: CfSetup;
 
   private iceConfig(): IceConfig & { token?: string } {
     const m = (k: string) => this.store.meta(k, () => '');
@@ -804,6 +840,7 @@ export class Hub {
     this.zoho.stop();
     this.mirror?.stop();
     this.announcer?.stop();
+    this.cloudflare.stop();
     this.gateway.stop();
     this.webinars.stop();
     this.missed.close();
@@ -1951,6 +1988,23 @@ export class Hub {
         if (op === 'remote.info') {
           const c = this.remoteConfig();
           return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote, site: this.publicSite() };
+        }
+        if (typeof op === 'string' && op.startsWith('admin.cloudflare.')) {
+          const me = this.store.userById(conn.userId!)!;
+          if (me.role !== 'owner' && me.role !== 'admin') throw new OpError('Only administrators can do that.');
+          try {
+            const token = typeof d.token === 'string' ? d.token : undefined;
+            const keep = typeof d.keep === 'boolean' ? d.keep : undefined;
+            if (op === 'admin.cloudflare.get') return this.cloudflare.view() satisfies Ops['admin.cloudflare.get']['res'];
+            if (op === 'admin.cloudflare.start') return this.cloudflare.start(me.id, token ?? '', { keep: !!keep, accountId: typeof d.accountId === 'string' ? d.accountId : undefined }) satisfies Ops['admin.cloudflare.start']['res'];
+            if (op === 'admin.cloudflare.choose') return this.cloudflare.choose(me.id, String(d.accountId ?? '')) satisfies Ops['admin.cloudflare.choose']['res'];
+            if (op === 'admin.cloudflare.retry') return this.cloudflare.retry(me.id, token, keep) satisfies Ops['admin.cloudflare.retry']['res'];
+            if (op === 'admin.cloudflare.update') return this.cloudflare.update(me.id, token, keep) satisfies Ops['admin.cloudflare.update']['res'];
+            if (op === 'admin.cloudflare.forget') return this.cloudflare.forget(me.id) satisfies Ops['admin.cloudflare.forget']['res'];
+          } catch (err) {
+            if (err instanceof CfSetupError) throw new OpError(err.message);
+            throw err;
+          }
         }
         if (op === 'admin.remote.get' || op === 'admin.remote.set') {
           const me = this.store.userById(conn.userId!)!;

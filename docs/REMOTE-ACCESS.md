@@ -174,40 +174,136 @@ Things that remain the office's responsibility:
   longer sign in, from anywhere.
 - Keeping the Cloudflare account protected with a strong password and two-factor sign-in.
 
-## Setting it up (once, about 15 minutes)
+## Setting it up (once, about 10 minutes)
 
-1. **A Cloudflare account.** The free plan is enough for an office of 25–100 people; the paid
-   Workers plan, $5 a month, raises the limits if it is ever needed.
-2. **An API token.** In Cloudflare: **My Profile → API Tokens → Create Token → "Edit Cloudflare
-   Workers"** template. Also note your **Account ID** (Workers & Pages overview, right side).
-3. **Deploy the gateway.** In GitHub, add two repository secrets: `CLOUDFLARE_API_TOKEN` and
+The free Cloudflare plan is enough for an office of 25–100 people; the paid Workers plan, $5 a month,
+raises the limits if it is ever needed.
+
+### Set up with Cloudflare (from the Control room)
+
+The owner does two things on Cloudflare's website and pastes one token into the app. The hub does
+everything else itself, with Cloudflare's API: no Node.js, no source code, no command prompt, and
+no addresses or fingerprints to copy.
+
+1. **A Cloudflare account**, made with the office email address
+   (<https://dash.cloudflare.com/sign-up>), and the email confirmed.
+2. **One API token.** In **Control room → Outside the office → Set up with Cloudflare**, **Open the
+   token form** opens Cloudflare's *Create API Token* page with the permissions filled in
+   (Cloudflare's documented template link, `permissionGroupKeys`). The token needs exactly:
+
+   | Permission | What the hub does with it |
+   | --- | --- |
+   | Account · Workers Scripts · Edit | the workers.dev name, the gateway Worker, its `HUB_FINGERPRINT` secret and its workers.dev address |
+   | Account · Cloudflare Pages · Edit | the meeting site's Pages project and its deployments |
+   | Account · Account Settings · Read | listing the account(s) the token reaches |
+   | Account · Cloudflare Realtime (Calls) · Edit | the TURN key for calls across networks |
+
+   A template link can carry the first three for a personal token; the owner adds the Realtime row
+   by hand (**+ Add more → Account → Cloudflare Realtime → Edit**; Cloudflare may call it *Calls*),
+   then **Continue to summary → Create Token**. Without the Realtime row everything else still
+   works, and the last step says what to add.
+3. **Paste it** into the card and choose **Set up**. Optionally tick **Keep it on the hub for
+   gateway updates**.
+
+The card shows each step as the hub does it (`apps/hub/src/cfdeploy.ts`):
+
+| Step | What happens | Cloudflare API |
+| --- | --- | --- |
+| Check the token | The token is live. An account-owned token is accepted when it can list its account. | `GET /user/tokens/verify` |
+| Choose the account | One account is used as it is; with several, the card asks which is the office's. | `GET /accounts` |
+| Workers address | The account's workers.dev name; if it has none, one made from the office's name (with a few letters added if that is taken). | `GET`/`PUT /accounts/{id}/workers/subdomain` |
+| Upload the gateway | The Worker as `wrangler deploy` uploads it: the module, the `Relay` Durable Object binding, only the migrations it does not have yet, the compatibility date, existing secrets kept. | `GET /accounts/{id}/workers/services/dexconnect-gateway`, `PUT /accounts/{id}/workers/scripts/dexconnect-gateway` (multipart) |
+| Pin the gateway | `HUB_FINGERPRINT` set to this hub's certificate fingerprint. | `PUT …/scripts/dexconnect-gateway/secrets` |
+| Turn on the gateway's address | `https://dexconnect-gateway.<name>.workers.dev` | `POST …/scripts/dexconnect-gateway/subdomain` |
+| Meeting site project | The Pages project `dexterity-meet` (an existing one of that name in the account is reused; if Cloudflare will not make it, `dexterity-meet-<suffix>`), remembered. Its address is the one Cloudflare gives the project (`<name>.pages.dev`, or with a suffix if another account has that name). | `GET`/`POST /accounts/{id}/pages/projects` |
+| Publish the meeting site | Direct upload as `wrangler pages deploy` does it: only the files Cloudflare lacks (by hash), then a deployment with the manifest, `_headers` and the front door (`_worker.js`) with its `GATEWAY` service binding. | `…/upload-token`, `/pages/assets/check-missing`, `/pages/assets/upload`, `/pages/assets/upsert-hashes`, `POST …/deployments` |
+| Connect this hub | The two addresses saved and **Allow access from outside the office** switched on. **Who may use it** (new devices from outside, the Control room from outside) is left as it was. | — |
+| Check | The gateway's `/health` answers; the hub signs in and the gateway reports it **pinned**; the meeting site's own files load and its `/health` reaches the gateway through the binding. A new account's workers.dev name can take a few minutes: the card says so, and Retry checks again. | — |
+| Relay for calls | A Realtime TURN key named `dexterity-connect-<hub id>`, checked by asking it for short-lived credentials, then saved as **Calls across networks → Cloudflare TURN**. A working key from an earlier run is kept; an unusable one of that name is replaced, not added to. An office that chose its own TURN server keeps it. | `GET`/`POST`/`DELETE /accounts/{id}/calls/turn_keys`, `POST rtc.live.cloudflare.com/v1/turn/keys/{key}/credentials/generate-ice-servers` |
+
+- **Resumable and idempotent.** Every step and what it made is recorded in the hub's database
+  (`meta.cf_setup`). If a step stops, the card says why in plain words (for a missing permission, which
+  one) and **Retry** continues from that step. Running the setup again updates the Worker and the site
+  in place: it never makes a second project, Worker or TURN key. A hub stopped mid-run shows Retry.
+- **The token** is used for the run and then forgotten. After a failed step it stays in the hub's
+  memory for 30 minutes, so Retry needs no paste. With **Keep it on the hub for gateway updates** it is
+  stored in the hub's database like the TURN token, never sent to any device and never shown again;
+  **Forget the token** removes it. The hub's backups contain it then, as they contain the TURN token.
+- **What it deploys** ships inside the hub: `apps/hub/scripts/build-cloud.mjs` (run by the hub build)
+  puts wrangler's own bundle of the gateway and the built meeting site into `cloud-bundle.json`, which
+  the single-executable hub carries inside itself (about 0.6 MB). When a newer hub carries a newer
+  gateway or site, the card offers **Update the gateway** (one click with a kept token).
+- Every run is in the audit log (`cloudflare.setup`, `cloudflare.failed`), with the account and the
+  addresses but never the token.
+
+### Setting it up by hand (fallback)
+
+For a hub built without the Cloudflare parts, or when the command line is preferred:
+
+1. **An API token** with the permissions above (or the **Edit Cloudflare Workers** template plus
+   **Account · Cloudflare Pages · Edit**). Note your **Account ID** (Workers & Pages overview, right side).
+2. **Deploy the gateway.** In GitHub, add two repository secrets: `CLOUDFLARE_API_TOKEN` and
    `CLOUDFLARE_ACCOUNT_ID`. Then run **Actions → gateway → Run workflow**. Its summary shows
    the gateway's address, `https://dexconnect-gateway.<your-subdomain>.workers.dev`. Without
-   GitHub: double-click `scripts\release\Deploy-Gateway.cmd` on an office PC with Node.js; it asks
-   for the token and account id and prints the address.
-4. **Turn it on.** In the app, **Control room → Outside the office**:
-   - paste the address;
-   - **Save address**;
-   - switch on **Allow access from outside the office**;
-   - under **Meeting site · Dexterity Meet**, paste the meeting site's address (the deploy prints
-     it, `https://dexterity-meet.pages.dev`) and **Save address**. The script and the workflow
-     deploy the site together with the gateway; the token also needs **Cloudflare Pages · Edit**
-     ([DEXTERITY-MEET.md](DEXTERITY-MEET.md), section 1).
+   GitHub: double-click `scripts\release\Deploy-Gateway.cmd` on an office PC with Node.js and a copy of
+   the source; it asks for the token and account id and prints the addresses.
+3. **Turn it on.** In the app, **Control room → Outside the office**: paste the gateway address,
+   **Save address**, switch on **Allow access from outside the office**, and under **Meeting site ·
+   Dexterity Meet** paste the meeting site's address ([DEXTERITY-MEET.md](DEXTERITY-MEET.md)).
+4. **Pin the gateway to the hub.** Copy the **Fingerprint** shown on the same page into a third
+   repository secret, `HUB_FINGERPRINT`, and run the workflow again (or run
+   `Deploy-Gateway.cmd -Fingerprint <it>`). The status then says *gateway pinned to this hub*.
+5. **TURN for calls**: see *Calls across networks* below.
 
-   The status turns green within seconds.
-5. **Pin the gateway to the hub (recommended).** Copy the **Fingerprint** shown on the same page into a
-   third repository secret, `HUB_FINGERPRINT`, and run the workflow again (or run
-   `Deploy-Gateway.cmd -Fingerprint <it>`). The status then says
-   *gateway pinned to this hub*.
-6. **Phones and home laptops.** People add their own devices; no administrator is involved:
-   - On their office PC: **Preferences → Your devices → Add my phone** shows a QR code. The phone's
-     camera opens the download page, which installs the Android app and copies a one-time pairing
-     code. On first launch the app finds the code and signs in as that person. (If it doesn't, the
-     app's **Scan the code on your PC** reads the same QR code.)
-   - **Add my laptop** shows the same kind of code as text. They email or message it to themselves
-     and paste it into the app on the laptop.
-   - Devices that have been on the office network once already know the gateway and simply work
-     outside.
+### Everyone's devices
+
+- **Phones and home laptops.** People add their own devices; no administrator is involved:
+  - On their office PC: **Preferences → Your devices → Add my phone** shows a QR code. The phone's
+    camera opens the download page, which installs the Android app and copies a one-time pairing
+    code. On first launch the app finds the code and signs in as that person. (If it doesn't, the
+    app's **Scan the code on your PC** reads the same QR code.)
+  - **Add my laptop** shows the same kind of code as text. They email or message it to themselves
+    and paste it into the app on the laptop.
+  - Devices that have been on the office network once already know the gateway and simply work
+    outside.
+
+### What was checked, and what the first real run must confirm
+
+Checked here (17 November 2026), without a real Cloudflare account:
+
+- `apps/hub/test/cfdeploy.test.ts` runs the whole setup against a stand-in for Cloudflare's API
+  (`apps/hub/test/cfmock.ts`) whose request shapes were recorded from wrangler 4.162 deploying this
+  repository (`wrangler deploy`, `secret put`, `pages project create`, `pages deploy` pointed at the
+  stand-in): the full run, running it again (nothing duplicated, no second migration, files not sent
+  again), a missing permission and Retry from that step, no Realtime permission, several accounts,
+  taken workers.dev and pages.dev names, an existing project reused, a failure part-way and Retry, a
+  wrong token, an account-owned token, a kept token and **Update the gateway**, a hub stopped mid-run.
+- `apps/hub/test/cfdeploy-workerd.test.ts` builds the real `cloud-bundle.json`, lets the hub deploy it
+  to the stand-in, then runs exactly what was uploaded in Cloudflare's local runtime (`wrangler dev`,
+  workerd): the hub signs in to the gateway and is reported **pinned** by the `HUB_FINGERPRINT` it set,
+  the site's front door serves its files and reaches the gateway through the `GATEWAY` binding its
+  deployment carried, a meeting page has its CSP, and a hub with another certificate is refused.
+- The file hashes match wrangler's (BLAKE3 of base64 content plus extension, checked against
+  wrangler's own `blake3-wasm`).
+- `apps/desktop/e2e/cfsetup.mts` drives the card in the app against the stand-in.
+
+Not checked (needs a real account; do it once and watch the card):
+
+- the token template link opening Cloudflare's form with the three permissions (Cloudflare's
+  documented `permissionGroupKeys` link), and the Realtime row added by hand;
+- Cloudflare accepting the Worker upload with `keep_bindings` and the migration as sent, the secret,
+  the workers.dev switch (sent with `Cloudflare-Workers-Script-Api-Date: 2025-08-01`, as wrangler does);
+- a Pages direct upload made with the hub's `_worker.bundle` and `wrangler_config_hash` taking its
+  `GATEWAY` binding from the deployment (wrangler's way when a `wrangler.jsonc` is used), and the
+  project's real `*.pages.dev` name;
+- `POST /calls/turn_keys` returning the key's token (`secret` in Cloudflare's reference) and
+  credentials from `rtc.live.cloudflare.com`;
+- how long a new account's workers.dev name takes to answer (the card waits four minutes, then
+  offers Retry).
+
+On the first real run: watch every step tick, then check the status line says **gateway pinned
+to this hub**, open the meeting site's address in a browser, join a test meeting from a phone on
+mobile data, and make a call from outside to confirm TURN.
 
 ## Calls across networks
 
@@ -218,8 +314,8 @@ Outside the office → Calls across networks**:
 - **Basic** (default): a public STUN server. This works with most home routers. Some mobile networks
   block direct calls.
 - **Cloudflare TURN** (recommended):
-  - In Cloudflare, **Realtime → TURN Server → Create**.
-  - Paste the **key id** and its **API token** here.
+  - **Set up with Cloudflare** makes the key and chooses this for you. By hand: in Cloudflare,
+    **Realtime → TURN Server → Create**, then paste the **key id** and its **API token** here.
   - The hub creates short-lived credentials for each call, and the token never leaves the hub.
   - Cloudflare's free allowance is generous for an office's calls.
 - **Own TURN server**: the addresses, username and password of a TURN server you run (for

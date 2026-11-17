@@ -8,6 +8,10 @@
   Same as the GitHub "gateway" workflow, without GitHub. See docs/DEXTERITY-MEET.md and
   docs/REMOTE-ACCESS.md.
 
+  Usually not needed: Control room > Outside the office > "Set up with Cloudflare" does all of this
+  from the hub itself (and pins the gateway and makes the TURN key), from one pasted token. This
+  script is the fallback, for a hub built without the Cloudflare parts or for the command line.
+
     Deploy-Gateway.cmd                          asks for the Cloudflare token and account id
     Deploy-Gateway.cmd -Fingerprint AB:CD…      also pins the gateway to the office hub
     Deploy-Gateway.cmd -SiteName dexmeet-office the meeting site under another name (if

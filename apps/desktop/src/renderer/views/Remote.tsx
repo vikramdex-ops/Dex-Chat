@@ -6,6 +6,7 @@ import qrcode from 'qrcode-generator';
 import type { Ops, RemoteView } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { Dialog, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
+import { CloudSetup } from './CloudSetup.tsx';
 
 export function Qr({ text, size = 220 }: { text: string; size?: number }) {
   const svg = useMemo(() => {
@@ -52,6 +53,7 @@ export function RemoteAdmin() {
   const s = v.status;
   return (
     <div className="org-admin">
+      <CloudSetup onChanged={load} />
       <section className="card">
         <div className="eyebrow">Access from outside the office</div>
         <p className="muted" style={{ marginTop: 0 }}>Phones and home laptops reach this hub through the office's own gateway on Cloudflare. The hub connects out to it, so no port is opened at the office, and every device's traffic is encrypted all the way to the hub: the gateway only passes it on.</p>
@@ -71,7 +73,7 @@ export function RemoteAdmin() {
             : <>Not connected{s.error ? `: ${s.error}` : ''}. Retrying.</>}
         </div>
         {v.config.enabled && s.connected && !s.pinned && (
-          <p className="warn-note"><Icon name="warning" size={14} /><span>Recommended: pin the gateway to this hub so nothing else can take its place. Run <span className="mono">npx wrangler secret put HUB_FINGERPRINT</span> in <span className="mono">apps/gateway</span> and paste the fingerprint below.</span></p>
+          <p className="warn-note"><Icon name="warning" size={14} /><span>Recommended: pin the gateway to this hub so nothing else can take its place. Set up with Cloudflare (above) pins it for you.</span></p>
         )}
       </section>
       <MeetSite v={v} save={save} />
