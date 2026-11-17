@@ -25,7 +25,7 @@ you make later.
   - holidays, week-offs and compensatory offs are days off;
   - compensatory working days are working days.
 - **Nib.** Start of day 09:45, wrap-up 18:00, register 18:30, follow-up 19:00, Monday to Saturday, day sheets
-  private.
+  private. Nib reminds people three times before the register: 18:00, 18:11 and 18:22.
 - **Notice desks.** Admin, HR, IT and Management.
 - **Policies.** The standard policies apply.
 - **Audit log.** Always on.
