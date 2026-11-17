@@ -183,6 +183,23 @@ recorded).
 4. Open **Move plan** and click **Apply now**.
 5. In **Layout**, rename **Room A (unlabelled)** and check that the two MD cabins are the right way round.
 
+**C8. Zoho Calendar (one step for the whole office).** The office uses Zoho Mail. Zoho lets an app reach
+someone's calendar only through an OAuth client owned by a Zoho account, so the office registers one, once.
+After that, each person connects their own calendar themselves (E6). Details: [`ZOHO-CALENDAR.md`](ZOHO-CALENDAR.md).
+
+1. Sign in at **https://api-console.zoho.in** with the office's Zoho administrator account.
+2. Choose **Add Client → Server-based Applications**.
+   - Name: `Dexterity Connect`. Homepage URL: the office's website.
+   - **Authorized Redirect URIs**: `http://127.0.0.1:47917/zoho/callback`, exactly as written.
+3. Click **Create**. If some colleagues' Zoho accounts are in another region, turn on **Multi-DC** in the
+   client's settings.
+4. In the app: **Control room → 11 Integrations → Zoho Calendar**.
+   - Leave **Zoho data centre** on **India**.
+   - Paste the **Client ID** and **Client secret**.
+   - Click **Save and invite everyone**.
+
+   Everyone gets one message telling them how to connect. The secret is never shown again.
+
 **Check it worked:** the floor plan shows people at their seats; **17 Audit log** lists every change you made.
 
 ---
@@ -330,6 +347,16 @@ Owners and admins can both configure everything. Only owners choose who the owne
 
 1. In **Preferences → Calendar**, each person can click **Show my meetings in Outlook or on my phone**.
 2. In Outlook, they paste the address under **Add calendar → Subscribe from web**.
+
+**E6. Zoho Calendar (each person, once, no administrator needed).** After C8, each person clicks
+**Connect Zoho Calendar**:
+
+- where: on the card at the top of the **Calendar** lens, or in **Preferences → Calendar**;
+- on: their office PC;
+- then: they sign in to Zoho in the browser and allow access.
+
+The app shows **Connected as … · last synced …**. Their meetings then appear in Zoho, and their Zoho appointments
+show as busy time in Dexterity Connect.
 
 ---
 

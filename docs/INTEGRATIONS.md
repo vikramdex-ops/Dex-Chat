@@ -3,6 +3,10 @@
 Several ways for a tool to work with Dexterity Connect, from the simplest to the most capable. None
 needs the internet: everything runs on the office network.
 
+> **Zoho Calendar** is a built-in sync rather than a bot: an administrator registers the office's Zoho client
+> once in Control room → Integrations, and each person connects their own calendar. See
+> [`ZOHO-CALENDAR.md`](ZOHO-CALENDAR.md).
+
 ## 1. Share a file or a note (no setup)
 
 Open this link with the system's default handler (`ShellExecute`, `QDesktopServices::openUrl`,
