@@ -69,7 +69,11 @@ function Invoke-Uninstall([string] $dir, [string[]] $more = @()) {
   # _?= must come last and takes the rest of the line as the folder, unquoted (NSIS rule)
   $code = Invoke-Program $exe ((@('/S') + $more + @("_?=$dir")) -join ' ')
   Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue   # only when now empty
+  # Only when now empty. Remove-Item on a folder with something left in it asks "are you sure?",
+  # and with no console to ask in that fails as "Object reference not set to an instance of an object".
+  if (-not (Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+  }
   return $code
 }
 
@@ -292,6 +296,7 @@ try {
   Write-Host 'The hub setup works: install, repair, uninstall, reinstall, upgrade from the zip, the zip fallback, and the hub updating itself with a rollback.' -ForegroundColor Green
 } catch {
   Write-Host $_ -ForegroundColor Red
+  Write-Host $_.ScriptStackTrace
   Show-Logs
   exit 1
 }
