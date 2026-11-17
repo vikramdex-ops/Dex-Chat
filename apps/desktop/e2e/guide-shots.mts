@@ -609,7 +609,9 @@ await part('help', async () => {
 
 await part('calendar', async () => {
   await lens(P, 'Calendar');
-  await P.getByRole('button', { name: 'Next week' }).click();
+  // the model review is two days from today: show the week it falls in (the Calendar's weeks start on Monday)
+  const monday = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+  if (monday(at(2, 11)) > monday(Date.now())) await P.getByRole('button', { name: 'Next week' }).click();
   await sleep(1200);
   await P.locator('.cal-block').first().waitFor();
   await P.locator('[aria-label="The week, hour by hour"]').evaluate((el: HTMLElement) => { el.scrollTop = el.scrollHeight * 0.05; }).catch(() => {});
