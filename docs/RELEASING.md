@@ -89,18 +89,75 @@ so both install the hub the same way:
   the data unless its box is ticked.
 
 Silent: `DexterityConnectHub-Setup.exe /S [/DATA=E:\HubData] [/NOPOWER]`, and
-`"Uninstall Dexterity Connect Hub.exe" /S [/REMOVEDATA]`. Exit codes: 0 done, 1 failed, 2 refused.
+`"Uninstall Dexterity Connect Hub.exe" /S [/REMOVEDATA]`. Exit codes: 0 done, 1 failed, 2 refused,
+3 a self-update went back to the version before (`/SELFUPDATE`, which the hub uses; below). The
+uninstaller also removes `previous\`.
 
 The GitHub workflow's `hub-smoke` job installs the built setup on a clean Windows runner, checks the
 service, firewall rules and `/health`, runs it again, uninstalls and reinstalls, upgrades an install
-made the old way from the zip, and runs the zip's script; nothing is published unless it passes.
+made the old way from the zip, runs the zip's script, and lets the hub update itself and go back
+after a broken update (below); nothing is published unless it passes.
 `apps/hub/installer/smoke-test.ps1` does it, and can be run by hand on a throw-away PC or VM.
 `Build-Release.cmd` does not run it (it would install a hub on the build PC): try a local build's
 setup on a spare PC before `-Publish`.
 
-The hub does not update itself. The update feed lists the hub zip (`hub-win-x64`), but the hub's
-mirror does not download it and nothing installs it: to upgrade the hub, run the new
-`DexterityConnectHub-Setup.exe` on the hub PC. The hub is offline for about a minute.
+## The hub updates itself
+
+The hub setup is run once. After that the hub keeps itself up to date from the same feed as the apps
+(`apps/hub/src/hub-update.ts`):
+
+- **The feed.** `make-feed.mjs` lists the hub's setup, `DexterityConnectHub-Setup-<version>.exe`, as
+  `hub-win-x64`, with its size and SHA-512, like the apps' installers. The hub zip is still a release
+  file (and in `SHA256SUMS.txt`) for installing by hand, but not in the feed. Both build paths stamp
+  the version into the hub (`build.mjs --version`), so the hub knows which build it is
+  (`DexterityConnectHub.exe --version` prints it, and `/health` reports it).
+- **Finding and fetching.** The hub looks at the feed for its channel (stable unless an administrator
+  chooses beta) a minute after it starts and every 4 hours. A newer setup is downloaded once into
+  `<data>\hub-update\` (resumable; refused unless its size and SHA-512 match the feed), and the owners
+  and administrators are told once: "The hub updates itself to X at 03:00; it is offline for about a
+  minute."
+- **When.** At the quiet time, 03:00 hub-local time by default (after the 02:00 backup), within a
+  two-hour window. Never while a meeting, call or webinar is live on the hub: it waits until it ends,
+  and if the window closes first, it tries the next night. When backups are set up it makes a fresh
+  backup first; if that fails, tonight's backup will do, and without a good backup in the last 24
+  hours it waits for the next night. Without backups set up it still updates, and says so.
+- **Installing.** The hub writes down its intent, checks the file's size and SHA-512 again, and
+  registers a one-off scheduled task (`Dexterity Connect Hub update`, as SYSTEM, no trigger) that runs
+  `DexterityConnectHub-Setup-<v>.exe /S /SELFUPDATE /NOPOWER`, so the setup is not a child of the
+  service it stops. The setup finds the installed hub and its data as an interactive repair does.
+- **Going back.** With `/SELFUPDATE`, `Install-Hub.ps1 -SelfUpdate` copies the running version's
+  programs to `<install>\previous\` before they are replaced. If the new version does not start, or
+  does not answer `https://127.0.0.1:47900/health` as its own version within 150 seconds, it puts the
+  old programs back, starts them and waits for `/health` again (exit code 3). If the setup stops while
+  copying, it runs `Install-Hub.ps1 -SelfUpdate -Rollback`. What happened goes to
+  `<data>\hub-update\result.json` and `setup.log`. The data is not part of this: an update that went
+  back leaves the database as the new version left it (changes to it only add tables and columns),
+  and the backup made just before is there if needed.
+- **Afterwards.** The hub, running again, compares its version with its intent: the new version means
+  it worked ("Updated from A to B" in the audit log, and a note to the administrators); the old one
+  means the setup went back. That version is then not tried again by itself; **Control room → Backups
+  & leavers → Hub updates** shows what the setup said and where its log is, with **Try again**.
+- **Administrators** (owners and admins only) see the version, the channel, the last look, the next
+  update and the history there, and can turn automatic updates off, change the quiet time and the
+  channel, and click **Update now** (it still waits for a live meeting unless they confirm
+  **Update now anyway**). The setup check shows the same in one line.
+- **Trust.** The same as the apps' updater: the feed comes over HTTPS from the public release
+  repository, and a setup runs only if its size and SHA-512 match the feed (checked again just before
+  it runs). Never a lower or equal version, never a beta on the stable channel, never a file named for
+  another version. The installers are not code-signed, so this trusts whoever can publish to the
+  release repository's `update-feed` branch, exactly as the apps do.
+- Only the hub installed as the Windows service updates itself. A hub run from source (development)
+  says so in the setup check and never looks at the feed by itself.
+
+To upgrade by hand instead (or with automatic updates off), run the new `DexterityConnectHub-Setup.exe`
+on the hub PC as before; the hub is offline for about a minute.
+
+The install test (`hub-smoke`) installs the release's setup, then lets the hub update itself the way
+it does at night (`DexterityConnectHub.exe --apply-update <setup>`, through the same scheduled task) to
+a test build one version later, and checks the service comes back healthy as that version with the
+same certificate and data; then it updates to a test build whose hub program cannot start and checks
+the setup goes back and the previous version runs and answers. The `hub` job builds those two test
+setups; they are never published.
 
 ## The internet gateway
 

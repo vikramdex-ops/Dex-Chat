@@ -126,6 +126,10 @@ sheet shows an amber warning and the Dexterity Connect system bot tells every ad
 day, until one works. A hub with no backup folder at all gets the same warning once it is two days
 old.
 
+Before the hub updates itself (at 03:00 by default, an hour after the nightly backup) it makes one
+more backup; if that fails, the night's backup is used, and without a good backup in the last 24
+hours the update waits for the next night ([RELEASING.md](RELEASING.md), "The hub updates itself").
+
 ## Restoring
 
 Use this after the hub's disk failed, the database was damaged, or to move the hub to a new PC.
