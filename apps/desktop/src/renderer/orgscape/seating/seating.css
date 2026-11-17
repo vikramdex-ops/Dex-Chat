@@ -160,3 +160,13 @@ html:is([lang='hi'], [lang='ta']) .seat-import th { letter-spacing: 0; text-tran
 .seat-bookings li .mono { flex: none; min-width: 8ch; color: var(--text-2); }
 .seat-bookings li span[translate] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seat-callout .os-co-cells > div:nth-child(even):has(+ .seat-book) { grid-column: span 2; }
+
+/* names from the drawing waiting to be matched (People tab) */
+.seat-waiting { display: grid; gap: 6px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--stroke); }
+.seat-waiting h3 { margin: 0; display: flex; align-items: center; gap: 6px; }
+.seat-wait-list { max-height: 30vh; }
+.seat-wait { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; padding: 6px 8px; }
+.seat-wait + .seat-wait { border-top: 1px solid var(--stroke); }
+.seat-wait .chip { font-size: 11px; }
+.seat-wait-who { grid-column: 2 / -1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-wait-who .input { width: 100%; }
