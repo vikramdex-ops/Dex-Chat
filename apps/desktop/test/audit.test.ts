@@ -22,3 +22,9 @@ test('other actions keep their words', () => {
   assert.deepEqual(auditLine('device.approved', 'Vikram Shah', null, words), { who: 'Vikram Shah', what: 'approved a device' });
   assert.deepEqual(auditLine('device.approved', null, null, words), { who: 'Someone', what: 'approved a device' });
 });
+
+test('the hub updating itself reads as the hub (hub-update.ts records it with no person)', () => {
+  const w = (a: string) => ({ 'hub.updated': 'updated itself to a new version', 'hub.update.settings': 'changed how the hub updates itself' } as Record<string, string>)[a] ?? a;
+  assert.deepEqual(auditLine('hub.updated', null, { from: '0.1.40', to: '0.1.42' }, w), { who: 'The hub', what: 'updated itself to a new version' });
+  assert.deepEqual(auditLine('hub.update.settings', 'Vikram Shah', null, w), { who: 'Vikram Shah', what: 'changed how the hub updates itself' });
+});

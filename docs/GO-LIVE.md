@@ -58,6 +58,14 @@ the release page lists `SHA256SUMS.txt`.
 **Worked when:** the setup's last page says **The hub is running** (Services also shows
 **Dexterity Connect Hub** as Running).
 
+Nobody runs the setup again. The hub updates itself from the release feed: a newer version is
+downloaded and checked during the day, and installed at 03:00 (hub-local time) after a fresh backup,
+never while a meeting, call or webinar is live; the hub is offline for about a minute. If the new
+version does not answer, the setup puts the old one back and the hub does not try that version again
+by itself. **Control room → 16 Backups & leavers → Hub updates** shows the version, the next update
+and the history, and has **Update now**, the quiet time, the channel and the switch; the setup check
+has a line for it. Details: [RELEASING.md](RELEASING.md), "The hub updates itself".
+
 ## 3. Become the owner, then let people in (10 minutes, then ongoing)
 
 1. On your own PC, install the app, open it, pick the hub and click **Request access**. The first
@@ -229,6 +237,10 @@ These were tested automatically on the development machine but have not yet run 
 - [ ] The hub choosing its backup disk on the office PC: the PowerShell disk map, `icacls` on the
       folder, and the amber "needs a second disk" sheet on a one-disk PC.
 - [ ] An update: publish a newer build and see an installed app update itself.
+- [ ] The hub updating itself on the office PC: publish a newer build, and the next morning see
+      "Updated from A to B" in the audit log and the new version in **Hub updates** (or click
+      **Update now** after hours). The install test on GitHub's Windows runner does this with test
+      builds, including a broken one that goes back; the office PC has not done it yet.
 
 ## 11. People to ask
 

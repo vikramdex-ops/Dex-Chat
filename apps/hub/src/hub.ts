@@ -16,6 +16,9 @@ import { HubAnnouncer } from '@dex/core/discovery';
 import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
 import { UpdateMirror } from './update-mirror.ts';
+import { HubUpdateError, HubUpdater, selfUpdateSupport, windowsLauncher } from './hub-update.ts';
+import type { HubUpdateHost } from './hub-update.ts';
+import { HUB_VERSION } from './version.ts';
 import { Messaging, MsgError } from './messaging.ts';
 import { Desk } from './desk.ts';
 import { Org, OrgError } from './org.ts';
@@ -76,7 +79,7 @@ import type { BackupPickOptions, FirstRunHost } from './firstrun.ts';
 import { HealthChecks, registerBuiltInChecks } from './setupcheck.ts';
 import type { BackupAuto } from '@dex/core';
 
-export const HUB_VERSION = '0.1.0';
+export { HUB_VERSION };
 
 export interface HubOptions {
   dataDir: string;
@@ -91,6 +94,11 @@ export interface HubOptions {
   maxFileBytes?: number;
   /** Update mirror settings; `false` turns the mirror off. */
   updates?: Omit<MirrorOptions, 'dir' | 'log'> | false;
+  /**
+   * The hub updating itself (hub-update.ts); `false` turns it off. Tests pass a feed, a stand-in
+   * launcher and `unsupported: null` (by default only the installed Windows service updates itself).
+   */
+  hubUpdate?: Partial<Pick<HubUpdateHost, 'feedUrls' | 'allowHttp' | 'launcher' | 'unsupported' | 'now' | 'checkEveryMs' | 'firstCheckDelayMs' | 'version'>> | false;
   /** UDP port for discovery; `false` disables discovery (tests). */
   discoveryPort?: number | false;
   /** Register the built-in 2026 holiday circular on first start (default on; most tests turn it off). */
@@ -165,6 +173,8 @@ export class Hub {
   private readonly conns = new Set<Conn>();
   private announcer: HubAnnouncer | null = null;
   readonly mirror: UpdateMirror | null;
+  /** The hub's own updates: it finds, checks and installs newer versions itself (hub-update.ts). */
+  readonly hubUpdate: HubUpdater | null;
   readonly messaging: Messaging;
   readonly files: FileStore;
   /** What a phone missed while disconnected, and its background service's long poll. */
@@ -615,6 +625,7 @@ export class Hub {
       ice: () => { const c = this.iceConfig(); return { mode: c.mode, keyId: c.keyId ?? null, hasToken: !!c.token, servers: c.servers.length }; },
       holidays: () => this.holidays.list(),
       zoho: () => this.zoho.adminView(),
+      hubUpdate: () => this.hubUpdate?.view() ?? null,
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -624,6 +635,36 @@ export class Hub {
     }
     this.mirror = opts.updates === false ? null
       : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
+    const hu = opts.hubUpdate === false ? null : opts.hubUpdate ?? {};
+    this.hubUpdate = hu === null ? null : new HubUpdater({
+      dataDir: opts.dataDir,
+      version: hu.version ?? HUB_VERSION,
+      unsupported: hu.unsupported !== undefined ? hu.unsupported : selfUpdateSupport(),
+      launcher: hu.launcher ?? windowsLauncher(path.join(opts.dataDir, 'hub-update')),
+      feedUrls: hu.feedUrls, allowHttp: hu.allowHttp, now: hu.now, checkEveryMs: hu.checkEveryMs, firstCheckDelayMs: hu.firstCheckDelayMs,
+      meta: (k) => this.store.meta(k, () => ''),
+      setMeta: (k, v) => this.setMeta(k, v),
+      live: () => {
+        const rooms = [...this.rooms.rooms.values()].filter((r) => r.participants.length > 0);
+        if (rooms.some((r) => r.meeting?.kind === 'webinar')) return 'webinar';
+        if (rooms.some((r) => r.meeting)) return 'meeting';
+        if (rooms.length) return 'call';
+        // a webinar marked live whose stage is empty for a moment still counts
+        return this.store.db.prepare(`SELECT 1 FROM webinars WHERE state = 'live' LIMIT 1`).get() ? 'webinar' : null;
+      },
+      backups: {
+        configured: () => !!this.backups.config().folder,
+        running: () => this.backups.isRunning(),
+        lastSuccessAt: () => this.backups.lastSuccessAt(),
+        run: () => this.backups.start(false, null).then((r) => ({ ok: r.ok, error: r.error }), (err: Error) => ({ ok: false, error: err.message })),
+      },
+      admins: () => this.store.activeUsers().filter((u) => isAdminRole(u.role)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      changed: (view) => this.emit('admin.hubUpdate', view, (c) => this.isAdminConn(c)),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      setupLog: path.win32.join(process.env.ProgramData ?? 'C:\\ProgramData', 'Dexterity Connect Hub', 'setup.log'),
+    });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
     this.meetGuests = new MeetGuests({
       rooms: this.rooms, meetings: this.meetings, webinars: () => this.webinars,
@@ -771,6 +812,7 @@ export class Hub {
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
       void this.botflows.jobs.tick().catch((err: Error) => this.log('error', 'bot job timer failed', { error: err.message }));
       try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
+      try { this.hubUpdate?.tick(); } catch (err) { this.log('error', 'hub update timer failed', { error: (err as Error).message }); }
       try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
       try { this.meetThreads.tick(); } catch (err) { this.log('error', 'meeting thread timer failed', { error: (err as Error).message }); }
       try { this.notices.tick(); } catch (err) { this.log('error', 'notice board timer failed', { error: (err as Error).message }); }
@@ -854,6 +896,7 @@ export class Hub {
     if (this.deskTimer) clearInterval(this.deskTimer);
     this.zoho.stop();
     this.mirror?.stop();
+    this.hubUpdate?.stop();
     this.announcer?.stop();
     this.cloudflare.stop();
     this.gateway.stop();
@@ -1995,6 +2038,20 @@ export class Hub {
           }
           const c = this.iceConfig();
           return { mode: c.mode, keyId: c.keyId, servers: c.servers.map((s) => ({ urls: s.urls, ...(s.username ? { username: s.username } : {}), ...(s.credential ? { credential: '••••••' } : {}) })), hasToken: !!c.token };
+        }
+        if (typeof op === 'string' && op.startsWith('admin.hubUpdate.')) {
+          const me = this.requireAdmin(conn);
+          const u = this.hubUpdate;
+          if (!u) throw new OpError('Hub updates are turned off on this hub.');
+          try {
+            if (op === 'admin.hubUpdate.get') return (d.check === true ? await u.check() : u.view()) satisfies Ops['admin.hubUpdate.get']['res'];
+            if (op === 'admin.hubUpdate.set') return u.configure(me.id, d) satisfies Ops['admin.hubUpdate.set']['res'];
+            if (op === 'admin.hubUpdate.now') return (await u.updateNow(me.id, d.force === true)) satisfies Ops['admin.hubUpdate.now']['res'];
+            if (op === 'admin.hubUpdate.retry') return u.retry(me.id) satisfies Ops['admin.hubUpdate.retry']['res'];
+          } catch (err) {
+            if (err instanceof HubUpdateError) throw new OpError(err.message);
+            throw err;
+          }
         }
         if (op === 'admin.setup.report') {
           this.requireAdmin(conn);

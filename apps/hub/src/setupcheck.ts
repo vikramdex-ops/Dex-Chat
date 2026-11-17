@@ -14,7 +14,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { DatabaseSync } from 'node:sqlite';
 import { minutesOf, nudgeTimes, summarize, uptimeText } from '@dex/core';
-import type { NibConfig, NoticeDesk, RemoteView, SetupCheck, SetupReport, ZohoAdminView } from '@dex/core';
+import type { HubUpdateView, NibConfig, NoticeDesk, RemoteView, SetupCheck, SetupReport, ZohoAdminView } from '@dex/core';
 import type { OfficeDay } from '@dex/core/holidays';
 import type { Backups } from './backup.ts';
 import { folderThere } from './firstrun.ts';
@@ -136,6 +136,8 @@ export interface SetupDeps {
   /** Zoho Calendar's office setup and who is connected (zoho.ts). */
   zoho: () => ZohoAdminView;
   remote: () => RemoteView;
+  /** The hub's own updates (hub-update.ts); null when they are turned off. */
+  hubUpdate?: () => HubUpdateView | null;
   ice: () => { mode: 'auto' | 'cloudflare' | 'custom'; keyId: string | null; hasToken: boolean; servers: number };
 }
 
@@ -155,6 +157,21 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
   health.register('hub', () => {
     const up = Math.round((Date.now() - d.startedAt) / 1000);
     return C('hub.service', 'Hub', 'The hub service is running', 'pass', `Running for ${uptimeText(up)} (since ${when(d.startedAt)}), version ${d.version}${process.platform === 'win32' ? '' : ` on ${process.platform}`}.`);
+  });
+
+  // the hub's own updates (hub-update.ts): the version, the channel, the last look, and anything pending or failed
+  health.register('hubupdate', () => {
+    const u = d.hubUpdate?.() ?? null;
+    if (!u) return C('hub.update', 'Hub', 'The hub does not update itself', 'info', `Version ${d.version}. Updates are turned off for this hub.`, 'Run the new DexterityConnectHub-Setup.exe on the hub PC to update it.');
+    if (!u.supported) return C('hub.update', 'Hub', 'This hub is updated by hand', 'info', `Version ${u.version}. ${u.unsupportedReason ?? ''}`.trim(), 'Run the new DexterityConnectHub-Setup.exe on the hub PC to update it.');
+    const looked = u.lastCheck ? `last looked ${when(u.lastCheck)}` : 'not looked yet';
+    const where = `Version ${u.version}, ${u.config.channel} channel; ${looked}.`;
+    if (u.installing) return C('hub.update', 'Hub', 'The hub is installing an update', 'info', `${where} Installing ${u.installing.version} since ${when(u.installing.since)}.`);
+    if (u.failed) return C('hub.update', 'Hub', 'The last hub update did not work', 'action', `${where} Tried ${u.failed.version} on ${when(u.failed.at)}. ${u.failed.message}`, 'Read the setup log (Control room ▸ Backups & leavers ▸ Hub updates), then click Try again.');
+    if (!u.config.auto) return C('hub.update', 'Hub', 'Automatic hub updates are off', 'info', u.available ? `${where} Version ${u.available.version} is available.` : where, 'Turn them on in Control room ▸ Backups & leavers ▸ Hub updates, or click Update now there when a new version comes.');
+    if (u.available) return C('hub.update', 'Hub', 'A newer hub is ready to install', 'info', `${where} Version ${u.available.version} installs itself${u.nextAt ? ` ${when(u.nextAt)}` : ''}; the hub is offline for about a minute then.`);
+    if (u.lastError) return C('hub.update', 'Hub', 'The hub could not look for updates', 'info', `${where} ${u.lastError}`, 'The hub needs internet access to find new versions; everything else works without it.');
+    return C('hub.update', 'Hub', 'The hub keeps itself up to date', 'pass', `${where} New versions install themselves at ${u.config.time} (the hub PC's time), after the night's backup and never during a meeting.`);
   });
 
   let integrity: { at: number; result: string } | null = null;

@@ -1,5 +1,5 @@
 // Control room ▸ Backups & leavers: the hub's nightly backups (where, when, how many are kept,
-// how the last ones went, "Back up now") and offboarding someone who leaves the office (what
+// how the last ones went, "Back up now"), the hub updating itself (HubUpdates.tsx), and offboarding someone who leaves the office (what
 // they look after, who takes over, people who left and giving access back).
 // See docs/BACKUP.md and apps/hub/src/offboard.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -9,6 +9,7 @@ import { tr } from '../i18n/index.ts';
 import './continuity.css';
 import './setupcheck.css';
 import { formatDateTime, formatTime } from '../time.ts';
+import { HubUpdatesAdmin } from './HubUpdates.tsx';
 
 /** Audit log wording for these actions (Control room ▸ Audit log). */
 export const CONTINUITY_AUDIT: Record<string, string> = {
@@ -30,7 +31,7 @@ export const CONTINUITY_AUDIT: Record<string, string> = {
   'calfeed.reset': 'made a new calendar feed address',
 };
 
-type Part = 'backups' | 'leavers';
+type Part = 'backups' | 'updates' | 'leavers';
 
 export function ContinuityAdmin({ session, live }: { session: Session; live: boolean }) {
   const [part, setPart] = useState<Part>('backups');
@@ -38,9 +39,10 @@ export function ContinuityAdmin({ session, live }: { session: Session; live: boo
     <div className="org-admin continuity">
       <Segmented<Part> label="Backups or leavers" value={part} onChange={setPart} options={[
         { value: 'backups', label: 'Backups', icon: 'archive' },
+        { value: 'updates', label: 'Hub updates', icon: 'server' },
         { value: 'leavers', label: 'Someone leaving', icon: 'user' },
       ]} />
-      {part === 'backups' ? <BackupsAdmin live={live} /> : <LeaversAdmin session={session} live={live} />}
+      {part === 'backups' ? <BackupsAdmin live={live} /> : part === 'updates' ? <HubUpdatesAdmin live={live} /> : <LeaversAdmin session={session} live={live} />}
     </div>
   );
 }
@@ -118,7 +120,7 @@ function BackupsAdmin({ live }: { live: boolean }) {
 
   const last = s.lastRun;
   const failed = !!last && !last.ok && !s.running;
-  const state = s.running ? 'run' : s.warning || failed ? 'warn' : s.lastSuccess ? 'ok' : 'off';
+  const state = s.running ? 'busy' : s.warning || failed ? 'warn' : s.lastSuccess ? 'ok' : 'off';
   const dirtyKeep = keep.keepDaily !== s.config.keepDaily || keep.keepWeekly !== s.config.keepWeekly || keep.keepMonthly !== s.config.keepMonthly;
   const auto = s.auto;
   return (

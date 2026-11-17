@@ -15,6 +15,8 @@ you make later.
   - opens the firewall;
   - stops the PC sleeping;
   - checks that the server answers.
+
+  After that the server updates itself (at 03:00, after the backup, never during a meeting): nothing to run.
 - **Backups.** On first start the server looks for a second disk:
   - if it finds one, it makes a private backup folder, schedules 02:00 nightly backups (keeping 14 daily, 8 weekly
     and 12 monthly), runs the first backup and checks it;
