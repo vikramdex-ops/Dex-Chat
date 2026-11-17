@@ -15,7 +15,8 @@ after(async () => { for (const c of cleanups.splice(0).reverse()) await c(); });
 
 export async function office() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dexmsg-'));
-  const hub = new Hub({ dataDir: dir, port: 0, host: '127.0.0.1', discoveryPort: false, updates: false });
+  // the built-in holiday circular stays out: these tests walk real dates and set their own holidays (holidays.test.ts has it)
+  const hub = new Hub({ dataDir: dir, port: 0, host: '127.0.0.1', discoveryPort: false, updates: false, holidaySeed: false });
   await hub.start();
   cleanups.push(async () => { await hub.stop(); fs.rmSync(dir, { recursive: true, force: true }); });
   const join = async (username: string) => {

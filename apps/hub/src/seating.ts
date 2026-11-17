@@ -110,7 +110,7 @@ export interface SeatingDeps {
   audit: (actor: string, action: string, target: string | null, detail?: Record<string, unknown>) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
   /** The office's working days (0 = Sunday) and holidays, for booking hot desks ahead. */
-  calendar?: () => { workdays: number[]; holidays: Array<{ date: string }> };
+  calendar?: () => { workdays: number[]; holidays: Array<{ date: string }>; extraWorkdays?: Array<{ date: string }> };
 }
 
 export class Seating {
@@ -184,17 +184,19 @@ export class Seating {
     return !!this.db.prepare('SELECT 1 FROM seat_managers WHERE user_id = ?').get(u.id);
   }
 
-  /** Today, then each working day (not a holiday) up to two weeks ahead: the days a hot desk can be booked. */
+  /** Today, then each working day (not a holiday or a Saturday off) up to two weeks ahead: the days a hot desk can be booked. */
   bookDays(): string[] {
     const cal = this.d.calendar?.();
     const off = new Set((cal?.holidays ?? []).map((h) => h.date));
+    // compensatory working days (a Saturday worked when the week is Monday to Friday) can be booked
+    const extra = new Set((cal?.extraWorkdays ?? []).map((h) => h.date));
     const out: string[] = [];
     const now = this.now();
     for (let i = 0; i <= 14; i++) {
       const t = new Date(now);
       t.setDate(t.getDate() + i);
       const day = ymd(t.getTime());
-      if (i === 0 || ((cal?.workdays ?? [1, 2, 3, 4, 5, 6]).includes(t.getDay()) && !off.has(day))) out.push(day);
+      if (i === 0 || (((cal?.workdays ?? [1, 2, 3, 4, 5, 6]).includes(t.getDay()) || extra.has(day)) && !off.has(day))) out.push(day);
     }
     return out;
   }

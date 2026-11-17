@@ -2,6 +2,7 @@
 // shared by the hub, the apps and integrations. The rules that run a flow are in flow-engine.ts;
 // the sandbox a tool runs in is described in miniapp.ts.
 import type { FileInfo, Message } from './protocol.ts';
+import type { CircularRecord, OfficeDay, OfficeDayKind } from './holidays.ts';
 
 // ---------------------------------------------------------------- flows
 /** How a step is answered. Free text can be checked as a number, a date, an email address or a pattern. */
@@ -723,7 +724,7 @@ export interface BotJobLane {
   canEdit: boolean;
 }
 
-export interface BotJobSheet { scope: 'mine' | 'office' | 'bot'; from: number; to: number; lanes: BotJobLane[]; holidays: Array<{ date: string; name: string }>; now: number; tzOffset: number }
+export interface BotJobSheet { scope: 'mine' | 'office' | 'bot'; from: number; to: number; lanes: BotJobLane[]; holidays: Array<{ date: string; name: string; kind?: string }>; extraWorkdays?: Array<{ date: string; name: string }>; now: number; tzOffset: number }
 
 // ---------------------------------------------------------------- tools (mini-apps)
 /** What a tool may do. Every use of `post` and `files` is confirmed by the person. */
@@ -854,8 +855,22 @@ export interface BotOps {
   /** A job's run history, newest first. */
   'botjob.history': { req: { flow: string; job: string }; res: BotJobRun[] };
   /** The office's holidays (jobs and reminders skip them) and its working days. */
-  'botjob.calendar': { req: void; res: { holidays: Array<{ date: string; name: string }>; workdays: number[]; tzOffset: number; hours: { from: string; to: string } } };
-  'admin.botjob.holidays': { req: { holidays: Array<{ date: string; name: string }> }; res: { holidays: Array<{ date: string; name: string }> } };
+  'botjob.calendar': {
+    req: void;
+    res: {
+      /** Days nobody works (holidays, Saturdays off, compensatory days off). */
+      holidays: Array<{ date: string; name: string; kind?: string }>;
+      workdays: number[]; tzOffset: number; hours: { from: string; to: string };
+      /** Compensatory working days on a day the office does not normally work. */
+      extraWorkdays?: Array<{ date: string; name: string }>;
+      /** Every registered day with its kind and where it came from (Office holidays). */
+      days?: OfficeDay[];
+      /** The holiday circulars registered, newest first. */
+      circulars?: CircularRecord[];
+    };
+  };
+  /** Replace the office's days (an administrator's edits; days read from a circular keep where they came from). */
+  'admin.botjob.holidays': { req: { holidays: Array<{ date: string; name: string; kind?: OfficeDayKind; for?: string | null }> }; res: { holidays: OfficeDay[] } };
 
   /** Tools members may add (approved and switched on). */
   'miniapp.list': { req: void; res: MiniAppInfo[] };

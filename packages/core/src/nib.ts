@@ -4,6 +4,8 @@
 // day sheets: a lead's transmittal and the management's register. The hub and the app both use
 // these, so the same words parse the same way on a PC and on the hub.
 
+import type { HolidayOps, HolidayReadView } from './holidays.ts';
+
 // ---------------------------------------------------------------- identity and configuration
 export const NIB_ACCOUNT = 'system\\nib';
 export const NIB_NAME = 'Nib';
@@ -983,7 +985,7 @@ export function qtyText(q: NibQty | null): string {
 
 // ---------------------------------------------------------------- ops and events
 export interface NibCardRef { kind: NibCardKind; ref: string }
-export type NibCardKind = 'lead' | 'register' | 'followup' | 'week' | 'ask' | 'leave' | 'cover' | 'welcome' | 'joiner' | 'hello' | 'reply' | 'leaveSpace';
+export type NibCardKind = 'lead' | 'register' | 'followup' | 'week' | 'ask' | 'leave' | 'cover' | 'welcome' | 'joiner' | 'hello' | 'reply' | 'leaveSpace' | 'holidays' | 'holidaysDone';
 export interface NibItemInput {
   id?: string;
   giverId?: string | null;
@@ -1026,10 +1028,12 @@ export type NibCard =
   | { kind: 'welcome'; leave: NibLeave }
   | { kind: 'joiner'; userId: string; meet: string[] }
   | { kind: 'hello'; userId: string }
-  | { kind: 'reply'; parse: NibParse; text: string; itemId: string | null; userId: string };
+  | { kind: 'reply'; parse: NibParse; text: string; itemId: string | null; userId: string }
+  /** A holiday circular Nib read (docs/HOLIDAYS.md), and the summary once it is registered. */
+  | { kind: 'holidays' | 'holidaysDone'; view: HolidayReadView };
 export interface NibSheetView { userId: string; date: string; day: NibDay | null; items: NibItem[]; access: SheetAccess }
 
-export interface NibOps {
+export interface NibOps extends HolidayOps {
   'nib.me': { req: void; res: NibMe };
   /** The start card: who gave you work today (and optional first items). */
   'nib.start': { req: { givers: string[]; items?: NibItemInput[]; yesterday?: 'send' | 'skip' }; res: NibMe };
