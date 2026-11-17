@@ -20,6 +20,65 @@ them again.
 
 ## Setting it up
 
+### On its own, on the first start
+
+When the hub starts and no administrator has chosen a backup folder (the setting was never saved),
+it looks at the hub PC's disks and chooses one itself, **only when that is safe**
+(`apps/hub/src/firstrun.ts`):
+
+- a **fixed** volume (Windows' drive type 3): not removable, not a network drive, not on a USB,
+  SD, FireWire, iSCSI or virtual-disk bus (USB disks that Windows reports as fixed are left out);
+- on a **different physical disk** from the hub's data, mapped from drive letter to disk number
+  with PowerShell (below);
+- not the Windows drive (`SystemDrive`) or a boot or system partition;
+- with at least **twice the hub's data and 10 GB** free. The roomiest such volume wins.
+
+It then makes `<drive>:\DexConnectBackup`, makes it private to **Administrators and SYSTEM** (and
+the hub's own account, when the service runs as someone else) with
+`icacls <folder> /inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F` (well-known
+SIDs, so it works in any Windows language), sets **02:00**, keeps **14 daily, 8 weekly and 12
+monthly** copies, runs the first backup at once and checks it like every other run. A folder that
+cannot be made private is not used. The audit log records `backup.settings` with `auto: true`.
+
+**If no disk qualifies** (one disk, another partition of the same disk, only the Windows disk, only
+USB drives, or a disk too full) the hub chooses nothing. **Backups & leavers** and the setup check
+at the top of the Control room then say, in amber: *Backups need a second disk or a network share*,
+what the hub found (for example "C:, D: are parts of the same physical disk (disk 0)") and the one
+thing to do. The hub looks again on each start until a folder is set, so adding a second disk and
+restarting the service is enough. Once an administrator saves a folder (or turns backups off), the
+hub never chooses one itself again, and a folder it chose is never re-chosen.
+
+On a PC that is not Windows, or when PowerShell does not answer within 20 seconds, the hub chooses
+nothing and says so.
+
+The PowerShell the hub runs, read-only (`DISK_SCRIPT` in `firstrun.ts`, run with
+`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand …`):
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$out = @()
+foreach ($v in @(Get-Volume | Where-Object { $_.DriveLetter })) {
+  $disk = $null; $bus = $null; $boot = $false
+  try {
+    $p = Get-Partition -DriveLetter $v.DriveLetter -ErrorAction Stop | Select-Object -First 1
+    $disk = [int]$p.DiskNumber
+    $boot = [bool]($p.IsBoot -or $p.IsSystem)
+    $d = Get-Disk -Number $disk -ErrorAction Stop
+    $bus = [string]$d.BusType
+  } catch { }
+  $out += [pscustomobject]@{
+    letter = [string]$v.DriveLetter; driveType = [string]$v.DriveType; disk = $disk; bus = $bus; boot = $boot
+    free = [int64]$v.SizeRemaining; size = [int64]$v.Size; label = [string]$v.FileSystemLabel
+  }
+}
+ConvertTo-Json -Compress -Depth 4 -InputObject ([pscustomobject]@{ system = [string]$env:SystemDrive; volumes = $out })
+```
+
+A volume whose disk Windows does not report (a mapped drive, Storage Spaces, some RAID drivers) has
+no disk number and is never chosen; if the hub's own data drive has none, nothing is chosen.
+
+### By hand
+
 **Control room → Backups & leavers → Backups.**
 
 1. **Backup folder.** A second disk (`E:\DexConnectBackup`) or a network share
@@ -56,7 +115,11 @@ The Backups sheet shows:
 - the next backup;
 - any failure, in plain words ("The backup folder E:\DexConnectBackup could not be reached. Check
   that the disk is plugged in...");
-- the copies in the folder and why each is kept (latest, day, week, month), and the last runs.
+- the copies in the folder and why each is kept (latest, day, week, month), and the last runs;
+- when the hub chose the folder itself, or could not, what it found.
+
+The **setup check** at the top of the Control room also shows backups: the destination, the
+schedule, and the last good backup with its size and whether it was checked.
 
 After a failure the hub tries again an hour later. **If no backup has worked for two days**, the
 sheet shows an amber warning and the Dexterity Connect system bot tells every administrator, once a

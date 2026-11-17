@@ -195,7 +195,8 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
     } else {
       out.push(C('backup.folder', 'Backups', auto?.state === 'needs-disk' ? 'Backups need a second disk or a network share' : 'No backup folder yet', auto?.state === 'failed' ? 'fail' : 'action',
         auto?.message ?? 'No backup folder has been chosen, so nothing is backed up.', auto?.action ?? 'Enter a folder on a second disk or a network share in Control room ▸ Backups & leavers ▸ Backup folder.'));
-      out.push(C('backup.schedule', 'Backups', 'No nightly backup yet', 'action', 'Backups run every night once a backup folder is chosen.', 'Choose the backup folder (above).'));
+      // one thing to do (the folder): the schedule and the copies follow from it
+      out.push(C('backup.schedule', 'Backups', 'No nightly backup yet', 'info', 'Backups run every night once a backup folder is chosen.'));
     }
     const ok = s.lastSuccess;
     if (s.running) out.push(C('backup.last', 'Backups', 'A backup is running', 'info', `${s.running.step} (started ${when(s.running.since)}).`));
@@ -207,7 +208,8 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
       out.push(age > 2 * DAY || !verified
         ? C('backup.last', 'Backups', 'No recent checked backup', 'fail', detail, 'In Control room ▸ Backups & leavers, click Back up now and see what it says.')
         : C('backup.last', 'Backups', 'The last backup worked and was checked', 'pass', detail));
-    } else out.push(C('backup.last', 'Backups', 'No backup yet', 'action', folder ? 'No backup has run yet.' : 'Nothing has been backed up.', folder ? 'Click Back up now in Control room ▸ Backups & leavers.' : 'Choose the backup folder (above); the first backup runs that night.'));
+    } else if (folder) out.push(C('backup.last', 'Backups', 'No backup yet', 'action', 'No backup has run yet.', 'Click Back up now in Control room ▸ Backups & leavers.'));
+    else out.push(C('backup.last', 'Backups', 'No backup yet', 'info', 'Nothing has been backed up yet.'));
     return out;
   });
 

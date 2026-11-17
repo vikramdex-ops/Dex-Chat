@@ -161,7 +161,7 @@ export function chooseBackupDrive(layout: DiskLayout, dataLetter: string | null,
   if (roomy[0]) return { kind: 'pick', volume: roomy[0], need };
   if (otherDisk.length) return { kind: 'none', reason: 'no-space', need, detail: `The second disk has too little free space: ${otherDisk.map(volText).join(', ')}.` };
   const sameDisk = fixed.filter((v) => v.disk === data.disk);
-  if (sameDisk.length) return { kind: 'none', reason: 'same-disk-only', need, detail: `${[data, ...sameDisk].map((v) => `${v.letter}:`).join(', ')} are parts of the same physical disk (disk ${data.disk}).` };
+  if (sameDisk.length) return { kind: 'none', reason: 'same-disk-only', need, detail: `${[data, ...sameDisk].map((v) => `${v.letter}:`).sort().join(', ')} are parts of the same physical disk (disk ${data.disk}).` };
   const windowsOnly = safeBus.filter((v) => v.disk !== null && v.disk !== data.disk);
   if (windowsOnly.length) return { kind: 'none', reason: 'system-only', need, detail: `The only other disk holds Windows (${windowsOnly.map((v) => `${v.letter}:`).join(', ')}).` };
   const unplug = others.filter((v) => v.driveType.toLowerCase() === 'removable' || (v.driveType.toLowerCase() === 'fixed' && UNSAFE_BUS.has((v.bus ?? '').toLowerCase())));
@@ -250,11 +250,11 @@ export function applyDefaults(h: FirstRunHost): FirstRunResult {
 
 const messages = {
   'unknown-data-disk': 'The hub could not tell which disk its data is on, so it did not choose a backup folder.',
-  'single-disk': 'Backups need a second disk or a network share. The hub PC has only one disk, and a backup on the same disk is lost with it.',
-  'same-disk-only': 'Backups need a second disk or a network share. The other drive letters on the hub PC are parts of the same disk, and a backup there is lost with it.',
-  'system-only': 'Backups need a second disk or a network share. The only other disk is the one Windows runs from, and the hub does not put backups on the Windows drive.',
-  'removable-only': 'Backups need a second disk or a network share. The only other drives can be unplugged (USB or removable), so the hub did not choose one.',
-  'no-space': 'Backups need a second disk or a network share with more free space. The second disk is too full.',
+  'single-disk': 'The hub PC has only one disk, and a backup on the same disk is lost with it.',
+  'same-disk-only': 'The other drive letters on the hub PC are parts of the same disk, and a backup there is lost with it.',
+  'system-only': 'The only other disk is the one Windows runs from, and the hub does not put backups on the Windows drive.',
+  'removable-only': 'The only other drives can be unplugged (USB or removable), so the hub did not choose one.',
+  'no-space': 'The second disk is too full for the backups.',
 } as const;
 const ACTION = 'Add a second internal disk to the hub PC or make a folder on a network share (NAS), then enter it in Control room ▸ Backups & leavers ▸ Backup folder, for example E:\\DexConnectBackup or \\\\NAS\\backups\\dexconnect, and click Save folder.';
 
@@ -288,7 +288,7 @@ export async function autoBackup(h: FirstRunHost, o: BackupPickOptions = {}): Pr
   const choice = chooseBackupDrive(layout, dataDrive, dataBytes);
   if (choice.kind === 'none') {
     h.log('warn', 'no safe backup disk', { reason: choice.reason, detail: choice.detail });
-    return record({ state: 'needs-disk', at: now, folder: null, first: null, message: `${messages[choice.reason]} ${choice.detail}`, action: ACTION });
+    return record({ state: choice.reason === 'unknown-data-disk' ? 'unsupported' : 'needs-disk', at: now, folder: null, first: null, message: `${messages[choice.reason]} ${choice.detail}`, action: ACTION });
   }
   const folder = (o.folderOn ?? ((l: string) => `${l}:\\${BACKUP_FOLDER_NAME}`))(choice.volume.letter);
   try {

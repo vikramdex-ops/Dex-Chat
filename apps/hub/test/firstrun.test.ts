@@ -238,22 +238,22 @@ test('a second disk: the hub chooses it, makes it private, backs up to it and ch
   c.disconnect();
 });
 
-for (const [name, l, reason] of [
-  ['only another part of the same disk', layout(vol({ letter: 'C', boot: true }), vol({ letter: 'D' })), /parts of the same disk/],
-  ['one disk', layout(vol({ letter: 'D' })), /only one disk/],
-  ['no disks found', layout(), /could not tell which disk/],
+for (const [name, l, reason, state] of [
+  ['only another part of the same disk', layout(vol({ letter: 'C', boot: true }), vol({ letter: 'D' })), /C:, D: are parts of the same physical disk/, 'needs-disk'],
+  ['one disk', layout(vol({ letter: 'D' })), /only one disk/, 'needs-disk'],
+  ['no disks found', layout(), /could not tell which disk/, 'unsupported'],
 ] as const) {
   test(`${name}: no folder is chosen, and the Control room says to add a second disk or a share`, async () => {
     const dest = tmp('dexfr-disk-');
     const dir = tmp('dexfr-');
     let hub = await boot(dir, { firstRun: pretend(l, dest) });
     const auto = await hub.firstRunBackup;
-    assert.equal(auto?.state, 'needs-disk');
+    assert.equal(auto?.state, state);
     assert.match(auto!.message, reason);
     assert.match(auto!.action!, /second internal disk .* network share/);
     assert.equal(hub.backups.config().folder, null, 'never an unsafe destination');
     assert.deepEqual(fs.readdirSync(dest), [], 'nothing was made');
-    assert.equal(hub.backups.status().auto?.state, 'needs-disk');
+    assert.equal(hub.backups.status().auto?.state, state);
     const c = await owner(hub);
     const r = await c.request('admin.setup.report');
     const folder = r.checks.find((x) => x.id === 'backup.folder')!;
@@ -348,7 +348,8 @@ test('the setup report: every area, manual checks never passed, administrators o
   const manual = r.checks.filter((x) => x.id.startsWith('manual.'));
   assert.ok(manual.length >= 3);
   assert.ok(manual.every((x) => x.state === 'manual' && x.fix), 'a person checks these, and is told how');
-  assert.ok(r.checks.every((x) => x.state === 'pass' || x.fix), 'everything not passed says what to do');
+  assert.ok(r.checks.every((x) => x.state === 'pass' || x.state === 'info' || x.fix), 'everything to do says what to do');
+  assert.equal(by.get('backup.schedule')!.state, 'info', 'one thing to do for backups: the folder');
   assert.equal(r.summary.pass + r.summary.fail + r.summary.action + r.summary.manual + r.summary.info, r.checks.length);
 
   const text = setupReportText(r);

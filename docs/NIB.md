@@ -203,8 +203,8 @@ understand:
 The register is a snapshot at the time it was sent, so it reads the same tomorrow.
 
 **Late sheets.** If anyone sends after the register, **one** follow-up register is sent at the
-follow-up time (21:00 by default; a time before the register time means the next workday
-morning). It lists only the late sheets, in the same rows as a lead card, and who is still
+follow-up time (19:00 by default, half an hour after the 18:30 register; a time before the
+register time means the next workday morning). It lists only the late sheets, in the same rows as a lead card, and who is still
 missing with their ask counts. No late sheets: no follow-up.
 
 **The week.** On the last workday of the week the management also get a weekly roll-up: a small
@@ -269,7 +269,7 @@ Administrators (the office manager, a director) set, on one ruled sheet in four 
 | **01 Activity givers**: area leads, discipline leads and team leads, each with a scope (`Area 4`, `Piping`); **Add the department heads** fills it from the Organisation | none |
 | **02 Management**: **Who receives the register** (the daily register, the follow-up and the week) | none |
 | 02 Management: **Who keeps a day sheet**: **All but the management**, or **Choose** who keeps none | all but the management |
-| **03 Times**: start of the day card, wrap-up, register, follow-up | 09:45, 18:00, 19:00, 21:00 |
+| **03 Times**: start of the day card, wrap-up, register, follow-up | 09:45, 18:00, 18:30, 19:00 |
 | 03 Times: **Asks a day** (1–5) | 3 |
 | 03 Times: **Workdays** | Mon–Sat |
 | **04 Jobs and privacy**: **Job codes**, one per line (`P-12 Refinery revamp`), used for parsing and grouping | none |
@@ -278,6 +278,14 @@ Administrators (the office manager, a director) set, on one ruled sheet in four 
 
 Every change is in the audit log (`nib.config`). **Send me a register now** posts today's register
 to the administrator to check the look before the first evening.
+
+**A new hub starts with these.** On its first start the hub writes the defaults above into Nib's
+settings once (`apps/hub/src/firstrun.ts`, flag `firstrun_nib_v1`, audit `setup.defaults`), so a
+later change to the built-in defaults never moves an office's times, and a restart never applies
+them again. Nobody receives the register until an administrator chooses (the setup check at the top
+of the Control room says so). A hub that ran a version from before these defaults, has people in it
+and never saved Nib's settings keeps the times it was working to (register 19:00, follow-up 21:00);
+a hub whose administrator saved Nib's settings keeps exactly what was saved.
 
 ## 9. Permissions
 

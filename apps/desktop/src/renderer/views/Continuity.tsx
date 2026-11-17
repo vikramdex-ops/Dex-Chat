@@ -2,7 +2,7 @@
 // how the last ones went, "Back up now") and offboarding someone who leaves the office (what
 // they look after, who takes over, people who left and giving access back).
 // See docs/BACKUP.md and apps/hub/src/offboard.ts.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BackupRun, BackupStatus, Departure, MeetingHandover, OffboardPreview, PublicUser, Session } from '@dex/core';
 import { Avatar, Icon, Segmented, relativeTime, useToast } from '../ui.tsx';
 import { tr } from '../i18n/index.ts';
@@ -91,9 +91,16 @@ function BackupsAdmin({ live }: { live: boolean }) {
   const [time, setTime] = useState('02:00');
   const [keep, setKeep] = useState({ keepDaily: 14, keepWeekly: 8, keepMonthly: 12 });
   const [saving, setSaving] = useState(false);
+  const shown = useRef<BackupStatus['config'] | null>(null);
   const adopt = useCallback((x: BackupStatus, fresh = false) => {
     setS(x);
-    if (fresh) { setFolder(x.config.folder ?? ''); setTime(x.config.time); setKeep({ keepDaily: x.config.keepDaily, keepWeekly: x.config.keepWeekly, keepMonthly: x.config.keepMonthly }); }
+    const before = shown.current;
+    shown.current = x.config;
+    if (fresh) { setFolder(x.config.folder ?? ''); setTime(x.config.time); setKeep({ keepDaily: x.config.keepDaily, keepWeekly: x.config.keepWeekly, keepMonthly: x.config.keepMonthly }); return; }
+    // changed elsewhere (another administrator, or the hub choosing a folder on its first start):
+    // follow it, unless this administrator is in the middle of typing something else
+    if (before && before.folder !== x.config.folder) setFolder((cur) => (cur.trim() === (before.folder ?? '') ? x.config.folder ?? '' : cur));
+    if (before && before.time !== x.config.time) setTime(x.config.time);
   }, []);
   useEffect(() => {
     if (!live) return;
