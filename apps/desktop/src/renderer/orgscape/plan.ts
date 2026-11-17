@@ -59,7 +59,7 @@ export function planFloor(plan: FloorPlan, version: number, holders: Holders, pe
     const booked = holder?.kind === 'hot' ? bookedToday.get(seat.id) ?? null : null;
     let occupant = holder?.kind === 'person' ? holder.userId : booked;
     if (occupant && !known.has(occupant)) occupant = null;
-    const dept = occupant ? byUser.get(occupant)?.profile.departmentId ?? null : holder && holder.kind !== 'person' ? holder.departmentId ?? null : null;
+    const dept = occupant ? byUser.get(occupant)?.profile.departmentId ?? null : holder && (holder.kind === 'reserved' || holder.kind === 'hot') ? holder.departmentId ?? null : null;
     return { seat, x: ox + seat.x * K, y: oy + seat.y * K, holder, occupant, booked, away: !!occupant && !!isAway(occupant), dept };
   });
   const byId = new Map(seats.map((s) => [s.seat.id, s] as const));

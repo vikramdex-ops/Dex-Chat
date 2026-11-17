@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyMoves, benchSeats, checkMoves, diffHolders, flowMoves, matchName, mergeMoves, nextRevLetter, nextSeatIds, parseSeatList, placeMoves, podSeats,
+  applyMoves, benchSeats, checkMoves, diffHolders, drawingClaims, drawingNameFits, flowMoves, matchName, mergeMoves, nextRevLetter, nextSeatIds, parseSeatList, placeMoves, podSeats,
   rotateSeats, seatFromText, seatLabel, swapMoves, validatePlan,
 } from '../src/seating.ts';
 import type { FloorPlan, Holders } from '../src/seating.ts';
@@ -119,4 +119,30 @@ test('layout editing: a bench of 4 takes the next IDs, pods face in, rotation tu
   assert.equal(nextRevLetter(null), 'A');
   assert.equal(nextRevLetter('Z'), 'AA');
   assert.equal(nextRevLetter('C'), 'D');
+});
+
+test('names from the drawing: word by word with initials; the longest wins; only certain matches are claimed', () => {
+  assert.ok(drawingNameFits('Sharada', 'Sharada Venkat'));
+  assert.ok(drawingNameFits('logesh  m', 'Logesh Murugan'));
+  assert.ok(drawingNameFits('Karthikeyan A S', 'Karthikeyan A. Senthil'));
+  assert.ok(!drawingNameFits('Sam', 'Samuel Raj'), 'a whole word, not the start of one');
+  assert.ok(!drawingNameFits('Anand Pandey', 'Anand'));
+  assert.ok(!drawingNameFits('Logesh D', 'Logesh Murugan'));
+  const named = [{ seatId: 'W-C09', name: 'Karthikeyan A' }, { seatId: 'W-C21', name: 'Karthikeyan A S' }, { seatId: 'W-A45', name: 'Pavithra' }, { seatId: 'W-A31', name: 'Sharada' }];
+  const drawing = named.map((n) => n.name);
+  const people = [
+    { id: 'ks', displayName: 'Karthikeyan A Senthil' }, { id: 'ka', displayName: 'Karthikeyan Arun' },
+    { id: 'p1', displayName: 'Pavithra R' }, { id: 'p2', displayName: 'Pavithra S' }, { id: 'sv', displayName: 'Sharada Venkat' },
+  ];
+  const r = drawingClaims(named, drawing, people, new Set());
+  // Senthil takes "Karthikeyan A S"; then Arun is the only one left for "Karthikeyan A"
+  assert.deepEqual(r.claims.map((c) => [c.seatId, c.userId]).sort(), [['W-A31', 'sv'], ['W-C09', 'ka'], ['W-C21', 'ks']]);
+  assert.deepEqual(r.waiting.map((w) => [w.seatId, w.suggestions.map((s) => s.userId).sort()]), [['W-A45', ['p1', 'p2']]]);
+  // someone already seated is never claimed for a second seat
+  assert.deepEqual(drawingClaims(named, drawing, people, new Set(['sv'])).claims.some((c) => c.userId === 'sv'), false);
+  // "Karthikeyan A S" already taken: a Karthikeyan A S… is not grabbed by plain "Karthikeyan A"
+  const left = named.filter((n) => n.seatId !== 'W-C21');
+  const r2 = drawingClaims(left, drawing, [{ id: 'kx', displayName: 'Karthikeyan A Suresh' }], new Set());
+  assert.deepEqual(r2.claims, []);
+  assert.deepEqual(r2.waiting.map((w) => w.seatId), ['W-C09']);
 });

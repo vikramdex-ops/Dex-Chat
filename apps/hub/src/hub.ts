@@ -259,7 +259,8 @@ export class Hub {
     this.reactionInsights = new ReactionInsights(this.store, this.messaging);
     this.messaging.onReaction = (messageId, convId, userId, emoji, on) => this.reactionInsights.record(messageId, convId, userId, emoji, on);
     this.messaging.afterSend = (msg, author) => this.links.prefetch(msg, author);
-    this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
+    // a rename or an import of people can make a name from the drawing certain: they take that seat
+    this.org = new Org(this.store, (u) => { this.emit('user.updated', u); this.claimSeats(); }, (info) => this.emit('org.updated', info));
     this.desk = new Desk(this.store.db, this.messaging, this.files, (userIds, name, data) => this.deliver(userIds, name, data), (uid) => {
       const u = this.store.userById(uid);
       return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
@@ -531,6 +532,8 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
       calendar: () => this.botflows.calendar(),
     });
+    // people who were already here before the drawing's names came take their named seats
+    this.claimSeats();
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -942,6 +945,14 @@ export class Hub {
     if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(JSON.stringify(frame));
   }
 
+  /** Names from the drawing that are now certainly someone: that person takes the seat (seating.ts). */
+  private claimSeats(): void {
+    // the Org is made before the floor plan: an early rename has nothing to claim yet
+    const seating = this.seating as Seating | undefined;
+    if (!seating) return;
+    try { seating.claimNamed(); } catch (err) { this.log('warn', 'seats from the drawing not claimed', { error: (err as Error).message }); }
+  }
+
   private emit(name: string, data: unknown, filter: (c: Conn) => boolean = () => true): void {
     for (const c of this.conns) if (c.ready && filter(c)) this.send(c, { t: 'evt', name, data });
   }
@@ -1101,6 +1112,7 @@ export class Hub {
     if (first) {
       this.messaging.ensureEveryoneSpace(user.id);
       this.messaging.welcome(user.id);
+      this.claimSeats();
     }
     this.store.audit(first ? user.id : null, 'device.registered', device.id, { account: key, hostname: account.hostname, ip: conn.ip, autoApproved: first });
     this.log('info', 'device registered', { account: key, hostname: account.hostname, status: device.status });
@@ -1278,7 +1290,8 @@ export class Hub {
         const user = this.store.userById(conn.userId!)!;
         this.emit('user.updated', user);
         if (before.availability !== user.availability && (before.availability === 'invisible' || user.availability === 'invisible')) this.announcePresence(user.id);
-        return user;
+        if (patch.displayName && patch.displayName !== before.displayName) this.claimSeats();
+        return this.store.userById(conn.userId!) ?? user;
       }
 
       case 'pair.create': {
@@ -1341,6 +1354,8 @@ export class Hub {
           this.messaging.joinDefaults(device.userId, this.policies.get().defaultSpaces ?? []);
           // people who were imported as reporting to this person now resolve to them
           if (user) this.org.announceReportsOf(user.account);
+          // the seat the office drawing names them on, when it is certainly them
+          this.claimSeats();
         }
         for (const c of this.conns) if (c.deviceId === device.id && !c.ready) this.continueAs(c, updated);
         return updated;
@@ -1391,6 +1406,8 @@ export class Hub {
           : 'Your account is now a **guest** account: you see only the Spaces you were invited to.';
         this.system.tell(target.id, told, `role-${target.id}-${Date.now()}`);
         this.emit('user.updated', user);
+        // a guest made a member can now hold the seat the drawing names them on
+        if (target.role === 'guest') this.claimSeats();
         return user;
       }
 

@@ -29,8 +29,9 @@ test('the seed plan: Rev A, 153 seats, the half-cabins the drawing names reserve
   const v: SeatingView = await priya.request('seating.get');
   assert.equal(v.version, 1);
   assert.equal(v.plan.seats.length, 153);
-  assert.equal(v.revisions.length, 1);
-  assert.equal(v.revisions[0].rev, 'A');
+  // Rev A, then the owner (Vikram, the name on POD2-1) taking his seat from the drawing
+  assert.deepEqual(v.revisions.map((r) => r.rev), ['B', 'A']);
+  assert.deepEqual(v.holders['POD2-1'], P(me(owner)));
   assert.deepEqual(v.holders['HC-05'], { kind: 'reserved', label: '3D-Manager' });
   assert.equal(v.canEdit, false);
   assert.deepEqual(v.plans, []);
@@ -71,10 +72,10 @@ test('a move plan applies today: a revision, the seat field follows and is read-
   assert.deepEqual(plan.changes.map((c) => c.to).sort(), ['W-A14', 'W-A15']);
   const applied = await owner.request('seating.apply', { id: plan.id });
   assert.equal(applied.status, 'applied');
-  assert.equal(applied.rev, 'B');
+  assert.equal(applied.rev, 'C');
   const v = await priya.request('seating.get');
   assert.deepEqual(v.holders['W-A14'], P(me(priya)));
-  assert.equal(v.revisions[0].rev, 'B');
+  assert.equal(v.revisions[0].rev, 'C');
   assert.equal(v.notice?.seatId, 'W-A14');
   assert.equal(v.notice?.label, 'W-A14 · Left benches');
   const priyaNow = (await owner.request('directory.list')).users.find((u) => u.id === me(priya))!;
@@ -101,9 +102,9 @@ test('a move plan applies today: a revision, the seat field follows and is read-
   h = after.holders;
   assert.deepEqual([h['W-A14'], h['W-A15']], [P(me(priya)), P(me(ravi))]);
   assert.equal(after.revisions[0].kind, 'undo');
-  assert.match(after.revisions[0].note, /Undo of Rev C/);
-  // compare: Rev B against Rev C
-  const b = await owner.request('seating.rev', { rev: 'B' }), c = await owner.request('seating.rev', { rev: 'C' });
+  assert.match(after.revisions[0].note, /Undo of Rev D/);
+  // compare: Rev C against Rev D
+  const b = await owner.request('seating.rev', { rev: 'C' }), c = await owner.request('seating.rev', { rev: 'D' });
   assert.deepEqual(b.holders['W-A14'], P(me(priya)));
   assert.deepEqual(c.holders['W-A14'], P(me(ravi)));
   assert.equal(c.rev.changes.length, 2);
@@ -125,7 +126,7 @@ test('effective dates: a plan for next Monday waits, is listed for everyone, and
   v = await priya.request('seating.get');
   assert.deepEqual(v.holders['POD1-3'], P(me(priya)));
   assert.equal(v.plans.length, 0);
-  assert.equal(v.revisions[0].rev, 'B');
+  assert.equal(v.revisions[0].rev, 'C');
   hub.seating.setClock(null);
   // a scheduled plan can be taken back to draft
   const p2 = await owner.request('seating.draft', { moves: [{ seatId: 'POD1-4', to: P(me(priya)) }] });
@@ -156,7 +157,7 @@ test('a department into a zone: the preview, then one plan; people who do not fi
 test('import: a pasted list is matched to the directory, uncertain names suggested; old free-text seats that name one', async () => {
   const { owner, priya, ravi } = await office();
   await owner.request('admin.org.setProfile', { userId: me(ravi), location: 'Desk W-B 07' });
-  await owner.request('admin.org.setProfile', { userId: me(owner), location: 'Bay 2, Desk 4' });
+  await owner.request('admin.org.setProfile', { userId: me(priya), location: 'Bay 2, Desk 4' });
   const { rows } = await owner.request('seating.importMatch', { text: 'seat_id,name_on_drawing\nW-A31, Priya\nW-A33, Ravi\nW-A35, Sharali\nW-A33, Priya\nQQ-1, Ravi\n' });
   assert.equal(rows.length, 5);
   assert.equal(rows[0].userId, me(priya), 'a Windows user name is a sure match');
@@ -187,7 +188,7 @@ test('layout: validation, no removing a held seat, versions; a stale save is ref
   next.rooms.find((r) => r.id === 'room-a')!.name = 'Training room';
   const saved = await owner.request('seating.layout', { plan: next, baseVersion: 1, note: 'A bench below the half-cabins; Room A is the training room' });
   assert.equal(saved.version, 2);
-  assert.equal(saved.rev, 'B');
+  assert.equal(saved.rev, 'C');
   await assert.rejects(owner.request('seating.layout', { plan: next, baseVersion: 1 }), /meanwhile/);
   await assert.rejects(priya.request('seating.layout', { plan: next, baseVersion: 2 }), /office managers/);
   // a held seat cannot go
@@ -197,7 +198,7 @@ test('layout: validation, no removing a held seat, versions; a stale save is ref
   await assert.rejects(owner.request('seating.layout', { plan: without, baseVersion: 2 }), /W-A55 is still held/);
   // comparing reads the layout the revision was drawn on
   assert.equal((await owner.request('seating.rev', { rev: 'A' })).plan.seats.length, 153);
-  assert.equal((await owner.request('seating.rev', { rev: 'B' })).plan.seats.length, 155);
+  assert.equal((await owner.request('seating.rev', { rev: 'C' })).plan.seats.length, 155);
 });
 
 test('hot desks: bookable by the day, one person per seat; a leaver frees their seat', async () => {
