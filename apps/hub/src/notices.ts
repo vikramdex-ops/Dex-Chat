@@ -199,9 +199,6 @@ export class NoticeBoard {
     this.d = d;
     this.db = d.db;
     this.db.exec(SCHEMA);
-    if (!(this.db.prepare('SELECT COUNT(*) AS n FROM notice_desks').get() as { n: number }).n) {
-      for (const desk of DEFAULT_DESKS) this.db.prepare('INSERT INTO notice_desks (id, code, name, created_at) VALUES (?, ?, ?, ?)').run(ulid(), desk.code, desk.name, Date.now());
-    }
     // files attached to notices stay while their notice does
     d.files.keep.push('NOT EXISTS (SELECT 1 FROM notice_revs nr WHERE nr.file_id = f.id)');
   }
@@ -212,6 +209,19 @@ export class NoticeBoard {
   setClock(at: number | null): void { this.offset = at === null ? 0 : at - Date.now(); }
 
   // ------------------------------------------------------------ desks
+  /**
+   * The four desks a new office starts with (Admin, HR, IT, Management), with no issuers. Only
+   * into an empty register, and only once per hub (firstrun.ts keeps the flag), so desks an
+   * administrator removed do not come back on a restart. Returns how many were made.
+   */
+  seedDefaultDesks(): number {
+    if ((this.db.prepare('SELECT COUNT(*) AS n FROM notice_desks').get() as { n: number }).n) return 0;
+    for (const desk of DEFAULT_DESKS) this.db.prepare('INSERT INTO notice_desks (id, code, name, created_at) VALUES (?, ?, ?, ?)').run(ulid(), desk.code, desk.name, Date.now());
+    return DEFAULT_DESKS.length;
+  }
+  /** The default desks' names, for the setup check. */
+  static readonly DEFAULT_DESK_NAMES = DEFAULT_DESKS.map((d) => d.name);
+
   private deskRows(): DeskRow[] { return this.db.prepare('SELECT * FROM notice_desks ORDER BY name COLLATE NOCASE').all() as unknown as DeskRow[]; }
   private desk(id: string): DeskRow | undefined { return this.db.prepare('SELECT * FROM notice_desks WHERE id = ?').get(id) as DeskRow | undefined; }
   private issuersOf(deskId: string): string[] { return (this.db.prepare('SELECT user_id FROM notice_issuers WHERE desk_id = ?').all(deskId) as Array<{ user_id: string }>).map((r) => r.user_id); }

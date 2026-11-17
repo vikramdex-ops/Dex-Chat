@@ -31,7 +31,7 @@ import path from 'node:path';
 import { DatabaseSync, backup as sqliteBackup } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { BACKUP_ALERT_MS, BACKUP_DEFAULTS } from '@dex/core';
-import type { BackupCheck, BackupConfig, BackupCopy, BackupRun, BackupStatus, PublicUser } from '@dex/core';
+import type { BackupAuto, BackupCheck, BackupConfig, BackupCopy, BackupRun, BackupStatus, PublicUser } from '@dex/core';
 
 const DAY = 86_400_000;
 /** Files read back and compared with their hash after each run. */
@@ -189,7 +189,8 @@ async function exists(p: string): Promise<fs.Stats | null> {
   try { return await fsp.stat(p); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
 }
 
-async function dirSize(dir: string): Promise<number> {
+/** Bytes in a folder and everything under it. */
+export async function dirSize(dir: string): Promise<number> {
   let n = 0;
   for (const e of await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])) {
     const p = path.join(dir, e.name);
@@ -273,8 +274,23 @@ export class Backups {
     this.setMeta('backup_state', JSON.stringify({ ...this.state(), ...patch }));
   }
 
-  /** Change where and when; a new folder is checked by writing to it. */
-  async configure(me: PublicUser, patch: Record<string, unknown>): Promise<BackupStatus> {
+  /** How the hub chose a folder on its first start (firstrun.ts); shown while no administrator has chosen one. */
+  auto(): BackupAuto | null {
+    try {
+      const a = JSON.parse(this.meta('backup_auto') ?? 'null') as BackupAuto | null;
+      if (!a || typeof a.state !== 'string') return null;
+      const folder = this.config().folder;
+      if (a.state === 'picked') return a.folder === folder ? a : null;
+      return folder ? null : a;
+    } catch { return null; }
+  }
+  setAuto(a: BackupAuto): void {
+    this.setMeta('backup_auto', JSON.stringify(a));
+    this.h.changed(this.status());
+  }
+
+  /** Change where and when; a new folder is checked by writing to it. `me` is null when the hub sets it up itself (firstrun.ts). */
+  async configure(me: Pick<PublicUser, 'id'> | null, patch: Record<string, unknown>): Promise<BackupStatus> {
     const cur = this.config();
     const next: BackupConfig = { ...cur };
     if (patch.folder !== undefined) {
@@ -314,7 +330,7 @@ export class Backups {
       this.copies = []; this.folderBytes = null; this.scanned = false;
       if (next.folder) await this.scan();
     }
-    this.h.audit(me.id, 'backup.settings', null, { folder: next.folder, time: next.time, keepDaily: next.keepDaily, keepWeekly: next.keepWeekly, keepMonthly: next.keepMonthly });
+    this.h.audit(me?.id ?? this.h.systemId(), 'backup.settings', null, { ...(me === null ? { auto: true } : {}), folder: next.folder, time: next.time, keepDaily: next.keepDaily, keepWeekly: next.keepWeekly, keepMonthly: next.keepMonthly });
     const s = this.status();
     this.h.changed(s);
     return s;
@@ -376,7 +392,7 @@ export class Backups {
     return {
       config: this.config(), running: this.running, lastRun: st.lastRun, lastSuccess: st.lastSuccess,
       nextRunAt: this.running ? null : this.nextRunAt(now), warning: this.warning(now), copies: this.copies, folderBytes: this.folderBytes,
-      history: st.history,
+      history: st.history, auto: this.auto(),
     };
   }
 

@@ -66,6 +66,10 @@ import { MissedNotices } from './missed.ts';
 import { Nib, NibError } from './nib.ts';
 import { NoticeBoard, NoticeError } from './notices.ts';
 import { Seating, SeatingError } from './seating.ts';
+import { applyDefaults, autoBackup } from './firstrun.ts';
+import type { BackupPickOptions, FirstRunHost } from './firstrun.ts';
+import { HealthChecks, registerBuiltInChecks } from './setupcheck.ts';
+import type { BackupAuto } from '@dex/core';
 
 export const HUB_VERSION = '0.1.0';
 
@@ -85,6 +89,11 @@ export interface HubOptions {
   /** UDP port for discovery; `false` disables discovery (tests). */
   discoveryPort?: number | false;
   log?: (level: 'info' | 'warn' | 'error' | 'debug', msg: string, extra?: Record<string, unknown>) => void;
+  /**
+   * The automatic backup folder on the first start (firstrun.ts): tests pass their own disk
+   * detector; `false` leaves backups alone. Default: PowerShell on Windows.
+   */
+  firstRun?: BackupPickOptions | false;
 }
 
 interface Conn {
@@ -181,6 +190,14 @@ export class Hub {
   readonly notices: NoticeBoard;
   /** The office's floor plan and who sits where (seating.ts, docs/SEATING.md). */
   readonly seating: Seating;
+  /**
+   * The setup check's checks (setupcheck.ts). Other parts of the hub add theirs with
+   * `hub.health.register(id, fn)`; they appear in Control room ▸ Setup check and its report.
+   */
+  readonly health = new HealthChecks();
+  /** The automatic backup folder of the first start, while it is being chosen (firstrun.ts). */
+  firstRunBackup: Promise<BackupAuto | null> = Promise.resolve(null);
+  private stopping = false;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -531,6 +548,18 @@ export class Hub {
       log: (level, msg, extra) => this.log(level, msg, extra),
       calendar: () => this.botflows.calendar(),
     });
+    registerBuiltInChecks(this.health, {
+      db: this.store.db, dataDir: opts.dataDir, startedAt: this.startedAt, version: HUB_VERSION, backups: this.backups,
+      nib: () => this.nib.config(), desks: () => this.notices.desks(), defaultDesks: NoticeBoard.DEFAULT_DESK_NAMES,
+      seats: () => {
+        try {
+          const seats = this.seating.layout().plan.seats.length;
+          return { seats, seated: Object.values(this.seating.holders()).filter((h) => h.kind === 'person').length };
+        } catch { return null; }
+      },
+      remote: () => this.remoteView(),
+      ice: () => { const c = this.iceConfig(); return { mode: c.mode, keyId: c.keyId ?? null, hasToken: !!c.token, servers: c.servers.length }; },
+    });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
     if (owner) {
@@ -605,7 +634,19 @@ export class Hub {
     return { app: APP_ID, v: PROTOCOL_VERSION, kind: 'hub', id: this.info.id, name: this.info.name, port: this.port, fp: this.fingerprint, version: HUB_VERSION };
   }
 
+  private firstRunHost(): FirstRunHost {
+    return {
+      db: this.store.db, store: this.store, dataDir: this.opts.dataDir, nib: this.nib, notices: this.notices, backups: this.backups,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      systemId: () => this.system.id,
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      alive: () => !this.stopping,
+    };
+  }
+
   async start(): Promise<void> {
+    // the office's defaults, once per hub, before anyone can connect (firstrun.ts)
+    try { applyDefaults(this.firstRunHost()); } catch (err) { this.log('error', 'first-run defaults failed', { error: (err as Error).message }); }
     await new Promise<void>((resolve, reject) => {
       this.server.once('error', reject);
       this.server.listen(this.opts.port ?? DEFAULT_HUB_PORT, this.opts.host ?? '0.0.0.0', () => {
@@ -657,6 +698,13 @@ export class Hub {
       }
     }, 20000);
     this.applyRemote();
+    // a backup folder on a second disk, when no administrator has chosen one (in the background)
+    if (this.opts.firstRun !== false) {
+      this.firstRunBackup = autoBackup(this.firstRunHost(), this.opts.firstRun ?? {}).catch((err: Error) => {
+        this.log('error', 'automatic backup folder failed', { error: err.message });
+        return null;
+      });
+    }
     this.log('info', 'hub listening', { port: this.port, hubId: this.info.id, fingerprint: this.fingerprint });
   }
 
@@ -712,6 +760,7 @@ export class Hub {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.deskTimer) clearInterval(this.deskTimer);
     this.mirror?.stop();
@@ -725,6 +774,7 @@ export class Hub {
     await Promise.race([this.flows.idle(), new Promise((r) => setTimeout(r, 3000).unref())]);
     // a backup copying the database finishes that step; the rest of the run stops
     await this.backups.halt();
+    await Promise.race([this.firstRunBackup.catch(() => null), new Promise((r) => setTimeout(r, 3000).unref())]);
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     this.store.close();
@@ -1828,6 +1878,10 @@ export class Hub {
           }
           const c = this.iceConfig();
           return { mode: c.mode, keyId: c.keyId, servers: c.servers.map((s) => ({ urls: s.urls, ...(s.username ? { username: s.username } : {}), ...(s.credential ? { credential: '••••••' } : {}) })), hasToken: !!c.token };
+        }
+        if (op === 'admin.setup.report') {
+          this.requireAdmin(conn);
+          return await this.health.report({ id: this.info.id, name: this.info.name, version: HUB_VERSION, startedAt: this.startedAt, uptimeSec: Math.round((Date.now() - this.startedAt) / 1000) }) satisfies Ops['admin.setup.report']['res'];
         }
         if (op === 'remote.info') {
           const c = this.remoteConfig();
