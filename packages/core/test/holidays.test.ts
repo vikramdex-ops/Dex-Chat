@@ -182,3 +182,35 @@ test('the plan: new, unchanged and updated days, removed ones only from a circul
   assert.ok(!after.some((d) => d.date === '2026-11-08'));
   assert.equal(after.find((d) => d.date === '2026-12-25')!.source!.hash, H2);
 });
+
+test('a read that may have missed rows (a scan, or serial numbers that skip) never removes registered days', () => {
+  const read = readCircular(REAL);
+  const empty = planCircular(read, [], H, []);
+  const list = applyCircular([], read, empty, { ref: read.ref, refDate: read.refDate, file: 'holidays-2026.pdf', hash: H });
+  // OCR found only the first rows, and lost a serial number on the way
+  const partial = readCircular(REAL.slice(0, 20).map((l) => l.replace(/\s{3,}/g, ' ').replace(/^5 /, '')));
+  assert.ok(partial.rows.length < 46);
+  const p = planCircular(partial, list, H2, [], { ocr: true });
+  assert.deepEqual(p.removed, []);
+  assert.ok(p.kept.length > 30, 'the days it did not see are kept');
+  // the same text from a PDF with a text layer, but with a serial number skipped: kept too
+  const gap = readCircular(REAL.filter((l) => !l.startsWith('7   24-Jan-2026')));
+  const pg = planCircular(gap, list, H2, []);
+  assert.deepEqual(pg.removed, []);
+  assert.deepEqual(pg.kept.map((d) => d.date), ['2026-01-24']);
+});
+
+test('names that differ only in quotes, case or spacing are the same day; the registered name stays', () => {
+  const read = readCircular(REAL);
+  const list = applyCircular([], read, planCircular(read, [], H, []), { ref: read.ref, refDate: read.refDate, file: 'a.pdf', hash: H });
+  const ocr = readCircular(REAL.map((l) => l.replace(/\s{3,}/g, ' ').replace('New Year’s Day', "New Year's day")));
+  const p = planCircular(ocr, list, H2, [], { ocr: true });
+  assert.equal(p.rows.find((r) => r.date === '2026-01-01')!.change, 'unchanged');
+  assert.equal(applyCircular(list, ocr, p, { ref: null, refDate: null, file: 'b.pdf', hash: H2 }).find((d) => d.date === '2026-01-01')!.name, 'New Year’s Day');
+});
+
+test('specks OCR leaves at the end of a description are dropped from a scan, never from a text PDF', () => {
+  const lines = ['Sl. No.   Date   Day   Description', '1   04-Apr-2026   Saturday   Week-Off y', '2   15-Aug-2026   Saturday   Independence Day ij', '3   16-Aug-2026   Sunday   Holi 2'];
+  assert.deepEqual(readCircular(lines, { ocr: true }).rows.map((r) => r.name), ['Week-Off', 'Independence Day', 'Holi']);
+  assert.deepEqual(readCircular(lines).rows.map((r) => r.name), ['Week-Off y', 'Independence Day ij', 'Holi 2']);
+});

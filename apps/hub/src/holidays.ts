@@ -154,7 +154,7 @@ export class Holidays {
     const r = this.row(id);
     if (!r || r.user_id !== me.id) throw new HolidaysError('That circular was not found.');
     if (r.state !== 'textless' && !(r.state === 'notCircular' && r.ocr)) throw new HolidaysError('That circular has text already.');
-    const read = readCircular(text.slice(0, MAX_TEXT).split(/\r?\n/));
+    const read = readCircular(text.slice(0, MAX_TEXT).split(/\r?\n/), { ocr: true });
     const state: HolidayReadState = read.rows.length ? 'open' : read.textless ? 'textless' : 'notCircular';
     this.db.prepare('UPDATE holiday_reads SET read = ?, state = ?, ocr = 1 WHERE id = ?').run(JSON.stringify(read), state, id);
     return this.view(me, id);
@@ -166,7 +166,7 @@ export class Holidays {
     if (!r || (r.user_id !== me.id && !isAdmin(me))) throw new HolidaysError('This card is not for you.');
     const read = r.read ? JSON.parse(r.read) as CircularRead : null;
     const done = r.done ? JSON.parse(r.done) as HolidayReadView['done'] : null;
-    const plan = read && read.rows.length ? planCircular(read, this.list(), r.hash, this.circulars()) : null;
+    const plan = read && read.rows.length ? planCircular(read, this.list(), r.hash, this.circulars(), { ocr: !!r.ocr }) : null;
     let state = r.state;
     if (state === 'open' && plan?.already) state = 'already';
     return {

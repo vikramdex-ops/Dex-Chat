@@ -38,6 +38,8 @@ try {
   // the first circular card (Nib's summary card comes after it)
   const card = B.locator('.nib-card.k-holidays').first();
   await card.getByRole('button', { name: 'Register 46 days' }).waitFor({ timeout: 20000 });
+  // the card is drawn once its details arrive
+  await card.locator('.hol-source', { hasText: 'HRD/CIR/2026/011' }).waitFor({ timeout: 10000 });
   const text = await card.innerText();
   for (const s of ['HRD/CIR/2026/011', 'holidays-2026.pdf', 'compensatory work', 'compensatory off', 'holiday']) assert.ok(text.toLowerCase().includes(s.toLowerCase()), `the card shows ${s}`);
   assert.match(text, /26 Mar 2026|Mar 26, 2026/, 'the circular’s date');
@@ -92,6 +94,28 @@ try {
   await again.scrollIntoViewIfNeeded();
   await shot(B, 'hp-05-already-1440-light');
   assert.equal((await owner.request('botjob.calendar')).days.length, 46);
+
+  // ---------------------------------------------------------------- 4b. a scan (HOLIDAY_SCAN: the circular as images, no text): read on this PC
+  if (process.env.HOLIDAY_SCAN) {
+    await B.locator('.dock input[type=file]').setInputFiles([process.env.HOLIDAY_SCAN]);
+    await sleep(1200);
+    await B.locator('.dock textarea').first().press('Enter');
+    const scan = B.locator('.nib-card.k-holidays', { hasText: 'This circular is a scan' });
+    await scan.waitFor({ timeout: 20000 });
+    await scan.scrollIntoViewIfNeeded();
+    await shot(B, 'hp-05b-scan-1440-light');
+    const t1 = Date.now();
+    await scan.getByRole('button', { name: 'Read the scan on this PC' }).click();
+    const ocr = B.locator('.nib-card.k-holidays', { hasText: 'Read from a scan on this PC' });
+    await ocr.waitFor({ timeout: 180000 });
+    const rowsRead = await ocr.locator('.hol-counts .nib-head-n').allInnerTexts();
+    console.log(`scan read on the PC in ${Date.now() - t1} ms; counts ${rowsRead.join(' ')}`);
+    // a scan never takes a registered day away, however it was read
+    assert.equal(await ocr.locator('.hol-removed').count(), 0);
+    assert.ok(rowsRead.slice(0, 4).reduce((n, x) => n + Number(x), 0) >= 40, 'most rows read from the scan');
+    await ocr.scrollIntoViewIfNeeded();
+    await shot(B, 'hp-05c-scan-read-1440-light');
+  }
 
   // ---------------------------------------------------------------- 5. at phone width, light and dark
   console.log('step 5', Date.now() - t0);

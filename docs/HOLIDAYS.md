@@ -98,7 +98,9 @@ missing); the rows themselves are still read.
 Against what is registered (`planCircular`), each good row is **new**, the **same**, or **changed**
 (name, kind or the day it makes up for). Days of the same year that came from a circular and are not
 in this one at all are **removed**. Days typed in by hand, days of other years, and dates the new
-circular has in doubt are never removed.
+circular has in doubt are never removed. Nothing is removed at all when the reading may have missed
+a row: a scan read by OCR, or serial numbers that skip or repeat. Those days are kept and the card
+says how many (`plan.kept`); remove one by hand in Office holidays if it really went.
 
 ## 5. Registering
 
@@ -120,7 +122,12 @@ the same year (a new file) shows its differences and applies them when registere
 A circular with no text layer (a scan) gives the hub nothing to read: the card says so. On a PC,
 **Read the scan on this PC** draws each page with PDF.js at about 200 dpi and reads it with the
 same OCR engine that reads text in pictures (`readScanText` in `ocr.ts`, tesseract.js, shipped
-with the app; up to six pages). The text goes to the hub (`nib.holidays.read { id, text }`), which
+with the app; up to six pages), as one column of lines with the gaps between cells kept (the
+engine's usual single-block mode loses most of a table's rows). On the 2026 circular printed to
+images, this reads all 46 rows in about seven seconds. What OCR gets wrong stays visible: a missed
+row number is a gap note, a misread name ("Goad Friday") is *Changed* against the registered day,
+and nothing is ever removed on a scan's word. Specks it leaves at the end of a description (one or
+two lowercase letters or a lone digit) are dropped from scans only. The text goes to the hub (`nib.holidays.read { id, text }`), which
 reads and checks it like any circular; the card then says it was read from a scan and asks for each
 row to be checked against the paper. On a phone (no OCR engine) the card asks for the circular as a
 PDF with text, or for the conversation to be opened on a PC.

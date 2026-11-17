@@ -185,7 +185,7 @@ function cellsOf(raw: string, out: Cell[]): void {
 }
 
 /** The circular's text, line by line (the hub's PDF reader, pdftotext, or OCR from the desktop). */
-export function readCircular(lines: string[]): CircularRead {
+export function readCircular(lines: string[], opts: { ocr?: boolean } = {}): CircularRead {
   const all = lines.slice(0, 6000).map((l) => l.replace(/[\u0000-\u0008\u000b-\u001f]/g, ' ').replace(/\s+$/, ''));
   const joined = all.join('\n');
   const textless = !/\p{L}{3,}/u.test(joined);
@@ -261,7 +261,8 @@ export function readCircular(lines: string[]): CircularRead {
 
   const rows: CircularRow[] = raws.map((r) => {
     const date = readDate(r.dateText);
-    const name = cleanName(r.desc.join(' '));
+    // OCR leaves specks at the end of a cell ("Week-Off y", "Independence Day ij"): one or two lowercase letters or a lone digit
+    const name = cleanName(r.desc.join(' ')).replace(opts.ocr ? /\s+(?:[a-z]{1,2}|\d)$/ : /$^/, '');
     const kind = name ? kindOf(name) : null;
     const problems: CircularProblem[] = [];
     if (!date) problems.push({ code: 'date' });
@@ -317,6 +318,11 @@ export interface CircularPlan {
   rows: Array<{ sl: number | null; date: string; name: string; kind: OfficeDayKind; for: string | null; change: DayChange; was: { name: string; kind: OfficeDayKind } | null }>;
   /** Days an earlier circular for the same year registered that this one no longer has. */
   removed: OfficeDay[];
+  /**
+   * Days that would be removed, kept because the read may be incomplete (a scan read by OCR, or
+   * serial numbers that skip or repeat): a missed row must never take a registered day away.
+   */
+  kept: OfficeDay[];
   /** Rows not registered (each with its problems). */
   exceptions: CircularRow[];
   counts: Record<OfficeDayKind, number>;
@@ -328,10 +334,15 @@ export interface CircularPlan {
 }
 
 const zero = (): Record<OfficeDayKind, number> => ({ holiday: 0, weekoff: 0, compoff: 0, compwork: 0 });
-const same = (a: OfficeDay, b: { name: string; kind: OfficeDayKind; for: string | null }) => a.name === b.name && a.kind === b.kind && (a.for ?? null) === (b.for ?? null);
+/** Names that differ only in quotes, case or spacing ("New Year’s Day", "New Year's day") are the same name. */
+const sameName = (a: string, b: string) => norm(a) === norm(b);
+const same = (a: OfficeDay, b: { name: string; kind: OfficeDayKind; for: string | null }) => sameName(a.name, b.name) && a.kind === b.kind && (a.for ?? null) === (b.for ?? null);
 
-/** What registering this read would change in the office's calendar. */
-export function planCircular(read: CircularRead, existing: OfficeDay[], hash: string, registered: CircularRecord[]): CircularPlan {
+/** Every row has its serial number and they run without a gap or a repeat: no row was missed. */
+export const readComplete = (read: CircularRead): boolean => read.rows.length > 0 && read.rows.every((r) => r.sl !== null) && !read.warnings.some((w) => w.code === 'serialGap' || w.code === 'serialDup');
+
+/** What registering this read would change in the office's calendar. `ocr`: the text came from a scan. */
+export function planCircular(read: CircularRead, existing: OfficeDay[], hash: string, registered: CircularRecord[], opts: { ocr?: boolean } = {}): CircularPlan {
   const good = goodRows(read);
   const have = new Map(existing.map((d) => [d.date, d] as const));
   const counts = zero();
@@ -344,9 +355,10 @@ export function planCircular(read: CircularRead, existing: OfficeDay[], hash: st
   const listed = new Set(read.rows.map((r) => r.date).filter((d): d is string => !!d));
   const year = read.year;
   // only days a circular put in, of the same year, that this circular does not mention at all
-  const removed = year === null ? [] : existing.filter((d) => d.source && d.date.startsWith(`${year}-`) && !listed.has(d.date) && (!read.period || (d.date >= read.period.from && d.date <= read.period.to)));
+  const gone = year === null ? [] : existing.filter((d) => d.source && d.date.startsWith(`${year}-`) && !listed.has(d.date) && (!read.period || (d.date >= read.period.from && d.date <= read.period.to)));
+  const sure = !opts.ocr && readComplete(read);
   return {
-    rows, removed, exceptions: read.rows.filter((r) => r.problems.length > 0), counts,
+    rows, removed: sure ? gone : [], kept: sure ? [] : gone, exceptions: read.rows.filter((r) => r.problems.length > 0), counts,
     added: rows.filter((r) => r.change === 'new').length, updated: rows.filter((r) => r.change === 'updated').length, unchanged: rows.filter((r) => r.change === 'unchanged').length,
     already: registered.find((c) => c.hash === hash) ?? null,
   };
@@ -356,7 +368,8 @@ export function planCircular(read: CircularRead, existing: OfficeDay[], hash: st
 export function applyCircular(existing: OfficeDay[], read: CircularRead, plan: CircularPlan, source: Omit<OfficeDaySource, 'sl'>): OfficeDay[] {
   const gone = new Set(plan.removed.map((d) => d.date));
   const map = new Map(existing.filter((d) => !gone.has(d.date)).map((d) => [d.date, d] as const));
-  for (const r of plan.rows) map.set(r.date, { date: r.date, name: r.name, kind: r.kind, ...(r.for ? { for: r.for } : {}), source: { ...source, sl: r.sl } });
+  // an unchanged day keeps the name it was registered with (a scan's straight quote does not replace it)
+  for (const r of plan.rows) map.set(r.date, { date: r.date, name: r.change === 'unchanged' ? map.get(r.date)?.name ?? r.name : r.name, kind: r.kind, ...(r.for ? { for: r.for } : {}), source: { ...source, sl: r.sl } });
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 

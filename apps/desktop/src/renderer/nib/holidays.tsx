@@ -136,10 +136,12 @@ export function HolidayCircularCard({ v, onChange, users }: { v: HolidayReadView
   }
   if (!r || !p) return null;
   const change = new Map(p.rows.map((x) => [`${x.sl}|${x.date}`, x.change] as const));
-  const ordered = [...r.rows].sort((a, b) => Number(b.problems.length > 0) - Number(a.problems.length > 0));
-  const shown = all ? ordered : ordered.slice(0, Math.max(6, p.exceptions.length));
   // new, same or changed per row only when it says something (a revised circular, or some days already there)
-  const revision = p.updated + p.removed.length > 0 || (p.unchanged > 0 && p.added > 0);
+  const revision = v.state === 'open' && (p.added < p.rows.length || p.removed.length + p.kept.length > 0);
+  // rows in doubt first, then the changed ones, then the rest in the circular's order
+  const rank = (x: CircularRow) => (x.problems.length ? 0 : revision && x.date && change.get(`${x.sl}|${x.date}`) === 'updated' ? 1 : 2);
+  const ordered = [...r.rows].sort((a, b) => rank(a) - rank(b));
+  const shown = all ? ordered : ordered.slice(0, Math.max(6, p.exceptions.length));
   const register = async () => {
     setBusy(true);
     try { onChange(await window.dex.request('nib.holidays.register', { id: v.id })); toast('Office holidays registered'); } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
@@ -168,6 +170,7 @@ export function HolidayCircularCard({ v, onChange, users }: { v: HolidayReadView
           <ul>{p.removed.map((d) => <li key={d.date}><span className="mono">{longDate(d.date)}</span> <span translate="no">{d.name}</span></li>)}</ul>
         </div>
       )}
+      {v.state === 'open' && p.kept.length > 0 && <p className="faint nib-fine">{p.kept.length === 1 ? '1 registered day is not in this reading. It is kept: a scan, or a missing row number, means a row may have been missed.' : `${p.kept.length} registered days are not in this reading. They are kept: a scan, or a missing row number, means a row may have been missed.`}</p>}
       {v.state === 'registered' && v.done && <p className="hol-stamp" role="status"><Icon name="check" size={14} />{by ? `Registered on ${stamp(v.done.at)} by ${by}.` : `Registered on ${stamp(v.done.at)}.`}</p>}
       {v.state === 'already' && p.already && <p className="hol-stamp" role="status"><Icon name="check" size={14} />{p.already.ref ? `Already registered on ${stamp(p.already.at)} from Ref ${p.already.ref}. Nothing changes.` : `Already registered on ${stamp(p.already.at)}. Nothing changes.`}</p>}
       {v.state === 'open' && (v.canRegister ? (

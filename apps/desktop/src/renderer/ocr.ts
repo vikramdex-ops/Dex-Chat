@@ -6,7 +6,7 @@ import type { FileInfo } from '@dex/core';
 type Job = { file: FileInfo; convKind: 'space' | 'direct' };
 const queue: Job[] = [];
 let running = false;
-let worker: { recognize: (img: Blob) => Promise<{ data: { text: string } }>; terminate: () => Promise<unknown> } | null = null;
+let worker: { recognize: (img: Blob) => Promise<{ data: { text: string } }>; setParameters: (p: Record<string, string>) => Promise<unknown>; terminate: () => Promise<unknown> } | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let disabled = false;
 
@@ -74,9 +74,14 @@ export async function readScanText(file: Pick<FileInfo, 'id' | 'name'>, onPage: 
   const [{ openPdf }, { fileBlob }] = await Promise.all([import('./pdf/pdfjs.ts'), import('./pdf/source.ts')]);
   const { doc } = await openPdf(await fileBlob(file), async () => null);
   const out: string[] = [];
+  let restore: (() => Promise<unknown>) | null = null;
   try {
     const of = Math.min(doc.numPages, maxPages);
     const w = await getWorker();
+    // a table: read the page as one column of lines (the default, one block, loses most rows), keeping
+    // the wide gaps between cells
+    await w.setParameters({ tessedit_pageseg_mode: '4', preserve_interword_spaces: '1' });
+    restore = () => w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '0' });
     for (let n = 1; n <= of; n++) {
       onPage(n, of);
       const page = await doc.getPage(n);
@@ -97,6 +102,8 @@ export async function readScanText(file: Pick<FileInfo, 'id' | 'name'>, onPage: 
     if (/Failed to load|wasm|Worker/i.test(String((e as Error).message))) disabled = true;
     throw e;
   } finally {
+    // pictures sent to Spaces are read with the engine's usual settings
+    await restore?.().catch(() => {});
     void doc.loadingTask.destroy().catch(() => {});
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => { void worker?.terminate(); worker = null; }, 60_000);
