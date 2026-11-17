@@ -171,6 +171,67 @@ test('nudges: counted, stepped, quiet while busy, and the management sees how ma
   hub.nib.setClock(null);
 });
 
+test('the office’s times, 18:00 to 18:30: three asks fit, the register says so, one follow-up at 19:00', async () => {
+  const { hub, owner, priya, ravi, anil, meera, clock } = await setup();
+  await owner.request('admin.nib.set', { startPromptAt: '09:45', wrapAt: '18:00', digestAt: '18:30', followUpAt: '19:00', nudgeLimit: 3 });
+  clock(9, 10);
+  for (const c of [priya, ravi, anil, meera]) await c.request('nib.start', { givers: [] });
+  // Meera would like to be asked at 18:20: that leaves no room for three asks, so 18:00 it is
+  const own = await meera.request('nib.day', { wrapAt: '18:20' });
+  assert.deepEqual([own.ownWrapAt, own.wrapAt], ['18:20', '18:00']);
+  // Ravi is on Do not disturb until 18:16
+  await ravi.request('me.update', { availability: 'dnd' });
+  const asked = new Map<string, string[]>();
+  for (let m = 0; m <= 30; m++) {
+    if (m === 16) await ravi.request('me.update', { availability: 'available' });
+    clock(18, m);
+    for (const [name, c] of [['anil', anil], ['ravi', ravi], ['priya', priya]] as const) {
+      const d = await c.request('nib.me');
+      asked.set(name, d.day.asks.filter((a) => a.kind === 'wrap').map((a) => `${new Date(a.at).getMinutes()}:${a.level}`));
+    }
+    // Priya snoozes the card for 30 minutes: Nib comes back at the last ask before the register
+    if (m === 11) {
+      const p = await priya.request('nib.day', { snoozeMinutes: 30 });
+      assert.equal(p.day.snoozeUntil, at(18, 22), 'a snooze never skips the register');
+    }
+  }
+  assert.deepEqual(asked.get('anil'), ['0:1', '11:2', '22:3'], 'the drop, the card, the message');
+  assert.deepEqual(asked.get('priya'), ['0:1', '11:2', '22:3'], 'the snooze moved the message to its time and did not count');
+  // Ravi was busy through the drop: the first ask when he is free (18:16), then the message 11 minutes later
+  assert.deepEqual(asked.get('ravi'), ['16:1', '27:3']);
+  assert.equal((await nibCards(anil)).filter((x) => x.nib?.kind === 'ask').length, 1, 'one message');
+  const reg = await owner.request('nib.card', { kind: 'register', ref: today }) as Extract<NibCard, { register: unknown }>;
+  const miss = new Map(reg.register.missing.map((x) => [x.userId, x]));
+  assert.equal(miss.get(me(anil))?.asks, 3, 'asked 3×');
+  assert.equal(miss.get(me(priya))?.asks, 3);
+  assert.equal(miss.get(me(ravi))?.asks, 2);
+  assert.equal(miss.get(me(ravi))?.busy, 'dnd');
+  // a late sheet, and exactly one follow-up at 19:00
+  clock(18, 40);
+  await anil.request('nib.item.save', { activity: 'Spool drawings', project: 'P-12' });
+  await anil.request('nib.wrap', {});
+  clock(18, 59);
+  assert.equal((await nibCards(owner)).filter((x) => x.nib?.kind === 'followup').length, 0);
+  clock(19, 0);
+  clock(19, 30);
+  assert.equal((await nibCards(owner)).filter((x) => x.nib?.kind === 'followup').length, 1);
+  hub.nib.setClock(null);
+});
+
+test('a window too short for the asks: the setup check says how many fit', async () => {
+  const { hub, owner } = await setup();
+  const nibRows = async () => (await owner.request('admin.setup.report')).checks.filter((x) => x.id.startsWith('nib.'));
+  await owner.request('admin.nib.set', { wrapAt: '18:00', digestAt: '18:30', nudgeLimit: 3 });
+  assert.equal((await nibRows()).some((x) => x.id === 'nib.asks'), false, 'three fit between 18:00 and 18:30');
+  await owner.request('admin.nib.set', { wrapAt: '18:15', digestAt: '18:30', nudgeLimit: 3 });
+  const row = (await nibRows()).find((x) => x.id === 'nib.asks')!;
+  assert.equal(row.state, 'info');
+  assert.equal(row.detail, 'Between the wrap-up and the register there is room for 2 asks, at 18:15, 18:25; the office set 3 a day.');
+  // nobody is pulled earlier than the office's own time
+  assert.equal((await owner.request('nib.me')).wrapAt, '18:15');
+  hub.nib.setClock(null);
+});
+
 test('who sees whose day sheet', async () => {
   const { hub, owner, priya, ravi, meera, clock } = await setup();
   clock(10, 0);

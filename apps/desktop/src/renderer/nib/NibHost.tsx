@@ -8,6 +8,7 @@ import type { Ink } from './NibMark.tsx';
 import { closeTray, dismissCallout, nibDay, nibMeId, nibStart, openTray, promptStart, rankGivers, refreshNib, startNib, toggleTray, useNib } from './store.ts';
 import type { TrayView } from './store.ts';
 import { firstName, wrapTimeText } from './words.ts';
+import { formatTime } from '../time.ts';
 import './nib.css';
 
 const Tray = lazy(() => import('./Tray.tsx'));
@@ -104,7 +105,7 @@ function Callout({ kind }: { kind: 'start' | 'wrap' }) {
       <p className="nib-line" role="status">{items ? (items === 1 ? `Pens down at ${wrapTimeText(me)}. Your sheet has 1 item to check.` : `Pens down at ${wrapTimeText(me)}. Your sheet has ${items} items to check.`) : 'Pens down soon. Your sheet is empty: tell me what you did, or say nothing today.'}</p>
       <div className="nib-callout-actions">
         <button className="btn primary sm" onClick={() => openTray({ v: 'wrap' })}>Check and send</button>
-        <button className="btn sm" disabled={busy} onClick={() => run(async () => { await nibDay({ snoozeMinutes: 30 }); dismissCallout(); }, 'I’ll ask again in 30 minutes.')}>In 30 min</button>
+        <button className="btn sm" disabled={busy} onClick={() => run(async () => { const m = await nibDay({ snoozeMinutes: 30 }); dismissCallout(); if (m.day.snoozeUntil) toast(`I’ll ask again at ${formatTime(m.day.snoozeUntil)}.`); })}>In 30 min</button>
         <button className="btn sm" disabled={busy} onClick={() => run(async () => { await nibDay({ snoozeUntilFree: true }); dismissCallout(); }, 'I’ll wait until your meeting ends.')}>After my meeting</button>
         {!me.items.some((x) => !x.carried) && <button className="btn ghost sm" disabled={busy} onClick={() => run(async () => { await nibDay({ nothing: true }); dismissCallout(); }, 'Nothing today. Fair enough.')}>Nothing today</button>}
       </div>

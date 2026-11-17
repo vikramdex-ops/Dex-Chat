@@ -30,8 +30,8 @@ const at = (h: number, m = 0) => { const [y, mo, d] = localToday.split('-').map(
 const clock = (h: number, m = 0) => { const t = at(h, m); hub.nib.setClock(t); hub.nib.tick(t); return t; };
 
 const seeded = await seedOffice(hub, owner, OFFICE, ['vikram', 'karthik', 'priya', 'bhavna']);
-// the walk below is timed to three asks before a 19:00 register (a new hub's defaults are register 18:30, follow-up 19:00,
-// which leave room for two); the follow-up at 21:00 as the walk expects
+// the walk below is timed to the 25-minute steps before a 19:00 register (a new hub's defaults, register 18:30 and
+// follow-up 19:00, fit the three asks closer together: nibasks.mts); the follow-up at 21:00 as the walk expects
 await owner.request('admin.nib.set' as never, { digestAt: '19:00', followUpAt: '21:00' } as never);
 const apps: any[] = [];
 let K: any, P: any, B: any;

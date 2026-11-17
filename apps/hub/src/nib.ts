@@ -9,7 +9,7 @@ import { isSealed } from '@dex/core/e2e';
 import type { Conversation, Department, Message, PublicUser } from '@dex/core';
 import {
   NIB_ACCOUNT, NIB_DEFAULTS, NIB_NAME, NIB_WORK_INTENTS, addDays, buildLeadCard, buildRegister, buildWeek, checkNibConfig, effectiveWrapAt,
-  liteItem, minutesOf, nudgePolicy, parseWork, qtyText, sheetAccess, visibleItems, weekdayOf,
+  liteItem, minutesOf, nudgePlan, nudgePolicy, parseWork, qtyText, sheetAccess, visibleItems, weekdayOf,
 } from '@dex/core/nib';
 import type {
   LeadCardView, NibAsk, NibCard, NibCardKind, NibConfig, NibDay, NibDayState, NibItem, NibItemInput, NibLeave, NibLeaveInput, NibLeaveKind,
@@ -377,7 +377,7 @@ export class Nib {
     const cfg = this.config();
     const sends = (this.db.prepare('SELECT sent_at FROM nib_days WHERE user_id = ? AND sent_at IS NOT NULL ORDER BY date DESC LIMIT 10').all(uid) as Array<{ sent_at: number }>)
       .map((r) => { const t = new Date(r.sent_at); return t.getHours() * 60 + t.getMinutes(); });
-    return effectiveWrapAt(cfg.wrapAt, own, sends, cfg.digestAt);
+    return effectiveWrapAt(cfg.wrapAt, own, sends, cfg.digestAt, cfg.nudgeLimit);
   }
   private welcomeFor(uid: string, date: string, seen: string | null): NibWelcome | null {
     const r = this.db.prepare('SELECT * FROM nib_leave WHERE user_id = ? AND cancelled = 0 AND to_date < ? AND to_date >= ? ORDER BY to_date DESC LIMIT 1').get(uid, date, addDays(date, -10)) as LeaveRow | undefined;
@@ -568,7 +568,17 @@ export class Nib {
           day.state = 'nothing'; day.started = true;
         }
         if (d.reopen === true && day.state === 'nothing') day.state = 'open';
-        if (typeof d.snoozeMinutes === 'number' && d.snoozeMinutes > 0) day.snoozeUntil = now + Math.min(240, Math.round(d.snoozeMinutes)) * 60_000;
+        if (typeof d.snoozeMinutes === 'number' && d.snoozeMinutes > 0) {
+          day.snoozeUntil = now + Math.min(240, Math.round(d.snoozeMinutes)) * 60_000;
+          // a snooze never skips the register: in a short window it ends at the last ask before it
+          if (date === this.today()) {
+            const cfg = this.config();
+            const wrapAt = this.at(date, this.wrapFor(me.id, (this.db.prepare('SELECT wrap_at FROM nib_prefs WHERE user_id = ?').get(me.id) as { wrap_at: string | null } | undefined)?.wrap_at ?? null));
+            const plan = nudgePlan((this.at(date, cfg.digestAt) - wrapAt) / 60_000, cfg.nudgeLimit);
+            const last = wrapAt + plan.offsets[plan.offsets.length - 1] * 60_000;
+            if (now < last && day.snoozeUntil > last) day.snoozeUntil = last;
+          }
+        }
         if (d.snoozeUntilFree === true) {
           day.snoozeUntil = now + 3 * 3600_000;
           this.db.prepare('UPDATE nib_days SET snooze_free = 1 WHERE user_id = ? AND date = ?').run(me.id, date);

@@ -140,25 +140,57 @@ cards follow ("changed after sending").
    working day does not, see [`HOLIDAYS.md`](HOLIDAYS.md)), for people the office exempted (by default the management
    subscribers themselves), on leave, after "Nothing today", or once the sheet is sent.
 2. **Never while busy**: in a Room, in a calendar meeting, on Do not disturb or Heads-down. A
-   nudge that falls in a busy spell waits until it ends; it is not counted.
-3. **Never twice within 20 minutes.** At most the office's limit a day (3 by default, 1 to 5).
-4. **The ladder**, from the person's wrap-up time *T*:
+   nudge that falls in a busy spell waits until it ends; it is not counted. If the spell ends
+   before the register, the waiting ask goes right then; the steps it no longer has room for are
+   **missed** (never counted), and when no further ask fits before the register, the one that goes
+   is the message. A spell that lasts until the register means no ask at all.
+3. **Never two asks closer than the gap**, and at most the office's limit a day (**Asks a day**,
+   3 by default, 1 to 5). The gap comes from the window between the wrap-up time *T* and the
+   register: the time left once a margin before the register is kept, divided evenly between the
+   asks, never under 7 minutes and never over 20.
+4. **The ladder**, spread across the window from *T* to the register (`nudgePlan()` in core):
 
-   | When | What | Counts as an ask |
+   | Ask | What | Counts as an ask |
    | --- | --- | --- |
-   | *T* | A hollow ink drop on Nib's tile. Nothing moves. | yes |
-   | *T* + 25 min | The wrap-up callout under the tile, and a card on Pulse. | yes |
-   | *T* + 50 min, or 15 min before the register, whichever is first | One friendly message in the Nib conversation, which notifies like any message. | yes |
+   | The first, at *T* | A hollow ink drop on Nib's tile. Nothing moves. | yes |
+   | The middle ones | The wrap-up callout under the tile, and a card on Pulse (with 4 or 5 asks a day the callout comes back, even after **Not now**). | yes |
+   | The last | One friendly message in the Nib conversation, which notifies like any message. | yes |
 
+   Each ask keeps the old 25-minute step from the one before where there is room, and is pulled
+   earlier only as far as the asks after it need. The last one goes at least a **margin** before
+   the register: a quarter of the window, never less than 5 minutes (time to check and send) and
+   never more than 15. With one ask a day it is the drop, and with two the drop and the callout,
+   unless the ask comes at or after the time the message would have gone; then it is the message.
+
+   | Wrap-up → register, asks | Asks at | Gap |
+   | --- | --- | --- |
+   | 18:00 → 18:30 (the office), 3 | 18:00 drop · 18:11 callout · 18:22 message | 11 min |
+   | 18:00 → 18:30, 4 or 5 | 18:00 · 18:08 · 18:15 · 18:22 (five do not fit) | 7 min |
+   | 18:00 → 18:30, 2 | 18:00 drop · 18:22 message | 20 min |
+   | 18:00 → 19:00 (before), 3 | 18:00 · 18:25 · 18:45, as it always was | 20 min |
+   | 18:00 → 18:15, 3 | 18:00 drop · 18:10 message | 10 min |
+   | 18:00 → 18:10, any | 18:00, the message | — |
+
+   **A window too short for the asks** (fewer than 7 minutes apart): Nib plans as many as fit, at
+   least the one at *T*, and the last of them is still the message. Control room ▸ Nib & day
+   sheets says so next to the times ("With these times Nib can ask 2 times before the register"),
+   and the setup check adds a Nib note ("Nib cannot ask as often as set").
 5. **Adaptive**: *T* is the person's own wrap-up time if they set one; otherwise the office's,
-   moved towards the time they usually send (the median of their last ten sends), never earlier
-   than an hour before the office's time and never later than 30 minutes before the register.
+   moved towards the time they usually send (the median of their last ten sends, less ten
+   minutes), never earlier than an hour before the office's time. Either way it is **never later
+   than ten minutes per ask a day before the register** (30 minutes for 3, so the asks keep their
+   room), unless the office's own wrap-up time is later than that: then it is the latest, and
+   nobody is pulled earlier than the office's time. With the office's 18:00 and 18:30 nobody is
+   asked later than 18:00; someone who sets 18:20 is asked from 18:00.
 6. **Their choice**, on the wrap-up callout: **Check and send**, a snooze (**In 30 min**, or
    **After my meeting**: until the current meeting ends), **Nothing today** (when the sheet has no
    work of today on it), or **×** (**Not now**). The wrap-up itself has **Ask me at …: change**, to
-   set your own wrap-up time. A snooze moves the next ask; it does not count.
+   set your own wrap-up time. A snooze moves the next ask; it does not count. A snooze never skips
+   the register: **In 30 min** ends at the last ask before it when that comes sooner (at 18:11 in
+   the office, Nib comes back at 18:22 with the message), and the note says when ("I'll ask again
+   at 18:22").
 7. **Only asks people could see count**: an ask while none of their devices is connected is not
-   counted, so "Nib asked 3 times" is true.
+   made (it waits like a busy spell), so "Nib asked 3 times" and the register's "asked 3×" are true.
 8. **The morning after**: if yesterday's sheet was never sent, the start card offers to send it
    first (one ask, counted against yesterday).
 
@@ -272,7 +304,7 @@ Administrators (the office manager, a director) set, on one ruled sheet in four 
 | **02 Management**: **Who receives the register** (the daily register, the follow-up and the week) | none |
 | 02 Management: **Who keeps a day sheet**: **All but the management**, or **Choose** who keeps none | all but the management |
 | **03 Times**: start of the day card, wrap-up, register, follow-up | 09:45, 18:00, 18:30, 19:00 |
-| 03 Times: **Asks a day** (1–5) | 3 |
+| 03 Times: **Asks a day** (1–5), spread from the wrap-up to the register (§3.5); under it, when the asks go ("Nib asks at 18:00 · 18:11 · 18:22; the register goes at 18:30"), and a note when the times leave room for fewer | 3 |
 | 03 Times: **Workdays** | Mon–Sat |
 | **04 Jobs and privacy**: **Job codes**, one per line (`P-12 Refinery revamp`), used for parsing and grouping | none |
 | 04 Jobs and privacy: **Who sees day sheets**: **Private** (each person, their givers for their own items, the management for all) or **Open to the office** | private |
@@ -328,8 +360,11 @@ screen about 130 ms after the hub is asked for it (posting, fetching and drawing
 drawn once and kept when the panels below it change.
 
 **Tests**: `packages/core/test/nib.test.ts` (the parser in English and Hinglish, reminders in
-words, the nudge policy, permissions, lead cards, the register for 40 and 200 people, the week),
+words, the nudge policy and the ask plan for every window and 1 to 5 asks, permissions, lead cards, the register for 40 and 200 people, the week),
 `apps/hub/test/nib.test.ts` (a whole day with the clock moved: start, capture in the conversation,
 wrap-up, one lead card filled in place, one register, a late sheet and exactly one follow-up;
-nudges counted and paused on Do not disturb; who sees whose sheet; the leave note end to end; the
-bot maker's Nib marks the person away) and `apps/desktop/e2e/nib.mts` (the same day in three real apps).
+nudges counted and paused on Do not disturb; the office's 18:00 and 18:30 minute by minute, with
+a snooze, a busy spell and an own wrap-up time; who sees whose sheet; the leave note end to end; the
+bot maker's Nib marks the person away), `apps/desktop/e2e/nib.mts` (the same day in three real apps)
+and `apps/desktop/e2e/nibasks.mts` (18:00 to 18:30: the asks in the Control room, the drop, the
+callout and the message, "asked 3×" in the register, one follow-up at 19:00).
