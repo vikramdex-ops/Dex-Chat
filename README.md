@@ -55,7 +55,7 @@ internet unplugged, and uses its own design language ("Drafting Table", see
 | Updates | In-app updater on Windows, macOS and Android: on open, every 4 h and on demand; stable and beta channels; installs from the hub's mirror when offline |
 | Phones | The same app on Android, in the office or anywhere on mobile data: images and voice notes inline, open files in another app, save to Downloads, attach from the phone, a layout made for small screens |
 | Comfort | Pop a conversation out into its own window, a global shortcut to bring the app forward (Ctrl+Alt+D), Preferences for compact density and text size (also Ctrl+= / Ctrl+-), 12- or 24-hour time, sidebar sorting and a resizable sidebar, a keyboard shortcuts sheet (Ctrl+/), Alt+↑/↓ between conversations, light and dark themes |
-| Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service. Built on an office PC with `scripts/release/Build-Release.cmd` (see [`docs/RELEASING.md`](docs/RELEASING.md)) |
+| Platforms | Windows (NSIS), macOS (arm64 and x64 DMG), Android (APK), and the hub as a Windows service (its own NSIS setup, or a zip). Built on an office PC with `scripts/release/Build-Release.cmd` (see [`docs/RELEASING.md`](docs/RELEASING.md)) |
 
 **Next:** a pilot on the office's own PCs and phones, then the remaining items in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
 
@@ -74,7 +74,7 @@ Apps find the hub on their own with a LAN broadcast probe. Every PC has its own 
 
 Releases are built on an office Windows PC: double-click `scripts\release\Build-Release.cmd`
 ([docs/RELEASING.md](docs/RELEASING.md)). It tests everything and builds the Windows installer, the
-Android APK and the hub package. With `-Publish`, it puts them on the
+Android APK and the hub (its setup and its zip). With `-Publish`, it puts them on the
 [public release repository](https://github.com/dexterity-admin/dexterity-connect/releases) and in the
 update feed: **stable** from `main`, **beta** from other branches. Installed apps update from there, or
 from the hub's mirror when they have no internet. Pushing code builds nothing.
@@ -83,7 +83,7 @@ from the hub's mirror when they have no internet. Pushing code builds nothing.
 
 Step by step, every manual setting from the server to Dexterity Meet links: [`docs/OFFICE-SETUP.md`](docs/OFFICE-SETUP.md) (also as [`docs/Dexterity-Connect-Office-Setup.pdf`](docs/Dexterity-Connect-Office-Setup.pdf)). The go-live checklist is [`docs/GO-LIVE.md`](docs/GO-LIVE.md). In short:
 
-1. **Hub PC:** extract the hub zip to where it should live (for example `D:\Dexterity Connect Hub`) and double-click `Install-Hub.cmd`. It installs the service, opens its firewall ports and starts it.
+1. **Hub PC:** download and run [`DexterityConnectHub-Setup.exe`](https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe) and click **Yes** when Windows asks. It checks the PC (64-bit Windows 10/11, free space, ports 47900/47901), installs the hub as a service (delayed automatic start, restarts after a failure), opens its firewall ports, keeps the PC from sleeping while plugged in, starts the hub and waits until it answers. Programs go to `C:\Program Files\Dexterity Connect Hub`, data to `C:\ProgramData\Dexterity Connect Hub\hub-data` (or a folder you choose); running it again repairs or upgrades, and it upgrades a hub installed from the zip where it is. The zip with `Install-Hub.cmd` still works and does the same. Log: `C:\ProgramData\Dexterity Connect Hub\setup.log`.
 2. **Your PC:** install Dexterity Connect, open it, and click **Request access**. As the first person, you become the owner.
 3. **Everyone else:** they install and open the app, then approve them in **Control room → Approvals** (click your tile at the top right).
 4. **Backups:** choose a backup folder on a second disk or a network share in **Control room → Backups & leavers** (see [`docs/BACKUP.md`](docs/BACKUP.md)).

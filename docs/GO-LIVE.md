@@ -38,21 +38,25 @@ the release page lists `SHA256SUMS.txt`.
   (about US$200–400 a year) removes this.
 - macOS installers can only be built on a Mac (commands in RELEASING.md). There is no iPhone app.
 
-## 2. Install the office hub (about 15 minutes, once)
+## 2. Install the office hub (about 10 minutes, once)
 
 1. Choose one PC that stays on all the time, on the office network, with a second disk or a NAS
    for backups.
-2. Extract the hub zip from the release (for example to `D:\Dexterity Connect Hub`). Double-click
-   **Install-Hub.cmd** as an administrator. This installs the Windows service, opens its firewall
-   ports and starts it:
+2. Run **DexterityConnectHub-Setup.exe** from the release on that PC and click **Yes** when Windows
+   asks. It checks the PC, installs the Windows service (delayed automatic start, restarts after a
+   failure), opens its firewall ports, stops the PC sleeping while plugged in, starts the hub and
+   waits until it answers (log: `C:\ProgramData\Dexterity Connect Hub\setup.log`):
    - TCP 47900: connections;
    - UDP 47901: discovery;
    - TCP and UDP 47910–47999: large Rooms.
+
+   The hub zip with **Install-Hub.cmd** does the same, for a PC where the setup cannot be used.
 3. If the office has more than one network segment (VLANs, a separate Wi-Fi), make sure those
    ports reach the hub PC. Note the hub PC's IP address: anyone the automatic search cannot reach
    types it in **Enter the hub address yourself**.
 
-**Worked when:** Services shows **Dexterity Connect Hub** as Running.
+**Worked when:** the setup's last page says **The hub is running** (Services also shows
+**Dexterity Connect Hub** as Running).
 
 ## 3. Become the owner, then let people in (10 minutes, then ongoing)
 
@@ -172,7 +176,7 @@ No administrator is needed:
 These were tested automatically on the development machine but have not yet run for real:
 
 - [ ] `Build-Release.cmd` and `Deploy-Gateway.cmd` on Windows (steps 1 and 7).
-- [ ] The hub as a Windows service on the office PC, and `Install-Hub.cmd`'s firewall rules.
+- [ ] The hub as a Windows service on the office PC (`DexterityConnectHub-Setup.exe`), and its firewall rules.
 - [ ] A real Cloudflare deployment: the gateway, the Pages site, its service binding and the
       token's Pages permission.
 - [ ] Two office PCs messaging, a call, a screen share and a Room of 5 or more.

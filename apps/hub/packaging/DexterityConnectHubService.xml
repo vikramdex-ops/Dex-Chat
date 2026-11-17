@@ -1,4 +1,6 @@
-<!-- Windows service definition for the Dexterity Connect Hub (run by WinSW). -->
+<!-- Windows service definition for the Dexterity Connect Hub (run by WinSW).
+     Install-Hub.ps1 writes the data folder into DEXCONNECT_DATA_DIR (an absolute path) and also sets
+     delayed automatic start and the three restarts with sc.exe, so they hold whatever WinSW does. -->
 <service>
   <id>DexterityConnectHub</id>
   <name>Dexterity Connect Hub</name>
@@ -7,9 +9,10 @@
   <env name="DEXCONNECT_DATA_DIR" value="%BASE%\hub-data" />
   <workingdirectory>%BASE%</workingdirectory>
   <startmode>Automatic</startmode>
-  <delayedAutoStart>false</delayedAutoStart>
+  <delayedAutoStart>true</delayedAutoStart>
   <onfailure action="restart" delay="5 sec" />
   <onfailure action="restart" delay="20 sec" />
+  <onfailure action="restart" delay="60 sec" />
   <resetfailure>1 hour</resetfailure>
   <stoptimeout>15 sec</stoptimeout>
   <logpath>%BASE%\logs</logpath>

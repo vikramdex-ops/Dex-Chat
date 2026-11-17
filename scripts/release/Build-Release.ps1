@@ -8,6 +8,8 @@
     Build-Release.cmd -SkipAndroid            Windows app and hub only
 
   Needs: Node.js 22, Git. For the Android APK: JDK 21 and the Android SDK (ANDROID_HOME).
+  The hub setup is built with NSIS: the copy the Windows app's build downloads is used, or an
+  installed NSIS (winget install NSIS.NSIS).
   For -Publish: the GitHub CLI (gh), signed in with access to the public release repository.
   See docs/RELEASING.md for the one-time setup.
 #>
@@ -91,7 +93,7 @@ Run npx @('electron-builder', '--win', 'nsis', '--publish', 'never')
 Pop-Location
 Get-ChildItem apps/desktop/release -Filter "DexterityConnect-Setup-$Version.exe" | Copy-Item -Destination $dest
 
-Step 'Office hub (Windows service package)'
+Step 'Office hub (zip and DexterityConnectHub-Setup)'
 Run node @('apps/hub/scripts/build.mjs', '--sea')
 $hubDir = Join-Path $env:TEMP "DexterityConnectHub-$Version"
 Remove-Item -Recurse -Force $hubDir -ErrorAction SilentlyContinue
@@ -103,6 +105,8 @@ Copy-Item node_modules/mediasoup/worker/out/Release/mediasoup-worker.exe $pkg
 Copy-Item apps/hub/packaging/* $pkg
 Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe' -OutFile (Join-Path $pkg 'DexterityConnectHubService.exe')
 Compress-Archive -Force -Path $pkg -DestinationPath (Join-Path $dest "DexterityConnectHub-$Version-win-x64.zip")
+# the installer for the server PC, from the same files (apps/hub/installer/hub-setup.nsi)
+Run node @('apps/hub/scripts/build-setup.mjs', '--stage', $pkg, '--version', $Version, '--out', (Join-Path $dest "DexterityConnectHub-Setup-$Version.exe"))
 
 if ($android) {
   Step 'Android app (APK)'
@@ -145,7 +149,24 @@ if (-not $Publish) {
 # ------------------------------------------------------------------ publish
 Step "Publishing $Version to $PublicRepo ($Channel)"
 $title = "Dexterity Connect $Version" + $(if ($Channel -eq 'beta') { ' (beta)' } else { '' })
-$files = Get-ChildItem $dest -File | ForEach-Object { $_.FullName }
+$files = @(Get-ChildItem $dest -File | ForEach-Object { $_.FullName })
+# fixed-name copies: releases/latest/download/<name> always gives the newest stable build, so the
+# landing page and docs/OFFICE-SETUP.md link to them directly (the same names as the GitHub workflow)
+$alias = Join-Path $env:TEMP "dexconnect-alias-$Version"
+Remove-Item -Recurse -Force $alias -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $alias | Out-Null
+foreach ($f in Get-ChildItem $dest -File) {
+  $a = switch -Wildcard ($f.Name) {
+    'DexterityConnectHub-Setup*.exe' { 'DexterityConnectHub-Setup.exe'; break }
+    '*Setup*.exe' { 'DexterityConnect-Setup.exe'; break }
+    '*mac-arm64.dmg' { 'DexterityConnect-mac-arm64.dmg'; break }
+    '*mac-x64.dmg' { 'DexterityConnect-mac-x64.dmg'; break }
+    '*.apk' { 'DexterityConnect.apk'; break }
+    '*Hub*.zip' { 'DexterityConnectHub-win-x64.zip'; break }
+    default { $null }
+  }
+  if ($a) { Copy-Item $f.FullName (Join-Path $alias $a); $files += (Join-Path $alias $a) }
+}
 Run gh (@('release', 'create', "v$Version", '--repo', $PublicRepo, '--draft', '--title', $title, '--notes-file', $notes) + $files)
 $flags = if ($Channel -eq 'beta') { @('--prerelease', '--latest=false') } else { @('--latest') }
 Run gh (@('release', 'edit', "v$Version", '--repo', $PublicRepo, '--draft=false') + $flags)
