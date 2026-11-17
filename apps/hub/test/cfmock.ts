@@ -50,6 +50,8 @@ export class CloudflareMock {
   readonly failOnce = new Map<string, { status: number; code: number; message: string }>();
   /** Called when a Worker is uploaded or its secrets change (a test can run the real bundle). */
   onScript: ((name: string, s: MockScript) => void | Promise<void>) | null = null;
+  /** Called when a Pages deployment is made (a test can run the real site). */
+  onDeployment: ((project: MockProject, dep: MockProject['deployments'][number]) => void | Promise<void>) | null = null;
   /** A real gateway (wrangler dev) the site passes requests to through its binding, instead of the fake one. */
   gatewayOrigin: string | null = null;
   /** workers.dev and pages.dev, as the hub should reach them (the fake gateway and site, or a real local one). */
@@ -287,6 +289,7 @@ export class CloudflareMock {
           const dep = { id: crypto.randomUUID(), manifest, bundle, headers: hp && typeof hp !== 'string' ? await hp.text() : null, branch: fields.branch ?? '', fields };
           entry.body = { fields: Object.keys(fields), files: [...f.keys()].filter((k) => typeof f.get(k) !== 'string'), bundleMetadata: bundle?.metadata };
           proj.deployments.push(dep);
+          await this.onDeployment?.(proj, dep);
           send(200, ok({ id: dep.id, url: `https://${dep.id.slice(0, 8)}.${proj.subdomain}`, environment: dep.branch === proj.production_branch ? 'production' : 'preview', latest_stage: { name: 'deploy', status: 'active' } })); return;
         }
       }
