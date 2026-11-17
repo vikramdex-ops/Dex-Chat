@@ -15,5 +15,7 @@ export function auditLine(action: string, actor: string | null, detail: unknown,
     if (actor === null) return { who: 'The hub', what: typeof d.people === 'number' && d.people <= 1 ? 'ended a meeting (nobody else joined)' : 'ended a meeting (everyone had left)' };
     return { who: actor, what: d.endedForEveryone ? 'ended a meeting for everyone' : 'ended a meeting' };
   }
+  // the hub updating itself (hub-update.ts) is recorded with no person
+  if (actor === null && action.startsWith('hub.')) return { who: 'The hub', what: words(action) };
   return { who: actor ?? 'Someone', what: words(action) };
 }

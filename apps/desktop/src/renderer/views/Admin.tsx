@@ -14,6 +14,7 @@ import { RemoteAdmin } from './Remote.tsx';
 import { AutomationsAdmin } from '../flows/FlowsPanel.tsx';
 import { ItDeskAdmin } from '../help/ItDesk.tsx';
 import { CONTINUITY_AUDIT, ContinuityAdmin } from './Continuity.tsx';
+import { HUB_UPDATE_AUDIT } from './HubUpdates.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
 import { auditLine } from './audit.ts';
@@ -64,6 +65,7 @@ const AUDIT_TEXT: Record<string, string> = {
   'flow.deleted': 'removed an automation',
   'flow.settings': 'changed whether automations may call the office network',
   ...CONTINUITY_AUDIT,
+  ...HUB_UPDATE_AUDIT,
   'help.staff.granted': 'put someone on the IT desk',
   'help.staff.removed': 'took someone off the IT desk',
   'device.paired': 'paired a phone or another PC',
@@ -348,6 +350,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
                   {line.what}
                   {subject && a.action !== 'device.registered' ? <> · {subject}</> : null}
                   {a.action === 'user.role' && detail ? <> · {roleWord(detail.from)} → {roleWord(detail.to)}</> : null}
+                  {a.action.startsWith('hub.update') || a.action === 'hub.updated' ? (detail?.from && detail?.to ? <span className="mono"> · {detail.from} → {detail.to}</span> : null) : null}
                 </span>
               </div>
             );
