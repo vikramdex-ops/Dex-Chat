@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pdfAssets } from './pdf-assets.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -33,10 +34,108 @@ function ocrAssets(): Plugin {
   };
 }
 
+/** Background blur for calls: MediaPipe's image segmenter (Apache-2.0) and its selfie model,
+ * copied beside the app so it works with no internet. */
+function segmenterAssets(): Plugin {
+  const wasm = path.join(path.dirname(require.resolve('@mediapipe/tasks-vision')), 'wasm');
+  const files: Array<[string, string]> = [
+    [path.join(wasm, 'vision_wasm_internal.js'), 'vision_wasm_internal.js'],
+    [path.join(wasm, 'vision_wasm_internal.wasm'), 'vision_wasm_internal.wasm'],
+    [path.resolve(__dirname, 'assets/models/selfie_segmenter.tflite'), 'selfie_segmenter.tflite'],
+  ];
+  let outDir = '';
+  return {
+    name: 'dex-segmenter-assets',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    writeBundle() {
+      fs.mkdirSync(path.join(outDir, 'segmenter'), { recursive: true });
+      for (const [from, to] of files) fs.copyFileSync(from, path.join(outDir, 'segmenter', to));
+    },
+    configureServer(server) {
+      server.middlewares.use('/segmenter/', (req, res, next) => {
+        const hit = files.find(([, to]) => req.url === `/${to}`);
+        if (!hit) return next();
+        res.setHeader('content-type', hit[1].endsWith('.js') ? 'text/javascript' : hit[1].endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream');
+        fs.createReadStream(hit[0]).pipe(res);
+      });
+    },
+  };
+}
+
+/** Describe-to-Automation: a small sentence-embedding model (all-MiniLM-L6-v2, quantized, Apache-2.0)
+ * copied beside the app, so drafting rules from plain words runs on this PC with nothing downloaded.
+ * The ONNX runtime's WebAssembly (MIT) is emitted by the build itself, from the worker's import. */
+const ortDist = path.dirname(require.resolve('onnxruntime-web'));
+function flowModelAssets(): Plugin {
+  const model = path.resolve(__dirname, 'assets/models/all-MiniLM-L6-v2');
+  const files: Array<[string, string]> = [
+    ...['config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'onnx/model_quantized.onnx']
+      .map((f): [string, string] => [path.join(model, f), `models/all-MiniLM-L6-v2/${f}`]),
+  ];
+  let outDir = '';
+  return {
+    name: 'dex-flow-model-assets',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    writeBundle() {
+      for (const [from, to] of files) {
+        fs.mkdirSync(path.dirname(path.join(outDir, 'minilm', to)), { recursive: true });
+        fs.copyFileSync(from, path.join(outDir, 'minilm', to));
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use('/minilm/', (req, res, next) => {
+        const hit = files.find(([, to]) => req.url?.split('?')[0] === `/${to}`);
+        if (!hit) return next();
+        res.setHeader('content-type', hit[1].endsWith('.wasm') ? 'application/wasm' : hit[1].endsWith('.json') ? 'application/json' : 'application/octet-stream');
+        fs.createReadStream(hit[0]).pipe(res);
+      });
+    },
+  };
+}
+
+/** Strong noise suppression in Rooms: RNNoise (BSD-3-Clause) built to WebAssembly with its audio
+ * worklet (@sapphi-red/web-noise-suppressor, MIT), copied beside the app like the segmenter. */
+function noiseAssets(): Plugin {
+  const dist = path.dirname(require.resolve('@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js'));
+  const files: Array<[string, string]> = [
+    [path.join(dist, 'workletProcessor.js'), 'rnnoiseWorklet.js'],
+    [path.join(dist, '..', 'rnnoise.wasm'), 'rnnoise.wasm'],
+    [path.join(dist, '..', 'rnnoise_simd.wasm'), 'rnnoise_simd.wasm'],
+  ];
+  let outDir = '';
+  return {
+    name: 'dex-noise-assets',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    writeBundle() {
+      fs.mkdirSync(path.join(outDir, 'noise'), { recursive: true });
+      for (const [from, to] of files) fs.copyFileSync(from, path.join(outDir, 'noise', to));
+    },
+    configureServer(server) {
+      server.middlewares.use('/noise/', (req, res, next) => {
+        const hit = files.find(([, to]) => req.url === `/${to}`);
+        if (!hit) return next();
+        res.setHeader('content-type', hit[1].endsWith('.js') ? 'text/javascript' : 'application/wasm');
+        fs.createReadStream(hit[0]).pipe(res);
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: 'src/renderer',
   base: './',
-  plugins: [react(), ocrAssets()],
+  // the interface's JSX runtime translates literal text into the chosen language (src/renderer/i18n)
+  plugins: [react({ jsxImportSource: '@dex/i18n' }), ocrAssets(), segmenterAssets(), flowModelAssets(), noiseAssets(), pdfAssets()],
+  resolve: {
+    alias: {
+      '@dex/i18n/jsx-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-runtime.ts'),
+      '@dex/i18n/jsx-dev-runtime': path.resolve(__dirname, 'src/renderer/i18n/jsx-dev-runtime.ts'),
+      // the sentence model runs on the CPU: the plain WebAssembly runtime, not the 28 MB WebGPU one
+      'onnxruntime-web/webgpu': path.join(ortDist, 'ort.wasm.bundle.min.mjs'),
+    },
+  },
+  // the Automations drafter's worker imports modules
+  worker: { format: 'es' },
   build: {
     outDir: '../../dist-renderer',
     emptyOutDir: true,

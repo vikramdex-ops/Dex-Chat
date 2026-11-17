@@ -1,0 +1,185 @@
+/* The drawing-office layer (docs/DESIGN-LANGUAGE.md): shared controls redrawn as the pieces of a
+   drawing sheet, loaded after styles.css and the static screens' own sheets so it decides their
+   shape. Choices are ruled cells, switches are slide levers, tags are mono captions in a box,
+   settings and dashboards are schedules ruled with hairlines, and amber stays for live things.
+   Screens that load later (the Control room, lounges, Help me) carry their part in their own file. */
+
+/* ------------------------------------------------------------------ a choice of one: ruled cells */
+.seg { padding: 0; gap: 0; border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); background: var(--layer-solid); }
+.seg button { height: 30px; padding: 0 13px; border-radius: 0; font-size: 13px; }
+.seg button + button { box-shadow: inset 1px 0 0 var(--stroke-strong); }
+.seg button:first-child { border-radius: 3px 0 0 3px; }
+.seg button:last-child { border-radius: 0 3px 3px 0; }
+.seg button:hover { background: var(--subtle); color: var(--text); }
+.seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+.seg button + button[aria-pressed='true'] { box-shadow: inset 1px 0 0 var(--stroke-strong), inset 0 -2px 0 var(--accent); }
+.seg button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.seg button .badge { margin-left: 2px; }
+
+/* ------------------------------------------------------------------ switches: a slide lever on a scale */
+.toggle {
+  width: 38px; height: 20px; border-radius: 3px; border: 1px solid var(--text-3); background-color: var(--subtle);
+  background-image: linear-gradient(var(--text-3), var(--text-3)); background-repeat: no-repeat; background-size: 1px 8px; background-position: 27px 50%;
+}
+.toggle::after { top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 2px; background: var(--layer-solid); box-shadow: inset 0 0 0 1px var(--text-2); }
+.toggle[aria-checked='true'] {
+  background-color: var(--accent); border-color: var(--accent);
+  background-image: linear-gradient(var(--accent-text), var(--accent-text)); background-repeat: no-repeat; background-size: 1px 8px; background-position: 9px 50%;
+}
+.toggle[aria-checked='true']::after { transform: translateX(18px); background: var(--accent-text); box-shadow: none; }
+
+/* ------------------------------------------------------------------ tags: a mono caption in a box */
+.chip {
+  height: 20px; padding: 0 6px; border-radius: 2px; border: 1px solid var(--stroke-strong); background: none; color: var(--text-2);
+  font: 600 10.5px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase;
+}
+.chip.ok { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: none; color: var(--accent-ink); }
+.chip.warn { border-color: var(--amber); background: none; color: var(--amber-ink); }
+.chip.bad { border-color: color-mix(in srgb, var(--danger) 60%, transparent); background: none; color: var(--danger); }
+.chip.accent { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); color: var(--accent-ink); }
+/* a guest is not live: a dashed box, not amber */
+.chip.guest { border-style: dashed; color: var(--text-2); }
+button.chip { cursor: pointer; }
+/* Hindi and Tamil tags are set in the body face, not as capitals: a time in a tag keeps the language's own am/pm */
+html:is([lang='hi'], [lang='ta']) .chip { font: 600 11.5px/1 var(--font-body); letter-spacing: 0; text-transform: none; }
+
+/* end-to-end encryption in a conversation's title block: a mono tag, teal, not a green pill */
+.e2e-chip {
+  border-radius: 2px; padding: 1px 6px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: none; color: var(--accent-ink);
+  font: 600 10px/1.5 var(--font-mono); letter-spacing: .06em; text-transform: uppercase;
+}
+.e2e-chip.off { border-style: dashed; border-color: var(--stroke-strong); background: none; color: var(--text-3); }
+html:is([lang='hi'], [lang='ta']) .e2e-chip { font: 600 11px/1.5 var(--font-body); letter-spacing: 0; }
+
+/* times to choose (reminders, how long a status lasts): ruled cells, not pills */
+.when-chip { height: 28px; padding: 0 10px; border-radius: 3px; background: var(--layer-solid); font-size: 12.5px; }
+.when-chip:hover { border-color: var(--accent); }
+.when-chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ------------------------------------------------------------------ settings: one ruled schedule per section */
+.settings { counter-reset: schedule; }
+.settings section { gap: 0; }
+.settings section > h3 {
+  counter-increment: schedule; margin: 0 0 8px; font: 600 11px/1.4 var(--font-body); text-transform: uppercase; letter-spacing: .12em; color: var(--text-3);
+}
+.settings section > h3::before { content: counter(schedule, decimal-leading-zero) '  '; font: 600 10.5px/1 var(--font-mono); letter-spacing: .04em; color: var(--accent-ink); white-space: pre; }
+.setting { border-radius: 0; background: var(--layer-solid); border-color: var(--stroke-strong); }
+.setting + .setting { margin-top: -1px; }
+.settings section > .setting:first-of-type, .settings section > h3 + .setting { border-radius: var(--radius-s) var(--radius-s) 0 0; }
+.settings section > .setting:last-child { border-radius: 0 0 var(--radius-s) var(--radius-s); }
+.settings section > h3 + .setting:last-child { border-radius: var(--radius-s); }
+.setting svg.lead { color: var(--accent-ink); }
+.form-grid { border-radius: var(--radius-s); border-color: var(--stroke-strong); background: var(--layer-solid); }
+html:is([lang='hi'], [lang='ta']) .settings section > h3 { letter-spacing: 0; font-size: 12.5px; }
+
+/* ------------------------------------------------------------------ Pulse: one title block, not a dashboard of cards */
+.grid.pulse-sheet { gap: 1px; padding: 1px; }
+.grid.pulse-sheet > .card { border: 0; border-radius: 0; box-shadow: 0 0 0 1px var(--stroke-strong); background: var(--layer-solid); }
+.grid.pulse-sheet > .card.interactive:hover { background: var(--card-hover); box-shadow: 0 0 0 1px var(--stroke-strong), inset 0 -2px 0 var(--accent); }
+.grid.pulse-sheet > .card .eyebrow { font: 600 10px/1.4 var(--font-body); letter-spacing: .14em; padding-bottom: 8px; border-bottom: 1px solid var(--stroke); }
+.pulse-section .list { border-radius: var(--radius-s); border-color: var(--stroke-strong); background: var(--stroke-strong); }
+.pulse-row .sb-meta { gap: 4px; }
+/* what changed in a conversation: a count in the margin, not a rounded "new" pill */
+.pulse-row .sb-meta .chip.accent { background: none; border-color: transparent; border-left: 2px solid var(--accent); border-radius: 0; padding: 0 0 0 6px; }
+
+/* ------------------------------------------------------------------ Directory: a register of ruled cells */
+.grid.cols-people { gap: 1px; padding: 1px; }
+.grid.cols-people > .card { border: 0; border-radius: 0; box-shadow: 0 0 0 1px var(--stroke-strong); background: var(--layer-solid); }
+.grid.cols-people > .card.interactive:hover { background: var(--card-hover); box-shadow: 0 0 0 1px var(--stroke-strong); }
+.grid.cols-people > .card.person.selected { box-shadow: 0 0 0 1px var(--stroke-strong), inset 0 0 0 2px var(--accent); }
+.grid.cols-people .person .name { gap: 4px; }
+
+/* ------------------------------------------------------------------ stamps: one ruled strip under a message */
+.reactions { gap: 0; }
+.reactions > button { position: relative; border-radius: 0; }
+.reactions > button + button { margin-left: -1px; }
+.reactions > button:first-child { border-radius: 3px 0 0 3px; }
+.reactions > button:last-child { border-radius: 0 3px 3px 0; }
+.reactions > button:only-child { border-radius: 3px; }
+.reactions > .reaction.mine, .reactions > button:hover, .reactions > button:focus-visible { z-index: 1; }
+.reaction.mine { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ------------------------------------------------------------------ sheets, menus, dialogs and notes */
+.dialog { border-radius: var(--radius-m); }
+.menu { border-radius: var(--radius-s); border-color: var(--stroke-strong); }
+.menu .menu-label { border-top: 1px solid var(--stroke); margin-top: 4px; }
+.menu .menu-label:first-child, .menu .menu-head + .menu-label, .menu .menu-sep + .menu-label { border-top: 0; margin-top: 0; }
+/* a toast reads like a revision note: a hairline box with a rule down its edge */
+.toast { border-radius: var(--radius-s); border-color: var(--stroke-strong); box-shadow: inset 3px 0 0 var(--accent), var(--shadow-2); padding-left: 16px; }
+.toast.bad { box-shadow: inset 3px 0 0 var(--danger), var(--shadow-2); }
+/* empty states: one symbol in a framed cell on the drafting grid, not an illustration */
+.empty { border-radius: var(--radius-s); }
+.empty > svg {
+  width: 20px; height: 20px; padding: 7px; box-sizing: content-box; border: 1px solid var(--stroke-strong); border-radius: 2px;
+  background: var(--layer-solid); color: var(--accent-ink); opacity: 1;
+}
+
+/* ------------------------------------------------------------------ small shapes that were pills */
+.conn { border-radius: var(--radius-s); }
+.btn.update-btn { border-radius: var(--radius-s); }
+.ev-person { border-radius: 3px; }
+.voice-note { border-radius: var(--radius-s); }
+.voice-play { border-radius: 3px; }
+.voice-rate { border-radius: 2px; }
+.select-bar { border-radius: var(--radius-s); }
+/* today in the week: the date boxed in teal like a grid reference, not a filled circle */
+.week-day.today b { color: var(--accent-ink); }
+.week-day.today i { color: var(--accent-ink); background: none; border: 1.5px solid var(--accent); border-radius: 2px; padding: 2px 5px; }
+
+/* ------------------------------------------------------------------ amber only for what is live */
+/* a drawing file is not live: teal with a section hatch */
+.file-ico[data-kind='drawing'] {
+  background: repeating-linear-gradient(135deg, var(--accent-soft) 0 3px, transparent 3px 6px), var(--layer-solid);
+  color: var(--accent-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+/* someone away from the office: a hatched note, like an area that is not in use */
+.notice-line.away {
+  border-radius: var(--radius-s); border: 1px dashed var(--stroke-strong);
+  background: repeating-linear-gradient(135deg, var(--subtle-2) 0 1px, transparent 1px 7px), var(--layer-solid);
+}
+/* a meeting card's tile is teal; its Join button turns amber only while the meeting is on */
+.lcard.k-meeting .lcard-tile, .lcard.k-event .lcard-tile { color: var(--accent-ink); }
+
+/* ------------------------------------------------------------------ phones: sheet tabs along the bottom edge */
+@media (max-width: 720px) {
+  .lens-dock { padding: 0 0 env(safe-area-inset-bottom); }
+  .lens-dock .lens {
+    gap: 4px; padding: 9px 2px 7px; border-radius: 0; color: var(--text-2);
+    font: 600 9.5px/1.1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase;
+  }
+  .lens-dock .lens + .lens { box-shadow: inset 1px 0 0 var(--stroke); }
+  .lens-dock .lens[aria-current='page'] { color: var(--accent-ink); background: var(--accent-soft); }
+  .lens-dock .lens-ink { height: 2px; border-radius: 0; }
+  .lens-ico .badge { top: -4px; left: 14px; border-radius: 2px; box-shadow: 0 0 0 1.5px var(--layer-solid); }
+  html:is([lang='hi'], [lang='ta']) .lens-dock .lens { font: 600 10.5px/1.15 var(--font-body); letter-spacing: 0; }
+}
+
+/* ------------------------------------------------------------------ the Control room's sections: a drawing register */
+.seg.seg-register {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); width: 100%; gap: 1px; padding: 1px;
+  border: 0; background: none; counter-reset: register;
+}
+.seg-register button, .seg-register button + button {
+  counter-increment: register; justify-content: flex-start; height: 36px; padding: 0 10px; gap: 7px; border-radius: 0;
+  background: var(--layer-solid); box-shadow: 0 0 0 1px var(--stroke-strong);
+}
+.seg-register button::before { content: counter(register, decimal-leading-zero); font: 600 10px/1 var(--font-mono); color: var(--text-3); letter-spacing: .04em; min-width: 15px; }
+.seg-register button:first-child, .seg-register button:last-child { border-radius: 0; }
+.seg-register button:hover { background: var(--subtle); }
+.seg-register button[aria-pressed='true'], .seg-register button + button[aria-pressed='true'] {
+  background: var(--accent-soft); color: var(--accent-ink); box-shadow: 0 0 0 1px var(--stroke-strong), inset 3px 0 0 var(--accent);
+}
+.seg-register button[aria-pressed='true']::before { color: var(--accent-ink); }
+.seg-register button:focus-visible { box-shadow: 0 0 0 1px var(--stroke-strong), inset 0 0 0 2px var(--accent); }
+.seg-register button .badge { margin-left: auto; }
+
+/* Preferences → Your network drives: a ruled schedule of letters and the shares they stand for */
+.net-drives .drive-table { width: 100%; margin-top: -1px; border-collapse: collapse; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 0 0 var(--radius-s) var(--radius-s); font-size: 12.5px; }
+.net-drives .drive-table th { padding: 5px 12px; text-align: left; font: 600 10px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--stroke); }
+.net-drives .drive-table td { padding: 7px 12px; border-top: 1px solid var(--stroke); vertical-align: top; }
+.net-drives .drive-table td.mono { overflow-wrap: anywhere; }
+.net-drives .drive-table td:first-child { width: 56px; font-weight: 600; color: var(--accent-ink); }
+.net-drives .drive-table tr.local td:first-child { color: var(--text-3); }
+.net-drives .drive-none { margin-top: -1px; padding: 9px 12px; border: 1px solid var(--stroke-strong); border-radius: 0 0 var(--radius-s) var(--radius-s); background: var(--layer-solid); font-size: 12.5px; }
+@media (max-width: 520px) { .net-drives .drive-table td:last-child, .net-drives .drive-table th:last-child { display: none; } }
+html:is([lang='hi'], [lang='ta']) .net-drives .drive-table th { letter-spacing: 0; }

@@ -1,0 +1,184 @@
+// The bot's conversation, played beside the editor in a real chat pane with the real cards. It
+// follows the draft as it changes (the answers given so far are given again to the new draft), and
+// Test run walks through it from the start exactly as a colleague would; nothing is sent.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { BotFlowAnswer, BotFlowCard, BotFlowDefinition, BotHop, Message, PublicUser } from '@dex/core';
+import { BotFlowError, effectiveVars, validateFlow } from '@dex/core/botflows';
+import { inputsFor, skillBot, tagLetters } from '@dex/core/botnet';
+import { testAct, testAnswer, testBack, testCancel, testStart, testTick, testWithdraw } from '@dex/core/botmaker';
+import type { TestRun } from '@dex/core/botmaker';
+import { Icon } from '../../ui.tsx';
+import { FlowCardView } from '../FlowCard.tsx';
+import type { FlowDriver } from '../FlowCard.tsx';
+import { BotMarkTile } from '../BotMark.tsx';
+import { DEFAULT_PERSONA } from './Identity.tsx';
+import { formatTime } from '../../time.ts';
+
+/** What was given in the test run: answers to steps, then (a tracked bot) what each person pressed. */
+type Given = Array<{ stepId: string; value: string; note?: string }>;
+const ACT = '@act';
+const TICK = '@tick';
+const WITHDRAW = '@withdraw';
+
+/** One thing done to the test request (pressed, ticked, withdrawn). */
+function trackStep(run: TestRun, g: Given[number]): TestRun {
+  if (g.stepId === ACT) return testAct(run, g.value, g.note ?? '');
+  if (g.stepId === TICK) { const [i, on] = g.value.split(':'); return testTick(run, Number(i), on === '1'); }
+  return testWithdraw(run);
+}
+
+/** A test run of `def`, with `given` answered again (as far as they still fit). */
+function replay(def: BotFlowDefinition, me: { id: string; name: string; account: string }, given: Given, memory: Record<string, BotFlowAnswer>, ctx: Parameters<typeof testAnswer>[3], lead: string | null): { run: TestRun; given: Given } {
+  let run = testStart(def, me, memory, lead);
+  const kept: Given = [];
+  for (const g of given) {
+    if (g.stepId.startsWith('@')) {
+      if (!run.item) break;
+      try { run = trackStep(run, g); kept.push(g); } catch { break; }
+      continue;
+    }
+    if (run.status !== 'active' || run.step !== g.stepId) break;
+    try { run = testAnswer(run, g.stepId, g.value, ctx); kept.push(g); } catch { break; }
+  }
+  return { run, given: kept };
+}
+
+export function Preview({ def, me, users, restartKey }: { def: BotFlowDefinition; me: PublicUser; users: Map<string, PublicUser>; restartKey: number }) {
+  // the last draft that is a working bot: the pane keeps showing it while a problem is being fixed
+  const [good, broken] = useMemo((): [BotFlowDefinition | null, boolean] => { try { return [validateFlow(def), false]; } catch { return [null, true]; } }, [def]);
+  const lastGood = useRef<BotFlowDefinition | null>(good);
+  if (good) lastGood.current = good;
+  const shown = good ?? lastGood.current;
+  const [given, setGiven] = useState<Given>([]);
+  const [memory, setMemory] = useState<Record<string, BotFlowAnswer>>({});
+  const [ended, setEnded] = useState<'cancelled' | null>(null);
+  const meRef = useMemo(() => ({ id: me.id, name: me.displayName, account: me.account }), [me]);
+  const ctx = useMemo(() => ({
+    now: Date.now(),
+    person: (v: string) => { const u = users.get(v) ?? [...users.values()].find((x) => x.displayName.toLowerCase() === v.toLowerCase()); return u && u.role !== 'bot' && u.id !== me.id ? { id: u.id, name: u.displayName } : null; },
+    file: (v: string) => (v.startsWith('test:') ? { id: v, name: v.slice(5) } : null),
+  }), [users, me.id]);
+  useEffect(() => { setGiven([]); setEnded(null); }, [restartKey]);
+  // "their lead" in the test run: the maker's own lead from the directory
+  const lead = me.profile?.managerId ?? null;
+  const base = useMemo(() => (shown ? replay(shown, meRef, given, memory, ctx, lead) : null), [shown, given, memory, meRef, ctx, lead]);
+  const run = base && ended ? testCancel(base.run) : base?.run ?? null;
+  // when it finishes, it remembers (as the real bot would) for the next test run
+  useEffect(() => { if (run?.status === 'done' && shown?.persona?.remember) setMemory((m) => ({ ...m, ...run.memory })); }, [run?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a step that asks another bot: the test run asks it for real (as the maker; an errand is only
+  // described), and answers the step with what comes back, as the hub would
+  const [asks, setAsks] = useState<Record<string, { ok: boolean | null; words: string; reason: string | null; ask: string; at: number }>>({});
+  useEffect(() => { setAsks({}); }, [restartKey]);
+  const askStep = run?.status === 'active' && shown ? shown.steps.find((x) => x.id === run.step && x.ask) : undefined;
+  const askKey = askStep && base ? `${askStep.id}#${base.given.length}` : null;
+  useEffect(() => {
+    if (!askStep?.ask || !askKey || !base || !shown || asks[askKey]) return;
+    const a = askStep.ask;
+    const inputs = inputsFor(a, effectiveVars(shown, base.run));
+    const ask = `${a.skill}${Object.values(inputs).length ? ` · ${Object.values(inputs).slice(0, 2).join(' · ')}` : ''}`;
+    setAsks((m) => ({ ...m, [askKey]: { ok: null, words: '', reason: null, ask, at: Date.now() } }));
+    void window.dex.request('botnet.try', { skill: a.skill, with: inputs }).then((r) => {
+      setAsks((m) => ({ ...m, [askKey]: { ok: r.ok, words: r.words, reason: r.reason, ask, at: Date.now() } }));
+      if (!r.ok || !r.answer) return;
+      try { testAnswer(base.run, askStep.id, r.answer.value, ctx); } catch { return; }
+      setGiven((g) => (g.length === base.given.length ? [...g, { stepId: askStep.id, value: r.answer!.value }] : g));
+    }).catch((e: Error) => setAsks((m) => ({ ...m, [askKey]: { ok: false, words: '', reason: e.message, ask, at: Date.now() } })));
+  }, [askKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** The relay card the test run shows for the asks so far. */
+  const relayFor = (stepId: string): BotFlowCard | null => {
+    const st = shown?.steps.find((x) => x.id === stepId);
+    const hits = Object.entries(asks).filter(([k]) => k.startsWith(`${stepId}#`));
+    if (!st?.ask || !hits.length || !shown) return null;
+    const [, last] = hits[hits.length - 1];
+    const to = skillBot(st.ask.skill);
+    const hop: BotHop = { id: `${stepId}-${last.at}`, kind: 'query', from: shown.name, to, ask: last.ask, answer: last.ok ? last.words : null, status: last.ok === null ? 'pending' : last.ok ? 'ok' : 'failed', reason: last.reason, at: last.at, ms: null, back: null, ref: null, canRetry: false };
+    return {
+      kind: 'relay', botId: 'test-bot', sessionId: null, ownerId: me.id, title: shown.title, state: 'active',
+      relay: { group: 'test', tags: [{ key: shown.name, title: shown.title, mark: p.mark, colour: p.colour, tag: tagLetters(shown.title, p.mark.kind === 'monogram' ? p.mark.letters : null), system: false, botId: null }, { key: to, title: to, mark: null, colour: null, tag: tagLetters(to), system: ['nib', 'directory', 'calendar'].includes(to), botId: null }], hops: [hop] },
+    };
+  };
+
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }, [run?.cards.length]);
+
+  const driver: FlowDriver = {
+    test: true,
+    answer: async (_sid, stepId, value) => {
+      if (!base) return;
+      // checked here so the card can show the refusal in the bot's own words
+      try { testAnswer(base.run, stepId, value, ctx); } catch (e) { throw new Error(e instanceof BotFlowError ? e.message : String(e)); }
+      setGiven([...base.given, { stepId, value }]);
+    },
+    back: async () => { if (base) { testBack(base.run); setGiven(base.given.slice(0, -1)); } },
+    cancel: async () => { setEnded('cancelled'); },
+    resume: async (_sid, over) => { if (over) setGiven([]); },
+    start: async () => ({ convId: 'test', resumed: false }),
+    track: {
+      act: async (_id, action, note) => {
+        if (!base) return;
+        const g = { stepId: ACT, value: action, note };
+        try { trackStep(base.run, g); } catch (e) { throw new Error(e instanceof BotFlowError ? e.message : String(e)); }
+        setGiven([...base.given, g]);
+      },
+      tick: async (_id, index, on) => { if (base) setGiven([...base.given, { stepId: TICK, value: `${index}:${on ? 1 : 0}` }]); },
+      withdraw: async () => { if (base) setGiven([...base.given, { stepId: WITHDRAW, value: '' }]); },
+      takeover: async () => {},
+    },
+  };
+  const p = shown?.persona ?? DEFAULT_PERSONA(def.title);
+  const botUser = { id: 'test-bot', displayName: def.title || 'Your bot' };
+  const fake = (id: string, body: string, card: TestRun['cards'][number]['card']): Message => ({ id, convId: 'test', authorId: botUser.id, body, createdAt: Date.now(), botflow: card ?? undefined } as unknown as Message);
+  const lines = run ? run.cards : [];
+  return (
+    <section className="bm-preview" aria-label="Test run">
+      <header className="bm-pv-head">
+        <BotMarkTile mark={p.mark} colour={p.colour} size={28} />
+        <span className="bm-pv-name" translate="no">{def.title || 'Your bot'}</span>
+        <span className="chip">Bot</span>
+        <span className="bm-pv-as mono">As {me.displayName}</span>
+      </header>
+      {broken && <div className="bm-pv-note" role="status"><Icon name="warning" size={14} />Showing the last version that worked. Fix the marked problems to try the change.</div>}
+      <div className="timeline bm-pv-timeline">
+        <div className="spine">
+          {!run && <div className="empty bm-pv-empty"><Icon name="chat" size={20} /><span>Add a question to see the conversation.</span></div>}
+          {run && (
+            <div className="run">
+              <div className="run-tile"><BotMarkTile mark={p.mark} colour={p.colour} size={36} /></div>
+              <div className="run-body">
+                <div className="run-head">
+                  <span className="run-name" translate="no">{def.title || 'Your bot'}</span>
+                  <span className="chip accent bot-chip">Bot</span>
+                  <span className="run-time">{formatTime(Date.now())}</span>
+                </div>
+                {lines.map((c) => {
+                  const relay = c.card?.kind === 'step' && c.card.stepId ? relayFor(c.card.stepId) : null;
+                  // a step the other bot answered is not the person's: only its relay card shows
+                  const asked = !!relay && relay.relay?.hops[0]?.status !== 'failed';
+                  return (
+                    <div key={c.id}>
+                      {relay && <div className="msg"><FlowCardView m={fake(`${c.id}-relay`, '', relay)} meId={me.id} users={users} driver={driver} /></div>}
+                      {!asked && (
+                        <div className="msg">
+                          {c.card
+                            ? <FlowCardView m={fake(c.id, c.body, { ...c.card, ownerId: me.id })} meId={me.id} users={users} driver={driver} />
+                            : <div className="msg-text" translate="no">{c.body}</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div ref={end} />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <footer className="bm-pv-foot">
+        <span className="mono faint">Test run · nothing is sent</span>
+        <span className="grow" />
+        {Object.keys(memory).length > 0 && <button type="button" className="btn ghost sm" onClick={() => setMemory({})}>Forget test answers</button>}
+      </footer>
+    </section>
+  );
+}

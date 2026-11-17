@@ -11,8 +11,9 @@ interface UserRow {
   availability_until?: number | null; ooo?: string | null;
   receipts?: number | null; status_emoji?: string | null; last_seen_at?: number | null;
   // from profiles (LEFT JOIN)
-  department_id?: string | null; manager_id?: string | null; phone?: string | null; extension?: string | null; location?: string | null;
+  department_id?: string | null; manager_id?: string | null; phone?: string | null; extension?: string | null; location?: string | null; seat_id?: string | null;
   email?: string | null; employee_id?: string | null; joined_on?: string | null; birthday?: string | null; fields?: string | null;
+  left_at?: number | null;
 }
 interface DeviceRow {
   id: string; user_id: string; public_key: string; hostname: string; status: DeviceStatus;
@@ -81,6 +82,20 @@ CREATE TABLE IF NOT EXISTS bot_tokens (
   created_at INTEGER NOT NULL,
   last_used INTEGER
 );
+CREATE TABLE IF NOT EXISTS departures (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  left_at INTEGER NOT NULL,
+  by_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  meetings TEXT NOT NULL,
+  note TEXT,
+  summary TEXT NOT NULL,
+  devices TEXT NOT NULL,
+  returned_at INTEGER,
+  returned_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_departures_user ON departures(user_id, returned_at);
 CREATE TABLE IF NOT EXISTS hooks (
   id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,
@@ -120,14 +135,43 @@ export const toPublicUser = (r: UserRow): PublicUser => ({
     departmentId: r.department_id ?? null, managerId: r.manager_id ?? null, phone: r.phone ?? null, extension: r.extension ?? null,
     location: r.location ?? null, email: r.email ?? null, employeeId: r.employee_id ?? null, joinedOn: r.joined_on ?? null,
     birthday: r.birthday ?? null, fields: parseFields(r.fields),
+    ...(r.seat_id ? { seatId: r.seat_id } : {}),
   },
+  // offboarding (offboard.ts): only on people who have left
+  ...(r.left_at ? { leftAt: r.left_at } : {}),
 });
 
 /** Users with their organisation profile (the manager is stored by account so imports work before people join). */
-const USER_SELECT = `SELECT u.*, p.department_id, p.phone, p.extension, p.location, p.email, p.employee_id, p.joined_on, p.birthday, p.fields,
+const USER_SELECT = `SELECT u.*, p.department_id, p.phone, p.extension, p.location, p.seat_id, p.email, p.employee_id, p.joined_on, p.birthday, p.fields,
   (SELECT m.id FROM users m WHERE m.account = p.manager_account) AS manager_id,
-  (SELECT MAX(d.last_seen) FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') AS last_seen_at
+  (SELECT MAX(d.last_seen) FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') AS last_seen_at,
+  (SELECT MAX(dp.left_at) FROM departures dp WHERE dp.user_id = u.id AND dp.returned_at IS NULL) AS left_at
   FROM users u LEFT JOIN profiles p ON p.account = u.account`;
+
+/**
+ * Every part of the hub prepares its SQL where it runs it (`db.prepare(sql).get(...)`), and
+ * compiling a statement costs several times more than running a simple one: a list of 60 messages
+ * prepared about a thousand. The database keeps the compiled statements instead, the most recently
+ * used few thousand, so the same text is compiled once. Statements finish before they return (no
+ * iterators are kept), so sharing one between callers is safe.
+ */
+export function cacheStatements(db: DatabaseSync, max = 2000): void {
+  const prepare = db.prepare.bind(db);
+  const cache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
+  db.prepare = (sql: string) => {
+    let st = cache.get(sql);
+    if (st) {
+      // most recently used last, so the oldest is dropped first
+      cache.delete(sql);
+      cache.set(sql, st);
+      return st;
+    }
+    st = prepare(sql);
+    cache.set(sql, st);
+    if (cache.size > max) cache.delete(cache.keys().next().value!);
+    return st;
+  };
+}
 
 const toDevice = (r: DeviceRow): DeviceRecord => ({
   id: r.id, userId: r.user_id, hostname: r.hostname, status: r.status, createdAt: r.created_at,
@@ -142,12 +186,23 @@ export class Store {
   constructor(dataDir: string) {
     fs.mkdirSync(dataDir, { recursive: true });
     this.db = new DatabaseSync(path.join(dataDir, 'hub.db'));
+    cacheStatements(this.db);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
     this.db.exec(SCHEMA);
     try { this.db.exec(`ALTER TABLE users ADD COLUMN availability TEXT NOT NULL DEFAULT 'available'`); } catch { /* already there */ }
+    try { this.db.exec('ALTER TABLE profiles ADD COLUMN seat_id TEXT'); } catch { /* already there */ }
     for (const col of ['enc_key TEXT', 'enc_sig TEXT']) { try { this.db.exec(`ALTER TABLE devices ADD COLUMN ${col}`); } catch { /* already there */ } }
     for (const col of ['availability_until INTEGER', 'ooo TEXT', 'receipts INTEGER NOT NULL DEFAULT 1', 'status_emoji TEXT']) { try { this.db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch { /* already there */ } }
+    // a count of changes to people, their profiles and devices (whatever part of the hub makes
+    // them), so the people list is read again only after one (see activeUsers)
+    this.db.exec('CREATE TEMP TABLE IF NOT EXISTS people_rev (n INTEGER NOT NULL); INSERT INTO people_rev (n) SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM people_rev);');
+    for (const table of ['users', 'profiles', 'devices']) {
+      for (const ev of ['INSERT', 'UPDATE', 'DELETE']) this.db.exec(`CREATE TEMP TRIGGER IF NOT EXISTS people_rev_${table}_${ev.toLowerCase()} AFTER ${ev} ON main.${table} BEGIN UPDATE people_rev SET n = n + 1; END`);
+    }
   }
+
+  /** The people list as last read, and the change count it was read at. */
+  private people: { rev: number; list: PublicUser[] } | null = null;
 
   close(): void { this.db.close(); }
 
@@ -161,7 +216,7 @@ export class Store {
 
   // ------------------------------------------------------------- users
   userCount(): number {
-    return (this.db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role != 'bot'").get() as { n: number }).n;
   }
 
   userById(id: string): PublicUser | null {
@@ -176,9 +231,14 @@ export class Store {
 
   /** People with at least one approved device, plus integrations (bots): who colleagues can see. */
   activeUsers(): PublicUser[] {
+    // asked for many times per message sent (mentions, search text, out of office): read once per change
+    const rev = (this.db.prepare('SELECT n FROM temp.people_rev').get() as { n: number }).n;
+    if (this.people?.rev === rev) return this.people.list.slice();
     const rows = this.db.prepare(`${USER_SELECT} WHERE u.role = 'bot' OR EXISTS
       (SELECT 1 FROM devices d WHERE d.user_id = u.id AND d.status = 'approved') ORDER BY u.display_name COLLATE NOCASE`).all() as unknown as UserRow[];
-    return rows.map(toPublicUser);
+    const list = rows.map(toPublicUser);
+    this.people = { rev, list };
+    return list.slice();
   }
 
   createUser(account: string, displayName: string, role: Role): PublicUser {
@@ -266,7 +326,7 @@ export class Store {
 
   bots(): Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> {
     const rows = this.db.prepare(`SELECT u.*, MIN(t.created_at) AS t_created, MAX(t.last_used) AS t_used, COUNT(t.token_hash) AS n
-      FROM users u LEFT JOIN bot_tokens t ON t.user_id = u.id WHERE u.role = 'bot' GROUP BY u.id ORDER BY u.display_name`).all() as unknown as Array<UserRow & { t_created: number | null; t_used: number | null; n: number }>;
+      FROM users u LEFT JOIN bot_tokens t ON t.user_id = u.id WHERE u.role = 'bot' AND u.account != 'system\\dexterity-connect' AND u.account NOT LIKE 'botmaker%' GROUP BY u.id ORDER BY u.display_name`).all() as unknown as Array<UserRow & { t_created: number | null; t_used: number | null; n: number }>;
     return rows.map((r) => ({ bot: toPublicUser(r), createdAt: r.t_created ?? r.created_at, lastUsed: r.t_used, active: r.n > 0 }));
   }
 

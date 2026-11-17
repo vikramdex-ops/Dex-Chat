@@ -114,7 +114,7 @@ export class Work {
       return;
     }
     const seen = this.lastSeen(s.user_id);
-    const end = seen && seen > s.start_at && seen < now ? Math.min(seen, s.start_at + STALE_WORK) : s.start_at + 9 * HOUR;
+    const end = seen && seen >= s.start_at && seen < now ? Math.min(seen, s.start_at + STALE_WORK) : s.start_at + 9 * HOUR;
     this.close(s.id, Math.min(end, now), true);
   }
 
@@ -134,7 +134,7 @@ export class Work {
   handle(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     const now = Date.now();
     const note = (v: unknown) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 120) || null : null);
-    if (op !== 'work.team' && op !== 'work.report' && (me.role === 'bot' || me.role === 'guest')) throw new WorkError('Check-in is for members of the office.');
+    if (op !== 'work.team' && op !== 'work.report' && (me.role === 'bot' || me.role === 'guest')) throw new WorkError('The day log is for members of the office.');
 
     switch (op) {
       case 'work.checkIn': {
@@ -157,7 +157,7 @@ export class Work {
 
       case 'work.break': {
         const open = this.open(me.id);
-        if (!open.some((s) => s.kind === 'work')) throw new WorkError('Check in first.');
+        if (!open.some((s) => s.kind === 'work')) throw new WorkError('Start your day first.');
         const brk = open.find((s) => s.kind === 'break');
         if (d.on === true && !brk) this.insert(me.id, 'break', null, now, null);
         if (d.on !== true && brk) this.close(brk.id, now);
@@ -168,7 +168,7 @@ export class Work {
         const mode = MODES.includes(d.mode as WorkMode) ? d.mode as WorkMode : null;
         if (!mode) throw new WorkError('Choose where you are working.');
         const work = this.open(me.id).find((s) => s.kind === 'work');
-        if (!work) throw new WorkError('Check in first.');
+        if (!work) throw new WorkError('Start your day first.');
         if (work.mode !== mode) {
           // moving (say from the office to a site visit) starts a new segment so reports show both
           this.close(work.id, now);

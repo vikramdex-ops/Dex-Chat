@@ -84,7 +84,7 @@ export function ShareDialog({ req, session, onDone }: { req: ShareRequest; sessi
       }
       if (!convId) return;
       const infos = [];
-      for (const f of usable) infos.push(await window.dex.uploadFile!(`share-${Date.now().toString(36)}`, { path: f.path, name: f.name }));
+      for (const f of usable) infos.push(await window.dex.uploadFile!(`share-${Date.now().toString(36)}`, { path: f.path, name: f.name, convId }));
       await sendMessage(convId, text.trim(), null, infos);
       toast('Shared');
       onDone(convId);
@@ -131,7 +131,7 @@ export function ShareDialog({ req, session, onDone }: { req: ShareRequest; sessi
         </>
       )}
       <div className="dialog-actions">
-        <span className="faint">{usable.length ? `${usable.length} ${usable.length === 1 ? 'file' : 'files'}` : ''}</span>
+        <span className="faint">{usable.length === 1 ? '1 file' : usable.length ? `${usable.length} files` : ''}</span>
         <button className="btn ghost" onClick={() => onDone(null)}>Cancel</button>
         <button className="btn primary" disabled={busy || (!target && !person) || (!text.trim() && !usable.length)} onClick={() => void share()}><Icon name="send" size={15} />Share</button>
       </div>

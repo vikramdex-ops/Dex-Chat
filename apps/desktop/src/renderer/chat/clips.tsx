@@ -2,7 +2,7 @@
 // video file that plays inline in the conversation.
 import { useEffect, useRef, useState } from 'react';
 import type { FileInfo } from '@dex/core';
-import { Dialog, Icon, useToast } from '../ui.tsx';
+import { Dialog, Icon, confirmAction, useToast } from '../ui.tsx';
 import { ScreenPicker } from '../rooms/RoomUi.tsx';
 import { sendMessage } from './store.ts';
 import { useFileSrc } from './files.tsx';
@@ -97,7 +97,7 @@ export function ClipRecorder({ mode, convId, parentId, onClose }: { mode: 'camer
     setBusy(true);
     try {
       const name = `${mode === 'camera' ? 'Video message' : 'Screen recording'} ${tag(clip.ms)}.webm`;
-      const info = await window.dex.uploadFile!(`clip-${Date.now().toString(36)}`, { data: await clip.blob.arrayBuffer(), name, mime: 'video/webm' });
+      const info = await window.dex.uploadFile!(`clip-${Date.now().toString(36)}`, { data: await clip.blob.arrayBuffer(), name, mime: 'video/webm', convId });
       await sendMessage(convId, '', parentId, [info]);
       onClose();
     } catch (e) { toast((e as Error).message, true); setBusy(false); }
@@ -105,7 +105,7 @@ export function ClipRecorder({ mode, convId, parentId, onClose }: { mode: 'camer
 
   if (phase === 'pick') return <ScreenPicker offerSound={false} onPick={(id) => void open(id)} onClose={onClose} />;
   return (
-    <Dialog title={mode === 'camera' ? 'Video message' : 'Screen recording'} onClose={() => { if (phase !== 'recording' || confirm('Stop and discard this recording?')) { rec.current?.r.state === 'recording' && rec.current.r.stop(); stopAll(); onClose(); } }}>
+    <Dialog title={mode === 'camera' ? 'Video message' : 'Screen recording'} onClose={() => { const end = () => { if (rec.current?.r.state === 'recording') rec.current.r.stop(); stopAll(); onClose(); }; if (phase !== 'recording') end(); else void confirmAction({ title: 'Stop and discard this recording?', confirm: 'Discard', danger: true }).then((ok) => { if (ok) end(); }); }}>
       <div className={`clip-stage${mode === 'camera' ? ' camera' : ''}`}>
         {phase === 'review' && clip
           ? <video key="review" src={clip.url} controls autoPlay playsInline />

@@ -1,10 +1,20 @@
+/** @jsxImportSource react */
 // Message formatting: a small, safe Markdown subset rendered straight to React elements
 // (never HTML strings). Supports **bold**, *italic*, ~~strike~~, `code`, ``` blocks ```,
-// > quotes, lists, links, <@mentions> and engineering line-number references.
+// > quotes, lists, links, <@mentions>, #tags, <#Space> references and engineering
+// line-number references. What people wrote is never translated (the plain React runtime above).
 import { EmojiImg, customEmoji } from '../emoji.tsx';
 import { highlight } from './highlight.tsx';
-import { useEffect, useState, type ReactNode } from 'react';
-import type { Message, PublicUser } from '@dex/core';
+import { plainSnippet } from '../localsearch/tokenize.ts';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { HASHTAG_RE, STICKER_RE } from '@dex/core';
+import type { Conversation, Message, PublicUser } from '@dex/core';
+import { Icon, Popover } from '../ui.tsx';
+import { addConversation, chatState, useChat } from './store.ts';
+import { mayStartPath, pathAt } from '@dex/core/sharepaths';
+import type { PathSpan } from '@dex/core/sharepaths';
+import { PATH_WORDS, myDrives, toLocalText, usePathView } from './sharepaths.ts';
+import { tr } from '../i18n/index.ts';
 
 /** Piping line numbers such as 6"-P-1001-A1B or 2-CW-2045 (Sleuth integration hooks onto these). */
 export const LINE_REF_RE = /\b\d{1,2}(?:"|''|in)?-[A-Z]{1,4}-\d{3,6}(?:-[A-Z0-9]{1,6})?\b/g;
@@ -17,9 +27,13 @@ const TOOL_NAME: Record<string, string> = { projectopener: 'Project Opener', dex
 /** Messages fetched for link previews, shared across the conversation (null = not visible). */
 const linked = new Map<string, Promise<Message | null>>();
 
-/** A link to a message shows who wrote it and how it starts, like a quote. */
+/**
+ * A link to a message is that message's card, in the text: who wrote it and how it starts, with
+ * Reply (its side-track). It keeps one height while it loads, so the timeline does not move; a
+ * message the reader cannot see becomes a quiet note with the plain link.
+ */
 function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
-  const id = url.split('/')[4] ?? '';
+  const [, , , convId = '', id = ''] = url.split('/');
   const [m, setM] = useState<Message | null | undefined>(undefined);
   useEffect(() => {
     let p = linked.get(id);
@@ -28,14 +42,18 @@ function MessageLink({ url, ctx }: { url: string; ctx: Ctx }) {
     void p.then((v) => { if (live) setM(v); });
     return () => { live = false; };
   }, [id]);
-  if (m === null) return <ToolLink url={url} />;
+  if (m === null) return <span className="msg-link-none"><span className="mlc-quiet">You don't have access to this message</span><ToolLink url={url} /></span>;
   const who = m ? ctx.users.get(m.authorId)?.displayName ?? 'Someone' : '…';
   const text = m ? (m.body || (m.files.length ? `📎 ${m.files[0].name}` : '')).replace(/<@([0-9A-Z]{26}|all)>/g, (_x, u: string) => `@${u === 'all' ? 'everyone' : ctx.users.get(u)?.displayName ?? 'someone'}`) : '';
+  const reply = () => window.dispatchEvent(new CustomEvent('dex-open-message', { detail: { convId: m?.convId ?? convId, messageId: m?.parentId ?? id, parentId: m?.parentId ?? id } }));
   return (
-    <button className="msg-link-card" title="Open the message" aria-label={`Open the message from ${who}: ${text.slice(0, 120)}`} onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
-      <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span> : null}</span>
-      <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
-    </button>
+    <span className={`msg-link-card${m ? '' : ' loading'}`}>
+      <button className="mlc-open" title="Open the message" aria-label={`Open the message from ${who}: ${text.slice(0, 120)}`} onClick={() => void window.dex.openLink?.(url).catch(() => {})}>
+        <span className="mlc-who">{who}{m ? <span className="faint"> · {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}{m.replyCount === 1 ? ' · 1 reply' : m.replyCount ? ` · ${m.replyCount} replies` : ''}</span> : null}</span>
+        <span className="mlc-text">{text.length > 160 ? `${text.slice(0, 157)}…` : text || ' '}</span>
+      </button>
+      {m && <button className="mlc-reply" title="Reply in its side-track" aria-label="Reply in a side-track" onClick={reply}>↳ Reply</button>}
+    </span>
   );
 }
 
@@ -45,6 +63,8 @@ function ToolLink({ url }: { url: string }) {
   try { label = decodeURIComponent(label); } catch { /* keep as is */ }
   if (/^dexconnect:\/\/message\//.test(url)) label = 'Open the message';
   else if (/^dexconnect:\/\/conversation\//.test(url)) label = 'Open the conversation';
+  else if (/^dexconnect:\/\/meet\//.test(url)) label = `Meeting ${label.replace(/^meet\//, '')}`;
+  else if (/^dexconnect:\/\/floor\//.test(url)) label = tr(`Walk to ${label.replace(/^floor\//, '')}`);
   return (
     <button className="tool-link" title={url} onClick={() => void window.dex.openLink?.(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })))}>
       <span className="tool-name">{TOOL_NAME[scheme] ?? scheme}</span>{label.length > 60 ? `${label.slice(0, 57)}…` : label}
@@ -63,13 +83,108 @@ function TagRef({ tag, kind }: { tag: string; kind: 'line' | 'drawing' }) {
 export const toolsInstalled: Record<string, boolean> = {};
 void window.dex?.installedTools?.().then((t) => Object.assign(toolsInstalled, t)).catch(() => {});
 
+// ------------------------------------------------------------------ #tags and Space references
+/** A Space reference in a message body: <#CONVERSATIONID>. */
+export const SPACE_REF_RE = /<#([0-9A-Z]{26})>/g;
+
+/** Open Spaces anyone can join (fetched when needed, kept for two minutes). */
+let browse: Promise<Conversation[]> | null = null;
+let browseAt = 0;
+let browsed: Conversation[] = [];
+export function openSpaces(): Promise<Conversation[]> {
+  if (!browse || Date.now() - browseAt > 120_000) {
+    browseAt = Date.now();
+    browse = window.dex.request('conv.browse').then((l) => { browsed = l; return l; }).catch(() => { browse = null; return browsed; });
+  }
+  return browse;
+}
+/** A Space's name, if this device knows it. */
+export function spaceName(id: string): string | null {
+  return chatState().conversations.get(id)?.name ?? browsed.find((c) => c.id === id)?.name ?? null;
+}
+
+/** #tag: opens Search for it. */
+function TagChip({ text, tag }: { text: string; tag: string }) {
+  return (
+    <button className="tag-chip" translate="no" title={`Find #${tag}`}
+      onClick={() => window.dispatchEvent(new CustomEvent('dex-search', { detail: { q: `#${tag.toLowerCase()}` } }))}>{text}</button>
+  );
+}
+
+/** <#Space>: opens the Space, or offers to join an open one you are not in. */
+function SpaceRef({ id }: { id: string }) {
+  const mine = useChat((s) => s.conversations.get(id));
+  const [open, setOpen] = useState<Conversation | null | undefined>(undefined);
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const joined = !!mine?.joined;
+  useEffect(() => {
+    if (joined) return;
+    let live = true;
+    void openSpaces().then((l) => { if (live) setOpen(l.find((c) => c.id === id) ?? null); });
+    return () => { live = false; };
+  }, [id, joined]);
+  const c = joined ? mine : open ?? mine;
+  if (!c) return <span className="space-ref none" title="A private Space you are not in"><Icon name="lock" size={11} />{open === undefined ? <span>…</span> : <span>a private Space</span>}</span>;
+  const join = async () => {
+    setBusy(true);
+    try {
+      const conv = await window.dex.request('conv.join', { convId: id });
+      addConversation(conv);
+      setAsk(false);
+      window.dispatchEvent(new CustomEvent('dex-open', { detail: id }));
+    } catch (e) { window.dispatchEvent(new CustomEvent('dex-toast', { detail: (e as Error).message })); setBusy(false); }
+  };
+  return (
+    <>
+      <button ref={btn} className={`space-ref${joined ? '' : ' outside'}`} title={joined ? `Open ${c.name}` : `${c.name}: an open Space you are not in`}
+        onClick={() => (joined ? window.dispatchEvent(new CustomEvent('dex-open', { detail: id })) : setAsk(!ask))}>
+        <Icon name="grid" size={11} /><span translate="no">{c.name ?? 'Space'}</span>
+      </button>
+      {ask && !joined && (
+        <Popover anchor={btn.current} onClose={() => setAsk(false)} className="menu space-join" align="start">
+          <div className="menu-label label">Open Space</div>
+          <div className="space-join-body">
+            <b translate="no">{c.name}</b>
+            {c.topic && <span className="faint" translate="no">{c.topic}</span>}
+            <span className="mono faint">{c.members.length === 1 ? '1 person' : `${c.members.length} people`}</span>
+          </div>
+          <button role="menuitem" disabled={busy} onClick={() => void join()}><Icon name="plus" size={16} />Join the Space</button>
+        </Popover>
+      )}
+    </>
+  );
+}
+
+/**
+ * A path on the office share, as this reader sees it: stored as UNC (\\nas01\Project\…) and shown
+ * with the reader's own drive letter when they have one, the UNC form in the tooltip. An older
+ * drive-letter path goes through the writer's drive map when the hub knows it; otherwise it stays
+ * as written, with a quiet note that the letter may mean something else here.
+ */
+function SharePath({ span, ctx }: { span: PathSpan; ctx: Ctx }) {
+  const v = usePathView(span.path, ctx.authorId, ctx.meId);
+  if (!v) return <>{span.raw}</>;
+  const text = span.quoted ? span.raw.replace(span.path, v.shown) : v.shown;
+  const title = v.unc && v.unc.toLowerCase() !== v.shown.replace(/\\$/, '').toLowerCase() ? v.unc
+    : v.hint ? tr(PATH_WORDS.maybe) : v.scope === 'local' ? tr(v.owner === 'me' ? PATH_WORDS.mine : PATH_WORDS.theirs) : undefined;
+  return (
+    <span className={`share-path${v.hint ? ' maybe' : ''}${v.scope === 'local' ? ' local' : ''}`} translate="no" title={title} data-unc={v.unc ?? undefined}>
+      {text}{v.hint ? <span className="sr-only"> {tr(PATH_WORDS.maybeShort)}</span> : null}
+    </span>
+  );
+}
+
 type Inline = { re: RegExp; render: (m: RegExpExecArray, key: string, ctx: Ctx) => ReactNode };
-interface Ctx { users: Map<string, PublicUser>; meId: string }
+interface Ctx { users: Map<string, PublicUser>; meId: string; /** who wrote the text, for drive-letter paths in older messages */ authorId?: string }
 
 const INLINE: Inline[] = [
   // \* \_ \` \~ \\ show the character itself
   { re: /\\([\\`*_~<>])/y, render: (m) => m[1] },
   { re: /`([^`\n]+)`/y, render: (m, k) => <code key={k} className="md-code">{m[1]}</code> },
+  { re: /<#([0-9A-Z]{26})>/y, render: (m, k) => <SpaceRef key={k} id={m[1]} /> },
+  { re: new RegExp(HASHTAG_RE.source, 'yu'), render: (m, k) => <TagChip key={k} text={m[0]} tag={m[1]} /> },
   { re: /<@([0-9A-Z]{26}|all)>/y, render: (m, k, ctx) => {
     if (m[1] === 'all') return <span key={k} className="mention all">@everyone</span>;
     const u = ctx.users.get(m[1]);
@@ -79,7 +194,7 @@ const INLINE: Inline[] = [
   { re: /\[([^\]\n]{1,200})\]\(((?:https?|dexconnect|projectopener|dexterity|sleuth|datum):\/\/[^\s)]{1,2000})\)/y, render: (m, k, ctx) => /^https?:/.test(m[2])
     ? <a key={k} href={m[2]} target="_blank" rel="noreferrer noopener" title={m[2]}>{inline(m[1], ctx, k)}</a>
     : <button key={k} className="md-link" title={m[2]} onClick={() => void window.dex.openLink?.(m[2]).catch(() => {})}>{inline(m[1], ctx, k)}</button> },
-  { re: /__([^_\n]+)__/y, render: (m, k, ctx) => <u key={k}>{inline(m[1], ctx, k)}</u> },
+  { re: /\+\+(?=\S)([^+\n]*[^+\s])\+\+/y, render: (m, k, ctx) => <u key={k}>{inline(m[1], ctx, k)}</u> },
   { re: /\*\*([^*\n]+)\*\*/y, render: (m, k, ctx) => <strong key={k}>{inline(m[1], ctx, k)}</strong> },
   { re: /~~([^~\n]+)~~/y, render: (m, k, ctx) => <s key={k}>{inline(m[1], ctx, k)}</s> },
   { re: /(?<![\w*])\*([^*\n]+)\*(?![\w*])/y, render: (m, k, ctx) => <em key={k}>{inline(m[1], ctx, k)}</em> },
@@ -94,7 +209,7 @@ const INLINE: Inline[] = [
 ];
 
 /** Starting characters worth trying an inline rule at (fast path for plain text). */
-const TRIGGER = /[`<*~_h0-9\\pdsDIGLPS:[]/;
+const TRIGGER = /[`<*~_+h0-9\\pdsDIGLPS:[#]/;
 
 function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   const out: ReactNode[] = [];
@@ -103,7 +218,17 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   let n = 0;
   while (i < text.length) {
     let matched = false;
-    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~' || text[i] === '[')) {
+    // a path on the office share (or a drive) comes before the \\ escape, so \\nas01 is not eaten
+    if (mayStartPath(text, i)) {
+      const span = pathAt(text, i);
+      if (span) {
+        if (buf) { out.push(buf); buf = ''; }
+        out.push(<SharePath key={`${keyBase}-${n++}`} span={span} ctx={ctx} />);
+        i = span.end;
+        continue;
+      }
+    }
+    if (TRIGGER.test(text[i]) && (i === 0 || !/[A-Za-z0-9]/.test(text[i - 1]) || text[i] === '`' || text[i] === '\\' || text[i] === '<' || text[i] === '*' || text[i] === '~' || text[i] === '+' || text[i] === '[')) {
       for (const rule of INLINE) {
         rule.re.lastIndex = i;
         const m = rule.re.exec(text);
@@ -122,8 +247,8 @@ function inline(text: string, ctx: Ctx, keyBase = 'i'): ReactNode[] {
   return out;
 }
 
-export function renderBody(body: string, users: Map<string, PublicUser>, meId: string): ReactNode {
-  const ctx: Ctx = { users, meId };
+export function renderBody(body: string, users: Map<string, PublicUser>, meId: string, authorId?: string): ReactNode {
+  const ctx: Ctx = { users, meId, authorId };
   const blocks: ReactNode[] = [];
   const parts = body.split(/```/);
   parts.forEach((part, pi) => {
@@ -221,18 +346,17 @@ export function renderBody(body: string, users: Map<string, PublicUser>, meId: s
 
 /** Plain-text preview for lists and notifications: mentions become names, markup is dropped. */
 export function plainPreview(body: string, users: Map<string, PublicUser>): string {
-  return body
+  if (STICKER_RE.test(body)) return 'Sticker';
+  const text = body
     .replace(/<@all>/g, '@everyone')
+    .replace(SPACE_REF_RE, (_, id: string) => `#${spaceName(id) ?? 'a Space'}`)
     .replace(/<@([0-9A-Z]{26})>/g, (_, id: string) => `@${users.get(id)?.displayName ?? 'someone'}`)
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
-    .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message')
-    // escaped characters stay, markup goes
-    .replace(/\\([\\`*_~<>])/g, (_, c: string) => `\u0000${c}`)
-    .replace(/(^|[^\u0000])[*_~`>]+/g, '$1')
-    .replace(/\u0000/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/dexconnect:\/\/message\/[\w-]+\/[\w-]+/g, '🔗 a message');
+  // share paths with this PC's drive letters, as in the message itself
+  // formatting marks go; a lone * in "4 * 5", P12_GA_rev and C++ stay (the same rules as search snippets)
+  return plainSnippet(myDrives().drives.length ? toLocalText(text) : text);
 }
 
 /** Is the message only emoji (shown larger)? */

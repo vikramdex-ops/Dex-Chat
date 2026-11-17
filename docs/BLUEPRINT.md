@@ -30,7 +30,7 @@ building, why, and in what order.
 | Sign-in | **Automatic from the Windows account.** First launch registers the device; an admin approves it once. No passwords. |
 | Privacy | **Direct messages are end-to-end encrypted** (the hub cannot read them). Channels and groups are encrypted in transit and auditable by admins. |
 | Calls | **In v1**: 1:1 and group voice/video, screen share, meetings, recording. |
-| AI | **Excluded entirely.** |
+| AI | **No cloud AI.** One small model runs on the PC to draft automation rules from plain words (nothing leaves the PC, and nothing runs until a person approves it). |
 | v1 modules | Everything: remote-work check-in/out, org directory & chart, calendar & meetings, polls/forms/notes, bots/slash commands/webhooks, whiteboard, guest users, compliance suite. |
 | Disk rule | Development artefacts never on `C:` (this project is built in the cloud and in CI; nothing is written to the developer's `C:`). The installed app uses normal Windows locations. |
 | Look & feel | **Windows 11 native**: Mica/acrylic surfaces, follows system light/dark, Dexterity teal as the accent, Fluent-style motion. A design language of our own: no layout, iconography, wording or interaction pattern borrowed from Cliq. |
@@ -40,7 +40,7 @@ building, why, and in what order.
 | Updates | In-app updater on every platform: checks on open, on a timer and on demand, then downloads, verifies, installs and relaunches inside the app. Offline offices update from the hub's mirror. |
 | Feel | Lighter and faster than Cliq: performance budgets enforced in CI (see section 8). |
 | Ecosystem | Dexterity's own tools are wired in **on both sides**: Connect gets cards, launchers and an open bot/webhook API, and each tool gets small hooks (`dexterity://` links, "share to Connect"). Hopper's alerts move from its Zoho Cliq bot to Connect. |
-| Identity | Custom app icon (`brand/icon/`): a "D" that is a speech bubble, with an amber spark. Used everywhere: app, tray, installers, landing page, Android. |
+| Identity | Custom app icon: a "D" that is also a speech bubble, with an amber spark at its heart and a fine orbit around it. Used everywhere: app, tray, installers, landing page, Android. |
 
 ## 3. Architecture
 
@@ -54,7 +54,7 @@ building, why, and in what order.
  │   │   ├─ scheduler (reminders, scheduled msgs, retention)│
  │   │   ├─ bot runtime (sandboxed JS) · webhooks           │
  │   │   └─ PWA host for phones                             │
- │   └─ LiveKit SFU (single binary, bundled) for group calls│
+ │   └─ mediasoup relay (bundled worker) for large Rooms    │
  └───────────▲──────────────────────────▲───────────────────┘
              │ WSS                      │ WebRTC media
  ┌───────────┴────────┐        ┌────────┴───────────┐
@@ -69,15 +69,15 @@ building, why, and in what order.
 | Component | Technology | Why |
 | --- | --- | --- |
 | Desktop shell | Electron (latest stable), TypeScript | Same Chromium on every PC, so WebRTC, screen capture (`desktopCapturer`) and notifications behave identically. Mica via `backgroundMaterial`. |
-| UI | React 19 + Vite, Zustand state, TanStack Virtual lists, CSS variables design system | Virtualised message lists and optimistic updates give the "zero-lag" feel. No heavy UI kit. |
-| Local store (every PC) | SQLite (`better-sqlite3`) + FTS5 | Instant cold start, offline history, local search of encrypted DMs, outbox for P2P fallback. |
+| UI | React 19 + Vite, small stores on `useSyncExternalStore`, CSS variables design system, a translating JSX runtime (Hindi, Tamil) | Optimistic updates, rendering only what is on screen, and code split by view keep it quick. No heavy UI kit. |
+| Local store (every PC) | The user profile folder: history this PC has seen, the outbox for the PC-to-PC fallback, and (being added) an encrypted index for searching end-to-end encrypted Direct messages | Quick start, history when the hub is down. |
 | Hub | Node 22 TypeScript service, `ws`, SQLite, packaged as a Windows service | Single installer on the hub PC; no admin skills needed. |
-| Group media | LiveKit server (Apache-2.0 Go binary), `livekit-client` | Runs offline on the hub; handles 100-person calls, simulcast, screen share. |
+| Group media | PC to PC (mesh) up to 8; above that the hub's mediasoup relay (ISC licence, bundled worker) with `mediasoup-client`; TURN for people outside | Runs offline on the hub; about 50 in a Room on the office network, webinars up to 500 watching. |
 | 1:1 media | Plain WebRTC P2P (no TURN needed on a LAN) | Lowest latency; works with the hub off. |
-| Crypto | libsodium (X25519 + XChaCha20-Poly1305, Ed25519 signatures); keys held with Windows DPAPI via Electron `safeStorage` | Device-bound identity; E2E DMs. |
+| Crypto | X25519, Ed25519 and HKDF (`@noble/curves`, `@noble/hashes`) with AES-256-GCM from WebCrypto; keys held with Windows DPAPI via Electron `safeStorage`, and in the Android Keystore on phones | Device-bound identity; E2E DMs and their files. |
 | Discovery | UDP broadcast beacon + mDNS (`_dexconnect._tcp`) | Finds the hub and peers with zero configuration. |
 | Installer | electron-builder NSIS (client) + NSIS (hub, registers the service and firewall rules) | One click; the installer creates its own firewall rules, so no manual PowerShell. |
-| CI | GitHub Actions: tests → Windows installers → release on tag | Built entirely in the cloud. |
+| Releases | `scripts/release/Build-Release.cmd` on an office PC: tests → Windows installer, hub package, Android APK → release page and update feed ([`RELEASING.md`](RELEASING.md)) | One double-click; the GitHub workflow remains for manual runs. |
 
 ### 3.2 Identity and sign-in
 1. On first launch the app reads the Windows account (`DOMAIN\user`), display name and PC name. It then generates
@@ -107,8 +107,51 @@ building, why, and in what order.
   X25519 key and HKDF, and signed with the sender device's Ed25519 key. The hub only ever sees the sealed
   envelope; a user's existing device re-wraps history for a new device. People can compare a safety code.
   *(As built; hub-side search excludes DMs.)*
+- DM files, photos, voice notes and recordings: encrypted on the sending device before upload, each with its own
+  random AES-256-GCM key and nonce prefix, in 128 KB chunks (so large files stream in both directions; the chunk
+  number and a last-chunk flag are in each nonce, so chunks cannot be reordered, dropped or cut off). The key, the
+  real name, type and size travel inside the sealed message body, covered by the sender's signature. The hub stores
+  ciphertext as "Encrypted file", never shows it inline, never reads it (no previews, no text extraction, no tools)
+  and refuses to attach it anywhere but an encrypted DM. Devices decrypt on download, so images, previews and
+  thumbnails are made on the device. The office's blocked file types are checked on the device before encryption.
+  Older, unencrypted DM files keep working. *(As built.)*
+- A DM that cannot be sealed (someone's app has no encryption key yet, or the sender's app is older) is never sent
+  silently: the hub marks it with the reason, everyone sees a small open lock on it, and the sender sees a notice
+  above the Dock before sending. Control room ▸ Policies ▸ *Require end-to-end encryption* stops such messages on the
+  device and on the hub, with an explanation, until the person updates. Conversations with an integration are exempt.
+- Device keys: on Windows and macOS sealed with Electron `safeStorage` (DPAPI, Keychain). A key made while sealing was
+  unavailable is sealed on the next start; a sealed key that cannot be unsealed *right now* is never replaced. On
+  Android the keys are wrapped by an AES-256 key held in the Android Keystore (`DexNative.secureGet/secureSet`);
+  older versions' plain copies move there on first start.
 - Channels and groups: encrypted at rest on the hub; readable by compliance admins (retention, eDiscovery, export).
 - Planned hardening after v1: a double-ratchet layer for forward secrecy on DMs.
+
+### 3.5 Phone notifications without Google push
+The Android app does not use Firebase Cloud Messaging: the office network has no Google account, and messages should
+not leave it. Notifications instead depend on the app staying connected, which Android and several makers (Xiaomi,
+Vivo, Oppo, Realme, OnePlus, Samsung, Huawei) restrict to save battery. *(As built.)*
+- **Foreground service** (`HubService`, type `remoteMessaging`) with a quiet, low-importance "Connected to the office"
+  notification while *Stay connected in the background* is on. Restarted after a reboot and after an app update
+  (`BootReceiver`), and by Android (`START_STICKY`) if it stops it.
+- **Its own wait for messages.** When the app's WebView is gone or disconnected, the service long-polls the hub's
+  `GET /notify/wait` (pinned to the hub's certificate, with a per-device token kept in the Keystore and revoked with
+  the device) and shows what arrives with the person's preferences. This works on the office network; outside it the
+  app's own connection through the gateway carries notifications while it runs.
+- **Nothing lost.** On every reconnect the app asks the hub (`notify.missed`) for what arrived since the last message
+  it or the service heard about, and shows it (encrypted DMs are opened on the phone first).
+- **Battery exemption** (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), asked only after a sheet explains why.
+- **Preferences ▸ Notifications check** shows each requirement (notification permission, background connection,
+  battery exemption, restricted background use, the maker's autostart switches) and opens the right settings page,
+  with step-by-step instructions for each maker (apps cannot read autostart switches, so people tick them off).
+
+**Google push as an option later.** If the office creates a Firebase project, FCM could wake the phone instead of the
+always-on service. It would need: a Firebase project and its `google-services.json` in the Android build (the Gradle
+file already applies the plugin when that file exists); the Firebase Messaging library and a service that receives
+messages; each phone registering its FCM token with the hub; the hub holding a Firebase service-account key and
+calling the FCM HTTP v1 API through the internet (so the hub needs outbound internet access to Google). Payloads
+would carry only a "something new" ping and a conversation id, never message text, so encrypted DMs stay private and
+the app fetches the content itself. It would not help phones on networks that block Google, and Chinese-market phones
+without Google services would still need the current approach.
 
 ## 4. Feature matrix with ratings
 
@@ -128,12 +171,12 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 | 9 | Scheduled messages (25 per chat), reminders (message or standalone, others, recurring) | Full | 100% | M | Hub runs schedules; direct mode runs them locally |
 | 10 | Mentions (@user, @channel, @all, #channel), Mentions & Replies view, hashtags + trends | Full | 100% | M | Amber mention highlights; unified Activity inbox |
 | 11 | Chat types: 1:1, groups (500), channel conversion, bots | Full | 100% | M | — |
-| 12 | Channels: org / team / private, roles (admin, moderator, member), permission matrix, announcement-only, archive, join/leave notices | Full | 100% | M | Per-department team channels generated from the org chart |
+| 12 | Channels: org / team / private, roles (admin, moderator, member), permission matrix, announcement-only, archive, join/leave notices | Full | 100% | M | Per-department team channels generated from the org chart; official notices get a register of their own, with acknowledgements ([`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md)) |
 | 13 | Chat organisation: pinned chats (100), folders (50), custom sections, filters, resizable sidebar | Full | 100% | S | Keyboard-reorderable sections |
 | 14 | Chat tabs & chat actions (pin files, forms, links, widgets to a chat) | Full | 100% | M | — |
 | 15 | Presence: available, away, busy, invisible, DND (timed / scheduled), on-call / in-meeting auto, custom status, OOO with delegate | Full | 100% | M | Windows Focus Assist sync without a native addon |
 | 16 | Notifications: global, per-chat, mute 1 h from the toast, sound sets, admin defaults | Full | 100% | M | Native Windows toasts with inline reply; taskbar badge (Cliq lacks it) |
-| 17 | Files: drag/paste, multi-preview, 1 GB, P2P transfer, media tab, pan/zoom viewer, image annotation, PDF/Office preview | Full | 95% | M | Office preview limited to PDF/images/text/video; Office docs open in the local app |
+| 17 | Files: drag/paste, multi-preview, 1 GB, P2P transfer, media tab, pan/zoom viewer, image annotation, PDF/Office preview | Full | 95% | M | PDFs in an in-app viewer (tiled for A0/A1 sheets, search, copy, rotate, password prompt); Office docs show a card and open in the local app |
 | 18 | Search: Ctrl+K, filters (person, chat, date, type), jump to date; DMs searched locally | Full | 100% | M | Results as you type in under 50 ms from the local FTS index |
 | 19 | OCR of text in images | Full (local engine) | 90% | M | Tesseract on the hub for channel images and locally for DMs |
 | 20 | 1:1 voice/video, screen share (with system audio), promote to group, ringtone | Full | 100% | L | P2P on the LAN gives near-zero latency |
@@ -153,11 +196,25 @@ Ratings: **Offline** = can it work with no internet · **Fidelity** = how close 
 | 34 | Admin: user approval, roles, defaults, policies (edit window, uploads, P2P files, mention limits), usage reports | Full | 100% | M | Admin console inside the app |
 | 35 | Compliance: retention (90-day minimum), audit trail, legal hold, eDiscovery, DLP alerts, export (JSON/PDF) | Full (channels) | 90% | L | DMs excluded by design (E2E) |
 | 36 | Multi-account, tray, start at sign-in, deep links, downloads manager, update check | Full | 100% | S | Updates pushed from the hub, so no internet is needed |
-| 37 | Mobile | Office Wi-Fi only | 70% | M | Installable PWA served by the hub: chat, files, notifications while open. Native apps later. |
+| 37 | Mobile | Office Wi-Fi only | 70% | M | Android app: chat, files, notifications through its own background connection (no Google push; see §3.5). |
 | — | **Not possible offline / out of scope**: Zia & all AI · Google Drive/WorkDrive attachments · Jira/GitHub/Zoho integrations (cloud) · PSTN phone calls · mobile push via Apple/Google · external cross-company channels | — | — | — | — |
 
 **Overall fidelity for the requested scope: about 97%** of Cliq's non-AI, non-cloud capability. The only shortfalls are
 Live Events (deferred), Office-document inline preview, and Deluge scripting (replaced by JavaScript).
+
+**Status against this plan (November 2026), from the code rather than the plan:**
+- **Not built:**
+  - Windows Focus Assist sync (row 15) and inline reply from a Windows notification (row 16).
+  - Office documents open in their own app; there is no inline Office preview.
+- **Being added:**
+  - an in-app PDF viewer (row 17);
+  - automatic hub backups;
+  - offboarding;
+  - a calendar feed for Outlook and phones;
+  - end-to-end encrypted attachments in Direct messages;
+  - searching encrypted Direct messages on the device.
+- **Built beyond this plan:** the full meeting and webinar suite, the IT help desk with consented remote control, lounges, automations, bot conversations and tools inside conversations.
+- **Untested outside this development environment:** everything above on real office Windows PCs, Android phones from several makers, and real home and mobile networks. A pilot is the next step.
 
 ## 5. Build plan
 
@@ -167,8 +224,8 @@ Live Events (deferred), Office-document inline preview, and Deluge scripting (re
 | --- | --- |
 | P0 Foundation | ✅ Done |
 | P1 Messaging core | ✅ Done, including end-to-end encrypted Direct messages and the hub-off PC-to-PC mode |
-| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, Files panel, full-text search with filters, OCR of images, voice notes, video messages and screen recordings, files on phones |
-| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks. Background effects and an SFU for larger calls are not built |
+| P2 Files & search | ✅ Files, a viewer with zoom, rotate and mark-up, a PDF viewer for drawing sheets, Files panel, full-text search with filters, on-device search of encrypted Direct messages, OCR of images, voice notes, video messages and screen recordings, files on phones |
+| P3 Calls | ✅ 1:1 and group Rooms (mesh up to 8, the hub's relay above that), add people, screen share, PiP, call quality, recording, mini-Room, Join from meetings, STUN/TURN across networks, background blur and backgrounds, noise suppression; the meeting suite (meetings, guests, recordings, breakouts, webinars) is in [`MEETINGS.md`](MEETINGS.md) |
 | P4 Productivity | ✅ Saved messages, reminders, scheduled messages, polls, forms, notes (with Slate), calendar and conference rooms, remote work, organisation and org chart |
 | P5 Platform & governance | ✅ Bot API, slash commands with signed webhooks, share links for office tools, whiteboards, guests, retention, legal hold, exports, Control room, audit |
 | P6 Mobile & polish | ✅ Android app with updater, files and a phone layout; pop-out windows, global shortcut, quiet hours, 12/24-hour time |
@@ -213,7 +270,7 @@ Each phase ends with installers built by CI, a test pass, and a short demo note.
 - **Android:** downloads the new APK and hands it to Android's installer (one tap to confirm).
   Every build is signed with the same key so Android accepts it as an update.
 
-### Performance budgets (enforced in CI)
+### Performance budgets (targets; measured with the performance script, not enforced automatically)
 | Metric | Budget |
 | --- | --- |
 | Cold start to usable window | < 1.5 s on an office PC |
@@ -245,6 +302,7 @@ replacement for Hopper's Cliq bot), and a launcher panel in Connect that shows w
 | An admin user | At hub install | The first person to sign in becomes admin; they approve everyone else. |
 | A department/designation CSV (optional) | P4 | Name, Windows username, department, designation, manager. Seeds the org chart. |
 | Code-signing certificate (optional) | Before rollout | Removes the Windows SmartScreen warning. Without one, users click "Run anyway" once. |
+| The office's actual seating layout drawing | Received (A3 print of 18-Jul-2026) and built in | Transcribed at real scale into `apps/hub/seed/floor-l01.json` (153 seats: 53 + 20 + 42 bench seats, 18 senior pod seats, 8 half-cabins, 9 client cabins, 2 MD's cabins, reception) and seeded on every hub as Rev A. The **Floor** sheet now draws it; seats are moved with move plans and revisions. See [`SEATING.md`](SEATING.md). The 40 names written on the drawing's seats (read on 15-Nov-2026) are committed, with the owner's approval, in `apps/hub/seed/floor-l01-names.json` and are on the plan from the first start; each person takes their named seat when they join (automatically when the match is certain, else an office manager confirms it under **Waiting to be matched**), so no import is needed. Still wanted from the office: the real name of "Room A" and where north is; later seat changes are real moves, made with move plans. The user guide's floor figure (`docs/guide/figures/fig-org-floor.png`) needs redrawing. |
 | A Cloudflare account (free plan) | For use outside the office | Hosts the gateway. Add an API token and account ID as repository secrets; the workflow deploys it. See [`REMOTE-ACCESS.md`](REMOTE-ACCESS.md). |
 
 Everything else (builds, installers, firewall rules, certificates, the hub setup) is automated.

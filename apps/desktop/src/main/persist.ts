@@ -10,6 +10,8 @@ import { createIdentity, isValidIdentity } from '@dex/core';
 import type { DeviceIdentity } from '@dex/core';
 import type { HubTarget } from '@dex/core/client';
 import { SETTINGS_EXTRA_DEFAULTS, type Settings } from '../shared/bridge.ts';
+import { loadSealedSecret } from './sealed-store.ts';
+import type { KeyFiles, SealBox } from './sealed-store.ts';
 
 export interface Config {
   hub: HubTarget | null;
@@ -21,6 +23,8 @@ export interface Config {
   pendingNotes?: { version: string; notes: string } | null;
   /** The office policy allows PC-to-PC messages while the hub is off (remembered for then). */
   peerFallback?: boolean;
+  /** Other offices (hubs) this device belongs to, to switch to. */
+  otherHubs?: HubTarget[];
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -51,46 +55,28 @@ export function saveConfig(config: Config): void {
   writeAtomic(file('config.json'), JSON.stringify(config, null, 2));
 }
 
+const box: SealBox = {
+  // Linux without a keyring falls back to "basic_text", which only obfuscates; a key sealed that
+  // way could not be unsealed once a keyring appears, so it is treated as no sealing at all
+  available: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend?.() === 'basic_text'),
+  encrypt: (text) => safeStorage.encryptString(text),
+  decrypt: (data) => safeStorage.decryptString(data),
+};
+const files: KeyFiles = {
+  exists: (p) => fs.existsSync(p),
+  read: (p) => fs.readFileSync(p),
+  write: (p, data) => writeAtomic(p, data),
+  remove: (p) => fs.rmSync(p, { force: true }),
+};
+
 /** This device's end-to-end encryption key pair, sealed like the identity. */
 export function loadEncKeys(): EncKeyPair {
-  const sealedPath = file('device.enc');
-  const plainPath = file('device.enc.json');
   const valid = (v: unknown): v is EncKeyPair => !!v && typeof (v as EncKeyPair).secret === 'string' && typeof (v as EncKeyPair).public === 'string';
-  try {
-    if (fs.existsSync(sealedPath) && safeStorage.isEncryptionAvailable()) {
-      const k = JSON.parse(safeStorage.decryptString(fs.readFileSync(sealedPath)));
-      if (valid(k)) return k;
-    } else if (fs.existsSync(plainPath)) {
-      const k = JSON.parse(fs.readFileSync(plainPath, 'utf8'));
-      if (valid(k)) return k;
-    }
-  } catch { /* unreadable: make a new key (older messages stay readable on the user's other devices) */ }
-  const k = createEncKeys();
-  if (safeStorage.isEncryptionAvailable()) writeAtomic(sealedPath, safeStorage.encryptString(JSON.stringify(k)));
-  else writeAtomic(plainPath, JSON.stringify(k));
-  return k;
+  // unreadable on this account: a new key (older messages stay readable on the user's other devices)
+  return loadSealedSecret({ sealedPath: file('device.enc'), plainPath: file('device.enc.json'), valid, create: createEncKeys, box, files });
 }
 
 export function loadIdentity(): DeviceIdentity {
-  const sealedPath = file('device.key');
-  const plainPath = file('device.key.json');
-  try {
-    if (fs.existsSync(sealedPath) && safeStorage.isEncryptionAvailable()) {
-      const id = JSON.parse(safeStorage.decryptString(fs.readFileSync(sealedPath)));
-      if (isValidIdentity(id)) return id;
-    } else if (fs.existsSync(plainPath)) {
-      const id = JSON.parse(fs.readFileSync(plainPath, 'utf8'));
-      if (isValidIdentity(id)) return id;
-    }
-  } catch {
-    // unreadable (e.g. copied from another account): fall through and create a new identity
-  }
-  const id = createIdentity();
-  if (safeStorage.isEncryptionAvailable()) {
-    writeAtomic(sealedPath, safeStorage.encryptString(JSON.stringify(id)));
-  } else {
-    // Development on Linux without a keyring only; Windows always has DPAPI.
-    writeAtomic(plainPath, JSON.stringify(id));
-  }
-  return id;
+  // Windows always has DPAPI; an unsealed file exists only on Linux without a keyring (development)
+  return loadSealedSecret({ sealedPath: file('device.key'), plainPath: file('device.key.json'), valid: (v): v is DeviceIdentity => isValidIdentity(v), create: createIdentity, box, files });
 }

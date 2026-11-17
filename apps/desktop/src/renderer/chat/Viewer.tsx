@@ -6,12 +6,21 @@ import type { FileInfo } from '@dex/core';
 import { Icon, useToast } from '../ui.tsx';
 import { FileActions, formatSize, useFileSrc } from './files.tsx';
 import { sendMessage } from './store.ts';
+import { LookTogetherButton } from '../pointers/surfaces.tsx';
+import { OfficeFileViewer, PdfFileViewer, isOffice, isPdf } from '../pdf/cards.tsx';
 
 type Tool = 'pen' | 'box' | 'arrow';
 type Stroke = { tool: Tool; color: string; points: Array<[number, number]> };
 const COLORS = ['#e5383b', '#f59f00', '#2b8a3e', '#1c7680', '#111111', '#ffffff'];
 
-export function Viewer({ file, all, convId, onClose }: { file: FileInfo; all: FileInfo[]; convId?: string; onClose: () => void }) {
+export function Viewer(props: { file: FileInfo; all: FileInfo[]; convId?: string; onClose: () => void }) {
+  // PDFs have a viewer of their own; Office files are opened in their own program (pdf/)
+  if (isPdf(props.file)) return <PdfFileViewer file={props.file} onClose={props.onClose} />;
+  if (isOffice(props.file)) return <OfficeFileViewer file={props.file} onClose={props.onClose} />;
+  return <ImageViewer {...props} />;
+}
+
+function ImageViewer({ file, all, convId, onClose }: { file: FileInfo; all: FileInfo[]; convId?: string; onClose: () => void }) {
   const [i, setI] = useState(Math.max(0, all.findIndex((f) => f.id === file.id)));
   const f = all[i] ?? file;
   const src = useFileSrc(f);
@@ -40,7 +49,10 @@ export function Viewer({ file, all, convId, onClose }: { file: FileInfo; all: Fi
   return createPortal(
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={f.name} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <header>
-        <span className="sb-name">{f.name}</span><span className="faint">{formatSize(f.size)}{all.length > 1 ? ` · ${i + 1} of ${all.length}` : ''}</span>
+        <span className="lb-title">
+          <span className="sb-name" translate="no">{f.name}</span>
+          <span className="lb-meta mono">{formatSize(f.size)}{all.length > 1 ? ` · sheet ${i + 1} of ${all.length}` : ''}</span>
+        </span>
         <span style={{ flex: 1 }} />
         {!markup && (
           <span className="lb-tools" role="toolbar" aria-label="View">
@@ -49,6 +61,7 @@ export function Viewer({ file, all, convId, onClose }: { file: FileInfo; all: Fi
             <button className="icon-btn" title="Zoom in (+)" onClick={() => setZoom((z) => Math.min(8, z * 1.25))}><Icon name="plus" size={17} /></button>
             <button className="icon-btn" title="Rotate (R)" onClick={() => setRot((r) => (r + 90) % 360)}><Icon name="rotate" size={17} /></button>
             {convId && window.dex.uploadFile && <button className="btn sm" onClick={() => setMarkup(true)}><Icon name="drawing" size={15} />Mark up</button>}
+            {convId && <LookTogetherButton file={f} convId={convId} />}
           </span>
         )}
         <FileActions f={f} />
@@ -126,7 +139,7 @@ function Markup({ src, name, convId, onDone, onCancel }: { src: string; name: st
       const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
       if (!blob) throw new Error('Could not make the picture.');
       const base = name.replace(/\.[^.]+$/, '');
-      const info = await window.dex.uploadFile!(`markup-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `${base} (marked up).png`, mime: 'image/png' });
+      const info = await window.dex.uploadFile!(`markup-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `${base} (marked up).png`, mime: 'image/png', convId });
       await sendMessage(convId, note.trim(), null, [info]);
       toast('Sent');
       onDone();

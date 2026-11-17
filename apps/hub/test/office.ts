@@ -9,13 +9,15 @@ import type { Conversation, Message } from '@dex/core';
 import { HubClient } from '@dex/core/client';
 import type { ClientState } from '@dex/core/client';
 import { Hub } from '../src/hub.ts';
+import type { HubOptions } from '../src/hub.ts';
 
 export const cleanups: Array<() => unknown> = [];
 after(async () => { for (const c of cleanups.splice(0).reverse()) await c(); });
 
-export async function office() {
+export async function office(extra: Partial<HubOptions> = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dexmsg-'));
-  const hub = new Hub({ dataDir: dir, port: 0, host: '127.0.0.1', discoveryPort: false, updates: false });
+  // the built-in holiday circular stays out: these tests walk real dates and set their own holidays (holidays.test.ts has it)
+  const hub = new Hub({ dataDir: dir, port: 0, host: '127.0.0.1', discoveryPort: false, updates: false, holidaySeed: false, ...extra });
   await hub.start();
   cleanups.push(async () => { await hub.stop(); fs.rmSync(dir, { recursive: true, force: true }); });
   const join = async (username: string) => {
@@ -35,7 +37,7 @@ export async function office() {
   };
   const priya = await approve('priya');
   const ravi = await approve('ravi');
-  return { hub, owner, priya, ravi, join };
+  return { hub, owner, priya, ravi, join, dir };
 }
 
 export function until(c: HubClient, pred: (s: ClientState) => boolean, ms = 5000): Promise<void> {

@@ -1,23 +1,32 @@
 import { useRef, useState } from 'react';
 import { EmojiPicker } from '../chat/EmojiPicker.tsx';
-import { QUICK_DEFAULT, quickReactions, setQuickReactions } from '../chat/quick.ts';
+import { MAX_STAMPS, STAMPS_DEFAULT, setStampsOnHand, stampsOnHand } from '../chat/quick.ts';
 import type { Session } from '@dex/core';
 import type { AppState, MessageSound, Settings, Theme } from '../../shared/bridge.ts';
 import { playSound } from '../sounds.ts';
 import { RemoteSettings } from './Remote.tsx';
+import { YourDevices } from './Pairing.tsx';
+import { CalendarFeedSettings } from './CalendarFeed.tsx';
+import { NetworkDrives } from './NetworkDrives.tsx';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Icon, Popover, Segmented, Toggle, deviceCode, useToast } from '../ui.tsx';
+import { Avatar, Icon, Popover, Segmented, Toggle, confirmAction, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
+import { NotificationsCheck } from './NotifyCheck.tsx';
+import { setMsgLayout, useMsgLayout } from '../chat/prefs.ts';
+import type { MsgLayout } from '../chat/prefs.ts';
+import { LANGUAGES, language, setLanguage } from '../i18n/index.ts';
 import type { UpdateChannel } from '../../shared/bridge.ts';
 
 export function SettingsView({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
   const live = state.phase === 'ready';
+  const msgLayout = useMsgLayout();
   const [name, setName] = useState(session.me.displayName);
   const [title, setTitle] = useState(session.me.title ?? '');
   const [status, setStatus] = useState(session.me.statusText ?? '');
   const [statusEmoji, setStatusEmoji] = useState(session.me.statusEmoji ?? '');
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [check, setCheck] = useState(false);
   const emojiBtn = useRef<HTMLButtonElement>(null);
   const dirty = name.trim() !== session.me.displayName || title.trim() !== (session.me.title ?? '') || status.trim() !== (session.me.statusText ?? '') || statusEmoji !== (session.me.statusEmoji ?? '');
 
@@ -33,7 +42,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
     || contact.location !== (session.me.profile.location ?? '') || contact.birthday !== (session.me.profile.birthday ?? '');
   const saveContact = async () => {
     try {
-      await window.dex.request('me.profile', { phone: contact.phone || null, extension: contact.extension || null, location: contact.location || null, birthday: contact.birthday || null });
+      await window.dex.request('me.profile', { phone: contact.phone || null, extension: contact.extension || null, ...(session.me.profile.seatId ? {} : { location: contact.location || null }), birthday: contact.birthday || null });
       toast('Contact details saved');
     } catch (e) { toast((e as Error).message, true); }
   };
@@ -69,7 +78,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
               )}
             </div>
             <div className="full row-actions" style={{ justifyContent: 'flex-end' }}>
-              <button className="btn primary" disabled={!dirty || !live || !name.trim()}>Save profile</button>
+              <button className="btn primary" disabled={!dirty || !live || !name.trim()} title={!live ? 'Waiting for the office hub…' : !name.trim() ? 'Your name cannot be empty' : !dirty ? 'Nothing has changed yet' : undefined}>Save profile</button>
             </div>
           </form>
         </section>
@@ -82,12 +91,14 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="field"><label htmlFor="s-phone">Phone</label>
               <input id="s-phone" className="input" value={contact.phone} maxLength={40} onChange={(e) => setContact({ ...contact, phone: e.target.value })} disabled={!live} /></div>
             <div className="field"><label htmlFor="s-seat">Seat or location</label>
-              <input id="s-seat" className="input" value={contact.location} maxLength={80} placeholder="Bay 2, Desk 4" onChange={(e) => setContact({ ...contact, location: e.target.value })} disabled={!live} /></div>
+              {session.me.profile.seatId
+                ? <><input id="s-seat" className="input mono" value={session.me.profile.location ?? session.me.profile.seatId} readOnly aria-describedby="s-seat-note" /><span id="s-seat-note" className="faint field-note">From the floor plan. The office manager moves seats.</span></>
+                : <input id="s-seat" className="input" value={contact.location} maxLength={80} placeholder="Bay 2, Desk 4" onChange={(e) => setContact({ ...contact, location: e.target.value })} disabled={!live} />}</div>
             <div className="field"><label htmlFor="s-bday">Birthday (MM-DD)</label>
               <input id="s-bday" className="input" value={contact.birthday} maxLength={5} placeholder="06-30" onChange={(e) => setContact({ ...contact, birthday: e.target.value })} disabled={!live} /></div>
             <div className="full row-actions" style={{ justifyContent: 'space-between' }}>
               <span className="faint" style={{ fontSize: 12.5 }}>Your department, designation and manager are set by an administrator.</span>
-              <button className="btn primary" disabled={!contactDirty || !live}>Save contact details</button>
+              <button className="btn primary" disabled={!contactDirty || !live} title={!live ? 'Waiting for the office hub…' : !contactDirty ? 'Nothing has changed yet' : undefined}>Save contact details</button>
             </div>
           </form>
         </section>
@@ -112,6 +123,23 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             ]} />
           </div>
           <div className="setting">
+            <Icon name="chat" className="lead" />
+            <div className="txt"><div>Messages drawn as</div><div className="faint">Spine: messages hang off a timeline rule. Cards: a compact card each, yours on the right. This PC only.</div></div>
+            <Segmented<MsgLayout> label="Messages drawn as" value={msgLayout} onChange={setMsgLayout} options={[
+              { value: 'spine', label: 'Spine' }, { value: 'cards', label: 'Cards' },
+            ]} />
+          </div>
+          <div className="setting">
+            <Icon name="globe" className="lead" />
+            <div className="txt"><div>Language</div><div className="faint">The app's own words. What people write and their names are never translated.</div></div>
+            <select className="input lang-pick" aria-label="Language" value={language()} onChange={(e) => {
+              // every screen is drawn again in the new language (the desktop window does not navigate, so no page reload)
+              void setLanguage(e.target.value).then(() => window.dispatchEvent(new Event('dex-redraw')));
+            }}>
+              {LANGUAGES.map((l) => <option key={l.code} value={l.code} translate="no">{l.native}{l.native !== l.name ? ` · ${l.name}` : ''}</option>)}
+            </select>
+          </div>
+          <div className="setting">
             <Icon name="clock" className="lead" />
             <div className="txt"><div>Time format</div><div className="faint">How times show in conversations, the Calendar and the Desk.</div></div>
             <Segmented<'system' | '12' | '24'> label="Time format" value={state.settings.timeFormat ?? 'system'} onChange={(timeFormat) => set({ timeFormat })} options={[
@@ -133,26 +161,26 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
         <section>
           <h3>Privacy</h3>
           <div className="setting">
-            <Icon name="check" className="lead" />
-            <div className="txt"><div>Read receipts</div><div className="faint">Colleagues see when you have read their messages. Turn off and you will not see theirs either.</div></div>
-            <Toggle label="Read receipts" checked={session.me.readReceipts !== false} onChange={(v) => void window.dex.request('me.update', { readReceipts: v }).catch((e: Error) => toast(e.message, true))} />
+            <Icon name="eye" className="lead" />
+            <div className="txt"><div>Show when I've seen messages</div><div className="faint">Colleagues' notches fill in as you see their messages. Turn off and you will not see when they have seen yours either.</div></div>
+            <Toggle label="Show when I've seen messages" checked={session.me.readReceipts !== false} onChange={(v) => void window.dex.request('me.update', { readReceipts: v }).catch((e: Error) => toast(e.message, true))} />
           </div>
         </section>
 
         <section>
-          <h3>Quick reactions</h3>
-          <QuickReactions />
+          <h3>Stamps on hand</h3>
+          <StampsOnHand />
         </section>
 
         <section>
           <h3>Notifications</h3>
-          <div className="setting">
+          <div className="setting wide-choice">
             <Icon name="bell" className="lead" />
-            <div className="txt"><div>Notify me about</div><div className="faint">Reminders and meetings always notify.</div></div>
-            <Segmented<Settings['notifyFor']> label="Notify me about" value={state.settings.notifyFor} onChange={(notifyFor) => set({ notifyFor })} options={[
-              { value: 'all', label: 'Everything' },
-              { value: 'mentions', label: 'Direct and mentions' },
-              { value: 'none', label: 'Nothing' },
+            <div className="txt"><div>Ping me for</div><div className="faint">Reminders and meetings always ping you.</div></div>
+            <Segmented<Settings['notifyFor']> label="Ping me for" value={state.settings.notifyFor} onChange={(notifyFor) => set({ notifyFor })} options={[
+              { value: 'all', label: 'Every message' },
+              { value: 'mentions', label: "Only what's addressed to me" },
+              { value: 'none', label: 'Only reminders and meetings' },
             ]} />
           </div>
           <div className="setting">
@@ -191,7 +219,13 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="txt"><div>Stay connected in the background</div><div className="faint">So messages, reminders and calls reach you when the app is closed. Android shows a quiet notification while this is on.</div></div>
             <Toggle label="Stay connected in the background" checked={state.settings.closeToTray} onChange={(v) => set({ closeToTray: v })} />
           </div>
+          {window.dex.phone && <div className="setting">
+            <Icon name="bell" className="lead" />
+            <div className="txt"><div>Notifications check</div><div className="faint">Battery, autostart and notification settings that phone makers use to stop background apps, and how to fix each.</div></div>
+            <button className="btn" onClick={() => setCheck(true)}>Check</button>
+          </div>}
         </section>}
+        {check && <NotificationsCheck state={state} onClose={() => setCheck(false)} />}
 
         {state.platform !== 'android' && <section>
           <h3>Start-up and windows</h3>
@@ -207,6 +241,9 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           </div>
         </section>}
 
+        <YourDevices state={state} />
+        <NetworkDrives state={state} />
+        <CalendarFeedSettings state={state} session={session} />
         <RemoteSettings state={state} />
 
         <section>
@@ -229,7 +266,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           <div className="setting">
             <Icon name="laptop" className="lead" />
             <div className="txt"><div>{state.platform === 'android' ? 'This phone' : 'This PC'}</div><div className="faint">{state.platform === 'android' ? '' : `${state.account.domain}\\${state.account.username} · `}{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
-            <button className="btn" onClick={() => { if (confirm('Disconnect from this hub? You can join it or another hub again from the welcome screen.')) void window.dex.forgetHub(); }}>Disconnect</button>
+            <button className="btn" onClick={() => void confirmAction({ title: 'Disconnect from this hub? You can join it or another hub again from the welcome screen.', confirm: 'Disconnect', danger: true }).then((ok) => { if (ok) void window.dex.forgetHub(); })}>Disconnect</button>
           </div>
         </section>
 
@@ -263,22 +300,33 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
   );
 }
 
-/** The three reactions on the message hover bar. */
-function QuickReactions() {
-  const [list, setList] = useState(quickReactions());
+/** The stamps kept on hand in the Stamp flyout of the spine tool column: up to four. */
+function StampsOnHand() {
+  const [list, setList] = useState(stampsOnHand());
   const [editing, setEditing] = useState<number | null>(null);
-  const refs = [useRef<HTMLButtonElement>(null), useRef<HTMLButtonElement>(null), useRef<HTMLButtonElement>(null)];
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const save = (next: string[]) => { setStampsOnHand(next); setList(stampsOnHand()); setEditing(null); };
   return (
     <div className="setting">
-      <Icon name="smile" className="lead" />
-      <div className="txt"><div>On the message bar</div><div className="faint">One click to react. Choose your own three.</div></div>
-      <div className="quick-pick">
-        {list.map((e, i) => <button key={i} ref={refs[i]} className="btn" aria-label={`Quick reaction ${i + 1}: ${e}`} onClick={() => setEditing(i)}>{e}</button>)}
-        <button className="link" onClick={() => { setQuickReactions(QUICK_DEFAULT); setList(QUICK_DEFAULT); }}>Reset</button>
+      <Icon name="stamp" className="lead" />
+      <div className="txt"><div>In the Stamp flyout</div><div className="faint">One click to stamp a message. Keep up to four.</div></div>
+      <div className="stamp-pick" role="group" aria-label="Stamps on hand">
+        {Array.from({ length: MAX_STAMPS }, (_, i) => (
+          <button key={i} ref={(el) => { refs.current[i] = el; }} className={`stamp${list[i] ? '' : ' empty'}`} aria-label={list[i] ? `Stamp ${i + 1}: ${list[i]}` : `Stamp ${i + 1}: empty`} onClick={() => setEditing(i)}>
+            {list[i] ?? <Icon name="plus" size={14} />}
+          </button>
+        ))}
+        <button className="link" onClick={() => save(STAMPS_DEFAULT)}>Reset</button>
       </div>
       {editing !== null && (
-        <Popover anchor={refs[editing].current} onClose={() => setEditing(null)} className="emoji-pop-wrap">
-          <EmojiPicker onClose={() => setEditing(null)} onPick={(e) => { if (e.startsWith(':')) return; const next = list.map((x, j) => (j === editing ? e : x)); setQuickReactions(next); setList(next); setEditing(null); }} />
+        <Popover anchor={refs.current[editing] ?? null} onClose={() => setEditing(null)} className="emoji-pop-wrap">
+          {list[editing] && list.length > 1 && <div className="stamp-clear"><button className="link" onClick={() => save(list.filter((_, j) => j !== editing))}>Leave this slot empty</button></div>}
+          <EmojiPicker onClose={() => setEditing(null)} onPick={(e) => {
+            if (e.startsWith(':')) return;
+            const next = list.slice();
+            if (editing < next.length) next[editing] = e; else next.push(e);
+            save(next);
+          }} />
         </Popover>
       )}
     </div>

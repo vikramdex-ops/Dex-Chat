@@ -1,5 +1,6 @@
 @echo off
-rem Dexterity Connect Hub installer. Installs the hub from THIS folder as a Windows service.
+rem Dexterity Connect Hub: installs (or repairs, or upgrades) the hub from THIS folder as a Windows service.
+rem The easier way is DexterityConnectHub-Setup.exe; this is for the zip. Both run Install-Hub.ps1.
 rem Put this folder where the hub should live (for example D:\Dexterity Connect Hub) before running.
 setlocal
 cd /d "%~dp0"
@@ -12,27 +13,18 @@ if errorlevel 1 (
 echo.
 echo Installing Dexterity Connect Hub from %~dp0
 echo.
-DexterityConnectHubService.exe status | find /i "NonExistent" >nul
-if not errorlevel 1 (
-  DexterityConnectHubService.exe install || goto :fail
-)
-netsh advfirewall firewall delete rule name="Dexterity Connect Hub (connections)" >nul 2>&1
-netsh advfirewall firewall delete rule name="Dexterity Connect Hub (discovery)" >nul 2>&1
-netsh advfirewall firewall add rule name="Dexterity Connect Hub (connections)" dir=in action=allow protocol=TCP localport=47900 profile=any program="%~dp0DexterityConnectHub.exe" >nul || goto :fail
-netsh advfirewall firewall add rule name="Dexterity Connect Hub (discovery)" dir=in action=allow protocol=UDP localport=47901 profile=any program="%~dp0DexterityConnectHub.exe" >nul || goto :fail
-DexterityConnectHubService.exe restart || DexterityConnectHubService.exe start || goto :fail
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if exist "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe" set "PS=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-Hub.ps1" -InstallDir "%~dp0." %*
+if errorlevel 1 goto :fail
 echo.
-echo  Dexterity Connect Hub is installed and running.
-echo  It starts automatically with Windows, even before anyone signs in.
-echo  Data folder: %~dp0hub-data    Logs: %~dp0logs
-echo.
-echo  Next: install Dexterity Connect on your own PC and open it. The first person
-echo  to join becomes the administrator and approves everyone else.
+echo  Data folder and logs: see above. Setup log: %ProgramData%\Dexterity Connect Hub\setup.log
 echo.
 pause
 exit /b 0
 :fail
 echo.
-echo  Installation did not finish. See the messages above, or the logs folder.
+echo  Installation did not finish. See the messages above, or
+echo  %ProgramData%\Dexterity Connect Hub\setup.log and the logs folder here.
 pause
 exit /b 1

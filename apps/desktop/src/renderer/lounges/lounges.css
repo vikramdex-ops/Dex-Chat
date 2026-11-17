@@ -1,0 +1,116 @@
+/* Lounges: rows on the Switchboard, a chip in the Space header, the floating lounge bar.
+   Amber marks something live (people in a lounge, someone speaking); structure stays teal. */
+
+.lg-section { padding-bottom: 2px; }
+.lg-row {
+  display: flex; align-items: flex-start; gap: 8px; margin: 1px 6px; padding: 6px 8px 6px 6px; border-radius: var(--radius-m);
+  border: 1px solid transparent; min-height: 44px;
+}
+.lg-row:hover { background: var(--subtle); }
+.lg-row.live { border-color: var(--stroke); background: linear-gradient(90deg, var(--amber-soft), transparent 46%); }
+.lg-row.here { border-color: var(--amber); }
+.lg-ico { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 30%; color: var(--accent-ink); background: var(--accent-soft); }
+.lg-row.live .lg-ico { color: var(--amber-ink); background: var(--amber-soft); }
+.lg-main { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.lg-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-sub { font-size: 9.5px; letter-spacing: .1em; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-pip { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--amber); }
+.lg-pip.speaking { animation: lg-speak 900ms ease-in-out infinite; }
+@keyframes lg-speak { 0%, 100% { box-shadow: 0 0 0 0 var(--amber-soft); } 50% { box-shadow: 0 0 0 4px var(--amber-soft); } }
+.lg-people { display: inline-flex; align-items: center; flex: none; gap: 3px; padding-left: 4px; }
+.lg-main .lg-people { padding: 5px 0 1px; }
+.lg-people .lg-tile { border-radius: 32%; }
+.lg-tile { display: inline-flex; border-radius: 32%; transition: box-shadow var(--fast); }
+.lg-tile .avatar.sm { --size: 22px; font-size: 9px; }
+.lg-tile.speaking { box-shadow: 0 0 0 1.5px var(--layer-solid), 0 0 0 3px var(--amber); position: relative; z-index: 1; }
+.lg-tile.muted { opacity: .62; }
+.lg-more { font-size: 10px; color: var(--text-3); padding-left: 4px; }
+.lg-row .lg-ico, .lg-row .lg-join { margin-top: 2px; }
+.lg-join {
+  flex: none; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent-ink);
+  font: 600 12px var(--font-body); cursor: pointer;
+}
+.lg-join:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); }
+.lg-join.here { border-color: var(--amber); color: var(--amber-ink); }
+.lg-join.here:hover { background: var(--amber); color: #2b1a00; }
+.lg-fold { position: relative; display: grid; place-items: center; width: 40px; height: 36px; margin: 3px auto; border: 0; border-radius: 30%; background: var(--accent-soft); color: var(--accent-ink); cursor: pointer; }
+.lg-fold.live { background: var(--amber-soft); color: var(--amber-ink); }
+.lg-fold.here { box-shadow: 0 0 0 2px var(--amber); }
+.lg-fold .lg-pip { position: absolute; right: 4px; top: 4px; }
+
+/* the Space header */
+.lg-strip { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.lg-chip {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 3px 0 10px; border-radius: var(--radius-s); cursor: pointer;
+  border: 1px solid var(--amber); background: var(--amber-soft); color: var(--text); font: 600 12px var(--font-body);
+}
+.lg-chip-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-chip-go { padding: 3px 8px; border-radius: 2px; background: var(--amber); color: #2b1a00; }
+.lg-chip.here .lg-chip-go { background: transparent; color: var(--amber-ink); border: 1px solid var(--amber); }
+.lg-menu-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: var(--radius-m); cursor: pointer;
+  border: 1px solid var(--stroke-strong); background: transparent; color: var(--text-2); font: 600 12px var(--font-body);
+}
+.lg-menu-btn:hover { background: var(--subtle); color: var(--text); }
+.lg-menu-btn .mono { font-size: 10.5px; color: var(--text-3); }
+.lg-pop { min-width: 340px; max-width: 420px; }
+.lg-pop .label { display: inline-flex; align-items: center; gap: 6px; }
+.lg-pop-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--stroke); }
+.lg-pop-row:first-of-type { border-top: 0; }
+.lg-empty { margin: 4px 12px 8px; font-size: 13px; color: var(--text-2); max-width: 320px; }
+.lg-form { display: grid; gap: 12px; width: 100%; }
+
+/* the lounge bar: a title block in the corner of the sheet, its cells ruled with hairlines; amber marks
+   that it is live (the rule down its edge pulses) and how to leave, never a red hang-up button */
+.lg-bar {
+  position: fixed; right: 26px; bottom: 104px; z-index: 38; display: flex; align-items: stretch; gap: 0;
+  padding: 0; max-width: calc(100vw - 24px); min-height: 50px;
+  background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong);
+  border-radius: var(--radius-s); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); animation: rise var(--med) var(--ease);
+}
+.lg-bar-pip { width: 3px; flex: none; align-self: stretch; background: var(--amber); animation: pulse 1.6s ease-in-out infinite; }
+.lg-bar-title { display: grid; align-content: center; gap: 2px; min-width: 0; padding: 6px 14px 6px 11px; }
+.lg-bar-title .label { font-size: 9.5px; color: var(--amber-ink); }
+.lg-bar-title strong { font: 600 14px var(--font-display); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-bar-time { display: grid; place-items: center; font-size: 12px; color: var(--text-2); padding: 0 12px; border-left: 1px solid var(--stroke-strong); border-right: 1px solid var(--stroke-strong); }
+.lg-bar > .lg-people { padding: 0 12px; }
+.lg-bar .lg-tile .avatar.sm { --size: 26px; font-size: 10px; }
+.lg-bar-tools { display: flex; align-items: center; gap: 0; padding: 0 8px; border-left: 1px solid var(--stroke-strong); }
+.lg-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: 0; cursor: pointer;
+  border: 1px solid var(--stroke-strong); background: var(--layer-solid); color: var(--text); font: 600 12px var(--font-body);
+}
+.lg-bar-tools .lg-btn + .lg-btn { margin-left: -1px; }
+.lg-bar-tools .lg-btn:first-child { border-radius: 3px 0 0 3px; }
+.lg-btn:hover { background: var(--subtle); }
+.lg-btn:focus-visible { position: relative; z-index: 1; }
+.lg-btn.off { color: var(--text-2); background: repeating-linear-gradient(135deg, var(--subtle-2) 0 1px, transparent 1px 6px), var(--layer-solid); }
+.lg-btn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); position: relative; z-index: 1; }
+.lg-bar-tools .lg-btn.leave { margin-left: 8px; border-radius: 3px; border: 1.5px solid var(--amber); background: none; color: var(--amber-ink); font-weight: 700; }
+.lg-btn.leave:hover { background: var(--amber-soft); }
+.lg-btn .mono { font-size: 11px; }
+.lg-screen {
+  position: fixed; right: 26px; bottom: 170px; z-index: 37; width: min(640px, 46vw); aspect-ratio: 16 / 10; margin: 0; overflow: hidden;
+  background: #0b1416; border: 1px solid var(--stroke-strong); border-radius: var(--radius-l); box-shadow: 0 14px 40px rgba(0, 0, 0, .3);
+}
+.lg-screen video { width: 100%; height: 100%; display: block; }
+.lg-screen figcaption {
+  position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; font-size: 10px; letter-spacing: .1em;
+  color: #e8f2f3; background: rgba(14, 30, 33, .8); border-radius: 4px;
+}
+.lg-screen figcaption .icon-btn { width: 22px; height: 22px; color: #e8f2f3; }
+.lg-screen .pt-tools { transform: translateX(-50%) scale(.9); }
+
+@media (max-width: 720px) {
+  .lg-bar { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom)); transform: none; flex-wrap: wrap; gap: 0; }
+  .lg-bar-title { flex: 1; }
+  .lg-bar-tools { width: 100%; justify-content: flex-start; padding: 6px 8px; border-left: 0; border-top: 1px solid var(--stroke-strong); }
+  .lg-bar-tools .lg-btn.leave { margin-left: auto; }
+  .lg-btn span:not(.mono) { display: none; }
+  .lg-btn { height: 40px; min-width: 40px; justify-content: center; }
+  .lg-screen { left: 8px; right: 8px; width: auto; bottom: 170px; }
+  .lg-strip .lg-chip-name, .lg-menu-btn span:not(.mono) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lg-pip.speaking, .lg-bar-pip { animation: none; }
+}

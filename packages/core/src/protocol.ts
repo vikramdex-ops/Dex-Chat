@@ -1,5 +1,12 @@
 // Wire protocol shared by the hub, the desktop app and (later) the phone web app.
 // Every frame is one JSON object with a `t` discriminator.
+import type { FlowEvents, FlowOps } from './flows.ts';
+import type { DecisionView, MessageKindOps, MessageRef } from './message-kinds.ts';
+
+import type { BotEvents, BotOps, BotFlowCard, MiniAppView } from './bots.ts';
+import type { NibCardRef, NibEvents, NibOps } from './nib.ts';
+
+import type { HelpCategory, HelpEntry, HelpFileKind, HelpTicket, SupportSession } from './helpdesk.ts';
 
 export const PROTOCOL_VERSION = 1;
 export const APP_ID = 'dexconnect';
@@ -69,6 +76,8 @@ export interface Profile {
   birthday: string | null;
   /** Custom fields set up by an administrator: field id -> value. */
   fields: Record<string, string>;
+  /** Their seat on the office's floor plan (then `location` is derived from it and read-only). */
+  seatId?: string | null;
 }
 
 export interface Department {
@@ -155,9 +164,22 @@ export interface IceConfig {
 }
 
 /** An office emoji added by an administrator, used as :name:. */
+/** An action an integration adds to messages' menus ("Raise an RFI", "Log as defect"). */
+export interface BotAction { id: string; label: string; scope: 'everywhere' | 'spaces' | 'direct'; botId: string; botName: string }
+
+/** A card an integration keeps up to date on everyone's Pulse (build status, plotter queue). */
+export interface Widget { botId: string; botName: string; key: string; title: string; lines: string[]; url: string | null; updatedAt: number }
+
 export interface CustomEmoji { name: string; fileId: string; createdBy: string; createdAt: number }
 
+/** A sticker: a larger image sent on its own, grouped in packs. Sent as the message body [[sticker:ID]]. */
+export interface Sticker { id: string; name: string; pack: string; fileId: string; createdBy: string; createdAt: number }
+export const STICKER_RE = /^\[\[sticker:([0-9A-Za-z]{10,40})\]\]$/;
+
 /** Office rules set by an administrator. */
+/** A line the office adds to the day's line on Pulse (optionally for a given date). */
+export interface OfficeLine { id: string; text: string; by: string | null; date: string | null; addedBy: string; addedAt: number }
+
 export interface OfficePolicy {
   /** Minutes after sending that people can edit or delete their own messages; null = any time. */
   editWindowMinutes: number | null;
@@ -168,6 +190,23 @@ export interface OfficePolicy {
   allowRecording: boolean;
   /** Spaces every newly approved person joins (besides the Office space). */
   defaultSpaces?: string[];
+  /** People may add their own phones and laptops with a pairing code (no approval needed). */
+  personalDevices?: boolean;
+  /** Everyone (not only administrators) may add office emoji and stickers. */
+  memberEmoji?: boolean;
+  /** Data-loss prevention: sensitive numbers and words stopped or masked in messages. */
+  dlp?: import('./dlp.ts').DlpRule[];
+  /** File types (extensions without the dot) that cannot be shared. */
+  blockedFileTypes?: string[];
+  /** Internet addresses (CIDR) that may connect from outside the office; empty = any. */
+  outsideNetworks?: string[];
+  /** Meetings and Rooms start with the camera off, and the app asks before turning it on. */
+  cameraConsent?: boolean;
+  /**
+   * Direct messages must be end-to-end encrypted: nothing is sent to someone whose app has no
+   * encryption key yet (an older version) until they update. Conversations with an integration are exempt.
+   */
+  requireE2E?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -303,6 +342,11 @@ export interface FileInfo {
   size: number;
   uploaderId: string;
   createdAt: number;
+  /**
+   * Encrypted on the sender's device for an end-to-end encrypted Direct message: the hub holds
+   * only ciphertext. The app fills in the real name, type and size from the message once opened.
+   */
+  sealed?: boolean;
 }
 
 export interface Message {
@@ -316,6 +360,8 @@ export interface Message {
   editedAt: number | null;
   deleted: boolean;
   pinned: boolean;
+  /** A pin that ends by itself. */
+  pinnedUntil?: number | null;
   /** emoji -> user ids */
   reactions: Record<string, string[]>;
   /** user ids mentioned with <@id>; "all" for <@all> */
@@ -334,8 +380,26 @@ export interface Message {
   system?: { kind: 'joined' | 'left' | 'added' | 'removed' | 'renamed' | 'away'; users: string[]; name?: string; until?: number } | null;
   poll: PollView | null;
   form: FormView | null;
+  /** An integration's interactive card (a step of a flow, Pick up where you left off…). */
+  botflow?: BotFlowCard | null;
+  /** A tool added to the conversation. */
+  miniapp?: MiniAppView | null;
+  /** A card from Nib (a lead's transmittal, the register, a leave notice…), drawn by the app from nib.card. */
+  nib?: NibCardRef | null;
+  /** A Decision: a small tree of questions each person walks on their own. */
+  decision?: DecisionView | null;
+  /** A reference to a message or file elsewhere, as this viewer may see it. */
+  ref?: MessageRef | null;
+  /** Links whose cards the author removed from this message. */
+  hiddenPreviews?: string[];
   /** Set by the app for end-to-end encrypted messages: opened and signed, opened but signer unknown, or not readable on this device. */
   e2e?: 'ok' | 'unverified' | 'locked';
+  /**
+   * Set by the hub on a Direct message that was sent without end-to-end encryption, and why:
+   * someone in the conversation had no encryption key yet (`no-key`, naming them), or the
+   * sender's app did not encrypt it (`sender`, an older version).
+   */
+  plain?: { reason: 'no-key' | 'sender' | 'meeting'; users: string[] } | null;
   /** Passed straight between PCs while the hub was off (posted to the hub once it is back). */
   via?: 'direct';
 }
@@ -396,7 +460,8 @@ export interface AttendanceDay {
 }
 
 // ---------------------------------------------------------------- forms, notes, whiteboards
-export type FormFieldType = 'text' | 'long' | 'choice' | 'multi' | 'number' | 'date';
+/** file: the answer is a file the person uploads (its id); scan: text read from a QR code or barcode (or typed). */
+export type FormFieldType = 'text' | 'long' | 'choice' | 'multi' | 'number' | 'date' | 'file' | 'scan';
 export interface FormField {
   id: string;
   label: string;
@@ -489,6 +554,10 @@ export interface CalEvent {
   attendees: Array<{ userId: string; response: Rsvp }>;
   cancelled: boolean;
   createdAt: number;
+  /** The time zone the organiser set it in (IANA, e.g. "Asia/Dubai"); null = the office's own. */
+  timeZone?: string | null;
+  /** Set on an event from the person's own Zoho Calendar: shown read-only, never a Dexterity meeting. */
+  external?: { source: 'zoho'; calendar: string | null } | null;
 }
 
 /** One time a (possibly repeating) event happens. */
@@ -512,6 +581,8 @@ export interface EventInput {
   recurrence?: Recurrence;
   until?: number | null;
   reminderMin?: number | null;
+  /** The zone it was planned in (IANA); null or left out = the office's own. */
+  timeZone?: string | null;
 }
 
 // ---------------------------------------------------------------- desk (personal productivity)
@@ -536,6 +607,29 @@ export interface Reminder {
   convId: string | null;
 }
 
+/** A message a phone was not told about while its connection was down (see notify.missed). */
+export interface MissedNotice {
+  id: string;
+  convId: string;
+  authorId: string;
+  kind: 'direct' | 'space';
+  /** Ready to show: "Ravi Kumar", "@ you in P-12 Piping · Ravi Kumar". */
+  title: string;
+  /** The text with names filled in (empty for an end-to-end encrypted message, which the app opens). */
+  text: string;
+  /** The message as stored: the app opens an encrypted one from this. */
+  body: string;
+  sealed: boolean;
+  /** A Direct message, a mention or a reply to you (notifies even with "Mentions only"). */
+  personal: boolean;
+  mentioned: boolean;
+  /** The conversation is hushed (only mentions notify). */
+  muted: boolean;
+  parentId: string | null;
+  at: number;
+  link: string;
+}
+
 export interface ScheduledMessage {
   id: string;
   convId: string;
@@ -548,9 +642,14 @@ export interface ScheduledMessage {
   error: string | null;
 }
 
+/** What a kept (saved) message is for, on your Desk. */
+export type KeepKind = 'keep' | 'todo' | 'important' | 'follow-up' | 'reference';
+export const KEEP_KINDS: KeepKind[] = ['keep', 'todo', 'important', 'follow-up', 'reference'];
+
 export interface SavedMessage {
   message: Message;
   savedAt: number;
+  kind?: KeepKind;
 }
 
 /** Mention markup inside message bodies: <@USERID> or <@all>. */
@@ -566,6 +665,8 @@ export interface RoomParticipant {
   screen: boolean;
   /** This person is recording the call (everyone is shown that). */
   recording?: boolean;
+  /** Speaking now (lounges only: shown to the Space on the lounge's row). */
+  speaking?: boolean;
 }
 
 export interface RoomInfo {
@@ -577,7 +678,99 @@ export interface RoomInfo {
   participants: RoomParticipant[];
   /** People invited who have not answered yet. */
   ringing: string[];
+  /** mesh: PCs send to each other (up to 8); relay: everyone sends once to the hub, which passes it on. */
+  mode?: 'mesh' | 'relay';
+  /** How many people the Room can hold. */
+  capacity?: number;
+  /** The meeting this Room holds (every Room has one: its short ID and link). */
+  meetingId?: string;
+  /** The meeting's title (a scheduled meeting, an instant meeting, a personal room). */
+  title?: string;
+  meetingKind?: MeetingKind;
+  /** Who runs the meeting; co-hosts have every host control. */
+  hostId?: string;
+  coHosts?: string[];
+  /** No one new can come in. */
+  locked?: boolean;
+  /** People waiting to be let in (sent to the host and co-hosts only). */
+  lobby?: LobbyEntry[];
+  /** Raised hands, oldest first. */
+  hands?: RaisedHand[];
+  /** The device everyone sees large (set by a host), or null. */
+  spotlight?: string | null;
+  settings?: MeetingSettings;
+  /** A Room with a job of its own: a lounge people drop into, or an IT support session. */
+  purpose?: RoomPurpose;
 }
+
+/** lounge: a standing audio space in a Space; support: a help-desk session between two people. */
+export type RoomPurpose = { kind: 'lounge'; loungeId: string; name: string } | { kind: 'support'; ticketId: string };
+
+/** A drop-in audio space inside a Space ("Piping desk"): it stays when empty; people come and go. */
+export interface Lounge {
+  id: string;
+  convId: string;
+  name: string;
+  createdBy: string;
+  createdAt: number;
+  archived: boolean;
+  /** Its Room while anyone is in it. */
+  roomId: string | null;
+  /** Who is in it now, and who of them is muted. */
+  people: Array<{ userId: string; deviceId: string; muted: boolean; speaking: boolean }>;
+}
+
+// ---------------------------------------------------------------- meetings
+/** instant: started from anywhere, with a Space of its own; personal: someone's standing room; conversation: a Room in a conversation; event: a Calendar meeting held as a call; webinar: an organiser and panelists on a stage, attendees watching (webinar.ts). */
+export type MeetingKind = 'instant' | 'personal' | 'conversation' | 'event' | 'webinar';
+/** Who waits in the lobby until a host lets them in: nobody, guests and people from outside the meeting's conversation and invitation, or everyone but the hosts. */
+export type LobbyRule = 'off' | 'outside' | 'everyone';
+export interface MeetingSettings {
+  lobby: LobbyRule;
+  /** People can come in before the host (or a co-host) arrives. */
+  joinBeforeHost: boolean;
+}
+export interface MeetingInfo {
+  /** Nine digits; shown as 482-913-207. */
+  id: string;
+  kind: MeetingKind;
+  title: string;
+  hostId: string;
+  convId: string | null;
+  eventId: string | null;
+  coHosts: string[];
+  settings: MeetingSettings;
+  /** dexconnect://meet/482-913-207 */
+  link: string;
+  /** The meeting's Room while it runs. */
+  live: { roomId: string; participants: number; startedAt: number } | null;
+  /** Its page on the office's meeting site (https://…/482-913-207 or its name), without the passcode; null when there is no site. */
+  page?: string | null;
+}
+export interface LobbyEntry { userId: string; deviceId: string; at: number; reason: 'admit' | 'host' }
+export interface RaisedHand { userId: string; deviceId: string; at: number }
+/** A finished meeting or call, for "Recent meetings". */
+export interface MeetingRecord { roomId: string; meetingId: string | null; title: string; kind: MeetingKind; convId: string; hostId: string; startedAt: number; endedAt: number; durationMs: number; people: string[] }
+/** Reactions that float up a tile. */
+export const MEETING_REACTIONS = ['👍', '👏', '😂', '😮', '❤️', '🎉'] as const;
+export const MEETING_ID_RE = /^\d{9}$/;
+/** 482913207 -> "482-913-207" */
+export const formatMeetingId = (id: string): string => (MEETING_ID_RE.test(id) ? `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}` : id);
+export const meetingLink = (id: string): string => `dexconnect://meet/${formatMeetingId(id)}`;
+/** A meeting ID from what someone typed or pasted: "482-913-207", "482 913 207", or a dexconnect://meet/ link. */
+export function parseMeetingId(text: string): string | null {
+  const t = String(text ?? '').trim();
+  const m = t.match(/^(?:dexconnect:\/\/meet\/)?([\d\s-]{9,20})\/?$/i);
+  if (!m) return null;
+  const digits = m[1].replace(/[\s-]/g, '');
+  return MEETING_ID_RE.test(digits) ? digits : null;
+}
+
+/** People looking at the same file or whiteboard together, and whether pointers are on. */
+export interface PointSession { surface: string; presenter: string; enabled: boolean; viewers: Array<{ userId: string; deviceId: string }> }
+
+/** A track someone sends to the hub's relay. */
+export interface RelayProducer { producerId: string; userId: string; deviceId: string; kind: 'audio' | 'video'; source: 'mic' | 'camera' | 'screen' | 'screen-audio' }
 
 export interface Session {
   hub: HubInfo;
@@ -610,7 +803,7 @@ export type ServerFrame =
 // ---- client -> hub
 export type ClientFrame =
   | { t: 'auth'; deviceId: string; sig: string }
-  | { t: 'register'; deviceId: string; publicKey: string; account: WindowsAccount; sig: string; /** guest invite code */ invite?: string }
+  | { t: 'register'; deviceId: string; publicKey: string; account: WindowsAccount; sig: string; /** guest invite code */ invite?: string; /** pairing token from one of the person's own devices */ pair?: string }
   | { t: 'req'; id: string; op: string; data?: unknown };
 
 /**
@@ -626,13 +819,19 @@ export function accountKey(account: Pick<WindowsAccount, 'domain' | 'username'>)
 }
 
 // Request/response operations available in a session.
-export interface Ops {
+export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'directory.list': { req: void; res: { users: PublicUser[]; online: string[] } };
   'me.update': { req: { readReceipts?: boolean; statusEmoji?: string | null; displayName?: string; title?: string | null; statusText?: string | null; availability?: Availability; /** availability lasts until */ until?: number | null; ooo?: { until: number; message?: string | null; delegateId?: string | null } | null }; res: PublicUser };
   'me.idle': { req: { idle: boolean }; res: { ok: true } };
   'admin.devices': { req: void; res: DeviceRecord[] };
+  /** A one-time code (24 h) that adds a phone or laptop to your account without an administrator. */
+  'pair.create': { req: { kind: 'phone' | 'laptop' }; res: { code: string; link: string; expiresAt: number } };
+  /** Your own devices. */
+  'me.devices': { req: void; res: Array<DeviceRecord & { current: boolean; paired: boolean }> };
+  /** Remove one of your own devices (it is signed out at once). */
+  'me.devices.remove': { req: { deviceId: string }; res: { ok: true } };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
-  'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner' | 'bot'> }; res: PublicUser };
+  'admin.setRole': { req: { userId: string; role: Exclude<Role, 'bot'> }; res: PublicUser };
   'admin.revoke': { req: { deviceId: string }; res: DeviceRecord };
   'admin.audit': { req: { limit?: number } | void; res: AuditEntry[] };
   'admin.updates': { req: { refresh?: boolean } | void; res: UpdateMirrorInfo };
@@ -644,16 +843,26 @@ export interface Ops {
   'admin.hooks.create': { req: { botId: string; convId: string }; res: { id: string; path: string } };
   'admin.hooks.revoke': { req: { id: string }; res: { ok: true } };
   /** Give an integration slash commands that call its webhook. Returns the signing secret once. */
-  'admin.bots.commands': { req: { userId: string; webhookUrl: string; commands: Array<{ command: string; description: string }> }; res: { secret: string } };
+  'admin.bots.commands': { req: { userId: string; webhookUrl: string; commands: Array<{ command: string; description: string }>; actions?: Array<{ label: string; scope?: BotAction['scope'] }> }; res: { secret: string } };
+  /** Message actions integrations offer (in a message's menu). */
+  'actions.list': { req: void; res: BotAction[] };
+  /** Send a message to an integration's action; text is given by the app for an encrypted message. */
+  'action.run': { req: { actionId: string; messageId: string; text?: string }; res: { text: string | null; ephemeral: boolean } };
+  /** Cards integrations keep up to date on Pulse. */
+  'widgets.list': { req: void; res: Widget[] };
   'cmd.list': { req: void; res: SlashCommand[] };
   /** Run an integration's command; its reply is posted (or, if it asks, shown only to you). */
-  'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean } };
+  'cmd.run': { req: { convId: string; command: string; text: string; parentId?: string }; res: { text: string | null; ephemeral: boolean; /** A conversation the app should open (a flow started there). */ open?: string } };
   /** Publish this device's encryption key (signed by its identity). */
   'e2e.publish': { req: { encKey: string; sig: string }; res: { ok: true } };
   /** Encryption keys of everyone's approved devices. */
   'e2e.keys': { req: { userIds: string[] }; res: Array<{ userId: string; deviceId: string; signKey: string; encKey: string; sig: string }> };
   /** Give more devices access to sealed messages (history for a new device of your own). */
   'e2e.addKeys': { req: { items: Array<{ messageId: string; wraps: Record<string, string> }> }; res: { updated: number } };
+  /** What arrived since a message id (missed while a phone was disconnected); with no `after`, only the cursor to start from. */
+  'notify.missed': { req: { after?: string | null; limit?: number }; res: { items: MissedNotice[]; cursor: string | null; more?: boolean } };
+  /** A token for this device's background service to wait for new messages on its own (GET /notify/wait). */
+  'notify.token': { req: void; res: { token: string } };
   'admin.guests.invites': { req: void; res: GuestInvite[] };
   'admin.guests.invite': { req: { spaceIds: string[]; accessDays: number; validDays: number; uses: number; note?: string }; res: GuestInvite & { code: string } };
   'admin.guests.revokeInvite': { req: { id: string }; res: { ok: true } };
@@ -673,9 +882,13 @@ export interface Ops {
   'ping': { req: void; res: { at: number } };
   'org.get': { req: void; res: OrgInfo };
   'policy.get': { req: void; res: OfficePolicy };
+  /** The office's own lines for Pulse. */
+  'lines.office': { req: void; res: OfficeLine[] };
+  'admin.lines.add': { req: { text: string; by?: string | null; date?: string | null }; res: OfficeLine[] };
+  'admin.lines.remove': { req: { id: string }; res: OfficeLine[] };
   'emoji.list': { req: void; res: CustomEmoji[] };
   /** How to reach this hub from outside (for a phone's setup code); null url when it is off. */
-  'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean } };
+  'remote.info': { req: void; res: { url: string | null; hubId: string; fingerprint: string; name: string; viaGateway: boolean; /** The meeting site's address (Dexterity Meet), or null. */ site?: string | null } };
   'admin.remote.get': { req: void; res: RemoteView };
   /** STUN/TURN servers for a call (fresh short-lived credentials when Cloudflare TURN is used). */
   'room.ice': { req: void; res: { iceServers: IceServer[] } };
@@ -685,6 +898,12 @@ export interface Ops {
   /** Text the uploader's PC read from an image, so search can find it (not Direct conversations). */
   'file.setText': { req: { fileId: string; text: string }; res: { ok: true } };
   'admin.emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
+  /** Anyone may add office emoji when the office allows it; people remove their own. */
+  'emoji.add': { req: { name: string; fileId: string }; res: CustomEmoji };
+  'emoji.remove': { req: { name: string }; res: { ok: true } };
+  'sticker.list': { req: void; res: Sticker[] };
+  'sticker.add': { req: { name: string; pack?: string; fileId: string }; res: Sticker };
+  'sticker.remove': { req: { id: string }; res: { ok: true } };
   'admin.emoji.remove': { req: { name: string }; res: { ok: true } };
   'admin.policy.set': { req: Partial<OfficePolicy>; res: OfficePolicy };
   'admin.usage': { req: { days?: 7 | 30 | 90 }; res: UsageReport };
@@ -706,6 +925,8 @@ export interface Ops {
     req: { kind: 'space'; name: string; topic?: string; private?: boolean; members?: string[] } | { kind: 'direct'; members: string[] };
     res: Conversation;
   };
+  /** Start a new Space from a message: it and its side-track replies are copied in (with credit). */
+  'conv.fork': { req: { messageId: string; name: string; private?: boolean; members?: string[] }; res: Conversation };
   'conv.join': { req: { convId: string }; res: Conversation };
   'conv.leave': { req: { convId: string }; res: { ok: true } };
   /** Report a message to the administrators (quote: the text of an encrypted message, from the reporter's device). */
@@ -734,6 +955,12 @@ export interface Ops {
   'msg.get': { req: { messageId: string }; res: Message };
   /** Spaces you share with someone, and your calls with them (newest first). */
   'people.common': { req: { userId: string }; res: { spaces: Array<{ id: string; name: string }>; calls: Array<{ at: number; durationMs: number; missed: boolean; video: boolean; convId: string }> } };
+  /**
+   * Who works together, for the org chart's Spaces overlay: the Spaces you can see (yours, and open
+   * ones), each with its members. Private Spaces you are not in, archived Spaces, the Office-wide
+   * Space, guests and integrations are left out; guests get none.
+   */
+  'people.spaces': { req: void; res: { spaces: Array<{ id: string; name: string; memberIds: string[]; mine: boolean }> } };
   /** The first message on or after a moment, for "jump to date". */
   'msg.at': { req: { convId: string; at: number }; res: { messageId: string | null } };
   'msg.list': { req: { convId: string; before?: string; parentId?: string; limit?: number }; res: { messages: Message[]; hasMore: boolean } };
@@ -742,7 +969,8 @@ export interface Ops {
   'msg.edit': { req: { messageId: string; body: string }; res: Message };
   'msg.delete': { req: { messageId: string; /** a moderator's reason, shown in its place */ reason?: string }; res: Message };
   'msg.react': { req: { messageId: string; emoji: string; on: boolean }; res: Message };
-  'msg.pin': { req: { messageId: string; pinned: boolean }; res: Message };
+  /** until: unpin by itself then (at most a year ahead); null or absent = until someone unpins it. */
+  'msg.pin': { req: { messageId: string; pinned: boolean; until?: number | null }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
   'typing': { req: { convId: string; parentId?: string }; res: { ok: true } };
   'room.start': { req: { convId: string; video: boolean }; res: RoomInfo };
@@ -750,14 +978,52 @@ export interface Ops {
   'room.leave': { req: { roomId: string }; res: { ok: true } };
   'room.decline': { req: { roomId: string }; res: { ok: true } };
   'room.signal': { req: { roomId: string; toDevice: string; data: unknown }; res: { ok: true } };
-  'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean }; res: { ok: true } };
+  'room.media': { req: { roomId: string; muted: boolean; camera: boolean; screen: boolean; /** remote control: see meet-control.ts */ controllable?: boolean; controlOff?: 'mac' | 'window' | 'unavailable' | null; desktop?: boolean }; res: { ok: true } };
   'room.list': { req: void; res: RoomInfo[] };
+  /** The hub's relay for large Rooms (mediasoup); parameters are mediasoup's, passed through. */
+  'relay.caps': { req: { roomId: string }; res: { rtpCapabilities: unknown } };
+  'relay.transport': { req: { roomId: string; direction: 'send' | 'recv' }; res: { id: string; iceParameters: unknown; iceCandidates: unknown[]; dtlsParameters: unknown } };
+  'relay.connect': { req: { transportId: string; dtlsParameters: unknown }; res: { ok: true } };
+  'relay.produce': { req: { transportId: string; kind: 'audio' | 'video'; rtpParameters: unknown; source: RelayProducer['source'] }; res: { id: string } };
+  'relay.producers': { req: { roomId: string }; res: RelayProducer[] };
+  'relay.consume': { req: { transportId: string; producerId: string; rtpCapabilities: unknown }; res: { id: string; producerId: string; kind: 'audio' | 'video'; rtpParameters: unknown } };
+  'relay.resume': { req: { consumerId: string }; res: { ok: true } };
+  'relay.close': { req: { producerId: string }; res: { ok: true } };
   /** Ring more of the conversation's members into a running call. */
   'room.invite': { req: { roomId: string; userIds: string[] }; res: RoomInfo };
   'room.record': { req: { roomId: string; on: boolean }; res: { ok: true } };
+  /** Meetings: an instant meeting (a new Space of its own, people invited are rung), or a conversation's meeting. */
+  'meet.create': { req: { title?: string; convId?: string; invite?: string[]; settings?: Partial<MeetingSettings> }; res: MeetingInfo };
+  /** The meeting a Calendar event is held in. */
+  'meet.event': { req: { eventId: string }; res: MeetingInfo };
+  /** Your personal room: your standing meeting ID. */
+  'meet.personal': { req: void; res: MeetingInfo };
+  /** What a meeting ID is (before joining). */
+  'meet.get': { req: { id: string }; res: MeetingInfo };
+  'meet.settings': { req: { id: string; title?: string; lobby?: LobbyRule; joinBeforeHost?: boolean }; res: MeetingInfo };
+  /** Join by ID: straight in, or wait in the lobby (until admitted, or until the host arrives). */
+  'meet.join': { req: { id: string }; res: { room: RoomInfo; waiting?: undefined } | { room?: undefined; waiting: 'admit' | 'host'; meeting: MeetingInfo } };
+  'meet.leaveLobby': { req: { id: string }; res: { ok: true } };
+  /** Meetings and calls you were in, newest first. */
+  'meet.recent': { req: { limit?: number } | void; res: MeetingRecord[] };
+  /** Host controls (the host and co-hosts). */
+  'room.admit': { req: { roomId: string; deviceIds?: string[]; all?: boolean; allow: boolean }; res: { ok: true } };
+  'room.lock': { req: { roomId: string; locked: boolean }; res: { ok: true } };
+  'room.cohost': { req: { roomId: string; userId: string; on: boolean }; res: { ok: true } };
+  /** Mute one device or everyone else; the app on that device turns its microphone off. */
+  'room.mute': { req: { roomId: string; deviceId?: string; all?: boolean }; res: { ok: true } };
+  /** Ask someone to turn their microphone on (they choose). */
+  'room.askUnmute': { req: { roomId: string; deviceId: string }; res: { ok: true } };
+  'room.remove': { req: { roomId: string; deviceId: string }; res: { ok: true } };
+  'room.spotlight': { req: { roomId: string; deviceId: string | null }; res: { ok: true } };
+  /** End the meeting for everyone. */
+  'room.end': { req: { roomId: string }; res: { ok: true } };
+  /** Raise or lower your hand; hosts lower someone's (deviceId) or everyone's (all). */
+  'room.hand': { req: { roomId: string; up: boolean; deviceId?: string; all?: boolean }; res: { ok: true } };
+  'room.react': { req: { roomId: string; emoji: string }; res: { ok: true } };
   'conv.markUnread': { req: { convId: string; messageId: string }; res: Conversation };
   'msg.forward': { req: { messageId: string; convIds: string[]; note?: string; /** per target: the text to post (re-sealed by the app for encrypted Directs) */ bodies?: Record<string, string> }; res: Message[] };
-  'msg.star': { req: { messageId: string; on: boolean }; res: { ok: true } };
+  'msg.star': { req: { messageId: string; on: boolean; kind?: KeepKind }; res: { ok: true } };
   'poll.create': {
     req: { convId: string; question: string; options: string[]; multi?: boolean; anonymous?: boolean; closesAt?: number | null; parentId?: string; clientId: string };
     res: Message;
@@ -780,7 +1046,8 @@ export interface Ops {
   'board.draw': { req: { boardId: string; op: BoardOp }; res: { seq: number } };
   'board.rename': { req: { boardId: string; title: string }; res: Board };
   'board.delete': { req: { boardId: string }; res: { ok: true } };
-  'cal.list': { req: { from: number; to: number }; res: Occurrence[] };
+  /** `external`: also the person's events from Zoho Calendar, read-only (zoho.ts). */
+  'cal.list': { req: { from: number; to: number; external?: boolean }; res: Occurrence[] };
   'cal.get': { req: { eventId: string }; res: CalEvent };
   'cal.create': { req: EventInput; res: CalEvent };
   'cal.update': { req: { eventId: string } & Partial<EventInput>; res: CalEvent };
@@ -808,6 +1075,54 @@ export interface Ops {
   'sched.update': { req: { id: string; body?: string; sendAt?: number }; res: ScheduledMessage };
   'sched.cancel': { req: { id: string }; res: { ok: true } };
   'sched.sendNow': { req: { id: string }; res: Message };
+  /** Hashtags people use, most used first (in conversations you are part of). */
+  'tags.top': { req: { prefix?: string; convId?: string } | void; res: Array<{ tag: string; count: number }> };
+  // ------------------------------------------------------------ help desk (docs/HELP-DESK.md)
+  'help.create': { req: { summary: string; detail?: string; category: HelpCategory; screenshot?: string | null; platform?: string | null }; res: HelpTicket };
+  /** Tickets you asked for, newest first. */
+  'help.mine': { req: void; res: HelpTicket[] };
+  /** IT: the queue (open and taken first, then recently closed). */
+  'help.queue': { req: { status?: 'active' | 'closed' | 'all' } | void; res: HelpTicket[] };
+  'help.get': { req: { id: string }; res: { ticket: HelpTicket; timeline: HelpEntry[] } };
+  'help.take': { req: { id: string }; res: HelpTicket };
+  'help.release': { req: { id: string }; res: HelpTicket };
+  'help.note': { req: { id: string; text: string }; res: HelpEntry };
+  'help.attach': { req: { id: string; fileId: string; kind: HelpFileKind }; res: HelpTicket };
+  'help.close': { req: { id: string; note?: string }; res: HelpTicket };
+  'help.reopen': { req: { id: string; note?: string }; res: HelpTicket };
+  'help.rate': { req: { id: string; rating: number; note?: string }; res: HelpTicket };
+  /** The assigned technician opens a support session (and is first in its Room). */
+  'help.session.start': { req: { id: string }; res: { session: SupportSession; room: RoomInfo } };
+  /** The requester (or the assigned technician, again) comes into the session's Room. */
+  'help.session.join': { req: { id: string; controlAvailable?: boolean }; res: { session: SupportSession; room: RoomInfo } };
+  'help.session.end': { req: { id: string }; res: { ok: true } };
+  /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
+  'help.consent': { req: { id: string; kind: 'screen' | 'control'; on: boolean; scope?: 'screen' | 'window' }; res: SupportSession };
+  /** The technician asks the requester for something (each needs the requester's own yes). */
+  'help.ask': { req: { id: string; kind: 'screen' | 'control' | 'diagnostics' }; res: { ok: true } };
+  /** People with the IT capability. */
+  'help.staff': { req: void; res: string[] };
+  'admin.help.staff': { req: { userId: string; on: boolean }; res: string[] };
+  // ------------------------------------------------------------ lounges
+  'lounge.list': { req: { convId?: string } | void; res: Lounge[] };
+  'lounge.create': { req: { convId: string; name: string }; res: Lounge };
+  'lounge.rename': { req: { id: string; name: string }; res: Lounge };
+  'lounge.archive': { req: { id: string; archived: boolean }; res: Lounge };
+  /** Come into a lounge (audio only; screen sharing allowed). */
+  'lounge.join': { req: { id: string }; res: RoomInfo };
+  /** Which lounge each person is in (the lounge's name only for Spaces you are in). */
+  'lounge.presence': { req: void; res: Array<{ userId: string; loungeId: string; name: string | null }> };
+  // ------------------------------------------------------------ live pointers
+  /** A small message to everyone else in your Room (pointers when the data channel is not there, e.g. on the relay). */
+  'room.data': { req: { roomId: string; data: unknown }; res: { ok: true } };
+  /** In a lounge: you started or stopped speaking (the Space sees a live pip on the lounge). */
+  'room.speaking': { req: { roomId: string; speaking: boolean }; res: { ok: true } };
+  /** Look at a file or whiteboard together: join its pointer session (invite: tell the conversation). */
+  'point.join': { req: { surface: string; convId?: string; invite?: boolean; name?: string }; res: PointSession };
+  'point.leave': { req: { surface: string }; res: { ok: true } };
+  'point.send': { req: { surface: string; data: unknown }; res: { ok: true } };
+  /** The presenter (whoever opened the session) turns pointers on or off for everyone. */
+  'point.set': { req: { surface: string; enabled: boolean }; res: PointSession };
   'search': {
     req: {
       q: string; convId?: string; limit?: number;
@@ -816,20 +1131,29 @@ export interface Ops {
       /** Page further back: only results older than this message id. */
       olderThan?: string;
     };
-    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string; textMatch?: string }> };
+    res: { messages: Array<{ message: Message; snippet: string }>; files: Array<FileInfo & { messageId: string; convId: string; textMatch?: string }>; /** Notices on the notice board (their text and their PDFs'). */ notices?: import('./notices.ts').NoticeHit[] };
   };
 }
 export type OpName = keyof Ops;
 
+/** #tags in message text: a letter first, then letters, digits, _ or - (not inside words or links). */
+export const HASHTAG_RE = /(?<![\p{L}\p{N}&/#])#([\p{L}][\p{L}\p{N}_-]{1,48})/gu;
+export const hashtags = (body: string): string[] => [...new Set([...body.matchAll(HASHTAG_RE)].map((m) => m[1].toLowerCase()))].slice(0, 20);
+
 // Server-pushed events.
-export interface Events {
+export interface Events extends FlowEvents, BotEvents, NibEvents {
   'presence': { userId: string; online: boolean; away?: boolean };
   'user.updated': PublicUser;
   'user.added': PublicUser;
   'admin.pending': DeviceRecord;
   'policy.updated': OfficePolicy;
   'emoji.updated': CustomEmoji[];
+  'sticker.updated': Sticker[];
+  'widgets.updated': Widget[];
+  'lines.updated': OfficeLine[];
   'org.updated': OrgInfo;
+  /** One of your devices was added with a pairing code. */
+  'me.devicePaired': DeviceRecord;
   'device.updated': DeviceRecord;
   /** The viewer's copy of a conversation changed (new member, name, unread counts...). */
   'conv.updated': Conversation;
@@ -842,9 +1166,18 @@ export interface Events {
   'read': { convId: string; userId: string; messageId: string };
   'room.ring': { room: RoomInfo; from: string };
   'room.updated': RoomInfo;
-  'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number };
+  'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number; /** a host ended it for everyone */ endedBy?: string };
   'room.signal': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
   'room.busy': { userId: string; inRoom: boolean };
+  /** To a device waiting in a meeting's lobby: let in (join now), turned away, or still waiting. */
+  'meet.lobby': { meetingId: string; state: 'admitted' | 'denied' | 'waiting'; reason?: 'admit' | 'host' };
+  /** To one device: a host muted you (the app turns the microphone off). */
+  'room.muted': { roomId: string; by: string };
+  /** To one device: a host asks you to unmute. */
+  'room.unmuteAsk': { roomId: string; by: string };
+  /** To one device: a host took you out of the meeting. */
+  'room.removed': { roomId: string; by: string };
+  'room.reaction': { roomId: string; deviceId: string; userId: string; emoji: string; at: number };
   /** Administrators: how many reports wait. */
   'admin.reports': { open: number };
   /** Someone's calendar says they are in a meeting now (or no longer). */
@@ -871,5 +1204,149 @@ export interface Events {
   'reminder.removed': { id: string };
   'sched.updated': ScheduledMessage;
   'sched.removed': { id: string; sentMessageId: string | null };
+  'help.updated': HelpTicket;
+  'help.entry': HelpEntry;
+  /** A support session started, changed (consent) or ended. */
+  'help.session': SupportSession;
+  /** To the requester: the technician asks for screen, control or diagnostics. */
+  'help.ask': { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string };
+  'help.staff': string[];
+  'lounge.updated': Lounge;
+  /** Someone came into or left a lounge (name is null for Spaces you are not in). */
+  'lounge.where': { userId: string; loungeId: string | null; name: string | null };
+  'room.data': { roomId: string; fromDevice: string; fromUser: string; data: unknown };
+  'point.data': { surface: string; fromDevice: string; fromUser: string; data: unknown };
+  'point.session': PointSession;
+  /** Someone asks the conversation to look at a file with them. */
+  'point.invite': { surface: string; convId: string; name: string; by: string };
 }
 export type EventName = keyof Events;
+
+// ---------------------------------------------------------------- link cards
+/** What a link points at. 'restricted' hides everything about something the viewer cannot see. */
+export type LinkCardKind =
+  | 'message' | 'conversation' | 'person' | 'file' | 'event' | 'task'
+  | 'search' | 'workbook' | 'project' | 'component' | 'calculator' | 'tool'
+  | 'folder' | 'path' | 'meeting'
+  | 'web' | 'video' | 'repo' | 'issue' | 'pull' | 'pdf' | 'image'
+  | 'restricted' | 'unavailable';
+
+export interface LinkAction {
+  kind: 'open' | 'reply' | 'join' | 'copy-path' | 'open-in-tool';
+  label: string;
+  /** What to open, copy or join: a dexconnect:// link, a tool link, a path or a web address. */
+  target: string;
+  /** For open-in-tool: the tool ('sleuth', 'sheets', 'project-opener', 'datum', 'folder', 'browser'). */
+  tool?: string;
+}
+
+export interface LinkCardMeta {
+  key: 'author' | 'updated' | 'size' | 'members' | 'status' | 'type' | 'site' | 'path' | 'when' | 'dimensions' | 'tool' | 'department' | 'replies' | 'location';
+  label: string;
+  value: string;
+  /** For author: the person's id; for updated/when: the time (ms); for size: bytes. */
+  ref?: string | number;
+}
+
+export interface LinkCard {
+  url: string;
+  kind: LinkCardKind;
+  title: string | null;
+  subtitle: string | null;
+  meta: LinkCardMeta[];
+  preview: {
+    /** Message text or page description (plain text, at most 300 characters). */
+    excerpt?: string;
+    /** A file on the hub to show as a thumbnail (images). */
+    fileId?: string;
+    /** A picture on the web (og:image, a YouTube thumbnail, the image itself). */
+    imageUrl?: string;
+    favicon?: string;
+  } | null;
+  actions: LinkAction[];
+  /** Ids behind an internal card, for the app to act on. */
+  ref?: { convId?: string; messageId?: string; userId?: string; fileId?: string; eventId?: string; taskId?: string };
+  /** Web pages: 'ok', or why there is no preview. */
+  status?: 'ok' | 'disabled' | 'blocked' | 'failed';
+  /** Why a preview failed or was blocked (plain English). */
+  reason?: string;
+  fetchedAt: number;
+  /** Served from the hub's cache (web pages only). */
+  cached?: boolean;
+}
+
+/** Administrators: web previews and which office-network hosts the hub may fetch. */
+export interface LinkSettings {
+  /** The hub fetches web pages to preview them (members). */
+  externalPreviews: boolean;
+  /** The same for guests (off by default: nothing about outside pages is fetched for them). */
+  guestExternalPreviews: boolean;
+  /** Host names on the office network the hub may fetch although they resolve to private addresses. */
+  allowLanHosts: string[];
+}
+
+/** A side-track in a conversation anchored to one link. */
+export interface LinkThread {
+  convId: string;
+  url: string;
+  urlHash: string;
+  rootMessageId: string;
+  root: Message;
+  /** The side-track was started now (with a new message holding the link). */
+  created: boolean;
+}
+
+// ---------------------------------------------------------------- reaction insights
+/** Descriptive numbers about a message's reactions. Reactions are not approvals. */
+export interface ReactionInsights {
+  messageId: string;
+  convId: string;
+  note: 'Reactions are not approvals';
+  total: number;
+  /** Distinct people who reacted. */
+  people: number;
+  distribution: Array<{ emoji: string; count: number; percent: number }>;
+  /** Conversation members other than the author (integrations left out). */
+  audience: {
+    members: number;
+    reacted: number;
+    /** Read it (by read receipts) but did not react. */
+    seenNoReaction: number;
+    notSeen: number;
+    /** Read receipts off, or a side-track reply (receipts cover the main timeline only). */
+    unknown: number;
+    reactedPercent: number;
+    seenNoReactionPercent: number;
+    /** False when read receipts cannot be shown to this viewer (theirs are off) or do not apply. */
+    receipts: boolean;
+  };
+  timeline: { bucketMs: number; buckets: Array<{ start: number; added: number; removed: number; cumulative: number }> };
+  firstAt: number | null;
+  lastAt: number | null;
+  /** Reactors per department (null for anonymous polls, or when the office has no departments). */
+  byDepartment: Array<{ departmentId: string | null; name: string; members: number; reacted: number; percent: number }> | null;
+  /** Announcements (Spaces where only moderators post, and the Office space): this message against the office's recent ones. */
+  announcement: { responseRate: number; officeAverage: number | null; compared: number } | null;
+  /** The message is an anonymous poll: only counts are given. */
+  anonymous: boolean;
+}
+
+export interface Ops {
+  /** A card for a link: internal links as the viewer may see them, web pages fetched by the hub (cached 24 h). */
+  'links.preview': { req: { url: string }; res: LinkCard };
+  /** Find or start the side-track about a link in a conversation (messageId: the message to anchor to, needed in Direct conversations). */
+  'links.discuss': { req: { url: string; convId: string; messageId?: string }; res: LinkThread };
+  /** The author removes (or brings back) the card for one link in their own message. */
+  'links.hide': { req: { messageId: string; url: string; hidden: boolean }; res: Message };
+  /**
+   * This device's network drives (letter → UNC root, nothing else), so drive-letter paths in its
+   * person's older messages can be read on other PCs. Members only; an empty list says "none".
+   */
+  'links.drives.set': { req: { drives: Array<{ letter: string; root: string }> }; res: { ok: true; count: number } };
+  /** The network drives of the people who wrote some messages (all their approved devices; a letter they map two ways is left out). Members only. */
+  'links.drives.of': { req: { userIds: string[] }; res: Record<string, { known: boolean; drives: Array<{ letter: string; root: string }> }> };
+  'admin.links.get': { req: void; res: LinkSettings };
+  'admin.links.set': { req: Partial<LinkSettings>; res: LinkSettings };
+  /** Who reacted how, and when; members of the conversation only. */
+  'reactions.insights': { req: { messageId: string }; res: ReactionInsights };
+}

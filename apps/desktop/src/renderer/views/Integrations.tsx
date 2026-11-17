@@ -14,17 +14,23 @@ export function Integrations({ state }: { state: AppState }) {
   const [name, setName] = useState('');
   const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
   const [cmdFor, setCmdFor] = useState<string | null>(null);
-  const [cmdForm, setCmdForm] = useState({ url: '', lines: '' });
+  const [cmdForm, setCmdForm] = useState({ url: '', lines: '', actions: '' });
+  const [actions, setActions] = useState<Ops['actions.list']['res']>([]);
   const [secret, setSecret] = useState<{ name: string; secret: string } | null>(null);
   const [commands, setCommands] = useState<Ops['cmd.list']['res']>([]);
-  useEffect(() => { void window.dex.request('cmd.list').then(setCommands).catch(() => {}); }, [bots]);
+  useEffect(() => { void window.dex.request('cmd.list').then(setCommands).catch(() => {}); void window.dex.request('actions.list').then(setActions).catch(() => {}); }, [bots]);
   const saveCommands = async (botId: string, name: string) => {
     const list = cmdForm.lines.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
       const m = l.match(/^\/?([\w-]+)\s*(?:[-–—:]\s*)?(.*)$/);
       return { command: m?.[1] ?? l, description: m?.[2] ?? '' };
     });
     try {
-      const r = await window.dex.request('admin.bots.commands', { userId: botId, webhookUrl: cmdForm.url, commands: list });
+      // "Raise an RFI (Spaces)" -> an action for Spaces only
+      const acts = cmdForm.actions.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+        const m = l.match(/^(.*?)\s*\((spaces|direct|everywhere)\)\s*$/i);
+        return { label: (m ? m[1] : l).slice(0, 40), scope: (m ? m[2].toLowerCase() : 'everywhere') as 'spaces' | 'direct' | 'everywhere' };
+      });
+      const r = await window.dex.request('admin.bots.commands', { userId: botId, webhookUrl: cmdForm.url, commands: list, actions: acts });
       setSecret({ name, secret: r.secret });
       setCmdFor(null);
       void load();
@@ -78,7 +84,7 @@ export function Integrations({ state }: { state: AppState }) {
             <div><div style={{ fontWeight: 600 }}>{b.bot.displayName}</div><div className="faint" style={{ fontSize: 12 }}>created {relativeTime(b.createdAt)} · last used {relativeTime(b.lastUsed)}</div></div>
             <span><span className={`chip ${b.active ? 'ok' : 'bad'}`}>{b.active ? 'Active' : 'Revoked'}</span></span>
             <span className="row-actions">
-              {b.active && <button className="btn ghost" disabled={!live} onClick={() => { setCmdFor(cmdFor === b.bot.id ? null : b.bot.id); setCmdForm({ url: '', lines: commands.filter((c) => c.botId === b.bot.id).map((c) => `/${c.command} - ${c.description}`).join('\n') }); }}>
+              {b.active && <button className="btn ghost" disabled={!live} onClick={() => { setCmdFor(cmdFor === b.bot.id ? null : b.bot.id); setCmdForm({ url: '', lines: commands.filter((c) => c.botId === b.bot.id).map((c) => `/${c.command} - ${c.description}`).join('\n'), actions: actions.filter((a) => a.botId === b.bot.id).map((a) => `${a.label}${a.scope === 'everywhere' ? '' : ` (${a.scope})`}`).join('\n') }); }}>
                 Commands{commands.some((c) => c.botId === b.bot.id) ? ` · ${commands.filter((c) => c.botId === b.bot.id).length}` : ''}
               </button>}
               {b.active && (
@@ -96,15 +102,18 @@ export function Integrations({ state }: { state: AppState }) {
         if (!b) return null;
         return (
           <div className="card token-card">
-            <div className="eyebrow">Slash commands for {b.bot.displayName}</div>
+            <div className="eyebrow">Commands and message actions for {b.bot.displayName}</div>
             <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>When someone types one of these, the hub sends it to the address below and posts the reply in the conversation. Requests are signed with a secret (shown once after saving) in the <code>X-Dex-Signature</code> header.</p>
             <div className="field"><label htmlFor="cmd-url">Webhook address on the office network</label>
               <input id="cmd-url" className="input mono" placeholder="http://hopper-pc:8710/dexconnect" value={cmdForm.url} onChange={(e) => setCmdForm({ ...cmdForm, url: e.target.value })} /></div>
             <div className="field"><label htmlFor="cmd-lines">Commands, one per line</label>
               <textarea id="cmd-lines" className="input mono" rows={4} placeholder={'/open - Open a project folder\n/transmittal - Start a transmittal'} value={cmdForm.lines} onChange={(e) => setCmdForm({ ...cmdForm, lines: e.target.value })} /></div>
+            <div className="field"><label htmlFor="cmd-actions">Message actions, one per line (in each message's menu)</label>
+              <textarea id="cmd-actions" className="input mono" rows={3} placeholder={'Raise an RFI (spaces)\nLog as a defect'} value={cmdForm.actions} onChange={(e) => setCmdForm({ ...cmdForm, actions: e.target.value })} />
+              <span className="faint" style={{ fontSize: 12 }}>The webhook receives the message, who wrote it and who chose the action. Add (spaces) or (direct) to offer it only there. Up to 10.</span></div>
             <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
               <button className="btn ghost" onClick={() => setCmdFor(null)}>Cancel</button>
-              <button className="btn primary" disabled={!cmdForm.url.trim()} onClick={() => void saveCommands(b.bot.id, b.bot.displayName)}>Save commands</button>
+              <button className="btn primary" disabled={!cmdForm.url.trim()} onClick={() => void saveCommands(b.bot.id, b.bot.displayName)}>Save</button>
             </div>
           </div>
         );

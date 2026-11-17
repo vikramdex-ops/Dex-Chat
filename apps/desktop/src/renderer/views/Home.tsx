@@ -1,6 +1,6 @@
 // Pulse: what needs you right now, then the state of the office at a glance.
-import { useMemo, useState } from 'react';
-import type { Session } from '@dex/core';
+import { useEffect, useMemo, useState } from 'react';
+import type { Session, Widget } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import type { Section } from '../App.tsx';
 import { OfflineBanner } from '../App.tsx';
@@ -9,8 +9,14 @@ import { useChat } from '../chat/store.ts';
 import { ConvTile, convTitle, shortTime } from '../chat/Switchboard.tsx';
 import { plainPreview } from '../chat/format.tsx';
 import { describeWhen, useDesk } from '../desk/store.ts';
-import { TeamToday } from '../work/WorkUi.tsx';
+import { DayLogCard } from '../work/WorkUi.tsx';
 import { NextMeeting } from '../calendar/CalendarView.tsx';
+import { DayLine } from '../pulse/DayLine.tsx';
+import { MeetPulseCard } from '../meet/MeetPulse.tsx';
+import { OfficeDrawingCard } from '../orgscape/PulseCard.tsx';
+import { NibPulseCard } from '../nib/pulse.tsx';
+import { formatTime } from '../time.ts';
+import { NoticeNeedsRows, WeekStrip, useNoticesWaiting } from '../notices/Host.tsx';
 
 function greeting(d = new Date()): string {
   const h = d.getHours();
@@ -30,6 +36,11 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
   const [status, setStatus] = useState(session.me.statusText ?? '');
   const live = state.phase === 'ready';
   const conversations = useChat((s) => s.conversations);
+  // until the conversations arrive, Pulse cannot say you are caught up
+  const chatReady = useChat((s) => s.ready);
+  const deskLoaded = useDesk((s) => s.loaded);
+  // notices waiting for my acknowledgement (the notice board)
+  const notices = useNoticesWaiting();
 
   const needsYou = useMemo(() => [...conversations.values()]
     .filter((c) => c.joined && (c.mentions > 0 || (c.unread > 0 && !c.muted)))
@@ -56,43 +67,48 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
       <div className="view-head">
         <div>
           <h1>{greeting()}, {firstName}</h1>
-          <p className="label">Pulse · {onlineUsers.length} of {people.length} online · {session.hub.name}</p>
+          <p className="label">{`Pulse · ${onlineUsers.length} of ${people.length} online`}<span translate="no"> · {session.hub.name}</span></p>
         </div>
       </div>
 
+      <DayLine live={live} />
+
       <section className="pulse-section">
-        <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length + dueToday.length ? ` · ${needsYou.length + dueToday.length}` : ''}</div>
+        <div className="label" style={{ marginBottom: 10 }}>Needs you{needsYou.length + dueToday.length + notices ? ` · ${needsYou.length + dueToday.length + notices}` : ''}</div>
+        <NoticeNeedsRows />
         {dueToday.length > 0 && (
           <div className="list" style={{ marginBottom: needsYou.length ? 10 : 0 }}>
             {dueToday.map((r) => (
               <button key={r.id} className="list-row pulse-row" onClick={() => go('desk')}>
                 <span className="pal-icon pulse-alarm"><Icon name="alarm" size={16} /></span>
                 <span className="sb-main">
-                  <span className="sb-title"><span className="sb-name">{r.text}</span></span>
-                  <span className="sb-preview">{r.message ? plainPreview(r.message.body, users) : r.createdBy !== session.me.id ? `From ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : 'Reminder'}</span>
+                  <span className="sb-title"><span className="sb-name" translate="no" title={r.text}>{r.text}</span></span>
+                  <span className="sb-preview" translate={r.message ? 'no' : undefined}>{r.message ? plainPreview(r.message.body, users) : r.createdBy !== session.me.id ? `From ${users.get(r.createdBy)?.displayName ?? 'a colleague'}` : 'Reminder'}</span>
                 </span>
                 <span className="sb-meta"><span className={`chip${r.dueAt <= Date.now() ? ' warn' : ''}`}>{describeWhen(r.dueAt)}</span></span>
               </button>
             ))}
           </div>
         )}
-        {needsYou.length === 0 && dueToday.length === 0 ? (
+        {(!chatReady || !deskLoaded) && needsYou.length === 0 && dueToday.length === 0 && notices === 0 ? (
+          <div className="empty pulse-empty pulse-wait" aria-busy="true"><span className="spinner" /><span className="faint">Looking for what needs you…</span></div>
+        ) : needsYou.length === 0 && dueToday.length === 0 && notices === 0 ? (
           <div className="empty pulse-empty"><Icon name="check" size={28} /><span>You're all caught up.</span></div>
         ) : needsYou.length === 0 ? null : (
           <div className="list">
             {needsYou.map((c) => {
               const last = c.lastMessage;
-              const who = last ? users.get(last.authorId)?.displayName.split(' ')[0] : '';
+              const who = last ? users.get(last.authorId)?.displayName.split(' ')[0] ?? 'Former member' : '';
               return (
                 <button key={c.id} className="list-row pulse-row" onClick={() => open(c.id, c.kind)}>
                   <ConvTile c={c} users={users} meId={session.me.id} online={online} />
                   <span className="sb-main">
-                    <span className="sb-title"><span className="sb-name">{convTitle(c, users, session.me.id)}</span></span>
-                    <span className="sb-preview">{last ? `${who}: ${plainPreview(last.body, users)}` : ''}</span>
+                    <span className="sb-title"><span className="sb-name" translate="no" title={convTitle(c, users, session.me.id)}>{convTitle(c, users, session.me.id)}</span></span>
+                    <span className="sb-preview" translate="no">{last ? `${who}: ${plainPreview(last.body, users)}` : ''}</span>
                   </span>
                   <span className="sb-meta">
                     <span className="sb-time">{last ? shortTime(last.createdAt) : ''}</span>
-                    {c.mentions > 0 ? <span className="badge">@ {c.mentions}</span> : <span className="chip accent">{c.unread} new</span>}
+                    {c.mentions > 0 ? <span className="badge">@ {c.mentions}</span> : <span className="chip accent">{`${c.unread} new`}</span>}
                   </span>
                 </button>
               );
@@ -101,9 +117,14 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
         )}
       </section>
 
-      <div className="grid cols-3">
-        <TeamToday users={session.users} meId={session.me.id} onPerson={onPerson} />
+      {session.me.role !== 'guest' && <WeekStrip onOpenBoard={() => go('notices')} />}
+
+      <div className="grid cols-3 pulse-sheet">
+        {session.me.role !== 'guest' && <NibPulseCard />}
+        <MeetPulseCard onOpen={() => go('meet')} />
+        <DayLogCard users={session.users} meId={session.me.id} onPerson={onPerson} />
         <NextMeeting meId={session.me.id} onOpen={() => go('calendar')} />
+        <OfficeDrawingCard users={session.users} me={session.me} onOpen={() => go('directory')} />
         <div className="card interactive" onClick={() => go('directory')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go('directory')}>
           <div className="eyebrow">Online now</div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -120,7 +141,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
           <form style={{ display: 'flex', gap: 8 }} onSubmit={(e) => { e.preventDefault(); void saveStatus(status.trim() || null); }}>
             <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder="What are you working on?" maxLength={120}
               value={status} onChange={(e) => setStatus(e.target.value)} disabled={!live} aria-label="Status message" />
-            <button className="btn primary" disabled={!live || status.trim() === (session.me.statusText ?? '')}>Set</button>
+            <button className="btn primary" disabled={!live || status.trim() === (session.me.statusText ?? '')} title={!live ? 'Waiting for the office hub…' : status.trim() === (session.me.statusText ?? '') ? 'Type a new status first' : undefined}>Set</button>
           </form>
           <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>Colleagues see this next to your name.</p>
         </div>
@@ -135,6 +156,8 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
             <p className="faint" style={{ marginTop: 10, fontSize: 13 }}>{pendingCount ? 'Review new devices in the Control room' : 'No one is waiting'}</p>
           </div>
         )}
+
+        <Widgets live={live} />
 
         <div className="card">
           <div className="eyebrow">Office hub</div>
@@ -152,5 +175,26 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Cards that integrations keep up to date (build status, plotter queue...), from the Bot API. */
+function Widgets({ live }: { live: boolean }) {
+  const [list, setList] = useState<Widget[]>([]);
+  useEffect(() => { if (live) void window.dex.request('widgets.list').then(setList).catch(() => {}); }, [live]);
+  useEffect(() => window.dex.onHubEvent((name, data) => { if (name === 'widgets.updated') setList(data as Widget[]); }), []);
+  return (
+    <>
+      {list.map((w) => (
+        <div key={`${w.botId}-${w.key}`} className="card widget-card">
+          <div className="eyebrow"><span translate="no">{w.title}</span><span className="widget-from mono" translate="no">{w.botName.toUpperCase()}</span></div>
+          <ul className="widget-lines">{w.lines.map((l, i) => <li key={i} translate="no">{l}</li>)}</ul>
+          <div className="widget-foot">
+            <span className="faint mono">UPDATED {formatTime(w.updatedAt)}</span>
+            {w.url && <a href={w.url} target="_blank" rel="noreferrer noopener">Open</a>}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

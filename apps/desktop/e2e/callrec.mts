@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import { startOffice, launch, shot, sleep } from './harness.mts';
+const { owner, hub } = await startOffice('callrec');
+const a = await launch('priya', 'Priya Raman');
+const b = await launch('ravi', 'Ravi Kumar');
+try {
+  const users = (await owner.request('directory.list')).users;
+  const ravi = users.find((u: any) => u.account.endsWith('ravi'))!;
+  const priya = users.find((u: any) => u.account.endsWith('priya'))!;
+  const dm = await a.page.evaluate((id) => window.dex.request('conv.create', { kind: 'direct', members: [id] }), ravi.id);
+  await a.page.getByRole('button', { name: /^Direct/ }).first().click();
+  await a.page.locator('.sb-row').first().click();
+  await a.page.getByTitle('Open a Room with voice').click();
+  await b.page.locator('.room-banner').getByRole('button', { name: 'Join with video' }).click({ timeout: 20000 });
+  await a.page.locator('.room-tile video').first().waitFor({ timeout: 20000 }).catch(() => {});
+  await sleep(2500);
+  await a.page.getByTitle('Record the Room (everyone is told)').click();
+  await b.page.locator('.rec-chip', { hasText: 'Priya Raman is recording' }).waitFor({ timeout: 10000 });
+  await a.page.locator('.rec-chip', { hasText: 'You are recording' }).waitFor();
+  await sleep(3000);
+  await shot(b.page, 'callrec-01-other-side');
+  await shot(a.page, 'callrec-02-recording');
+  await a.page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+  await sleep(300);
+  await shot(a.page, 'callrec-02b-recording-dark');
+  await a.page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
+  await a.page.getByTitle('Stop recording').click();
+  // the recording is kept on the hub, then shared with the conversation and played from the shelf
+  await a.page.getByText('Kept on the hub.').waitFor({ timeout: 30000 });
+  await shot(a.page, 'callrec-03-ready');
+  await a.page.getByRole('button', { name: 'Share with the conversation' }).click();
+  await sleep(1500);
+  await a.page.getByRole('button', { name: 'Open on the shelf' }).click();
+  await a.page.getByTitle('Leave the Room').click().catch(() => {});
+  await a.page.locator('.rec-viewer video').waitFor({ timeout: 15000 });
+  const dims = await a.page.locator('.rec-viewer video').evaluate((v: HTMLVideoElement) => new Promise((r) => { const done = () => r([v.videoWidth, v.videoHeight]); if (v.readyState >= 1) done(); else v.onloadedmetadata = done; setTimeout(() => r([v.videoWidth, v.videoHeight]), 8000); }));
+  assert.deepEqual(dims, [1280, 720]);
+  await shot(a.page, 'callrec-04-shared');
+  void priya;
+  console.log('CALLREC E2E PASSED');
+} catch (e) { await shot(a.page, 'callrec-FAIL-a'); await shot(b.page, 'callrec-FAIL-b'); throw e; } finally { await a.app.close(); await b.app.close(); owner.disconnect(); await hub.stop(); }

@@ -7,6 +7,7 @@ import { Icon, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { VoicePlayer } from './voice.tsx';
 import { VideoClip } from './clips.tsx';
+import { OfficeCard, PdfChip, isOffice, isPdf } from '../pdf/cards.tsx';
 
 export const filesSupported = () => typeof window.dex.uploadFile === 'function';
 export const fileSrc = (id: string) => `dexfile://f/${id}`;
@@ -70,7 +71,11 @@ export function FileActions({ f }: { f: FileInfo }) {
   );
 }
 
-export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f: FileInfo, all: FileInfo[]) => void }) {
+export function MessageFiles({ files, onView, draggableAs }: {
+  files: FileInfo[]; onView: (f: FileInfo, all: FileInfo[]) => void;
+  /** Files can be dragged into other conversations as references (see refs.tsx). */
+  draggableAs?: (f: FileInfo) => Record<string, unknown>;
+}) {
   if (!files.length) return null;
   const images = files.filter(isImage);
   const showImages = filesSupported();
@@ -82,7 +87,7 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
       {showImages && images.length > 0 && (
         <div className={`img-grid n${Math.min(images.length, 4)}`}>
           {images.slice(0, 4).map((f, i) => (
-            <button key={f.id} className="img-tile" onClick={() => onView(f, images)} title={f.name}>
+            <button key={f.id} className="img-tile" onClick={() => onView(f, images)} title={f.name} {...draggableAs?.(f)}>
               <FileImg f={f} lazy />
               {i === 3 && images.length > 4 && <span className="more">+{images.length - 4}</span>}
             </button>
@@ -92,11 +97,14 @@ export function MessageFiles({ files, onView }: { files: FileInfo[]; onView: (f:
       {audio.map((f) => <VoicePlayer key={f.id} f={f} />)}
       {videos.map((f) => <VideoClip key={f.id} f={f} />)}
       {[...(showImages ? [] : images), ...others].map((f) => {
+        // PDFs open in the viewer; Office files say what they are (pdf/cards.tsx)
+        if (showImages && isPdf(f)) return <PdfChip key={f.id} f={f} onOpen={() => onView(f, [f])} dragProps={draggableAs?.(f)} />;
+        if (isOffice(f)) return <OfficeCard key={f.id} f={f} dragProps={draggableAs?.(f)} />;
         const k = kind(f);
         return (
-          <div key={f.id} className="file-card">
+          <div key={f.id} className="file-card" {...draggableAs?.(f)}>
             <span className="file-ico" data-kind={k.icon}><Icon name={k.icon} size={18} /><span>{k.label}</span></span>
-            <span className="sb-main"><span className="sb-name" title={f.name}>{f.name}</span><span className="sb-preview">{formatSize(f.size)}</span></span>
+            <span className="sb-main"><span className="sb-name" title={f.name} translate="no">{f.name}</span><span className="sb-preview">{formatSize(f.size)}</span></span>
             <FileActions f={f} />
           </div>
         );
@@ -120,7 +128,7 @@ export function Lightbox({ file, all, onClose }: { file: FileInfo; all: FileInfo
   return createPortal(
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={f.name} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <header>
-        <span className="sb-name">{f.name}</span><span className="faint">{formatSize(f.size)}{all.length > 1 ? ` · ${i + 1} of ${all.length}` : ''}</span>
+        <span className="sb-name" translate="no">{f.name}</span><span className="faint">{formatSize(f.size)}{all.length > 1 ? ` · ${i + 1} of ${all.length}` : ''}</span>
         <span style={{ flex: 1 }} />
         <FileActions f={f} />
         <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
@@ -153,8 +161,8 @@ function wireProgress(): void {
   window.dex.onUploadProgress((id, sent, total) => progressListeners.get(id)?.(sent, total));
 }
 
-/** Start uploading files; `update` receives every change. */
-export function startUploads(files: File[], update: (key: string, patch: Partial<Attachment> | null) => void): Attachment[] {
+/** Start uploading files; `update` receives every change. For a conversation, `convId` lets the app encrypt Direct files first. */
+export function startUploads(files: File[], update: (key: string, patch: Partial<Attachment> | null) => void, convId?: string): Attachment[] {
   wireProgress();
   const out: Attachment[] = [];
   for (const file of files) {
@@ -166,7 +174,7 @@ export function startUploads(files: File[], update: (key: string, patch: Partial
     void (async () => {
       try {
         const path = window.dex.pathForFile?.(file) || '';
-        const src = path ? { path, name: a.name, mime } : { data: await file.arrayBuffer(), name: a.name, mime };
+        const src = path ? { path, name: a.name, mime, convId } : { data: await file.arrayBuffer(), name: a.name, mime, convId };
         if (!path && file.size > 100 * 1024 * 1024) throw new Error('Large files must be attached from disk, not pasted.');
         const info = await window.dex.uploadFile!(key, src);
         update(key, { info, sent: file.size });
@@ -190,7 +198,7 @@ export function AttachmentTray({ items, onRemove }: { items: Attachment[]; onRem
           <div key={a.key} className={`attach-chip${a.error ? ' failed' : a.info ? ' done' : ''}`} title={a.error ?? a.name}>
             {a.preview ? <img src={a.preview} alt="" /> : <span className="file-ico small"><Icon name={kind(a).icon} size={14} /></span>}
             <span className="sb-main">
-              <span className="sb-name">{a.name}</span>
+              <span className="sb-name" translate="no">{a.name}</span>
               <span className="sb-preview">{a.error ? a.error : a.info ? formatSize(a.size) : `${pct}% of ${formatSize(a.size)}`}</span>
             </span>
             {!a.info && !a.error && <span className="chip-bar"><span style={{ width: `${pct}%` }} /></span>}
@@ -218,7 +226,8 @@ export function FilesPanel({ convId, onView, onClose }: { convId: string; onView
         {(list ?? []).filter((f) => !isImage(f) || !filesSupported()).map((f) => (
           <div key={`${f.messageId}-${f.id}`} className="file-card compact">
             <span className="file-ico"><Icon name={kind(f).icon} size={16} /></span>
-            <span className="sb-main"><span className="sb-name" title={f.name}>{f.name}</span><span className="sb-preview">{formatSize(f.size)} · {new Date(f.createdAt).toLocaleDateString()}</span></span>
+            <span className="sb-main"><span className="sb-name" title={f.name} translate="no">{f.name}</span><span className="sb-preview">{formatSize(f.size)} · {new Date(f.createdAt).toLocaleDateString()}</span></span>
+            {filesSupported() && (isPdf(f) || isOffice(f)) && <button className="btn ghost" onClick={() => onView(f, [f])}>{isPdf(f) ? 'View' : 'Details'}</button>}
             <FileActions f={f} />
           </div>
         ))}

@@ -1,5 +1,7 @@
 // Shared UI building blocks: icons, avatars, controls, toasts and formatting helpers.
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+// the base stylesheet comes first: every screen's own styles and drawing.css load after it and win
+import './styles.css';
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { PublicUser } from '@dex/core';
@@ -15,6 +17,7 @@ const PATHS = {
   monitor: 'M3.5 5h17v11h-17zM9 20h6M12 16v4',
   server: 'M4 4.5h16v6H4zM4 13.5h16v6H4zM7.5 7.5h.01M7.5 16.5h.01',
   lock: 'M6 10.5h12V20H6zM8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5',
+  unlock: 'M6 10.5h12V20H6zM8.5 10.5V8a3.5 3.5 0 0 1 6.9-.8',
   refresh: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15',
   clock: 'M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm0-12v4.5l3 2',
   sun: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-13v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4',
@@ -41,11 +44,13 @@ const PATHS = {
   play: 'M7 5v14l11-7z',
   open: 'M14 4.5h5.5V10M19.5 4.5 11 13M17 13.5V19.5H4.5V7H10',
   download: 'M12 4.5v11M7 11l5 5 5-5M5 19.5h14',
-  phone: 'M6.5 3.5h3l1.5 4.5-2 1.5a11 11 0 0 0 5.5 5.5l1.5-2 4.5 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4.5 5.5a2 2 0 0 1 2-2z',
+  /** Voice: a Room on plan with sound leaving it (not a handset). */
+  phone: 'M3.5 6.5h9v11h-9zM3.5 10h3.5v4H3.5M15.5 9.5a3.5 3.5 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10',
   history: 'M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3h3M12 8v4.5l3 2',
   globe: 'M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17zM3.5 12h17M12 3.5c2.3 2.3 3.5 5.2 3.5 8.5s-1.2 6.2-3.5 8.5c-2.3-2.3-3.5-5.2-3.5-8.5S9.7 5.8 12 3.5z',
   mobile: 'M8 3.5h8a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19V5A1.5 1.5 0 0 1 8 3.5zM11 17.5h2',
-  'phone-off': 'M4 15.5c4.6-4.4 11.4-4.4 16 0l-1.6 2.6-3.6-1.3v-2.5a10 10 0 0 0-5.6 0v2.5l-3.6 1.3z',
+  /** Leave or end: a door with the way out (not a hung-up handset). */
+  'phone-off': 'M3.5 20.5h10M5.5 20.5V3.5h7v17M10 12h.01M13.5 12h7.5M18 9l3 3-3 3',
   video: 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3',
   'video-off': 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3M3 3l18 18',
   mic: 'M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21',
@@ -66,8 +71,10 @@ const PATHS = {
   copy: 'M8 8h11v12H8zM5 16V4h11',
   trash: 'M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13',
   at: 'M16 12a4 4 0 1 1-1.2-2.9M16 8v5.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.6 7.2',
-  send: 'M4.5 12 20 4.5 15.5 20l-3.5-6.5zM12 13.5l8-9',
-  chat: 'M4.5 5.5h15v10h-8l-4.5 4v-4h-2.5z',
+  /** Send on: a transmittal, a sheet with a dimension arrow leaving it (not a paper plane). */
+  send: 'M4 4.5h8l3 3v3M4 4.5v15h11v-3M8.5 13.5H20.5M17.5 10.5l3 3-3 3',
+  /** Messages: a spine with entries hanging off it (not a speech bubble). */
+  chat: 'M5 3.5v17M5 7h2.5M5 14h2.5M10.5 6h9M10.5 9h6M10.5 13h9M10.5 16h5',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   star: 'M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.7l-5.1 2.7 1-5.6-4.1-4 5.7-.8z',
   alarm: 'M12 20.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Zm0-11v3.5l2.5 1.5M4 5.5 6.5 3M20 5.5 17.5 3',
@@ -80,6 +87,45 @@ const PATHS = {
   schedule: 'M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm0-12v4.5l3 2M3.5 20.5l3-3',
   pause: 'M8.5 5.5v13M15.5 5.5v13',
   repeat: 'M5 10a6 6 0 0 1 10.5-4L18 8.5M18 4.5v4h-4M19 14a6 6 0 0 1-10.5 4L6 15.5M6 19.5v-4h4',
+  /** Direct: two linked tiles. */
+  direct: 'M5.5 5.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2zM15.5 11.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2zM10.5 9H17v2.5',
+  /** Directory: an index card with a tab. */
+  card: 'M3.5 7h17v12.5h-17zM5.5 7V4.5h5V7M6.5 10.5h4v4h-4zM13 11h5M13 14h4M6.5 17h11',
+  /** Keep on my Desk: a desk drawer. */
+  drawer: 'M4 4.5h16v15H4zM4 12h16M10 8.25h4M10 15.75h4',
+  /** Send: a dimension arrow ending in an extension tick. */
+  dimsend: 'M3.5 12H19M14.5 7.5 19 12l-4.5 4.5M20.5 5.5v13',
+  chevron: 'M7 10l5 5 5-5',
+  /** A rubber stamp (reactions). */
+  stamp: 'M9.5 4h5v5l3 3.5h-11l3-3.5zM5 14.5h14v3H5zM6 20.5h12',
+  /** A side-track: a branch off the spine. */
+  branch: 'M7 3.5v9a4.5 4.5 0 0 0 4.5 4.5H20M16.5 13.5 20 17l-3.5 3.5',
+  /** Close a Pane: a sheet folding away. */
+  'pane-close': 'M4.5 4.5h15v15h-15zM9.5 9.5l5 5M14.5 9.5l-5 5',
+  /** Lay a Pane beside the others. */
+  beside: 'M3.5 5h7.5v14H3.5zM13 5h7.5v14H13zM16.75 9.5v5M14.5 12h4.5',
+  /** Restyle: a line of text with a revision delta over it. */
+  restyle: 'M4 17.5h9M4 13.5h6M15.5 4.5 20 12h-9zM15.5 15v5',
+  /** A Decision: a question that branches into outcomes. */
+  decision: 'M12 4l6 6-6 6-6-6zM6 10H3.5v9M18 10h2.5v9M12 16v3.5',
+  /** A drag grip on the tool column. */
+  grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  /** Reaction insights: bars on an axis. */
+  insight: 'M4 4v16h16M8 16V11M12 16V7M16 16v-3',
+  /** Nib: a drafting pen's nib, with its slit and breather hole. */
+  nib: 'M8.5 3.5h7v3l2.5 4L12 20.5 6 10.5l2.5-4zM8.5 6.5h7M12 20.5v-7.6M12 12.9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
+  /** A day sheet: a ruled sheet with a tick. */
+  daysheet: 'M5 3.5h14v17H5zM8 8h8M8 11.5h5M8 15l1.8 1.8L13.5 13',
+  /** A reference: a sheet with a leader pointing elsewhere. */
+  reference: 'M4.5 4.5h9v11h-9zM13.5 10H20M16.5 6.5 20 10l-3.5 3.5M7 8h4M7 11h4',
+  /** An action point: a register's tick box with a leader to whoever acts on it. */
+  action: 'M4 5h6v6H4zM5.4 8.1l1.3 1.3 2.1-2.5M12.5 8H20M4 15.5h10M17 12.5l3 3-3 3',
+  /** A notice: a sheet held up by a drawing pin, with its lines. */
+  notice: 'M5 6.5h14V20H5zM10.2 6.4a1.8 1.8 0 1 1 3.6 0M8 11h8M8 14h8M8 17h5',
+  /** A letter for staff without the app: a sheet folded into its cover. */
+  mail: 'M3.5 6h17v12h-17zM3.5 6.5l8.5 6.5 8.5-6.5',
+  /** A meeting's recap: a sheet with its title block in the corner. */
+  recap: 'M4 3.5h16v17H4zM11.5 14.5h8.5M11.5 14.5v6M15.5 14.5v6M7 7.5h10M7 10.5h6',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -126,6 +172,11 @@ export function presenceFor(id: string): Presence {
   return a === 'busy' ? 'busy' : 'on';
 }
 
+/** Some tiles are drawn rather than lettered (a bot a member made): bots/BotMark.tsx supplies them. */
+type TileArt = (id: string, size?: 'sm' | 'lg') => { colour: string; node: ReactNode; monogram: boolean } | null;
+let tileArt: TileArt = () => null;
+export function setTileArt(f: TileArt): void { tileArt = f; }
+
 /** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
 export function Avatar({ user, online, presence, size }: {
   user: Pick<PublicUser, 'id' | 'displayName'>;
@@ -134,15 +185,29 @@ export function Avatar({ user, online, presence, size }: {
   size?: 'sm' | 'lg';
 }) {
   const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
+  const art = tileArt(user.id, size);
+  if (art) {
+    return (
+      <span className={`avatar bot-tile${art.monogram ? ' mono' : ''}${size ? ` ${size}` : ''}`} style={{ background: art.colour }} translate="no" title={user.displayName}>
+        {art.node}
+      </span>
+    );
+  }
   return (
-    <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }}
-      title={p ? `${user.displayName} · ${PRESENCE_LABEL[p]}` : user.displayName}>
+    <span className={`avatar${size ? ` ${size}` : ''}`} data-presence={p} style={{ background: colorFor(user.id) }} translate="no"
+      title={p ? `${user.displayName} · ${presenceText(user.id, p)}` : user.displayName}>
       {initials(user.displayName)}
     </span>
   );
 }
 
-export const PRESENCE_LABEL: Record<Presence, string> = { on: 'available', off: 'offline', away: 'away', room: 'in a Room', dnd: 'do not disturb', busy: 'busy', meeting: 'in a meeting' };
+export const PRESENCE_LABEL: Record<Presence, string> = { on: 'at their desk', off: 'offline', away: 'away', room: 'in a Room', dnd: 'no interruptions', busy: 'heads-down', meeting: 'in a meeting' };
+
+/** A finer word for someone in a Room ("in Piping desk" for a lounge), from whoever knows (lounges/store.ts). */
+let presenceNote: (id: string) => string | null = () => null;
+export function setPresenceNote(f: (id: string) => string | null): void { presenceNote = f; }
+/** How someone's presence reads: "at their desk", "in Piping desk"… */
+export function presenceText(id: string, p: Presence): string { return (p === 'room' && presenceNote(id)) || PRESENCE_LABEL[p]; }
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="toggle" onClick={() => onChange(!checked)} />;
@@ -158,11 +223,12 @@ export function ToggleRow({ checked, onChange, label }: { checked: boolean; onCh
   );
 }
 
-export function Segmented<T extends string | number>({ value, options, onChange, label }: {
-  value: T; label: string; onChange: (v: T) => void; options: Array<{ value: T; label: string; icon?: IconName; badge?: number }>;
+/** A choice of one, drawn as a row of ruled cells (`className` adds a variant, such as the Control room's register). */
+export function Segmented<T extends string | number>({ value, options, onChange, label, className }: {
+  value: T; label: string; onChange: (v: T) => void; options: Array<{ value: T; label: string; icon?: IconName; badge?: number }>; className?: string;
 }) {
   return (
-    <div className="seg" role="group" aria-label={label}>
+    <div className={`seg${className ? ` ${className}` : ''}`} role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
           {o.icon && <Icon name={o.icon} size={16} />}
@@ -194,16 +260,52 @@ export function deviceCode(deviceId: string): string {
   return deviceId.slice(0, 8).toUpperCase().replace(/(.{4})/, '$1 ');
 }
 
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const visible = (el: HTMLElement) => !!(el.offsetParent || el.getClientRects().length);
+/** The keyboard stays inside a dialog: Tab from the last control goes back to the first. */
+export function trapTab(e: React.KeyboardEvent<HTMLElement>): void {
+  if (e.key !== 'Tab') return;
+  const all = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(visible);
+  if (!all.length) { e.preventDefault(); return; }
+  const first = all[0];
+  const last = all[all.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !e.currentTarget.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+/**
+ * Focus for a dialog or sheet: into it when it opens (its first field, or the dialog itself),
+ * and back to whatever had it when it closes.
+ */
+export function useDialogFocus(ref: React.RefObject<HTMLElement | null>, field = true): void {
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) {
+      const first = !field ? undefined : [...el.querySelectorAll<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea:not([disabled]), select:not([disabled])')].find(visible);
+      (first ?? el).focus({ preventScroll: true });
+    }
+    return () => {
+      const now = document.activeElement;
+      if (before?.isConnected && (!now || now === document.body || el?.contains(now))) before.focus({ preventScroll: true });
+    };
+  }, [ref, field]);
+}
+/** Is this the dialog on top (the last one opened)? Escape closes only that one. */
+const onTop = (el: HTMLElement | null) => { const all = document.querySelectorAll('.scrim'); return !!el && all[all.length - 1] === el; };
+
 /** A centred dialog over a blurred scrim, rendered at the top of the document. */
 export function Dialog({ title, children, onClose, narrow }: { title: string; children: ReactNode; onClose: () => void; narrow?: boolean }) {
+  const scrim = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && onTop(scrim.current)) onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return createPortal(
-    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={scrim} className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={box} tabIndex={-1} onKeyDown={trapTab} className={`dialog wide${narrow ? ' narrow' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
           <h2 style={{ flex: 1 }}>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
@@ -219,22 +321,45 @@ export function Dialog({ title, children, onClose, narrow }: { title: string; ch
  * A menu or picker anchored to a button, rendered at the top of the document so a
  * scrolling or clipped container never cuts it off. Flips above the anchor near the bottom.
  */
+/** Arrow keys, Home and End move between the items of a menu (from its search field too). */
+export function menuKeys(e: React.KeyboardEvent<HTMLElement>): void {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (typing && (e.key === 'Home' || e.key === 'End')) return;
+  const items = [...e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')].filter(visible);
+  if (!items.length) return;
+  e.preventDefault();
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const down = e.key === 'ArrowDown';
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : at < 0 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
+}
+
 export function Popover({ anchor, onClose, className, children, align = 'end' }: {
-  anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode; align?: 'start' | 'end';
+  anchor: HTMLElement | null; onClose: () => void; className: string; children: ReactNode;
+  /** 'right': beside the anchor, for menus that open from a vertical tool column. */
+  align?: 'start' | 'end' | 'right';
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!anchor || !el) return;
-    const a = anchor.getBoundingClientRect();
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    let left = align === 'end' ? a.right - w : a.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-    let top = a.bottom + 6;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, a.top - h - 6);
-    setPos({ left, top });
+    const place = () => {
+      const a = anchor.getBoundingClientRect();
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      let left = align === 'end' ? a.right - w : align === 'right' ? a.right + 6 : a.left;
+      left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+      let top = align === 'right' ? a.top - 6 : a.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, align === 'right' ? window.innerHeight - h - 8 : a.top - h - 6);
+      setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
+    };
+    place();
+    // content that arrives or opens later (a submenu, items loaded on open) places it again
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    ro?.observe(el);
+    return () => ro?.disconnect();
   }, [anchor, align]);
   useEffect(() => {
     const down = (e: MouseEvent) => {
@@ -256,41 +381,69 @@ export function Popover({ anchor, onClose, className, children, align = 'end' }:
       window.removeEventListener('resize', onClose);
     };
   }, [anchor, onClose]);
+  // a menu takes the keyboard when it opens (unless a field in it already has it) and gives it back when it closes
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) el.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+    return () => { if (el?.contains(document.activeElement) && anchor?.isConnected) anchor.focus({ preventScroll: true }); };
+  }, [anchor]);
   return createPortal(
-    <div ref={ref} className={`popover ${className}`} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
+    <div ref={ref} className={`popover ${className}`} onKeyDown={menuKeys} style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>,
     document.body,
   );
 }
 
 // ------------------------------------------------------------------ toasts
-interface Toast { id: number; text: string; bad?: boolean }
-const ToastCtx = createContext<(text: string, bad?: boolean) => void>(() => {});
+/** A button in a toast, such as Undo. */
+export interface ToastAction { label: string; run: () => void }
+interface Toast { id: number; text: string; bad?: boolean; action?: ToastAction }
+type Push = (text: string, bad?: boolean, action?: ToastAction) => void;
+const ToastCtx = createContext<Push>(() => {});
 export const useToast = () => useContext(ToastCtx);
+/** Long enough to read: longer for long text, for problems and for toasts with a button. */
+const toastTime = (t: Toast) => Math.max(t.action ? 7000 : 4200, 1800 + t.text.length * 55) + (t.bad ? 1800 : 0);
 
 export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const push = useCallback((text: string, bad?: boolean) => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-3), { id, text, bad }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+  // everything below is drawn afresh on 'dex-redraw' (a new language), where the window cannot reload
+  const [epoch, setEpoch] = useState(0);
+  useEffect(() => {
+    const on = () => setEpoch((n) => n + 1);
+    window.addEventListener('dex-redraw', on);
+    return () => window.removeEventListener('dex-redraw', on);
   }, []);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const drop = useCallback((id: number) => { clearTimeout(timers.current.get(id)); timers.current.delete(id); setToasts((t) => t.filter((x) => x.id !== id)); }, []);
+  const later = useCallback((id: number, ms: number) => { clearTimeout(timers.current.get(id)); timers.current.set(id, setTimeout(() => drop(id), ms)); }, [drop]);
+  const push = useCallback<Push>((text, bad, action) => {
+    const t: Toast = { id: Date.now() + Math.random(), text, bad, action };
+    setToasts((all) => [...all.slice(-3), t]);
+    later(t.id, toastTime(t));
+  }, [later]);
   // parts of the app without access to the toast context (message formatting) raise errors this way
   useEffect(() => {
-    const on = (e: Event) => push(String((e as CustomEvent).detail), true);
+    // a plain string is a problem; { text, ok: true } is good news (a reference posted from a drag)
+    const on = (e: Event) => { const d = (e as CustomEvent).detail as unknown; if (d && typeof d === 'object' && 'text' in d) push(String((d as { text: unknown }).text), (d as { ok?: boolean }).ok !== true); else push(String(d), true); };
     window.addEventListener('dex-toast', on);
     return () => window.removeEventListener('dex-toast', on);
   }, [push]);
   return (
     <ToastCtx.Provider value={push}>
-      {children}
+      <Fragment key={epoch}>{children}</Fragment>
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`}>
+          <div key={t.id} className={`toast${t.bad ? ' bad' : ''}`} role={t.bad ? 'alert' : undefined}
+            onMouseEnter={() => clearTimeout(timers.current.get(t.id))} onMouseLeave={() => later(t.id, 2500)}>
             <Icon name={t.bad ? 'warning' : 'check'} />
-            <span>{t.text}</span>
+            <span className="toast-text">{t.text}</span>
+            {t.action && <button className="btn sm toast-action" onClick={() => { drop(t.id); t.action!.run(); }}>{t.action.label}</button>}
+            <button className="icon-btn toast-x" aria-label="Dismiss" title="Dismiss" onClick={() => drop(t.id)}><Icon name="x" size={14} /></button>
           </div>
         ))}
       </div>
     </ToastCtx.Provider>
   );
 }
+
+// Asking before something that cannot be taken back lives in confirm.tsx (one dialog for the whole app).
+export { confirmAction } from './confirm.tsx';

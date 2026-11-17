@@ -1,0 +1,36 @@
+// The share bar: a small window of its own at the top of the screen (#overlay=bar). In a support
+// session it shows while IT sees the screen; in a meeting while someone uses the presenter's mouse
+// and keyboard ("Give control"). It stays above everything, says who sees or uses the screen, and
+// stops control or sharing with one press. The amber frame around the screen is drawn by the main
+// process.
+import { useEffect, useState } from 'react';
+import type { ShareBarState } from '../../shared/bridge.ts';
+import './help.css';
+
+export function ShareBar() {
+  const [s, setS] = useState<ShareBarState | null>(null);
+  useEffect(() => {
+    document.documentElement.classList.add('sb-overlay-doc');
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => { document.documentElement.dataset.theme = media.matches ? 'dark' : 'light'; };
+    apply();
+    media.addEventListener('change', apply);
+    const off = window.dex.overlay?.onState((x) => setS(x as ShareBarState));
+    window.dex.overlay?.ready();
+    return () => { media.removeEventListener('change', apply); off?.(); };
+  }, []);
+  if (!s) return null;
+  const act = (a: 'stop-control' | 'stop-screen') => window.dex.overlay?.action(a);
+  const meeting = s.context === 'meeting';
+  return (
+    <div className={`share-bar${s.control ? ' control' : ''}`} role="toolbar" aria-label={meeting ? 'Your screen in the meeting' : 'Screen shared with IT'}>
+      <span className="share-bar-pip" aria-hidden="true" />
+      <span className="share-bar-text">
+        <b>{s.control ? `${s.peer} is using your mouse and keyboard` : s.scope === 'window' ? `Sharing your window with ${s.peer}` : `Sharing your screen with ${s.peer}`}</b>
+        <span className="mono">{s.control ? `STOP: ${s.hotkey.toUpperCase()}` : meeting ? 'DEXTERITY CONNECT · MEETING' : 'DEXTERITY CONNECT · IT SUPPORT'}</span>
+      </span>
+      {s.control && <button className="share-bar-btn stop" onClick={() => act('stop-control')}>Stop control</button>}
+      <button className={`share-bar-btn${s.control ? '' : ' stop'}`} onClick={() => act('stop-screen')}>Stop sharing</button>
+    </div>
+  );
+}

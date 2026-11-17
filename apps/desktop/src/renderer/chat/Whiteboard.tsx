@@ -4,9 +4,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Board, BoardOp } from '@dex/core';
-import { Icon, useToast } from '../ui.tsx';
+import { Icon, confirmAction, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
 import { sendMessage } from './store.ts';
+import { BoardPointers } from '../pointers/surfaces.tsx';
 
 type Tool = 'pen' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'erase';
 type Mark = Exclude<BoardOp, { t: 'erase' } | { t: 'clear' }>;
@@ -270,7 +271,7 @@ export function WhiteboardStage({ board, convId, onClose }: { board: Board; conv
     if (!blob || !window.dex.uploadFile) return;
     try {
       const name = `${title.replace(/[^\w -]/g, '').trim() || 'Whiteboard'}.png`;
-      const info = await window.dex.uploadFile(newId(), { data: await blob.arrayBuffer(), name, mime: 'image/png' });
+      const info = await window.dex.uploadFile(newId(), { data: await blob.arrayBuffer(), name, mime: 'image/png', convId });
       await sendMessage(convId, '', null, [info]);
       toast('Posted to the conversation');
     } catch (e) { toast((e as Error).message, true); }
@@ -285,7 +286,7 @@ export function WhiteboardStage({ board, convId, onClose }: { board: Board; conv
         <span className="faint board-live"><span className="work-dot" />Live for everyone in this conversation</span>
         <span style={{ flex: 1 }} />
         <button className="btn ghost" onClick={undo} title="Undo your last mark (Ctrl+Z)">Undo</button>
-        <button className="btn ghost danger" onClick={() => { if (confirm('Clear the whole whiteboard for everyone?')) send({ t: 'clear' }); }}>Clear</button>
+        <button className="btn ghost danger" onClick={() => void confirmAction({ title: 'Clear the whole whiteboard for everyone?', confirm: 'Clear', danger: true }).then((ok) => { if (ok) send({ t: 'clear' }); })}>Clear</button>
         <button className="btn primary" onClick={() => void postImage()}><Icon name="send" size={15} />Post as image</button>
       </header>
       <div className="board-tools" role="toolbar" aria-label="Drawing tools">
@@ -300,6 +301,7 @@ export function WhiteboardStage({ board, convId, onClose }: { board: Board; conv
         {WIDTHS.map((w) => <button key={w} className={`board-tool${width === w ? ' on' : ''}`} onClick={() => setWidth(w)} aria-label={`Thickness ${w}`}><span className="glyph dot" style={{ width: w + 3, height: w + 3 }} /></button>)}
       </div>
       <canvas ref={canvas} className={`board-canvas tool-${tool}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={(e) => e.preventDefault()} />
+      <BoardPointers boardId={board.id} view={view} canvas={canvas} />
       {!loaded && <div className="board-loading"><span className="spinner" /></div>}
       {textAt && (
         <textarea className="board-text" autoFocus style={{ left: textAt.sx, top: textAt.sy, color }} value={text} placeholder="Type, then click away"

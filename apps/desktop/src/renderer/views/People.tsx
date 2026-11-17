@@ -1,23 +1,89 @@
-// The Directory lens: everyone in the office as people cards, an org chart that walks the
-// reporting lines, and departments. Selecting someone opens their profile beside the list.
-import { useEffect, useMemo, useState } from 'react';
+// The Directory lens: everyone in the office as people cards, the office drawing (orgscape/) with
+// reporting lines, departments and the team's day log. Selecting someone opens their card beside
+// the list, drawn as a drawing title block.
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { Presence } from '../ui.tsx';
 import type { Department, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
-import { Avatar, Dialog, Icon, ROLE_LABEL, Segmented, presenceFor, useToast, relativeTime } from '../ui.tsx';
-import { formatBirthday, formatJoined, managersOf, reportsOf, teamSize, useOrg } from '../org/store.ts';
+import { Avatar, Dialog, Icon, Popover, ROLE_LABEL, Segmented, presenceFor, presenceText, useToast, relativeTime } from '../ui.tsx';
+import type { IconName } from '../ui.tsx';
+import { formatBirthday, formatJoined, reportsOf, useOrg } from '../org/store.ts';
 import { startCall } from '../rooms/engine.ts';
 import { addConversation } from '../chat/store.ts';
 import { useWork, workLine } from '../work/store.ts';
-import { TeamAttendance } from '../work/WorkUi.tsx';
+import { TeamDayLog } from '../work/WorkUi.tsx';
+import { useProgressive } from '../progressive.ts';
+import './people.css';
+import { LeftTheOffice } from './LeftOffice.tsx';
+import { Orgscape } from '../orgscape/Orgscape.tsx';
+import { onChartRequest, takeChartRequest } from '../orgscape/request.ts';
+import { peekFloorRequest } from '../orgscape/seating/store.ts';
+import { formatDateTime } from '../time.ts';
 
-type View = 'people' | 'chart' | 'departments' | 'attendance';
+/**
+ * Sheet tabs: labels sitting on a ruled line, the open one cut into it like the tab of a
+ * drawing sheet. Counts sit in a small mono box. Shared by the Directory, the Desk and Search.
+ */
+export function SheetTabs<T extends string>({ value, onChange, label, tabs }: {
+  value: T; onChange: (v: T) => void; label: string; tabs: Array<{ value: T; label: string; count?: number | string; icon?: IconName; attention?: boolean }>;
+}) {
+  return (
+    <div className="sheet-tabs" role="tablist" aria-label={label}>
+      {tabs.map((t) => (
+        <button key={t.value} type="button" role="tab" aria-selected={value === t.value} className="sheet-tab" onClick={() => onChange(t.value)}>
+          {t.icon && <Icon name={t.icon} size={15} />}
+          <span>{t.label}</span>
+          {!!t.count && <span className={`sheet-n mono${t.attention ? ' attention' : ''}`}>{t.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type View = 'people' | 'chart' | 'departments' | 'daylog';
 type Filter = 'all' | 'online';
 
-export function People({ state, session, query, setQuery, focusUser, onMessage }: {
+/** One person's card, drawn again only when something on it changes (not for every key typed in the search). */
+const PersonCard = memo(function PersonCard({ u, meId, selected, flash, online, presence, department, work, onPick }: {
+  u: PublicUser; meId: string; selected: boolean; flash: boolean; online: boolean; presence: Presence; department: string | undefined;
+  work: Parameters<typeof workLine>[0]; onPick: (id: string) => void;
+}) {
+  return (
+    <button id={`person-${u.id}`} className={`card person interactive${selected ? ' selected' : ''}${flash ? ' flash' : ''}`} onClick={() => onPick(u.id)}>
+      {u.profile.extension && <span className="person-ext mono" aria-label={`Extension ${u.profile.extension}`}>EXT {u.profile.extension}</span>}
+      <Avatar user={u} presence={presence} size="lg" />
+      <div className="who">
+        <div className="name">
+          <span className="line" translate="no" title={u.displayName}>{u.displayName}</span>
+          {u.id === meId && <span className="chip accent">You</span>}
+          {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
+          {u.role === 'guest' && <span className="chip guest">Guest</span>}
+        </div>
+        <div className="line muted" translate={u.title ? 'no' : undefined} title={u.title || undefined}>{u.title || (online ? 'Online' : 'Offline')}</div>
+        <div className="line faint" translate="no">{department ?? u.account}</div>
+        {workLine(work) && <div className={`work-line ${work?.status}`}><span className="work-dot" />{workLine(work)}</div>}
+        {u.ooo && u.ooo.until > Date.now() && <div className="work-line leave"><span className="work-dot" />On leave until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}</div>}
+        {u.statusText && <div className="status" translate="no">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
+      </div>
+    </button>
+  );
+});
+
+export function People({ state, session, query: kept, setQuery: keep, focusUser, onMessage }: {
   state: AppState; session: Session; query: string; setQuery: (q: string) => void; focusUser: string | null; onMessage: (userId: string) => void;
 }) {
-  const [view, setView] = useState<View>('people');
+  // the search is typed here and handed back to be kept when the lens closes (typing in it does
+  // not draw the whole app again); the cards follow it a moment behind the keys
+  const [query, setQuery] = useState(kept);
+  const typed = useRef(query);
+  typed.current = query;
+  useEffect(() => () => keep(typed.current), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const search = useDeferredValue(query);
+  // asked to open the drawing at someone (Pulse, a link): start on the drawing
+  const [chartAt, setChartAt] = useState<{ id: string; n: number } | null>(() => { const id = takeChartRequest(); return id ? { id, n: 1 } : null; });
+  const [view, setView] = useState<View>(chartAt || peekFloorRequest() ? 'chart' : 'people');
   const [filter, setFilter] = useState<Filter>('all');
   const [dept, setDept] = useState<string>('');
   const [selected, setSelected] = useState<string | null>(focusUser);
@@ -33,39 +99,51 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
   const managesSomeone = everyone.some((u) => u.profile.managerId === session.me.id);
 
   useEffect(() => { if (focusUser) { setSelected(focusUser); setView('people'); } }, [focusUser]);
+  // a seat link (dexconnect://floor/W-A14): the drawing, where the floor plan takes it from there
+  useEffect(() => { const on = () => setView('chart'); window.addEventListener('dex-floor', on); return () => window.removeEventListener('dex-floor', on); }, []);
+  useEffect(() => onChartRequest((id) => { takeChartRequest(); setView('chart'); setChartAt((c) => ({ id, n: (c?.n ?? 0) + 1 })); }), []);
+  const showInChart = (id: string) => { setView('chart'); setChartAt((c) => ({ id, n: (c?.n ?? 0) + 1 })); };
+  const chartPeople = useMemo(() => everyone.filter((u) => u.role !== 'guest'), [everyone]);
 
   const people = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
     return everyone
       .filter((u) => filter === 'all' || online.has(u.id))
       .filter((u) => !dept || u.profile.departmentId === dept)
       .filter((u) => !q || [u.displayName, u.account, u.title ?? '', u.statusText ?? '', departments.get(u.profile.departmentId ?? '')?.name ?? '',
         u.profile.location ?? '', u.profile.extension ?? '', u.profile.employeeId ?? '', ...Object.values(u.profile.fields)].some((f) => f.toLowerCase().includes(q)))
       .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName));
-  }, [everyone, online, filter, query, dept, departments]);
+  }, [everyone, online, filter, search, dept, departments]);
 
+  // a screenful of cards at once, the rest over the next frames (see progressive.ts)
+  const shown = useProgressive(people, 36, 48);
+  // the person asked for, once their card is drawn
+  const scrolledTo = useRef<string | null>(null);
   useEffect(() => {
-    if (focusUser) document.getElementById(`person-${focusUser}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [focusUser]);
-
+    if (!focusUser || scrolledTo.current === focusUser) return;
+    const el = document.getElementById(`person-${focusUser}`);
+    if (!el) return;
+    scrolledTo.current = focusUser;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focusUser, shown.length]);
   const sel = selected ? users.get(selected) : undefined;
 
   return (
-    <div className={`directory${sel ? ' with-profile' : ''}`}>
+    <div className={`directory${sel ? ' with-profile' : ''}${view === 'chart' ? ' charting' : ''}`}>
       <div className="view directory-main">
         <OfflineBanner state={state} />
         <div className="view-head">
           <div>
             <h1>Directory</h1>
-            <p className="label">{everyone.length} people · {online.size} online{org.departments.length ? ` · ${org.departments.length} departments` : ''}</p>
+            <p className="label">{`${everyone.length} people · ${online.size} online`}{org.departments.length ? ` · ${org.departments.length} departments` : ''}</p>
           </div>
-          <Segmented<View> label="View" value={view} onChange={setView} options={[
-            { value: 'people', label: 'People', icon: 'people' },
-            { value: 'chart', label: 'Org chart', icon: 'list' },
-            { value: 'departments', label: 'Departments', icon: 'grid' },
-            ...(isAdmin || managesSomeone ? [{ value: 'attendance' as View, label: 'Attendance', icon: 'clock' as const }] : []),
-          ]} />
         </div>
+        <SheetTabs<View> label="Directory view" value={view} onChange={setView} tabs={[
+          { value: 'people', label: 'People' },
+          { value: 'chart', label: 'Org chart' },
+          { value: 'departments', label: 'Departments' },
+          ...(isAdmin || managesSomeone ? [{ value: 'daylog' as View, label: 'Day log' }] : []),
+        ]} />
 
         {view === 'people' && (
           <>
@@ -80,125 +158,151 @@ export function People({ state, session, query, setQuery, focusUser, onMessage }
               <Segmented<Filter> label="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'Everyone' }, { value: 'online', label: 'Online' }]} />
             </div>
             {people.length === 0 ? (
-              <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span></div>
+              <div className="empty"><Icon name="people" size={36} /><span>No one matches.</span>{(query.trim() || dept || filter !== 'all') && <button className="btn" onClick={() => { setQuery(''); setDept(''); setFilter('all'); }}>Show everyone</button>}</div>
             ) : (
               <div className="grid cols-people">
-                {people.map((u) => (
-                  <button key={u.id} id={`person-${u.id}`} className={`card person interactive${selected === u.id ? ' selected' : ''}${focusUser === u.id ? ' flash' : ''}`} onClick={() => setSelected(u.id)}>
-                    <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
-                    <div className="who">
-                      <div className="name">
-                        <span className="line">{u.displayName}</span>
-                        {u.id === session.me.id && <span className="chip accent">You</span>}
-                        {(u.role === 'owner' || u.role === 'admin') && <span className="chip">{ROLE_LABEL[u.role]}</span>}
-                        {u.role === 'guest' && <span className="chip warn">Guest</span>}
-                      </div>
-                      <div className="line muted">{u.title || (online.has(u.id) ? 'Online' : 'Offline')}</div>
-                      <div className="line faint">{[departments.get(u.profile.departmentId ?? '')?.name, u.profile.extension && `Ext ${u.profile.extension}`].filter(Boolean).join(' · ') || u.account}</div>
-                      {workLine(work.get(u.id)) && <div className={`work-line ${work.get(u.id)?.status}`}><span className="work-dot" />{workLine(work.get(u.id))}</div>}
-                      {u.statusText && <div className="status">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
-                    </div>
-                  </button>
-                ))}
+                {shown.map((u) => <PersonCard key={u.id} u={u} meId={session.me.id} selected={selected === u.id} flash={focusUser === u.id} online={online.has(u.id)}
+                  presence={presenceFor(u.id)} department={departments.get(u.profile.departmentId ?? '')?.name} work={work.get(u.id)} onPick={setSelected} />)}
               </div>
             )}
+            <LeftTheOffice session={session} query={query} onOpen={setSelected} />
           </>
         )}
 
-        {view === 'chart' && <OrgChart people={everyone} users={users} meId={session.me.id} focus={selected} onFocus={setSelected} departments={departments} />}
-        {view === 'attendance' && <TeamAttendance users={everyone} meId={session.me.id} isAdmin={isAdmin} />}
+        {view === 'chart' && (
+          <Orgscape people={chartPeople} users={users} departments={departments} meId={session.me.id} focus={chartAt} live={live}
+            onOpenCard={setSelected} onMessage={onMessage} />
+        )}
+        {view === 'daylog' && <TeamDayLog users={everyone} meId={session.me.id} isAdmin={isAdmin} />}
         {view === 'departments' && <Departments people={everyone} departments={org.departments} users={users} onOpen={(id) => { setDept(id); setView('people'); }} />}
       </div>
 
       {sel && (
         <ProfilePanel u={sel} users={users} people={everyone} departments={departments} meId={session.me.id} isAdmin={isAdmin} live={live}
           onClose={() => setSelected(null)} onPick={setSelected} onMessage={onMessage} onEdit={() => setEditing(sel.id)}
-          onChart={() => setView('chart')} />
+          onChart={() => showInChart(sel.id)} />
       )}
       {editing && users.get(editing) && <ProfileEditor u={users.get(editing)!} people={everyone} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-// ------------------------------------------------------------------ profile panel
+// ------------------------------------------------------------------ profile: a title block
+type Cell = { k: string; v: ReactNode; wide?: boolean; mono?: boolean; span?: boolean };
+
+/** Lay cells out two to a row; a wide cell takes a whole row, and a cell left alone stretches. */
+function rowsOf(cells: Cell[]): Cell[] {
+  const out: Cell[] = [];
+  let col = 0;
+  for (const c of cells) {
+    if (c.wide && col === 1) { out[out.length - 1] = { ...out[out.length - 1], span: true }; col = 0; }
+    out.push(c.wide ? { ...c, span: true } : c);
+    if (!c.wide) col ^= 1;
+  }
+  if (col === 1) out[out.length - 1] = { ...out[out.length - 1], span: true };
+  return out;
+}
+
+const shortDate = (t: number) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function ProfilePanel({ u, users, people, departments, meId, isAdmin, live, onClose, onPick, onMessage, onEdit, onChart }: {
   u: PublicUser; users: Map<string, PublicUser>; people: PublicUser[]; departments: Map<string, Department>; meId: string; isAdmin: boolean; live: boolean;
   onClose: () => void; onPick: (id: string) => void; onMessage: (id: string) => void; onEdit: () => void; onChart: () => void;
 }) {
   const toast = useToast();
   const org = useOrg();
+  const work = useWork().get(u.id);
+  const [roomMenu, setRoomMenu] = useState(false);
+  const roomBtn = useRef<HTMLButtonElement>(null);
   const manager = u.profile.managerId ? users.get(u.profile.managerId) : undefined;
   const reports = reportsOf(u.id, people);
   const dept = u.profile.departmentId ? departments.get(u.profile.departmentId) : undefined;
+  const presence = presenceFor(u.id);
+  const first = u.displayName.split(/\s+/)[0];
   const call = async (video: boolean) => {
+    setRoomMenu(false);
     try {
       const c = await window.dex.request('conv.create', { kind: 'direct', members: [u.id] });
       addConversation(c);
       await startCall(c.id, video);
     } catch (e) { toast((e as Error).message, true); }
   };
-  const rows: Array<[string, string | null | undefined, boolean?]> = [
-    ['Department', dept?.name],
-    ['Extension', u.profile.extension, true],
-    ['Phone', u.profile.phone, true],
-    ['Email', u.profile.email, true],
-    ['Seat', u.profile.location],
-    ['Employee ID', u.profile.employeeId, true],
-    ['Joined', formatJoined(u.profile.joinedOn)],
-    ['Birthday', formatBirthday(u.profile.birthday)],
-    ['Windows account', u.account, true],
-    ...org.fields.map((f): [string, string | undefined] => [f.label, u.profile.fields[f.id]]),
-  ];
+  const onLeave = u.ooo && u.ooo.until > Date.now() ? u.ooo : null;
+  const cells: Cell[] = [
+    { k: 'Dept', v: dept?.name },
+    { k: 'Ext', v: u.profile.extension, mono: true },
+    { k: 'Seat', v: u.profile.location },
+    {
+      k: 'Line manager',
+      v: manager ? <button className="tb-link" onClick={() => onPick(manager.id)}>{manager.displayName}</button> : null,
+    },
+    { k: 'Status', v: u.role === 'bot' ? null : <>{sentence(presenceText(u.id, presence))}{u.statusText && <span className="tb-sub">{u.statusEmoji ? `${u.statusEmoji} ` : ''}{u.statusText}</span>}</> },
+    { k: 'Day', v: workLine(work) },
+    { k: 'Last on', v: u.id !== meId && presence === 'off' && u.lastSeen ? relativeTime(u.lastSeen) : null },
+    {
+      k: 'On leave', wide: true,
+      v: onLeave ? <>Until {shortDate(onLeave.until)}{onLeave.delegateId && <span className="tb-sub">Ask {users.get(onLeave.delegateId)?.displayName ?? 'a colleague'} meanwhile</span>}</> : null,
+    },
+    { k: 'Phone', v: u.profile.phone, mono: true },
+    { k: 'Employee ID', v: u.profile.employeeId, mono: true },
+    { k: 'Email', v: u.profile.email, mono: true, wide: true },
+    { k: 'Joined', v: formatJoined(u.profile.joinedOn) },
+    { k: 'Birthday', v: formatBirthday(u.profile.birthday) },
+    ...org.fields.map((f): Cell => ({ k: f.label, v: u.profile.fields[f.id] })),
+    { k: 'Windows account', v: u.account, mono: true, wide: true },
+  ].filter((c) => c.v !== null && c.v !== undefined && c.v !== '');
   return (
     <aside className="profile-panel" aria-label={`${u.displayName}'s profile`}>
-      <button className="icon-btn profile-close" onClick={onClose} aria-label="Close profile"><Icon name="x" size={16} /></button>
-      <div className="profile-hero">
-        <Avatar user={u} presence={presenceFor(u.id)} size="lg" />
-        <h2>{u.displayName}</h2>
-        <p className="muted">{u.title ?? ROLE_LABEL[u.role]}</p>
-        <WorkChip userId={u.id} />
-        {u.ooo && <div className="work-line ooo"><Icon name="calendar" size={13} />Out of office until {new Date(u.ooo.until).toLocaleDateString([], { day: 'numeric', month: 'short' })}{u.ooo.delegateId ? ` · ask ${users.get(u.ooo.delegateId)?.displayName ?? 'a colleague'}` : ''}</div>}
-        {u.statusText && <div className="status">{u.statusEmoji ? `${u.statusEmoji} ` : ""}{u.statusText}</div>}
-        {u.id !== meId && presenceFor(u.id) === 'off' && u.lastSeen && <div className="faint" style={{ fontSize: 12 }}>Last seen {relativeTime(u.lastSeen)}</div>}
-        {u.id !== meId && (
-          <div className="row-actions">
-            <button className="btn primary" disabled={!live} onClick={() => onMessage(u.id)}><Icon name="chat" size={15} />Message</button>
-            <button className="icon-btn" disabled={!live} title="Voice call" aria-label="Voice call" onClick={() => void call(false)}><Icon name="phone" size={17} /></button>
-            <button className="icon-btn" disabled={!live} title="Video call" aria-label="Video call" onClick={() => void call(true)}><Icon name="video" size={17} /></button>
-          </div>
-        )}
+      <div className="pp-head">
+        <span className="label">Directory card</span>
+        <button className="icon-btn" onClick={onClose} aria-label="Close profile"><Icon name="x" size={16} /></button>
       </div>
-      <dl className="profile-facts">
-        {rows.filter(([, v]) => v).map(([k, v, mono]) => (
-          <div key={k}><dt>{k}</dt><dd className={`selectable${mono ? ' mono' : ''}`}>{v}</dd></div>
-        ))}
-      </dl>
-      {(manager || reports.length > 0) && (
-        <div className="profile-line">
-          {manager && (
-            <>
-              <div className="label">Reports to</div>
-              <button className="mini-person" onClick={() => onPick(manager.id)}><Avatar user={manager} presence={presenceFor(manager.id)} size="sm" /><span><b>{manager.displayName}</b><span className="faint">{manager.title}</span></span></button>
-            </>
+      <div className="tblock">
+        <div className="tb-head">
+          <div className="tb-tile"><Avatar user={u} presence={presence} size="lg" /></div>
+          <div className="tb-cell"><span className="tb-k">Name</span><span className="tb-v tb-name">{u.displayName}</span></div>
+          <div className="tb-cell"><span className="tb-k">Title</span><span className="tb-v">{u.title ?? ROLE_LABEL[u.role]}</span></div>
+        </div>
+        <dl className="tb-body profile-facts">
+          {rowsOf(cells).map((c) => (
+            <div key={c.k} className={`tb-cell${c.span ? ' span' : ''}`}>
+              <dt className="tb-k">{c.k}</dt>
+              <dd className={`tb-v selectable${c.mono ? ' mono' : ''}`}>{c.v}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      {u.id !== meId && u.role !== 'bot' && (
+        <div className="pp-actions">
+          <button className="btn primary" disabled={!live} onClick={() => onMessage(u.id)}><Icon name="edit" size={15} />Write to {first}</button>
+          <button ref={roomBtn} className="btn room-btn" disabled={!live} aria-haspopup="menu" aria-expanded={roomMenu} onClick={() => setRoomMenu(!roomMenu)}>
+            Open a Room<Icon name="back" size={13} className="chev-down" />
+          </button>
+          {roomMenu && (
+            <Popover anchor={roomBtn.current} onClose={() => setRoomMenu(false)} className="menu" align="start">
+              <button role="menuitem" onClick={() => void call(false)}><Icon name="phone" size={16} />With voice</button>
+              <button role="menuitem" onClick={() => void call(true)}><Icon name="video" size={16} />With video</button>
+            </Popover>
           )}
-          {reports.length > 0 && (
-            <>
-              <div className="label">Direct reports · {reports.length}</div>
-              {reports.map((r) => (
-                <button key={r.id} className="mini-person" onClick={() => onPick(r.id)}><Avatar user={r} presence={presenceFor(r.id)} size="sm" /><span><b>{r.displayName}</b><span className="faint">{r.title}</span></span></button>
-              ))}
-            </>
-          )}
-          <button className="link" onClick={onChart}>See in the org chart</button>
         </div>
       )}
+      {reports.length > 0 && (
+        <div className="profile-line">
+          <div className="label">Their team · {reports.length}</div>
+          {reports.map((r) => (
+            <button key={r.id} className="mini-person" onClick={() => onPick(r.id)}><Avatar user={r} presence={presenceFor(r.id)} size="sm" /><span><b>{r.displayName}</b><span className="faint">{r.title}</span></span></button>
+          ))}
+        </div>
+      )}
+      {u.role !== 'bot' && u.role !== 'guest' && <button className="link pp-chart" onClick={onChart}>See in the org chart</button>}
       {u.id !== meId && live && <InCommon userId={u.id} />}
       {isAdmin && u.role !== 'bot' && <button className="btn" onClick={onEdit}><Icon name="edit" size={15} />Edit details</button>}
     </aside>
   );
 }
 
-/** Spaces you are both in, and your recent calls with them. */
+/** Spaces you are both in, and the Rooms you held together lately. */
 function InCommon({ userId }: { userId: string }) {
   const [d, setD] = useState<{ spaces: Array<{ id: string; name: string }>; calls: Array<{ at: number; durationMs: number; missed: boolean; video: boolean; convId: string }> } | null>(null);
   useEffect(() => {
@@ -214,62 +318,15 @@ function InCommon({ userId }: { userId: string }) {
       {d.spaces.length > 0 && (
         <>
           <div className="label">Spaces in common · {d.spaces.length}</div>
-          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
+          <div className="chip-row">{d.spaces.slice(0, 12).map((s) => <button key={s.id} className="chip" translate="no" title={s.name} onClick={() => void window.dex.openLink?.(`dexconnect://conversation/${s.id}`).catch(() => {})}># {s.name}</button>)}</div>
         </>
       )}
       {d.calls.length > 0 && (
         <>
-          <div className="label">Calls</div>
+          <div className="label">Rooms together</div>
           <ul className="call-history">{d.calls.slice(0, 6).map((c) => (
-            <li key={c.at}><Icon name={c.video ? 'video' : 'phone'} size={13} /><span className={c.missed ? 'missed' : ''}>{c.missed ? 'Missed' : mins(c.durationMs)}</span><span className="faint">{new Date(c.at).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span></li>
+            <li key={c.at}><Icon name={c.video ? 'video' : 'phone'} size={13} /><span className={c.missed ? 'missed' : ''}>{c.missed ? 'Missed' : mins(c.durationMs)}</span><span className="faint">{formatDateTime(c.at, { day: 'numeric', month: 'short' })}</span></li>
           ))}</ul>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------ org chart
-function OrgChart({ people, users, meId, focus, onFocus, departments }: {
-  people: PublicUser[]; users: Map<string, PublicUser>; meId: string; focus: string | null; onFocus: (id: string) => void; departments: Map<string, Department>;
-}) {
-  const hasLines = people.some((u) => u.profile.managerId);
-  // start at the top of the organisation (the person with the largest team)
-  const top = useMemo(() => [...people].filter((u) => !u.profile.managerId || !users.has(u.profile.managerId))
-    .sort((a, b) => teamSize(b.id, people) - teamSize(a.id, people))[0], [people, users]);
-  const centre = (focus && users.get(focus)) || users.get(meId);
-  if (!hasLines) {
-    return <div className="empty"><Icon name="list" size={36} /><span>No reporting lines yet. An administrator can set who reports to whom in each profile, or import them from a spreadsheet in the Control room.</span></div>;
-  }
-  if (!centre) return null;
-  const ladder = managersOf(centre.id, users).reverse();
-  const reports = reportsOf(centre.id, people);
-  const peers = centre.profile.managerId ? reportsOf(centre.profile.managerId, people).filter((p) => p.id !== centre.id) : [];
-  const node = (u: PublicUser, kind: 'up' | 'centre' | 'down' | 'peer') => (
-    <button key={u.id} className={`org-node ${kind}${u.id === meId ? ' me' : ''}`} onClick={() => onFocus(u.id)}>
-      <Avatar user={u} presence={presenceFor(u.id)} size={kind === 'centre' ? 'lg' : 'sm'} />
-      <span className="org-who">
-        <b>{u.displayName}</b>
-        <span className="faint">{u.title ?? departments.get(u.profile.departmentId ?? '')?.name ?? ''}</span>
-        {kind !== 'up' && teamSize(u.id, people) > 0 && <span className="org-team">{teamSize(u.id, people)} in team</span>}
-      </span>
-    </button>
-  );
-  return (
-    <div className="org-chart">
-      <div className="org-tools">
-        {top && top.id !== centre.id && <button className="btn ghost sm" onClick={() => onFocus(top.id)}><Icon name="back" size={14} />Top of the organisation</button>}
-        {centre.id !== meId && <button className="btn ghost sm" onClick={() => onFocus(meId)}>Me</button>}
-      </div>
-      {ladder.length > 0 && <div className="org-ladder">{ladder.map((u) => node(u, 'up'))}</div>}
-      <div className="org-centre">
-        {node(centre, 'centre')}
-        {peers.length > 0 && <div className="org-peers"><span className="label">Same manager</span>{peers.slice(0, 8).map((p) => node(p, 'peer'))}{peers.length > 8 && <span className="faint">+{peers.length - 8} more</span>}</div>}
-      </div>
-      {reports.length > 0 && (
-        <>
-          <div className="org-rule"><span className="label">Direct reports · {reports.length}</span></div>
-          <div className="org-reports">{reports.map((u) => node(u, 'down'))}</div>
         </>
       )}
     </div>
@@ -290,7 +347,7 @@ function Departments({ people, departments, users, onOpen }: { people: PublicUse
           <button key={d.id} className="card interactive dept-card" onClick={() => onOpen(d.id)}>
             <div className="eyebrow">{parent ? `${parent.name} ›` : 'Department'}</div>
             <h3>{d.name}</h3>
-            <p className="muted">{members.length} {members.length === 1 ? 'person' : 'people'}{head ? ` · led by ${head.displayName}` : ''}</p>
+            <p className="muted">{members.length === 1 ? '1 person' : `${members.length} people`}{head ? ` · led by ${head.displayName}` : ''}</p>
             <div className="dept-faces">
               {members.slice(0, 8).map((u) => <Avatar key={u.id} user={u} presence={presenceFor(u.id)} size="sm" />)}
               {members.length > 8 && <span className="faint">+{members.length - 8}</span>}
@@ -319,7 +376,7 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
     try {
       await window.dex.request('admin.org.setProfile', {
         userId: u.id, title: f.title || null, departmentId: f.departmentId || null, managerId: f.managerId || null, phone: f.phone || null,
-        extension: f.extension || null, location: f.location || null, email: f.email || null, employeeId: f.employeeId || null,
+        extension: f.extension || null, ...(u.profile.seatId ? {} : { location: f.location || null }), email: f.email || null, employeeId: f.employeeId || null,
         joinedOn: f.joinedOn || null, birthday: f.birthday || null, fields: f.fields,
       });
       toast(`Saved ${u.displayName}'s details`);
@@ -340,9 +397,9 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
           </select>
         </div>
       </div>
-      <div className="field"><label htmlFor="pe-mgr">Reports to</label>
+      <div className="field"><label htmlFor="pe-mgr">Line manager</label>
         <select id="pe-mgr" className="input" value={f.managerId} onChange={set('managerId')}>
-          <option value="">No one</option>
+          <option value="">None</option>
           {people.filter((p) => p.id !== u.id).sort((a, b) => a.displayName.localeCompare(b.displayName)).map((p) => <option key={p.id} value={p.id}>{p.displayName}{p.title ? ` · ${p.title}` : ''}</option>)}
         </select>
       </div>
@@ -352,7 +409,9 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
       </div>
       <div className="form-row">
         {input('email', 'Email', { maxLength: 120, type: 'email' })}
-        {input('location', 'Seat or location', { maxLength: 80 })}
+        {u.profile.seatId
+          ? <div className="field"><label htmlFor="pe-location">Seat</label><input id="pe-location" className="input mono" value={u.profile.location ?? u.profile.seatId} readOnly aria-describedby="pe-seat-note" /><span id="pe-seat-note" className="faint field-note">From the floor plan. Move them on Org chart ▸ Floor.</span></div>
+          : input('location', 'Seat or location', { maxLength: 80 })}
       </div>
       <div className="form-row">
         {input('employeeId', 'Employee ID', { maxLength: 40 })}
@@ -374,14 +433,8 @@ function ProfileEditor({ u, people, onClose }: { u: PublicUser; people: PublicUs
       <div className="dialog-actions">
         <span className="faint">{u.account}</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={busy} onClick={() => void save()}>Save</button>
+        <button className="btn primary" disabled={busy} onClick={() => void save()}>Save details</button>
       </div>
     </Dialog>
   );
-}
-
-function WorkChip({ userId }: { userId: string }) {
-  const s = useWork().get(userId);
-  const line = workLine(s);
-  return line ? <div className={`work-line ${s?.status}`}><span className="work-dot" />{line}</div> : null;
 }

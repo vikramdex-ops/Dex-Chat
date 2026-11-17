@@ -1,11 +1,19 @@
-// The three one-click reactions on the message bar, chosen in Preferences (kept on this device).
-export const QUICK_DEFAULT = ['👍', '✅', '👀'];
+// Stamps: up to four reactions kept on hand in the Stamp flyout of the spine tool column,
+// chosen in Preferences ("Stamps on hand") and kept on this device.
+export const MAX_STAMPS = 4;
+export const STAMPS_DEFAULT = ['👍', '✅', '👀', '🙏'];
 const KEY = 'dex-quick-reactions';
-export function quickReactions(): string[] {
-  try { const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as unknown; if (Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'string')) return v as string[]; } catch { /* storage off */ }
-  return QUICK_DEFAULT;
+
+export function stampsOnHand(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as unknown;
+    if (Array.isArray(v) && v.length <= MAX_STAMPS && v.every((x) => typeof x === 'string' && x.length > 0)) return v as string[];
+  } catch { /* storage off */ }
+  return STAMPS_DEFAULT;
 }
-export function setQuickReactions(list: string[]): void {
-  try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 3))); } catch { /* storage off */ }
-  window.dispatchEvent(new Event('dex-quick'));
+
+export function setStampsOnHand(list: string[]): void {
+  const clean = [...new Set(list.filter(Boolean))].slice(0, MAX_STAMPS);
+  try { localStorage.setItem(KEY, JSON.stringify(clean)); } catch { /* storage off */ }
+  window.dispatchEvent(new Event('dex-stamps'));
 }

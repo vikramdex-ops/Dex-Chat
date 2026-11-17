@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 // Markdown attachments (README.md, notes) shown formatted, without leaving the conversation.
 import { useEffect, useState } from 'react';
 import type { FileInfo, PublicUser } from '@dex/core';

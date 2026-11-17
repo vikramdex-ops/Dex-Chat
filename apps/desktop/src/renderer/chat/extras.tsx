@@ -28,7 +28,7 @@ export function PollCard({ m, meId, users }: { m: Message; meId: string; users: 
     <div className={`poll${poll.closed ? ' closed' : ''}`} role="group" aria-label={`Poll: ${poll.question}`}>
       <div className="poll-head">
         <Icon name="poll" size={16} />
-        <span className="label">{poll.closed ? 'Poll · closed' : poll.multi ? 'Poll · choose any' : 'Poll · choose one'}{poll.anonymous ? ' · anonymous' : ''}</span>
+        <span className="label">{poll.closed ? 'Poll · voting closed' : poll.multi ? 'Poll · choose any' : 'Poll · choose one'}{poll.anonymous ? ' · anonymous' : ''}</span>
       </div>
       <div className="poll-q">{renderBody(poll.question, users, meId)}</div>
       <div className="poll-options">
@@ -38,29 +38,31 @@ export function PollCard({ m, meId, users }: { m: Message; meId: string; users: 
           return (
             <button key={i} className={`poll-opt${mine ? ' mine' : ''}${showResults && o.votes === leader && leader > 0 ? ' lead' : ''}`} disabled={poll.closed || busy}
               onClick={() => void vote(i)} aria-pressed={mine}>
-              {showResults && <span className="poll-fill" style={{ width: `${pct}%` }} />}
-              <span className={`poll-mark${poll.multi ? ' square' : ''}`}>{mine && <Icon name="check" size={12} />}</span>
-              <span className="poll-text">{o.text}</span>
-              {showResults && (
-                <span className="poll-count">
-                  {!poll.anonymous && o.voters.length > 0 && (
-                    <span className="poll-faces" title={o.voters.map((id) => (id === meId ? 'You' : users.get(id)?.displayName ?? 'Someone')).join(', ')}>
-                      {o.voters.slice(0, 3).map((id) => <span key={id} className="poll-face" style={{ background: colorFor(id) }} />)}
-                    </span>
-                  )}
-                  {pct}%
-                </span>
-              )}
+              <span className="poll-row">
+                <span className={`poll-mark${poll.multi ? ' square' : ''}`}>{mine && <Icon name="check" size={12} />}</span>
+                <span className="poll-text" translate="no">{o.text}</span>
+                {showResults && (
+                  <span className="poll-count">
+                    {!poll.anonymous && o.voters.length > 0 && (
+                      <span className="poll-faces" title={o.voters.map((id) => (id === meId ? 'You' : users.get(id)?.displayName ?? 'Someone')).join(', ')}>
+                        {o.voters.slice(0, 3).map((id) => <span key={id} className="poll-face" style={{ background: colorFor(id) }} />)}
+                      </span>
+                    )}
+                    {o.votes} · {pct}%
+                  </span>
+                )}
+              </span>
+              {showResults && <span className="poll-scale" aria-hidden="true"><span className="poll-fill" style={{ width: `${pct}%` }} /></span>}
             </button>
           );
         })}
       </div>
       <div className="poll-foot faint">
-        {poll.voterCount} {poll.voterCount === 1 ? 'vote' : 'votes'}
+        {poll.voterCount === 1 ? '1 vote' : `${poll.voterCount} votes`}
         {poll.closesAt && !poll.closed && <> · closes {describeWhen(poll.closesAt)}</>}
         {!showResults && <> · vote to see results</>}
         {!poll.closed && m.authorId === meId && (
-          <button className="link" onClick={() => void window.dex.request('poll.close', { messageId: m.id }).catch((e: Error) => toast(e.message, true))}>Close poll</button>
+          <button className="link" onClick={() => void window.dex.request('poll.close', { messageId: m.id }).catch((e: Error) => toast(e.message, true))}>Close voting</button>
         )}
         {m.authorId === meId && showResults && (
           <button className="link" onClick={() => {
@@ -86,7 +88,7 @@ export function ForwardedTag({ m, users, meId }: { m: Message; users: Map<string
   return (
     <div className="fwd-tag">
       <Icon name="forward" size={13} />
-      <span>Forwarded · originally from <b>{who}</b>{where} · {describeWhen(f.createdAt)}</span>
+      <span>Passed on from <b>{who}</b>{where} · {describeWhen(f.createdAt)}</span>
     </div>
   );
 }
@@ -193,7 +195,7 @@ export function ForwardDialog({ message, more = [], users, meId, online, onClose
   return (
     <Dialog title="Forward" onClose={onClose}>
       {more.length ? <div className="quote">{1 + more.length} messages</div>
-        : <div className="quote">{message.body ? renderBody(message.body, users, meId) : <span className="faint">{message.files.length} {message.files.length === 1 ? 'file' : 'files'}</span>}</div>}
+        : <div className="quote">{message.body ? renderBody(message.body, users, meId) : <span className="faint">{message.files.length === 1 ? '1 file' : `${message.files.length} files`}</span>}</div>}
       <input className="input" autoFocus placeholder="Search conversations" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search conversations" />
       <div className="picker-list">
         {list.length === 0 && <div className="faint" style={{ padding: 12 }}>No conversations match.</div>}
@@ -281,7 +283,7 @@ export function ScheduleDialog({ preview, users, meId, onPick, onClose }: {
   const [busy, setBusy] = useState(false);
   const tooSoon = at !== null && at < Date.now() + 60_000;
   return (
-    <Dialog title="Schedule message" onClose={onClose}>
+    <Dialog title="Send later" onClose={onClose}>
       {preview && <div className="quote">{renderBody(preview, users, meId)}</div>}
       <WhenPicker kind="send" value={at} onChange={setAt} />
       {tooSoon && <span className="field-error">Choose a time at least a minute from now.</span>}
@@ -290,7 +292,7 @@ export function ScheduleDialog({ preview, users, meId, onPick, onClose }: {
         <span className="faint">{at ? describeWhen(at) : 'Choose when'}</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={!at || tooSoon || busy} onClick={() => { if (!at) return; setBusy(true); void onPick(at).finally(() => setBusy(false)); }}>
-          <Icon name="schedule" size={15} />Schedule
+          <Icon name="schedule" size={15} />Send at this time
         </button>
       </div>
     </Dialog>

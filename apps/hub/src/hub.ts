@@ -2,6 +2,7 @@
 // people directory and an audit trail. Discovery answers LAN probes so apps find it unaided.
 import https from 'node:https';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -15,6 +16,9 @@ import { HubAnnouncer } from '@dex/core/discovery';
 import type { HubBeacon } from '@dex/core/discovery';
 import { Store } from './store.ts';
 import { UpdateMirror } from './update-mirror.ts';
+import { HubUpdateError, HubUpdater, selfUpdateSupport, windowsLauncher } from './hub-update.ts';
+import type { HubUpdateHost } from './hub-update.ts';
+import { HUB_VERSION } from './version.ts';
 import { Messaging, MsgError } from './messaging.ts';
 import { Desk } from './desk.ts';
 import { Org, OrgError } from './org.ts';
@@ -23,32 +27,102 @@ import { Calendar, CalError } from './calendar.ts';
 import { Guests, GuestError } from './guests.ts';
 import { Compliance, ComplianceError } from './compliance.ts';
 import { Policies, PolicyError } from './policies.ts';
+import { Pairing, lanAddresses } from './pairing.ts';
+import { SystemBot } from './systembot.ts';
+import { Relay, RelayError } from './relay.ts';
+import { ipAllowed } from '@dex/core/dlp';
+import { pairCode, pairLink } from '@dex/core/remote';
 import { Emoji, EmojiError } from './emoji.ts';
 import { RemoteGateway } from './remote.ts';
 import { Ice } from './ice.ts';
+import { CfSetup, CfSetupError, cloudflareEndpoints } from './cfdeploy.ts';
+import type { CfEndpoints, CfSetupOptions, CloudBundle } from './cfdeploy.ts';
 import { slackToMarkdown } from './slack.ts';
 import { Commands, CommandError } from './commands.ts';
 import { Workspace, WorkspaceError } from './workspace.ts';
 import { encKeyStatement } from '@dex/core/e2e';
 import { FileStore } from './files.ts';
 import { Rooms, RoomError } from './rooms.ts';
+import { MeetingError, Meetings } from './meetings.ts';
+import { Flows, FlowError } from './flows.ts';
+import { BotFlows, BotFlowsError } from './botflows.ts';
+import { BotFlowError } from '@dex/core/botflows';
+import { MiniApps, MiniAppError } from './miniapps.ts';
+import { MeetGuests } from './meet-guests.ts';
+import { MeetReports, ReportError } from './meet-reports.ts';
+import { MeetThreads, ThreadError } from './meet-threads.ts';
+import { Recordings, RecordingError } from './recordings.ts';
+import { Webinars, WebinarError } from './webinars.ts';
+import { MEET_ORG_DEFAULT, isWebGuest, isWebGuestDevice, normalizeSlug, siteBase, siteUrlProblem } from '@dex/core';
+import { HelpDesk, HelpError } from './helpdesk.ts';
+import { LoungeError, Lounges } from './lounges.ts';
+import { PointerError, Pointers } from './pointers.ts';
 import type { MirrorOptions } from './update-mirror.ts';
 import { loadOrCreateCertificate } from './tls.ts';
+import { Links, LinkError } from './links.ts';
+import { ReactionInsights, InsightError } from './reactions.ts';
+import { Decisions, DecisionError } from './decisions.ts';
+import { Refs, RefError } from './refs.ts';
+import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
+import { OffboardError, Offboarding } from './offboard.ts';
+import { CalFeedError, CalendarFeeds } from './calfeed.ts';
+import { ZohoError, ZohoSync } from './zoho.ts';
+import type { ZohoTestOptions } from './zoho.ts';
+import { MeetPublic, PublicPageError } from './meet-public.ts';
+import { MissedNotices } from './missed.ts';
+import { Nib, NibError } from './nib.ts';
+import { Holidays, HolidaysError } from './holidays.ts';
+import { NoticeBoard, NoticeError } from './notices.ts';
+import { Seating, SeatingError } from './seating.ts';
+import { applyDefaults, autoBackup } from './firstrun.ts';
+import type { BackupPickOptions, FirstRunHost } from './firstrun.ts';
+import { HealthChecks, registerBuiltInChecks } from './setupcheck.ts';
+import type { BackupAuto } from '@dex/core';
 
-export const HUB_VERSION = '0.1.0';
+export { HUB_VERSION };
 
 export interface HubOptions {
   dataDir: string;
   name?: string;
   port?: number;
   host?: string;
+  /** The relay for large Rooms: off to use only PC-to-PC calls (default on when installed). */
+  relay?: boolean;
+  /** UDP/TCP ports the relay uses for media (default 47910–47999). */
+  relayPorts?: [number, number];
   /** Largest file accepted (default 1 GB). */
   maxFileBytes?: number;
   /** Update mirror settings; `false` turns the mirror off. */
   updates?: Omit<MirrorOptions, 'dir' | 'log'> | false;
+  /**
+   * The hub updating itself (hub-update.ts); `false` turns it off. Tests pass a feed, a stand-in
+   * launcher and `unsupported: null` (by default only the installed Windows service updates itself).
+   */
+  hubUpdate?: Partial<Pick<HubUpdateHost, 'feedUrls' | 'allowHttp' | 'launcher' | 'unsupported' | 'now' | 'checkEveryMs' | 'firstCheckDelayMs' | 'version'>> | false;
   /** UDP port for discovery; `false` disables discovery (tests). */
   discoveryPort?: number | false;
+  /** Register the built-in 2026 holiday circular on first start (default on; most tests turn it off). */
+  holidaySeed?: boolean;
   log?: (level: 'info' | 'warn' | 'error' | 'debug', msg: string, extra?: Record<string, unknown>) => void;
+  /**
+   * The automatic backup folder on the first start (firstrun.ts): tests pass their own disk
+   * detector; `false` leaves backups alone. Default: PowerShell on Windows.
+   */
+  firstRun?: BackupPickOptions | false;
+  /** Zoho Calendar against a mock server (tests only; also DEX_ZOHO_TEST_DCS and DEX_ZOHO_CALLBACK_PORT). */
+  zoho?: ZohoTestOptions;
+  /** "Set up with Cloudflare": where Cloudflare is and what to deploy (tests use a stand-in; src/cfdeploy.ts). */
+  cloudflare?: { endpoints?: CfEndpoints; bundle?: () => CloudBundle | null; fetch?: typeof fetch; waits?: CfSetupOptions['waits'] };
+}
+
+/** Test-only Zoho addresses from the environment (the e2e scripts' mock server); never set in an office. */
+function zohoTestEnv(): ZohoTestOptions | undefined {
+  const dcs = process.env.DEX_ZOHO_TEST_DCS;
+  const port = Number(process.env.DEX_ZOHO_CALLBACK_PORT) || undefined;
+  if (!dcs && !port) return undefined;
+  let parsed: ZohoTestOptions['dcs'];
+  try { parsed = dcs ? JSON.parse(dcs) as ZohoTestOptions['dcs'] : undefined; } catch { parsed = undefined; }
+  return { dcs: parsed, callbackPort: port, retryDelayMs: 50, kickMs: 300 };
 }
 
 interface Conn {
@@ -99,9 +173,20 @@ export class Hub {
   private readonly conns = new Set<Conn>();
   private announcer: HubAnnouncer | null = null;
   readonly mirror: UpdateMirror | null;
+  /** The hub's own updates: it finds, checks and installs newer versions itself (hub-update.ts). */
+  readonly hubUpdate: HubUpdater | null;
   readonly messaging: Messaging;
   readonly files: FileStore;
+  /** What a phone missed while disconnected, and its background service's long poll. */
+  readonly missed: MissedNotices;
   readonly rooms: Rooms;
+  readonly meetings: Meetings;
+  readonly meetGuests: MeetGuests;
+  /** Every meeting's page on the office's meeting site (Dexterity Meet): names, what a page may learn. */
+  readonly meetPublic: MeetPublic;
+  readonly reports: MeetReports;
+  readonly recordings: Recordings;
+  readonly webinars: Webinars;
   readonly desk: Desk;
   readonly org: Org;
   readonly work: Work;
@@ -109,9 +194,45 @@ export class Hub {
   readonly guests: Guests;
   readonly compliance: Compliance;
   readonly policies: Policies;
+  readonly pairing: Pairing;
+  readonly system: SystemBot;
+  readonly relay: Relay;
   readonly emoji: Emoji;
   readonly commands: Commands;
   readonly workspace: Workspace;
+  readonly links: Links;
+  readonly reactionInsights: ReactionInsights;
+  readonly flows: Flows;
+  readonly botflows: BotFlows;
+  readonly miniapps: MiniApps;
+  readonly helpdesk: HelpDesk;
+  readonly lounges: Lounges;
+  readonly pointers: Pointers;
+  readonly decisions: Decisions;
+  readonly refs: Refs;
+  readonly backups: Backups;
+  readonly offboarding: Offboarding;
+  readonly feeds: CalendarFeeds;
+  /** Zoho Calendar sync for people who connect their Zoho account (zoho.ts, docs/ZOHO-CALENDAR.md). */
+  readonly zoho: ZohoSync;
+  /** The office's days off and compensatory working days, and the holiday circulars read (holidays.ts). */
+  readonly holidays: Holidays;
+  /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
+  readonly nib: Nib;
+  /** Meeting threads, action points and recaps (meet-threads.ts). */
+  readonly meetThreads: MeetThreads;
+  /** The notice board: the issuing desks' register of notices (notices.ts, docs/ANNOUNCEMENTS.md). */
+  readonly notices: NoticeBoard;
+  /** The office's floor plan and who sits where (seating.ts, docs/SEATING.md). */
+  readonly seating: Seating;
+  /**
+   * The setup check's checks (setupcheck.ts). Other parts of the hub add theirs with
+   * `hub.health.register(id, fn)`; they appear in the setup check at the top of the Control room, and in its report.
+   */
+  readonly health = new HealthChecks();
+  /** The automatic backup folder of the first start, while it is being chosen (firstrun.ts). */
+  firstRunBackup: Promise<BackupAuto | null> = Promise.resolve(null);
+  private stopping = false;
   private lastPurge = 0;
   private deskTimer: NodeJS.Timeout | null = null;
   /** file token -> user, one per signed-in connection */
@@ -132,6 +253,12 @@ export class Hub {
 
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
     this.files = new FileStore(this.store.db, path.join(opts.dataDir, 'files'), opts.maxFileBytes);
+    // the office's days off: holidays, Saturdays off, compensatory days (holidays.ts, docs/HOLIDAYS.md)
+    this.holidays = new Holidays({
+      db: this.store.db, store: this.store, files: this.files, seed: opts.holidaySeed !== false,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers(), this.files);
     this.work = new Work(this.store.db, () => this.store.activeUsers(), (uid) => {
       // a connected device counts as seen now
@@ -148,26 +275,357 @@ export class Hub {
       }
     });
     this.compliance = new Compliance(this.store, this.messaging, this.files);
-    this.policies = new Policies(this.store, this.files, (p) => this.emit('policy.updated', p));
+    this.policies = new Policies(this.store, this.files, (p) => {
+      this.emit('policy.updated', p);
+      // a narrower list of outside networks applies at once
+      for (const c of [...this.conns]) {
+        if (c.remote && !this.outsideAllowed(c)) { this.send(c, { t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }); c.ws.close(); }
+      }
+    });
+    this.policies.linesChanged = (list) => this.emit('lines.updated', list);
+    this.pairing = new Pairing(this.store);
+    this.system = new SystemBot(this.store, this.messaging);
+    this.missed = new MissedNotices(this.store.db, () => this.store.activeUsers(), (id) => this.files.forMessage(id).map((f) => f.name));
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
+    this.messaging.dlpRules = () => this.policies.get().dlp ?? [];
+    this.messaging.requireE2E = () => this.policies.get().requireE2E === true;
+    this.messaging.keyless = (userIds) => {
+      if (!userIds.length) return [];
+      const rows = this.store.db.prepare(`SELECT DISTINCT user_id FROM devices WHERE status = 'approved' AND enc_key IS NOT NULL AND user_id IN (${userIds.map(() => '?').join(',')})`).all(...userIds) as Array<{ user_id: string }>;
+      const have = new Set(rows.map((r) => r.user_id));
+      return userIds.filter((u) => !have.has(u));
+    };
     this.messaging.onReport = () => this.emit('admin.reports', { open: this.messaging.openReports() }, (c) => this.isAdminConn(c));
     this.emoji = new Emoji(this.store, this.files, (list) => this.emit('emoji.updated', list));
     this.files.isPublic = (id) => this.emoji.isEmojiFile(id);
+    this.emoji.membersMay = () => this.policies.get().memberEmoji !== false;
+    this.emoji.stickersChanged = (list) => this.emit('sticker.updated', list);
     this.messaging.customEmoji = (name) => this.emoji.exists(name);
     this.commands = new Commands(this.store, this.messaging);
     this.workspace = new Workspace(this.store.db, this.messaging, (userIds, name, data) => this.deliver(userIds, name, data));
-    this.org = new Org(this.store, (u) => this.emit('user.updated', u), (info) => this.emit('org.updated', info));
+    this.links = new Links({ store: this.store, messaging: this.messaging, files: this.files, visibleUsers: (u) => this.guests.visibleTo(u, this.store.activeUsers()),
+      event: (u, id) => { try { return this.calendar.handle('cal.get', u, { eventId: id }) as import('@dex/core').CalEvent; } catch { return null; } },
+      meeting: (u, id) => {
+        const meetings = this.meetings; // made a little further down; asked only once the hub runs
+        const m = meetings.get(id);
+        if (!m) return null;
+        const live = (this.rooms.handle('room.list', u, '', {}) as import('@dex/core').RoomInfo[]).find((r) => r.meetingId === m.id) ?? null;
+        return { info: meetings.info(m, live), insider: meetings.insider(m, u.id) };
+      } });
+    this.decisions = new Decisions(this.store.db, this.messaging);
+    this.refs = new Refs(this.store.db, this.messaging, this.files);
+    this.reactionInsights = new ReactionInsights(this.store, this.messaging);
+    this.messaging.onReaction = (messageId, convId, userId, emoji, on) => this.reactionInsights.record(messageId, convId, userId, emoji, on);
+    this.messaging.afterSend = (msg, author) => this.links.prefetch(msg, author);
+    // a rename or an import of people can make a name from the drawing certain: they take that seat
+    this.org = new Org(this.store, (u) => { this.emit('user.updated', u); this.claimSeats(); }, (info) => this.emit('org.updated', info));
     this.desk = new Desk(this.store.db, this.messaging, this.files, (userIds, name, data) => this.deliver(userIds, name, data), (uid) => {
       const u = this.store.userById(uid);
       return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
     });
+    this.flows = new Flows({
+      store: this.store, messaging: this.messaging, desk: this.desk, files: this.files, system: this.system,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      userAdded: (u) => this.emit('user.added', u),
+    });
+    this.messaging.observe = (e) => this.flows.onEvent(e);
+    this.messaging.keptTags = (id) => this.flows.tagsOf(id);
+    // conversations with integrations (flows, sessions) and tools in conversations
+    this.botflows = new BotFlows({
+      store: this.store, messaging: this.messaging, files: this.files, desk: this.desk, broadcast: (n, d) => this.emit(n, d), log: (l, m, e) => this.log(l, m, e),
+      deliver: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      // the office's working days are Nib's (made below; read when a job asks)
+      calendar: () => ({ workdays: this.nib ? this.nib.workingDay().workdays : [1, 2, 3, 4, 5, 6] }),
+      days: this.holidays,
+    });
+    this.miniapps = new MiniApps({ store: this.store, messaging: this.messaging, files: this.files, deliver: (u, n, d) => this.deliver(u, n, d), broadcast: (n, d) => this.emit(n, d) });
+    this.messaging.extraView = (r) => ({ ...this.botflows.view(r), ...this.miniapps.view(r) });
+    this.messaging.onPosted = (author, convId, msg) => this.botflows.onPosted(author, convId, msg);
+    this.commands.extra = { list: () => this.botflows.commandList(), run: (c, me, convId) => this.botflows.runCommand(c, me, convId) };
+    this.relay = new Relay({
+      // the address PCs use to reach this hub: the one it is bound to, or its office address
+      announced: () => (this.opts.host && this.opts.host !== '0.0.0.0' ? this.opts.host : (lanAddresses(this.port)[0] ?? '127.0.0.1:0').split(':')[0]),
+      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+      log: (level, msg, meta) => this.log(level, msg, meta),
+    }, opts.relayPorts);
+    this.meetings = new Meetings(this.store.db, this.messaging, (uid) => {
+      const u = this.store.userById(uid);
+      return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null;
+    });
+    this.meetings.defaults = () => { const p = this.policies.get(); return { lobby: p.meetingLobby ?? 'outside', joinBeforeHost: p.joinBeforeHost !== false }; };
+    this.reports = new MeetReports(this.store.db);
+    this.meetPublic = new MeetPublic({
+      db: this.store.db, meetings: this.meetings,
+      live: (meetingId) => this.rooms.live(meetingId),
+      userById: (uid) => this.store.userById(uid),
+      site: () => this.publicSite(),
+      org: () => this.remoteConfig().orgName ?? MEET_ORG_DEFAULT,
+      zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+      allowed: () => this.policies.get().guestLinks !== false,
+      gatewayOn: () => this.remoteConfig().enabled,
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.meetings.pageUrl = (meetingId) => this.meetPublic.pageUrl(meetingId);
     this.rooms = new Rooms({
       members: (convId) => this.messaging.members(convId),
-      deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
-      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+      deliverToUsers: (userIds, name, data) => {
+        // browser guests are not connections of the hub: their events go through the gateway
+        const guests = userIds.filter(isWebGuest);
+        this.deliver(guests.length ? userIds.filter((u) => !isWebGuest(u)) : userIds, name, () => data);
+        for (const g of guests) this.meetGuests.toUser(g, name, data);
+      },
+      deliverToDevice: (deviceId, name, data) => this.toDevice(deviceId, name, data),
+      visitorsOf: (ids) => this.meetGuests.visitors(ids),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      track: this.reports,
       broadcast: (name, data) => this.emit(name, data),
       allowRecording: () => this.policies.get().allowRecording,
       ended: (room, missed, durationMs) => this.policies.logCall(room.id, room.convId, room.startedBy, room.video, missed, durationMs),
+      relayAvailable: () => this.opts.relay !== false && this.relay.available(),
+      deviceLeft: (_roomId, deviceId) => this.relay.leave(deviceId),
+      roomClosed: (roomId) => this.relay.closeRoom(roomId),
+      meetings: this.meetings,
+      purposeChanged: (room, ended) => {
+        this.lounges.roomChanged(room, ended);
+        if (ended) this.helpdesk.roomEnded(room); else this.helpdesk.roomChanged(room);
+      },
+      webinar: { onStage: (m, u) => this.webinars.onStage(m, u), staff: (m, u) => this.webinars.isHost(m, u) || this.webinars.isPanelist(m, u), changed: (r) => this.webinars.roomChanged(r), ended: (r) => this.webinars.roomEnded(r) },
+      // made further down; the Rooms call these only once the hub runs
+      threads: {
+        opened: (r, m) => { const o = this.meetThreads.roomOpened(r, m); return o ? { id: o.id, noteTakerId: o.noteTakerId } : null; },
+        ended: (r) => this.meetThreads.roomEnded(r),
+        said: (main, me, text, opts) => this.meetThreads.said(main, me, text, opts),
+        log: (main) => this.meetThreads.chatLog(main),
+        missed: (main, me, before) => this.meetThreads.missed(main, me, before),
+        noteTaker: (roomId, userId) => { this.meetThreads.setNoteTaker(roomId, userId); },
+      },
+    });
+    this.recordings = new Recordings({
+      db: this.store.db, files: this.files, dir: path.join(opts.dataDir, 'recordings-partial'),
+      userById: (id) => this.store.userById(id),
+      isMember: (convId, userId) => this.messaging.isMember(convId, userId),
+      convKind: (convId) => { const r = this.store.db.prepare('SELECT kind FROM conversations WHERE id = ?').get(convId) as { kind: string } | undefined; return r ? (r.kind === 'direct' ? 'direct' : 'space') : null; },
+      session: (roomId) => { const r = this.store.db.prepare('SELECT meeting_id, conv_id, title FROM meeting_sessions WHERE room_id = ?').get(roomId) as { meeting_id: string | null; conv_id: string; title: string } | undefined; return r ? { meetingId: r.meeting_id, convId: r.conv_id, title: r.title } : null; },
+      attended: (roomId, userId) => this.reports.attended(roomId, userId),
+      maxBytes: () => (this.policies.get().recordingMaxMb ?? 2048) * 1024 * 1024,
+      allowed: () => this.policies.get().allowRecording,
+      retention: () => { const p = this.compliance.policy(); return { space: p.spaceRetentionDays, direct: p.directRetentionDays }; },
+      held: (convId, userId) => !!this.store.db.prepare(`SELECT 1 FROM legal_holds WHERE (kind = 'conv' AND target_id = ?) OR (kind = 'user' AND target_id = ?) LIMIT 1`).get(convId ?? '', userId),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      tell: (userIds, name, data) => this.deliver(userIds, name, () => data),
+    });
+    this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
+    const deliverNow = (userIds: string[], name: string, data: unknown) => this.deliver(userIds, name, () => data);
+    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data) });
+    this.lounges = new Lounges({
+      db: this.store.db, messaging: this.messaging, rooms: this.rooms, deliver: deliverNow,
+      // Space members see the lounge's name; everyone else only that the person is in a lounge
+      where: (userId, lounge) => {
+        const members = new Set(lounge ? this.messaging.members(lounge.convId) : []);
+        this.emit('lounge.where', { userId, loungeId: lounge?.id ?? null, name: lounge?.name ?? null }, (c) => !!c.userId && members.has(c.userId));
+        this.emit('lounge.where', { userId, loungeId: lounge?.id ?? null, name: null }, (c) => !c.userId || !members.has(c.userId));
+      },
+    });
+    this.pointers = new Pointers({
+      db: this.store.db, files: this.files, messaging: this.messaging, deliver: deliverNow,
+      deliverToDevice: (deviceId, name, data) => { for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data }); },
+    });
+    // files attached to a help ticket open for the people on it
+    const readBefore = this.files.extraRead;
+    this.files.extraRead = (userId, fileId) => readBefore(userId, fileId) || this.helpdesk.canRead(userId, fileId);
+    this.webinars = new Webinars({
+      db: this.store.db, meetings: this.meetings, rooms: this.rooms, messaging: this.messaging, files: this.files,
+      userById: (uid) => this.store.userById(uid),
+      deliverToUsers: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      deliverToDevice: (deviceId, name, data) => this.toDevice(deviceId, name, data),
+      isRemote: (deviceId) => [...this.conns].some((c) => c.ready && c.deviceId === deviceId && c.remote),
+      relayAvailable: () => this.opts.relay !== false && this.relay.available(),
+      relayLeave: (deviceId) => this.relay.leave(deviceId),
+      relayClose: (roomId) => this.relay.closeRoom(roomId),
+      // registration and watch pages live on the office's meeting site (or the gateway's address)
+      gateway: () => this.publicSite(),
+      pageRef: (meetingId) => this.meetPublic.slugOf(meetingId),
+      office: () => this.info.name,
+      tell: (userId, text, key) => this.system.tell(userId, text, key),
+      recordingLink: (me, recordingId) => {
+        try {
+          const r = this.recordings.handle('rec.share', me, { id: recordingId, link: true }) as import('@dex/core').RecordingInfo;
+          if (!r.link) throw new WebinarError('That recording cannot be shared by link.');
+          return r.link;
+        } catch (err) { if (err instanceof RecordingError) throw new WebinarError(err.message); throw err; }
+      },
+      iceServers: () => this.ice.servers(),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      ffmpegPath: () => this.store.meta('ffmpeg_path', () => '') || null,
+      setFfmpegPath: (p) => this.setMeta('ffmpeg_path', p ?? ''),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.reports.webinarFor = (meetingId) => this.webinars.reportFor(meetingId);
+    // keeping the office going: backups, offboarding and calendar feeds (backup.ts, offboard.ts, calfeed.ts)
+    this.feeds = new CalendarFeeds({
+      db: this.store.db, hubId: () => this.info.id, office: () => this.info.name,
+      userById: (uid) => this.store.userById(uid),
+      active: (uid) => this.canSignIn(uid),
+      lan: () => lanAddresses(this.port),
+      gateway: () => { const rc = this.remoteConfig(); return rc.enabled ? rc.url : null; },
+      meetingFor: (organizer, eventId) => this.meetings.forEvent(organizer, eventId).id,
+      pageUrl: (meetingId) => this.meetPublic.pageUrl(meetingId),
+      venueName: (vid) => this.calendar.venues().find((v) => v.id === vid)?.name ?? null,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+    });
+    this.zoho = new ZohoSync({
+      db: this.store.db, dataDir: opts.dataDir,
+      meta: (k) => this.store.meta(k, () => ''),
+      setMeta: (k, v) => this.setMeta(k, v),
+      userById: (uid) => this.store.userById(uid),
+      activeUsers: () => this.store.activeUsers(),
+      active: (uid) => this.canSignIn(uid),
+      details: (u, eventId) => this.feeds.details(u, eventId),
+      zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+      deliver: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      toAdmins: (name, data) => this.emit(name, data, (c) => this.isAdminConn(c)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      test: opts.zoho ?? zohoTestEnv(),
+    });
+    this.calendar.changed = (eventId) => this.zoho.changed(eventId);
+    this.calendar.externals = (userIds, from, to) => this.zoho.externals(userIds, from, to);
+    this.backups = new Backups({
+      db: this.store.db, dataDir: opts.dataDir, hubId: id, hubName: () => this.info.name, version: HUB_VERSION,
+      systemId: () => this.system.id,
+      admins: () => this.store.activeUsers().filter((u) => isAdminRole(u.role)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      changed: (status) => this.emit('admin.backup', status, (c) => this.isAdminConn(c)),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.offboarding = new Offboarding({
+      store: this.store, messaging: this.messaging, calendar: this.calendar, helpdesk: this.helpdesk, feeds: this.feeds, system: this.system,
+      signOut: (uid, reason) => this.signOut(uid, reason),
+      broadcast: (name, data, adminsOnly) => {
+        // a leaver's seat is freed on the floor plan
+        if (name === 'user.left') { try { this.seating.personLeft((data as { userId: string }).userId); } catch (err) { this.log('warn', 'seat not freed', { error: (err as Error).message }); } }
+        this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined);
+      },
+      forgetNotify: (deviceId) => this.missed.revoke(deviceId),
+      active: (uid) => this.canSignIn(uid),
+    });
+    { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
+    this.nib = new Nib({
+      db: this.store.db, store: this.store, messaging: this.messaging, desk: this.desk, calendar: this.calendar, work: this.work, days: this.holidays,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      online: (uid) => [...this.conns].some((c) => c.ready && c.userId === uid),
+      busy: (uid) => {
+        if (this.rooms.inRoomUsers().includes(uid)) return 'room';
+        if (this.inMeeting.has(uid)) return 'meeting';
+        const a = this.store.userById(uid)?.availability;
+        return a === 'dnd' ? 'dnd' : a === 'busy' ? 'busy' : null;
+      },
+      departments: () => this.org.info().departments,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
+      userAdded: (u) => this.emit('user.added', u),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    { const prev = this.messaging.onPosted; this.messaging.onPosted = (author, convId, msg) => { prev?.(author, convId, msg); try { this.nib.onPosted(author, convId, msg); } catch (err) { this.log('warn', 'nib reply failed', { error: (err as Error).message }); } }; }
+    this.botflows.away = (me, answers) => {
+      const line = this.nib.leaveFromFlow(me, answers);
+      if (answers.from) this.botflows.net.emitAway(me.id, answers.from, answers.to ?? null);
+      return line;
+    };
+    // bots asking Nib about leave, and jobs leaving people on leave out
+    this.botflows.net.leave = (uid, date) => this.nib.leaveInfo(uid, date);
+    this.botflows.jobs.away = (uid, date) => this.nib.awayOn(uid, date);
+    this.meetThreads = new MeetThreads({
+      db: this.store.db, messaging: this.messaging,
+      userById: (uid) => { const u = this.store.userById(uid); return u && this.store.activeUsers().some((a) => a.id === u.id) ? u : null; },
+      activeUsers: () => this.store.activeUsers(),
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      cardAuthor: () => this.system.user,
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      recordings: (roomIds, viewer) => roomIds.flatMap((id) => this.recordings.forRoom(id, viewer)),
+      roomLive: (roomIds) => roomIds.some((id) => this.rooms.rooms.has(id)),
+      desk: {
+        todo: (owner, messageId, on) => { this.desk.handle('msg.star', owner, { messageId, on, kind: 'todo' }); },
+        remind: (by, owner, messageId, text, dueAt) => {
+          try { return (this.desk.handle('remind.create', by, { forUserId: owner.id, messageId, text, dueAt: Math.max(dueAt, Date.now() + 60_000) }) as { id: string }).id; } catch { return null; }
+        },
+        reminderDone: (id, done, dueAt) => {
+          const r = this.store.db.prepare('SELECT user_id FROM reminders WHERE id = ?').get(id) as { user_id: string } | undefined;
+          const u = r ? this.store.userById(r.user_id) : null;
+          if (u) { try { this.desk.handle('remind.update', u, { id, done, ...(dueAt ? { dueAt } : {}) }); } catch { /* gone */ } }
+        },
+        reminderGone: (id) => {
+          const r = this.store.db.prepare('SELECT user_id FROM reminders WHERE id = ?').get(id) as { user_id: string } | undefined;
+          const u = r ? this.store.userById(r.user_id) : null;
+          if (u) { try { this.desk.handle('remind.delete', u, { id }); } catch { /* gone */ } }
+        },
+      },
+      nib: {
+        add: (owner, a) => this.nib.meetingItem(owner, a),
+        status: (itemId, status) => this.nib.meetingItemStatus(itemId, status),
+        gone: (itemId) => this.nib.meetingItemGone(itemId),
+        away: (uid, date) => this.nib.awayOn(uid, date),
+        hours: () => this.nib.workingDay(),
+      },
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.meetings.eventThread = (eventId) => this.meetThreads.ensureEventThread(eventId, true);
+    this.meetings.ownThread = (convId) => this.meetThreads.isOwn(convId);
+    this.meetings.occurrenceOf = (roomId) => this.meetThreads.occurrenceOf(roomId);
+    this.nib.onMeetingItem = (itemId, status, by) => this.meetThreads.nibChanged(itemId, status, by);
+    { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.meetThreads.mayReadFile(userId, fileId); }
+    { const prev = this.messaging.beforeChange; this.messaging.beforeChange = (msg, change, actorId) => { prev?.(msg, change, actorId); if (change === 'delete') { try { this.meetThreads.messageDeleted(msg.id); } catch { /* the message still goes */ } } }; }
+    this.notices = new NoticeBoard({
+      db: this.store.db, store: this.store, files: this.files,
+      departments: () => this.org.info().departments,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, data),
+      // reminders and answers are one quiet line from Nib (or the system bot while Nib is off)
+      tell: (uid, key, text) => { if (!this.nib.note(uid, key, text)) this.system.tell(uid, text, key); },
+      hasApp: (uid) => this.canSignIn(uid),
+      held: (uid) => !!this.store.db.prepare(`SELECT 1 FROM legal_holds WHERE kind = 'user' AND target_id = ? LIMIT 1`).get(uid),
+      officePins: () => {
+        const office = this.store.db.prepare('SELECT id FROM conversations WHERE everyone = 1 LIMIT 1').get() as { id: string } | undefined;
+        if (!office) return [];
+        return (this.store.db.prepare('SELECT id, body, author_id, created_at FROM messages WHERE conv_id = ? AND pinned = 1 AND deleted = 0 ORDER BY id DESC LIMIT 50').all(office.id) as Array<{ id: string; body: string; author_id: string; created_at: number }>)
+          .map((m) => ({ ...m, files: this.files.forMessage(m.id) }));
+      },
+      unpin: (messageId) => { this.store.db.prepare('UPDATE messages SET pinned = 0, pin_until = NULL WHERE id = ?').run(messageId); this.messaging.pushUpdate(messageId); },
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.notices.mayReadFile(userId, fileId); }
+    this.seating = new Seating({
+      db: this.store.db, store: this.store,
+      // guests never see the floor plan
+      broadcast: (name, data) => this.emit(name, data, (c) => { const u = c.userId ? this.store.userById(c.userId) : null; return !!u && u.role !== 'guest' && u.role !== 'bot'; }),
+      tell: (uid, key, text) => { if (!this.nib.note(uid, key, text)) this.system.tell(uid, text, key); },
+      userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      calendar: () => this.botflows.calendar(),
+    });
+    // people who were already here before the drawing's names came take their named seats
+    this.claimSeats();
+    registerBuiltInChecks(this.health, {
+      db: this.store.db, dataDir: opts.dataDir, startedAt: this.startedAt, version: HUB_VERSION, backups: this.backups,
+      nib: () => this.nib.config(), desks: () => this.notices.desks(), defaultDesks: NoticeBoard.DEFAULT_DESK_NAMES,
+      seats: () => {
+        try {
+          const seats = this.seating.layout().plan.seats.length;
+          const held = Object.values(this.seating.holders());
+          return { seats, seated: held.filter((h) => h.kind === 'person').length, named: held.filter((h) => h.kind === 'named').length, waiting: this.seating.waitingCount() };
+        } catch { return null; }
+      },
+      remote: () => this.remoteView(),
+      ice: () => { const c = this.iceConfig(); return { mode: c.mode, keyId: c.keyId ?? null, hasToken: !!c.token, servers: c.servers.length }; },
+      holidays: () => this.holidays.list(),
+      zoho: () => this.zoho.adminView(),
+      hubUpdate: () => this.hubUpdate?.view() ?? null,
     });
     // databases from before messaging existed: create the Office space and add everyone
     const owner = this.store.activeUsers().find((u) => u.role === 'owner');
@@ -177,13 +635,123 @@ export class Hub {
     }
     this.mirror = opts.updates === false ? null
       : new UpdateMirror({ ...(opts.updates ?? {}), dir: path.join(opts.dataDir, 'updates'), log: this.log });
+    const hu = opts.hubUpdate === false ? null : opts.hubUpdate ?? {};
+    this.hubUpdate = hu === null ? null : new HubUpdater({
+      dataDir: opts.dataDir,
+      version: hu.version ?? HUB_VERSION,
+      unsupported: hu.unsupported !== undefined ? hu.unsupported : selfUpdateSupport(),
+      launcher: hu.launcher ?? windowsLauncher(path.join(opts.dataDir, 'hub-update')),
+      feedUrls: hu.feedUrls, allowHttp: hu.allowHttp, now: hu.now, checkEveryMs: hu.checkEveryMs, firstCheckDelayMs: hu.firstCheckDelayMs,
+      meta: (k) => this.store.meta(k, () => ''),
+      setMeta: (k, v) => this.setMeta(k, v),
+      live: () => {
+        const rooms = [...this.rooms.rooms.values()].filter((r) => r.participants.length > 0);
+        if (rooms.some((r) => r.meeting?.kind === 'webinar')) return 'webinar';
+        if (rooms.some((r) => r.meeting)) return 'meeting';
+        if (rooms.length) return 'call';
+        // a webinar marked live whose stage is empty for a moment still counts
+        return this.store.db.prepare(`SELECT 1 FROM webinars WHERE state = 'live' LIMIT 1`).get() ? 'webinar' : null;
+      },
+      backups: {
+        configured: () => !!this.backups.config().folder,
+        running: () => this.backups.isRunning(),
+        lastSuccessAt: () => this.backups.lastSuccessAt(),
+        run: () => this.backups.start(false, null).then((r) => ({ ok: r.ok, error: r.error }), (err: Error) => ({ ok: false, error: err.message })),
+      },
+      admins: () => this.store.activeUsers().filter((u) => isAdminRole(u.role)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      changed: (view) => this.emit('admin.hubUpdate', view, (c) => this.isAdminConn(c)),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      setupLog: path.win32.join(process.env.ProgramData ?? 'C:\\ProgramData', 'Dexterity Connect Hub', 'setup.log'),
+    });
     this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 1024 * 1024 });
+    this.meetGuests = new MeetGuests({
+      rooms: this.rooms, meetings: this.meetings, webinars: () => this.webinars,
+      send: (gid, frame) => this.gateway.sendGuest(gid, frame),
+      close: (gid, code, reason) => this.gateway.closeGuest(gid, code, reason),
+      allowed: () => this.policies.get().guestLinks !== false,
+      iceServers: () => this.ice.servers(),
+      userById: (uid) => this.store.userById(uid),
+      audit: (actor, action, target, meta) => this.store.audit(actor, action, target, meta ?? {}),
+      tellHosts: (room, name, reason) => {
+        const hosts = [room.hostId, ...(room.coHosts ?? [])].filter((u): u is string => !!u && room.participants.some((p) => p.userId === u));
+        this.deliver(hosts, 'meet.guestRefused', () => ({ roomId: room.id, name, reason }));
+      },
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      resolve: (ref) => this.meetPublic.resolveId(ref),
+      joinProblem: (m) => this.meetPublic.joinProblem(m),
+      // a guest's file follows the office's file rules (blocked types, the upload limit)
+      fileProblem: (name, size) => {
+        const ext = name.toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
+        if (ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) return `This office does not allow .${ext} files to be shared.`;
+        if (size > this.files.maxBytes) return `Files can be up to ${Math.floor(this.files.maxBytes / 1024 / 1024)} MB.`;
+        return null;
+      },
+      storeFile: (guestId, name, mime, data) => { const f = this.files.storeBuffer(guestId, name, mime, data); return { id: f.id, name: f.name, size: f.size }; },
+    });
     this.gateway = new RemoteGateway({
       hubId: id, certPem: tls.cert, keyPem: tls.key, localPort: () => this.port, secret: this.gatewaySecret,
       log: (level, msg, extra) => this.log(level, msg, extra),
       onStatus: () => {},
+      guests: this.meetGuests,
+      // the meeting site's questions (page.info, page.check), and the webinar pages, which may name a webinar by its name
+      web: (op, ref, ip, body) => (op.startsWith('page.') ? this.meetPublic.request(op, ref, ip, body) : this.webinars.webRequest(op, this.meetPublic.resolveId(ref) ?? ref, ip, body)),
+      calendar: (token, ip) => this.feeds.fetch(token, ip),
+    });
+    // "Set up with Cloudflare": the gateway and the meeting site deployed from the Control room (cfdeploy.ts)
+    this.cloudflare = new CfSetup({
+      hubId: id, hubName: () => this.info.name, fingerprint: this.fingerprint, version: HUB_VERSION,
+      meta: { get: (k) => this.store.meta(k, () => ''), set: (k, v) => this.setMeta(k, v) },
+      ...(opts.cloudflare?.bundle ? { bundle: opts.cloudflare.bundle } : {}),
+      ...(opts.cloudflare?.endpoints ? { endpoints: opts.cloudflare.endpoints } : {}),
+      ...(opts.cloudflare?.fetch ? { fetch: opts.cloudflare.fetch } : {}),
+      ...(opts.cloudflare?.waits ? { waits: opts.cloudflare.waits } : {}),
+      connect: (url, site) => {
+        // the addresses and outside access on; who may join and the Control room from outside stay as they are
+        this.setMeta('remote_url', url);
+        this.setMeta('meet_site_url', site);
+        this.setMeta('remote_enabled', '1');
+        this.store.audit(null, 'remote.set', null, { ...this.remoteConfig(), by: 'cloudflare-setup' });
+        this.applyRemote();
+      },
+      reconnect: () => { this.gateway.stop(); this.applyRemote(); },
+      gatewayStatus: () => this.gateway.status,
+      turnConfig: () => { const c = this.iceConfig(); return { mode: c.mode, keyId: c.keyId ?? null, token: c.token ?? null }; },
+      setTurn: (keyId, token) => {
+        this.setMeta('ice_mode', 'cloudflare');
+        this.setMeta('ice_key', keyId);
+        this.setMeta('ice_token', token);
+        this.setMeta('ice_servers', '[]');
+        this.ice.clear();
+        this.store.audit(null, 'ice.set', null, { mode: 'cloudflare', keyId, by: 'cloudflare-setup' });
+      },
+      changed: (view) => this.emit('admin.cloudflare', view, (c) => this.isAdminConn(c)),
+      audit: (actor, action, detail) => this.store.audit(actor || null, action, null, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
     });
     this.wss.on('connection', (ws, req) => this.accept(ws, req));
+  }
+
+  /** Has an approved device and has not left the office: can use Dexterity Connect now. */
+  private canSignIn(userId: string): boolean {
+    return !!this.store.db.prepare(`SELECT 1 FROM devices WHERE user_id = ? AND status = 'approved' LIMIT 1`).get(userId) && !this.offboarding.hasLeft(userId);
+  }
+
+  /** Close every connection of a person at once, and the file links their sessions handed out. */
+  private signOut(userId: string, reason: string): void {
+    for (const c of [...this.conns]) {
+      if (c.userId !== userId) continue;
+      this.send(c, { t: 'rejected', reason });
+      c.ws.close();
+    }
+    for (const [t, u] of this.fileTokens) if (u === userId) this.fileTokens.delete(t);
+  }
+
+  /** An event to one device: an app's connection, or a browser guest or attendee through the gateway. */
+  private toDevice(deviceId: string, name: string, data: unknown): void {
+    if (isWebGuestDevice(deviceId)) { this.meetGuests.toDevice(deviceId, name, data); return; }
+    for (const c of this.conns) if (c.ready && c.deviceId === deviceId) this.send(c, { t: 'evt', name, data });
   }
 
   get port(): number {
@@ -194,7 +762,19 @@ export class Hub {
     return { app: APP_ID, v: PROTOCOL_VERSION, kind: 'hub', id: this.info.id, name: this.info.name, port: this.port, fp: this.fingerprint, version: HUB_VERSION };
   }
 
+  private firstRunHost(): FirstRunHost {
+    return {
+      db: this.store.db, store: this.store, dataDir: this.opts.dataDir, nib: this.nib, notices: this.notices, backups: this.backups,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      systemId: () => this.system.id,
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      alive: () => !this.stopping,
+    };
+  }
+
   async start(): Promise<void> {
+    // the office's defaults, once per hub, before anyone can connect (firstrun.ts)
+    try { applyDefaults(this.firstRunHost()); } catch (err) { this.log('error', 'first-run defaults failed', { error: (err as Error).message }); }
     await new Promise<void>((resolve, reject) => {
       this.server.once('error', reject);
       this.server.listen(this.opts.port ?? DEFAULT_HUB_PORT, this.opts.host ?? '0.0.0.0', () => {
@@ -202,6 +782,8 @@ export class Hub {
         resolve();
       });
     });
+    // a restore (--restore) refuses to run while this is here and the program is alive
+    try { fs.writeFileSync(path.join(this.opts.dataDir, LOCK_FILE), JSON.stringify({ pid: process.pid, port: this.port, startedAt: Date.now() })); } catch (err) { this.log('warn', 'could not write the lock file', { error: (err as Error).message }); }
     if (this.opts.discoveryPort !== false) {
       this.announcer = new HubAnnouncer(() => this.beacon(), this.opts.discoveryPort ?? DISCOVERY_PORT);
       try {
@@ -220,11 +802,21 @@ export class Hub {
       if (Date.now() - this.lastPurge > 3600_000) {
         this.lastPurge = Date.now();
         try { this.compliance.purge(); } catch (err) { this.log('error', 'retention failed', { error: (err as Error).message }); }
+        try { this.recordings.purge(); } catch (err) { this.log('error', 'recording retention failed', { error: (err as Error).message }); }
       }
       try { this.presenceTick(); } catch (err) { this.log('error', 'presence timer failed', { error: (err as Error).message }); }
       try { this.messaging.tick(); } catch (err) { this.log('error', 'mute timer failed', { error: (err as Error).message }); }
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
+      try { this.zoho.tick(); } catch (err) { this.log('error', 'zoho timer failed', { error: (err as Error).message }); }
+      try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
+      void this.botflows.jobs.tick().catch((err: Error) => this.log('error', 'bot job timer failed', { error: err.message }));
+      try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
+      try { this.hubUpdate?.tick(); } catch (err) { this.log('error', 'hub update timer failed', { error: (err as Error).message }); }
+      try { this.nib.tick(); } catch (err) { this.log('error', 'nib timer failed', { error: (err as Error).message }); }
+      try { this.meetThreads.tick(); } catch (err) { this.log('error', 'meeting thread timer failed', { error: (err as Error).message }); }
+      try { this.notices.tick(); } catch (err) { this.log('error', 'notice board timer failed', { error: (err as Error).message }); }
+      try { this.seating.tick(); } catch (err) { this.log('error', 'seating timer failed', { error: (err as Error).message }); }
     };
     tick();
     this.deskTimer = setInterval(tick, 10_000);
@@ -236,11 +828,19 @@ export class Hub {
       }
     }, 20000);
     this.applyRemote();
+    // a backup folder on a second disk, when no administrator has chosen one (in the background)
+    if (this.opts.firstRun !== false) {
+      this.firstRunBackup = autoBackup(this.firstRunHost(), this.opts.firstRun ?? {}).catch((err: Error) => {
+        this.log('error', 'automatic backup folder failed', { error: err.message });
+        return null;
+      });
+    }
     this.log('info', 'hub listening', { port: this.port, hubId: this.info.id, fingerprint: this.fingerprint });
   }
 
   // ------------------------------------------------------------ outside the office
-  readonly ice = new Ice(() => this.iceConfig(), () => this.remoteConfig().enabled);
+  readonly ice = new Ice(() => this.iceConfig(), () => this.remoteConfig().enabled, fetch, cloudflareEndpoints().rtc);
+  readonly cloudflare: CfSetup;
 
   private iceConfig(): IceConfig & { token?: string } {
     const m = (k: string) => this.store.meta(k, () => '');
@@ -252,7 +852,21 @@ export class Hub {
   remoteConfig(): RemoteConfig {
     const m = (k: string, d: string) => this.store.meta(k, () => d);
     const url = m('remote_url', '');
-    return { enabled: m('remote_enabled', '0') === '1' && !!url, url: url || null, allowJoin: m('remote_join', '1') === '1', allowAdmin: m('remote_admin', '0') === '1' };
+    return {
+      enabled: m('remote_enabled', '0') === '1' && !!url, url: url || null, allowJoin: m('remote_join', '1') === '1', allowAdmin: m('remote_admin', '0') === '1',
+      siteUrl: m('meet_site_url', '') || null, orgName: m('meet_org_name', '') || MEET_ORG_DEFAULT,
+    };
+  }
+
+  /**
+   * The address of meeting pages: the office's meeting site (Dexterity Meet, on Cloudflare Pages or
+   * the office's own domain) when it is set, else the gateway's own address; null while access
+   * from outside is off.
+   */
+  publicSite(): string | null {
+    const rc = this.remoteConfig();
+    if (!rc.enabled || !rc.url) return null;
+    return siteBase(rc.siteUrl || rc.url);
   }
 
   private setMeta(key: string, value: string): void {
@@ -268,6 +882,7 @@ export class Hub {
   private applyRemote(): void {
     const c = this.remoteConfig();
     this.info = { ...this.info, remote: c.enabled && c.url ? { url: c.url } : null };
+    this.gateway.site = c.siteUrl ?? null;
     this.gateway.configure(c.enabled ? c.url : null);
     for (const conn of this.conns) {
       if (!conn.remote) continue;
@@ -276,23 +891,39 @@ export class Hub {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.deskTimer) clearInterval(this.deskTimer);
+    this.zoho.stop();
     this.mirror?.stop();
+    this.hubUpdate?.stop();
     this.announcer?.stop();
+    this.cloudflare.stop();
     this.gateway.stop();
+    this.webinars.stop();
+    this.missed.close();
+    await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
+    // let automations that are running finish before the database closes
+    await Promise.race([this.flows.idle(), new Promise((r) => setTimeout(r, 3000).unref())]);
+    // a backup copying the database finishes that step; the rest of the run stops
+    await this.backups.halt();
+    await Promise.race([this.firstRunBackup.catch(() => null), new Promise((r) => setTimeout(r, 3000).unref())]);
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     this.store.close();
+    try { fs.rmSync(path.join(this.opts.dataDir, LOCK_FILE), { force: true }); } catch { /* gone */ }
   }
 
   // --------------------------------------------------------------- http
   private http(req: IncomingMessage, res: ServerResponse): void {
     if (this.mirror?.handle(req, res)) return;
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/notify/')) { this.missed.route(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/cal/')) { this.feeds.route(req, res); return; }
+    if (/^\/api\/(flows|sessions)(\/|\?|$)/.test(req.url ?? '')) { void this.botflows.route(req, res); return; }
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -327,6 +958,16 @@ export class Hub {
     const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : '';
     const bot = token ? this.store.botByTokenHash(crypto.createHash('sha256').update(token).digest('hex')) : null;
     if (!bot || bot.role !== 'bot') { req.resume(); reply(401, { ok: false, error: 'Unknown or revoked integration token.' }); return; }
+    if (req.method === 'POST' && req.url?.split('?')[0] === '/api/bot/widget') {
+      let raw = '';
+      try { for await (const c of req) { raw += c; if (raw.length > 16 * 1024) throw new Error('too large'); } } catch { reply(413, { ok: false, error: 'Pulse card too large.' }); return; }
+      try {
+        const list = this.commands.setWidget(bot.id, JSON.parse(raw) as Record<string, unknown>);
+        this.emit('widgets.updated', list);
+        reply(200, { ok: true });
+      } catch (err) { reply(400, { ok: false, error: (err as Error).message }); }
+      return;
+    }
     if (req.method !== 'POST' || req.url?.split('?')[0] !== '/api/bot/message') { req.resume(); reply(404, { ok: false, error: 'not found' }); return; }
     let raw = '';
     try {
@@ -415,8 +1056,12 @@ export class Hub {
 
     if (req.method === 'POST' && url.pathname === '/files') {
       if (user.role === 'guest') { req.resume(); sendJson(403, { error: 'Guests cannot upload files.' }); return; }
+      // an encrypted file's type is checked on the sender's device, before it is encrypted
+      const sealed = url.searchParams.get('sealed') === '1';
+      const ext = (url.searchParams.get('name') ?? '').toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
+      if (!sealed && ext && (this.policies.get().blockedFileTypes ?? []).includes(ext)) { req.resume(); sendJson(403, { error: `Your office doesn't allow .${ext} files to be shared.` }); return; }
       try {
-        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined);
+        const info = await this.files.receive(req, user.id, url.searchParams.get('name') ?? 'file', url.searchParams.get('type') ?? undefined, sealed);
         this.log('info', 'file uploaded', { user: user.account, size: info.size });
         sendJson(200, info);
       } catch (err) {
@@ -429,6 +1074,8 @@ export class Hub {
     const m = url.pathname.match(/^\/files\/([0-9A-Z]{26})$/);
     if ((req.method === 'GET' || req.method === 'HEAD') && m) {
       if (!this.files.canRead(user.id, m[1])) { sendJson(404, { error: 'not found' }); return; }
+      // a recording leaving the hub is in the audit log (once per download, not per byte range)
+      if (req.method === 'GET') this.recordings.downloaded(m[1], user.id, /^bytes=[1-9]/.test(req.headers.range ?? ''), String(req.headers['x-dex-remote-ip'] ?? req.socket.remoteAddress ?? ''));
       this.files.serve(req, res, m[1], url.searchParams.get('download') === '1');
       return;
     }
@@ -447,6 +1094,12 @@ export class Hub {
       conn.remote = true;
       conn.ip = `internet ${String(req.headers['x-dex-remote-ip'] ?? '').slice(0, 80)}`;
       if (!this.remoteConfig().enabled) { ws.send(JSON.stringify({ t: 'rejected', reason: 'Access from outside the office is turned off.' })); ws.close(); return; }
+      if (!this.outsideAllowed(conn)) {
+        this.log('info', 'outside connection refused by network policy', { ip: conn.ip });
+        ws.send(JSON.stringify({ t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }));
+        ws.close();
+        return;
+      }
     }
     this.conns.add(conn);
     ws.on('pong', () => { conn.alive = true; });
@@ -461,8 +1114,24 @@ export class Hub {
     this.send(conn, { t: 'hello', hub: this.info, nonce: conn.nonce });
   }
 
+  /** The office may limit outside access to some internet addresses (Control room ▸ Policies). */
+  private outsideAllowed(conn: Conn): boolean {
+    const nets = this.policies.get().outsideNetworks;
+    if (!nets?.length) return true;
+    const addr = conn.ip.replace(/^internet /, '').split(' ')[0];
+    return ipAllowed(addr, nets);
+  }
+
   private send(conn: Conn, frame: ServerFrame): void {
     if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(JSON.stringify(frame));
+  }
+
+  /** Names from the drawing that are now certainly someone: that person takes the seat (seating.ts). */
+  private claimSeats(): void {
+    // the Org is made before the floor plan: an early rename has nothing to claim yet
+    const seating = this.seating as Seating | undefined;
+    if (!seating) return;
+    try { seating.claimNamed(); } catch (err) { this.log('warn', 'seats from the drawing not claimed', { error: (err as Error).message }); }
   }
 
   private emit(name: string, data: unknown, filter: (c: Conn) => boolean = () => true): void {
@@ -472,6 +1141,8 @@ export class Hub {
   /** Send an event to every connected device of the given people. */
   private deliver(userIds: string[], name: string, data: (userId: string) => unknown): void {
     const wanted = new Set(userIds);
+    // phones waiting in the background hear about new messages too
+    if (name === 'msg.new') this.missed.wake(wanted);
     const cache = new Map<string, unknown>();
     for (const c of this.conns) {
       if (!c.ready || !c.userId || !wanted.has(c.userId)) continue;
@@ -512,7 +1183,7 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
-    if (conn.deviceId && conn.ready) this.rooms.leaveAll(conn.deviceId);
+    if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.pointers.dropDevice(conn.deviceId); this.webinars.leaveDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
     if (conn.ready && conn.userId) this.announcePresence(conn.userId);
@@ -521,7 +1192,8 @@ export class Hub {
       this.store.touchDevice(conn.deviceId);
       if (conn.userId && ![...this.conns].some((c) => c.ready && c.userId === conn.userId)) {
         const u = this.store.userById(conn.userId);
-        if (u) this.emit('user.updated', u);
+        // someone offboarded is not put back in colleagues' lists as they are signed out
+        if (u && !u.leftAt) this.emit('user.updated', u);
       }
     }
   }
@@ -553,6 +1225,7 @@ export class Hub {
 
   private onRegister(conn: Conn, frame: Extract<ClientFrame, { t: 'register' }>): void {
     if (conn.ready) return;
+    if (typeof frame.pair === 'string' && frame.pair && !this.store.device(String(frame.deviceId ?? ''))) { this.onPair(conn, frame); return; }
     if (conn.remote && !this.store.device(String(frame.deviceId ?? '')) && !this.remoteConfig().allowJoin) {
       this.send(conn, { t: 'rejected', reason: 'New devices join from the office network. Ask your administrator if you need to join from outside.' });
       conn.ws.close();
@@ -599,6 +1272,11 @@ export class Hub {
     // a guest invite approves a new person straight away, as a guest
     let invite: ReturnType<Guests['check']> | null = null;
     if (!first && typeof frame.invite === 'string' && frame.invite.trim() && (!user || user.role === 'guest')) {
+      if (user && this.offboarding.hasLeft(user.id)) {
+        this.send(conn, { t: 'rejected', reason: 'This account has left the office. Ask an administrator if you need access again.' });
+        conn.ws.close();
+        return;
+      }
       invite = this.guests.check(frame.invite.slice(0, 40));
       if ('error' in invite) {
         this.send(conn, { t: 'rejected', reason: invite.error });
@@ -615,6 +1293,7 @@ export class Hub {
     if (first) {
       this.messaging.ensureEveryoneSpace(user.id);
       this.messaging.welcome(user.id);
+      this.claimSeats();
     }
     this.store.audit(first ? user.id : null, 'device.registered', device.id, { account: key, hostname: account.hostname, ip: conn.ip, autoApproved: first });
     this.log('info', 'device registered', { account: key, hostname: account.hostname, status: device.status });
@@ -626,6 +1305,34 @@ export class Hub {
     }
     this.continueAs(conn, device);
   }
+
+  /** A new device of someone who already has an approved one, carrying their pairing token. */
+  private onPair(conn: Conn, frame: Extract<ClientFrame, { t: 'register' }>): void {
+    const fail = (reason: string) => { this.send(conn, { t: 'rejected', reason }); conn.ws.close(); };
+    const account = validAccount(frame.account);
+    if (!account || typeof frame.publicKey !== 'string' || deviceIdFor(frame.publicKey) !== frame.deviceId) { fail('Malformed registration.'); return; }
+    if (!this.proofOk(conn, frame.deviceId, frame.publicKey, frame.sig)) { fail('This device could not prove its identity.'); return; }
+    if (this.policies.get().personalDevices === false) { fail('Your administrator has turned off adding personal devices. Ask them to approve this device instead.'); return; }
+    // guessing tokens is pointless (144 random bits) but keep failed tries cheap and rare
+    const hour = Date.now() - 3600_000;
+    this.pairFails = this.pairFails.filter((t) => t > hour);
+    if (this.pairFails.length >= 60) { fail('Too many pairing attempts. Try again in an hour.'); return; }
+    const r = this.pairing.consume(String(frame.pair), frame.deviceId);
+    if ('error' in r) { this.pairFails.push(Date.now()); fail(r.error); return; }
+    const user = this.store.userById(r.userId);
+    if (!user || user.role === 'bot' || !this.store.devices().some((x) => x.userId === user.id && x.status === 'approved')) { fail('That account is not active any more.'); return; }
+    const label = `${account.hostname || (r.kind === 'phone' ? 'Phone' : 'Laptop')}`.slice(0, 60);
+    const device = this.store.createDevice(frame.deviceId, user.id, frame.publicKey, label, 'approved');
+    this.store.audit(user.id, 'device.paired', device.id, { kind: r.kind, hostname: label, ip: conn.ip, remote: !!conn.remote });
+    this.log('info', 'device paired', { user: user.account, kind: r.kind, hostname: label });
+    this.emit('me.devicePaired', device, (c) => c.userId === user.id);
+    this.system.tell(user.id, `**${label}** was added to your account with a pairing code (${conn.remote ? 'from outside the office' : 'on the office network'}). If that wasn't you, remove it now in **Preferences → Your devices**.`, `paired-${device.id}`);
+    this.emit('device.updated', device, (c) => this.isAdminConn(c));
+    conn.deviceId = device.id;
+    conn.userId = user.id;
+    this.continueAs(conn, device);
+  }
+  private pairFails: number[] = [];
 
   private isAdminConn(c: Conn): boolean {
     if (!c.userId) return false;
@@ -651,6 +1358,7 @@ export class Hub {
     this.store.touchDevice(device.id);
     this.send(conn, { t: 'ready', session: this.sessionFor(conn) });
     if (!wasOnline || this.isAway(device.userId) === false) this.announcePresence(device.userId, undefined);
+    try { this.botflows.onReady(device.userId); } catch (err) { this.log('warn', 'resume offer failed', { error: (err as Error).message }); }
   }
 
   private sessionFor(conn: Conn): Session {
@@ -689,6 +1397,8 @@ export class Hub {
   private presenceTick(now = Date.now()): void {
     // "in a meeting", from the calendar
     const meeting = this.calendar.inMeetingNow(now);
+    // an appointment in their own Zoho Calendar counts too (zoho.ts)
+    for (const u of this.zoho.busyNow(now)) meeting.add(u);
     for (const u of meeting) if (!this.inMeeting.has(u)) this.emit('meeting.busy', { userId: u, inMeeting: true });
     for (const u of this.inMeeting) if (!meeting.has(u)) this.emit('meeting.busy', { userId: u, inMeeting: false });
     this.inMeeting = meeting;
@@ -763,7 +1473,39 @@ export class Hub {
         const user = this.store.userById(conn.userId!)!;
         this.emit('user.updated', user);
         if (before.availability !== user.availability && (before.availability === 'invisible' || user.availability === 'invisible')) this.announcePresence(user.id);
-        return user;
+        if (patch.displayName && patch.displayName !== before.displayName) this.claimSeats();
+        return this.store.userById(conn.userId!) ?? user;
+      }
+
+      case 'pair.create': {
+        const me = this.store.userById(conn.userId!)!;
+        if (me.role === 'guest' || me.role === 'bot') throw new OpError('Guests add devices through an invite from an administrator.');
+        if (this.policies.get().personalDevices === false) throw new OpError('Your administrator has turned off adding personal devices.');
+        const kind = d.kind === 'laptop' ? 'laptop' : 'phone';
+        const t = this.pairing.create(me.id, kind);
+        const rc = this.remoteConfig();
+        const code = pairCode({ hubId: this.info.id, fp: this.fingerprint, name: this.info.name, lan: lanAddresses(this.port), url: rc.enabled ? rc.url : null, token: t.token, kind });
+        this.store.audit(me.id, 'pair.created', null, { kind });
+        return { code, link: pairLink(code), expiresAt: t.expiresAt } satisfies Ops['pair.create']['res'];
+      }
+
+      case 'me.devices': {
+        return this.store.devices().filter((x) => x.userId === conn.userId && (x.status === 'approved' || x.status === 'pending'))
+          .map((x) => ({ ...x, current: x.id === conn.deviceId, paired: this.pairing.isPaired(x.id) }))
+          .sort((a, b) => Number(b.current) - Number(a.current) || (b.lastSeen ?? b.createdAt) - (a.lastSeen ?? a.createdAt)) satisfies Ops['me.devices']['res'];
+      }
+
+      case 'me.devices.remove': {
+        const device = typeof d.deviceId === 'string' ? this.store.device(d.deviceId) : null;
+        if (!device || device.userId !== conn.userId) throw new OpError('Device not found.');
+        if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
+        const updated = this.store.setDeviceStatus(device.id, 'revoked', conn.userId!);
+        this.store.audit(conn.userId!, 'device.removedByOwner', device.id, { hostname: device.hostname });
+        for (const c of [...this.conns]) {
+          if (c.deviceId === device.id) { this.send(c, { t: 'rejected', reason: 'This device was removed from your account.' }); c.ws.close(); }
+        }
+        this.emit('device.updated', updated, (c) => this.isAdminConn(c));
+        return { ok: true } satisfies Ops['me.devices.remove']['res'];
       }
 
       case 'me.idle': {
@@ -783,6 +1525,7 @@ export class Hub {
         if (!device) throw new OpError('Device not found.');
         if (device.status !== 'pending') throw new OpError('That device was already handled.');
         const approve = d.approve === true;
+        if (approve && this.offboarding.hasLeft(device.userId)) throw new OpError(`${device.displayName} has left the office. Give them access again first: Control room ▸ Backups & leavers.`);
         const wasActive = this.store.activeUsers().some((u) => u.id === device.userId);
         const updated = this.store.setDeviceStatus(device.id, approve ? 'approved' : 'rejected', me.id);
         this.store.audit(me.id, approve ? 'device.approved' : 'device.rejected', device.id, { account: device.account });
@@ -794,6 +1537,8 @@ export class Hub {
           this.messaging.joinDefaults(device.userId, this.policies.get().defaultSpaces ?? []);
           // people who were imported as reporting to this person now resolve to them
           if (user) this.org.announceReportsOf(user.account);
+          // the seat the office drawing names them on, when it is certainly them
+          this.claimSeats();
         }
         for (const c of this.conns) if (c.deviceId === device.id && !c.ready) this.continueAs(c, updated);
         return updated;
@@ -805,7 +1550,9 @@ export class Hub {
         if (!device) throw new OpError('Device not found.');
         if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
         const updated = this.store.setDeviceStatus(device.id, 'revoked', me.id);
+        this.missed.revoke(device.id);
         this.store.audit(me.id, 'device.revoked', device.id, { account: device.account });
+        if (device.status === 'approved') this.system.tell(device.userId, `An administrator removed **${device.hostname}** from your account. It is signed out and can't be used to sign in again.`, `revoked-${device.id}`);
         for (const c of [...this.conns]) {
           if (c.deviceId === device.id) {
             this.send(c, { t: 'rejected', reason: 'This device was removed by an administrator.' });
@@ -820,14 +1567,30 @@ export class Hub {
         const me = this.requireAdmin(conn);
         const target = typeof d.userId === 'string' ? this.store.userById(d.userId) : null;
         if (!target) throw new OpError('Person not found.');
-        if (target.id === me.id) throw new OpError('You cannot change your own role.');
-        if (target.role === 'owner') throw new OpError('The workspace owner cannot be changed.');
         const role = d.role;
-        if (role !== 'admin' && role !== 'member' && role !== 'guest') throw new OpError('Unknown role.');
-        if (target.role === 'admin' && me.role !== 'owner') throw new OpError('Only the owner can change an administrator.');
+        if (role !== 'owner' && role !== 'admin' && role !== 'member' && role !== 'guest') throw new OpError('Unknown role.');
+        // several owners may share the office; there is always at least one
+        const owners = this.store.activeUsers().filter((u) => u.role === 'owner').length;
+        if (target.id === me.id) {
+          // an owner may step down to administrator while another owner remains
+          if (me.role !== 'owner' || role !== 'admin') throw new OpError('You cannot change your own role.');
+          if (owners < 2) throw new OpError('Make someone else an owner first: the office always keeps at least one owner.');
+        } else {
+          if ((role === 'owner' || target.role === 'owner') && me.role !== 'owner') throw new OpError('Only an owner can choose who the owners are.');
+          if (target.role === 'admin' && me.role !== 'owner') throw new OpError('Only an owner can change an administrator.');
+        }
+        if (role === 'owner' && target.role === 'guest') throw new OpError('A guest cannot be an owner. Make them a member first.');
+        if (role === target.role) return target;
         const user = this.store.updateUser(target.id, { role });
         this.store.audit(me.id, 'user.role', target.id, { from: target.role, to: role });
+        const told = role === 'owner' ? 'You are now an **owner**: you can configure everything in the Control room and choose the administrators and the other owners.'
+          : role === 'admin' ? (target.role === 'owner' ? 'You are now an **administrator** instead of an owner: you can still configure the office in the Control room.' : 'You are now an **administrator**: the Control room is in your tile menu.')
+          : role === 'member' ? (target.role === 'guest' ? 'You are now a **member** of the office: you can see open Spaces and the whole Directory.' : target.role === 'owner' ? 'You are no longer an owner.' : 'You are no longer an administrator.')
+          : 'Your account is now a **guest** account: you see only the Spaces you were invited to.';
+        this.system.tell(target.id, told, `role-${target.id}-${Date.now()}`);
         this.emit('user.updated', user);
+        // a guest made a member can now hold the seat the drawing names them on
+        if (target.role === 'guest') this.claimSeats();
         return user;
       }
 
@@ -860,6 +1623,14 @@ export class Hub {
         const rows = this.store.db.prepare(`SELECT id, user_id, public_key, enc_key, enc_sig FROM devices WHERE status = 'approved' AND enc_key IS NOT NULL AND user_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as Array<{ id: string; user_id: string; public_key: string; enc_key: string; enc_sig: string }>;
         return rows.map((r) => ({ userId: r.user_id, deviceId: r.id, signKey: r.public_key, encKey: r.enc_key, sig: r.enc_sig })) satisfies Ops['e2e.keys']['res'];
       }
+
+      case 'notify.missed': {
+        const limit = typeof d.limit === 'number' && Number.isFinite(d.limit) ? d.limit : 50;
+        return this.missed.list(conn.userId!, d.after, limit) satisfies Ops['notify.missed']['res'];
+      }
+
+      case 'notify.token':
+        return { token: this.missed.token(conn.deviceId!, conn.userId!) } satisfies Ops['notify.token']['res'];
 
       case 'e2e.addKeys': {
         const me = this.store.userById(conn.userId!)!;
@@ -932,14 +1703,165 @@ export class Hub {
         } satisfies Ops['admin.updates']['res'];
       }
 
+      case 'meet.guestLink': {
+        const me = this.store.userById(conn.userId!)!;
+        const m = this.meetings.get(d.id);
+        if (!m) throw new OpError('No meeting has that ID.');
+        const live = this.rooms.live(m.id);
+        const may = m.hostId === me.id || m.coHosts.includes(me.id) || (!!live && (live.hostId === me.id || (live.coHosts ?? []).includes(me.id)));
+        if (!may) throw new OpError('Only the host and co-hosts can see or change the guest link.');
+        const allowed = this.policies.get().guestLinks !== false;
+        let next = m;
+        if (d.enabled !== undefined || d.regenerate === true) {
+          if (d.enabled === true && !allowed) throw new OpError('Your office has turned guest links off (Control room ▸ Policies ▸ Meetings).');
+          next = this.meetings.setGuest(m, typeof d.enabled === 'boolean' ? d.enabled : undefined, d.regenerate === true);
+          this.store.audit(me.id, d.regenerate === true ? 'meeting.guestLinkRenewed' : next.guest.enabled ? 'meeting.guestLinkOn' : 'meeting.guestLinkOff', m.id, {});
+        }
+        const rc = this.remoteConfig();
+        const view = this.meetings.guestView(next, { gateway: rc.enabled ? rc.url : null, allowed, relayOnly: live?.mode === 'relay' || this.meetings.expected(next) > 8 });
+        // the link guests are sent: the meeting's page on the office's meeting site
+        return { ...view, url: view.url ? this.meetPublic.view(next).guestUrl : null };
+      }
+
+      case 'meet.public.get':
+      case 'meet.public.set': {
+        const me = this.store.userById(conn.userId!)!;
+        const m = this.meetings.get(d.id);
+        if (!m) throw new OpError('No meeting has that ID.');
+        const live = this.rooms.live(m.id);
+        const may = m.hostId === me.id || m.coHosts.includes(me.id) || (!!live && (live.hostId === me.id || (live.coHosts ?? []).includes(me.id)));
+        if (!may) throw new OpError('Only the host and co-hosts can see or change the meeting\'s page.');
+        try {
+          return op === 'meet.public.get' ? this.meetPublic.view(m) : this.meetPublic.set(m, me, d);
+        } catch (err) { if (err instanceof PublicPageError) throw new OpError(err.message); throw err; }
+      }
+
+      case 'meet.slug.check': {
+        const me = this.store.userById(conn.userId!)!;
+        const m = typeof d.id === 'string' ? this.meetings.get(d.id) : null;
+        const slug = normalizeSlug(typeof d.slug === 'string' ? d.slug : '');
+        const problem = this.meetPublic.availability(slug, m?.id ?? null, m?.hostId ?? me.id);
+        return { slug, ok: !problem, problem };
+      }
+
+      case 'meet.personal.slug': {
+        const me = this.store.userById(conn.userId!)!;
+        try {
+          const m = this.meetings.personal(me);
+          this.meetPublic.setSlug(m, typeof d.slug === 'string' ? d.slug : null, me.id);
+          return this.meetPublic.view(m);
+        } catch (err) { if (err instanceof PublicPageError || err instanceof MeetingError) throw new OpError(err.message); throw err; }
+      }
+
+      case 'meet.report': {
+        const me = this.store.userById(conn.userId!)!;
+        try {
+          return this.reports.report(d.roomId, me, (meetingId, userId) => { const m = meetingId ? this.meetings.get(meetingId) : null; return !!m && (m.hostId === userId || m.coHosts.includes(userId)); });
+        } catch (err) {
+          if (err instanceof ReportError) throw new OpError(err.message);
+          throw err;
+        }
+      }
+
+      case 'admin.meetings.usage': {
+        this.requireAdmin(conn);
+        const days = typeof d.days === 'number' && [28, 91, 182, 364].includes(d.days) ? d.days : 91;
+        return this.reports.usage(days, this.recordings.stats(Date.now() - days * 86400_000));
+      }
+
       default: {
-        if (typeof op === 'string' && op.startsWith('room.')) {
+        if (typeof op === 'string' && op.startsWith('rec.')) {
           const me = this.store.userById(conn.userId!)!;
           try {
-            const result = this.rooms.handle(op, me, conn.deviceId!, d);
+            const result = this.recordings.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof RecordingError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('relay.')) {
+          const me = this.store.userById(conn.userId!)!;
+          // media through the relay stays on the office network
+          if (conn.remote) throw new OpError('Large Rooms work on the office network. From outside, join Rooms of up to 8 people.');
+          // a webinar's stage has a relay room of its own: the broadcaster sends to it, attendees on the office network take from it
+          const stage = d.stage !== undefined;
+          const room = stage ? this.webinars.stageRoom(conn.deviceId!, d.stage) : this.rooms.roomOf(conn.deviceId!, d.roomId ?? undefined);
+          if (stage && !room) throw new OpError('The webinar\'s stage is not on.');
+          if (stage && op === 'relay.produce' && !this.webinars.isBroadcaster(conn.deviceId!, d.stage)) throw new OpError('Only the PC composing the stage sends to it.');
+          try {
+            const result = await this.relay.handle(op, me.id, conn.deviceId!, d, room);
+            if (result !== undefined) return result;
+          } catch (err) {
+            throw new OpError(err instanceof RelayError ? err.message : `The relay could not do that (${(err as Error).message}).`);
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('web.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.webinars.handle(op, me, conn.deviceId!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof WebinarError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(meet\.(thread|recap|recapChat|recapFor)$|ap\.(create|update|list)$|agenda\.(get|set|tick)$)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            switch (op) {
+              case 'meet.thread': return this.meetThreads.threadInfo(me, d, (id) => this.meetings.get(id));
+              case 'meet.recap': return this.meetThreads.recap(me, d.occurrenceId);
+              case 'meet.recapChat': return this.meetThreads.recapChat(me, d);
+              case 'meet.recapFor': return this.meetThreads.recapFor(me, d.eventId, d.slotStart);
+              case 'ap.create': return this.meetThreads.createAction(me, d);
+              case 'ap.update': return this.meetThreads.updateAction(me, d);
+              case 'ap.list': return this.meetThreads.listActions(me, d);
+              default: return this.meetThreads.agenda(me, op, d);
+            }
+          } catch (err) {
+            if (err instanceof ThreadError || err instanceof MsgError || err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('room.') || op.startsWith('meet.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            // a device outside the office cannot reach the relay: it gets PC-to-PC Rooms
+            const result = this.rooms.handle(op, me, conn.deviceId!, conn.remote ? { ...d, fromOutside: true } : d);
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(help\.|admin\.help\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.helpdesk.handle(op, me, conn.deviceId!, d, conn.remote);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof HelpError || err instanceof RoomError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('lounge.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.lounges.handle(op, me, conn.deviceId!, d, conn.remote);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof LoungeError || err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && op.startsWith('point.')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.pointers.handle(op, me, conn.deviceId!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof PointerError) throw new OpError(err.message);
             throw err;
           }
         }
@@ -953,13 +1875,41 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(cmd\.|admin\.bots\.commands$)/.test(op)) {
+        if (typeof op === 'string' && /^(cmd\.|admin\.bots\.commands$|actions\.list$|action\.run$|widgets\.list$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = await this.commands.handle(op, me, d);
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof CommandError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(flow\.|admin\.flows\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.flows.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof FlowError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(botflow\.|admin\.botflows\.|botnet\.|botjob\.|admin\.botjob\.)/.test(op)) {
+          try {
+            const result = await this.botflows.handle(op, this.store.userById(conn.userId!)!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof BotFlowsError || err instanceof BotFlowError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(miniapp\.|admin\.miniapps\.)/.test(op)) {
+          try {
+            const result = this.miniapps.handle(op, this.store.userById(conn.userId!)!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof MiniAppError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }
@@ -984,13 +1934,67 @@ export class Hub {
             throw err;
           }
         }
+        if (typeof op === 'string' && /^(zoho\.|admin\.zoho\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.zoho.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof ZohoError) throw new OpError(err.message);
+            throw err;
+          }
+        }
         if (typeof op === 'string' && /^(cal\.|admin\.cal\.)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
+            // the meeting's thread follows the invitations (meet-threads.ts)
+            const before = op === 'cal.update' && typeof d.eventId === 'string'
+              ? (this.store.db.prepare('SELECT user_id FROM event_attendees WHERE event_id = ?').all(d.eventId) as Array<{ user_id: string }>).map((r) => r.user_id) : [];
             const result = this.calendar.handle(op, me, d);
+            if ((op === 'cal.create' || op === 'cal.update') && result && typeof (result as { id?: unknown }).id === 'string') {
+              const id = (result as { id: string }).id;
+              try {
+                const had = (result as { convId: string | null }).convId;
+                this.meetThreads.eventSaved(id, before);
+                if (!had) { this.calendar.pushEvent(id); return this.calendar.handle('cal.get', me, { eventId: id }); }
+              } catch (err) { this.log('warn', 'meeting thread not made', { error: (err as Error).message }); }
+            }
+            if (op === 'cal.cancel' && typeof d.eventId === 'string') { try { this.meetThreads.eventCancelled(d.eventId); } catch (err) { this.log('warn', 'cancel card not posted', { error: (err as Error).message }); } }
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof CalError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('nib.') || op.startsWith('admin.nib.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.nib.handle(op, me, d);
+            // someone goes on leave: bots listening for it act (release their seats…)
+            if (op === 'nib.leave' && typeof d.from === 'string') this.botflows.net.emitAway(me.id, d.from, typeof d.to === 'string' ? d.to : null);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof NibError || err instanceof MsgError || err instanceof CalError || err instanceof HolidaysError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('notices.') || op.startsWith('admin.notices.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.notices.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof NoticeError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('seating.') || op.startsWith('admin.seating.'))) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.seating.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof SeatingError) throw new OpError(err.message);
             throw err;
           }
         }
@@ -1035,9 +2039,44 @@ export class Hub {
           const c = this.iceConfig();
           return { mode: c.mode, keyId: c.keyId, servers: c.servers.map((s) => ({ urls: s.urls, ...(s.username ? { username: s.username } : {}), ...(s.credential ? { credential: '••••••' } : {}) })), hasToken: !!c.token };
         }
+        if (typeof op === 'string' && op.startsWith('admin.hubUpdate.')) {
+          const me = this.requireAdmin(conn);
+          const u = this.hubUpdate;
+          if (!u) throw new OpError('Hub updates are turned off on this hub.');
+          try {
+            if (op === 'admin.hubUpdate.get') return (d.check === true ? await u.check() : u.view()) satisfies Ops['admin.hubUpdate.get']['res'];
+            if (op === 'admin.hubUpdate.set') return u.configure(me.id, d) satisfies Ops['admin.hubUpdate.set']['res'];
+            if (op === 'admin.hubUpdate.now') return (await u.updateNow(me.id, d.force === true)) satisfies Ops['admin.hubUpdate.now']['res'];
+            if (op === 'admin.hubUpdate.retry') return u.retry(me.id) satisfies Ops['admin.hubUpdate.retry']['res'];
+          } catch (err) {
+            if (err instanceof HubUpdateError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (op === 'admin.setup.report') {
+          this.requireAdmin(conn);
+          return await this.health.report({ id: this.info.id, name: this.info.name, version: HUB_VERSION, startedAt: this.startedAt, uptimeSec: Math.round((Date.now() - this.startedAt) / 1000) }) satisfies Ops['admin.setup.report']['res'];
+        }
         if (op === 'remote.info') {
           const c = this.remoteConfig();
-          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote };
+          return { url: c.enabled ? c.url : null, hubId: this.info.id, fingerprint: this.fingerprint, name: this.info.name, viaGateway: conn.remote, site: this.publicSite() };
+        }
+        if (typeof op === 'string' && op.startsWith('admin.cloudflare.')) {
+          const me = this.store.userById(conn.userId!)!;
+          if (me.role !== 'owner' && me.role !== 'admin') throw new OpError('Only administrators can do that.');
+          try {
+            const token = typeof d.token === 'string' ? d.token : undefined;
+            const keep = typeof d.keep === 'boolean' ? d.keep : undefined;
+            if (op === 'admin.cloudflare.get') return this.cloudflare.view() satisfies Ops['admin.cloudflare.get']['res'];
+            if (op === 'admin.cloudflare.start') return this.cloudflare.start(me.id, token ?? '', { keep: !!keep, accountId: typeof d.accountId === 'string' ? d.accountId : undefined }) satisfies Ops['admin.cloudflare.start']['res'];
+            if (op === 'admin.cloudflare.choose') return this.cloudflare.choose(me.id, String(d.accountId ?? '')) satisfies Ops['admin.cloudflare.choose']['res'];
+            if (op === 'admin.cloudflare.retry') return this.cloudflare.retry(me.id, token, keep) satisfies Ops['admin.cloudflare.retry']['res'];
+            if (op === 'admin.cloudflare.update') return this.cloudflare.update(me.id, token, keep) satisfies Ops['admin.cloudflare.update']['res'];
+            if (op === 'admin.cloudflare.forget') return this.cloudflare.forget(me.id) satisfies Ops['admin.cloudflare.forget']['res'];
+          } catch (err) {
+            if (err instanceof CfSetupError) throw new OpError(err.message);
+            throw err;
+          }
         }
         if (op === 'admin.remote.get' || op === 'admin.remote.set') {
           const me = this.store.userById(conn.userId!)!;
@@ -1048,6 +2087,13 @@ export class Hub {
               if (url && !/^(https:\/\/[a-z0-9.-]+|http:\/\/(127\.0\.0\.1|localhost))(:\d+)?(\/[\w.-]*)*$/i.test(url)) throw new OpError('Enter the gateway\'s https:// address, for example https://dexconnect-gateway.example.workers.dev');
               this.setMeta('remote_url', url);
             }
+            if (d.siteUrl !== undefined) {
+              const site = d.siteUrl === null || d.siteUrl === '' ? '' : siteBase(String(d.siteUrl));
+              const problem = siteUrlProblem(site);
+              if (problem) throw new OpError(problem);
+              this.setMeta('meet_site_url', site);
+            }
+            if (d.orgName !== undefined) this.setMeta('meet_org_name', clean(d.orgName, 80));
             if (typeof d.enabled === 'boolean') this.setMeta('remote_enabled', d.enabled ? '1' : '0');
             if (typeof d.allowJoin === 'boolean') this.setMeta('remote_join', d.allowJoin ? '1' : '0');
             if (typeof d.allowAdmin === 'boolean') this.setMeta('remote_admin', d.allowAdmin ? '1' : '0');
@@ -1065,7 +2111,7 @@ export class Hub {
             throw new OpError((err as Error).message);
           }
         }
-        if (typeof op === 'string' && /^(emoji\.list|admin\.emoji\.(add|remove))$/.test(op)) {
+        if (typeof op === 'string' && /^(emoji\.(list|add|remove)|admin\.emoji\.(add|remove)|sticker\.(list|add|remove))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.emoji.handle(op, me, d);
@@ -1075,7 +2121,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(policy\.get|admin\.policy\.set|admin\.usage)$/.test(op)) {
+        if (typeof op === 'string' && /^(policy\.get|admin\.policy\.set|admin\.usage|lines\.office|admin\.lines\.(add|remove))$/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.policies.handle(op, me, d);
@@ -1105,13 +2151,57 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|people\.common$|typing$|search$)/.test(op)) {
+        if (typeof op === 'string' && /^(conv\.|msg\.|file\.|poll\.|form\.|activity\.|admin\.reports\.|people\.common$|people\.spaces$|tags\.top$|typing$|search$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             const result = this.messaging.handle(op, me, d);
+            // search also reads the notice board: titles, text and the text of attached PDFs
+            if (op === 'search' && result && typeof result === 'object' && !(typeof d.convId === 'string' && d.convId)) {
+              try { (result as Ops['search']['res']).notices = this.notices.search(me, d.q, 5); } catch (err) { this.log('warn', 'notice search failed', { error: (err as Error).message }); }
+            }
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(decision|refs)\./.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = op.startsWith('decision.') ? this.decisions.handle(op, me, d) : this.refs.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof DecisionError || err instanceof RefError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(links\.|admin\.links\.|reactions\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            if (op === 'links.drives.set') return this.links.setDrives(me, conn.deviceId!, d) satisfies Ops['links.drives.set']['res'];
+            const result = op.startsWith('reactions.') ? this.reactionInsights.handle(op, me, d) : await this.links.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof LinkError || err instanceof InsightError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(admin\.backup\.(get|set|run)|admin\.offboard\.(preview|run|list|reactivate)|directory\.left|cal\.feed\.(get|set|reset))$/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            if (op.startsWith('admin.backup.')) {
+              this.requireAdmin(conn);
+              if (op === 'admin.backup.set') return await this.backups.configure(me, d);
+              if (op === 'admin.backup.run') {
+                if (!this.backups.config().folder) throw new OpError('Choose a backup folder first.');
+                void this.backups.start(true, me.id).catch(() => { /* recorded in the status */ });
+              }
+              return this.backups.status();
+            }
+            const result = op.startsWith('cal.feed.') ? this.feeds.handle(op, me, d) : this.offboarding.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof BackupFailure || err instanceof OffboardError || err instanceof CalFeedError || err instanceof MsgError) throw new OpError(err.message);
             throw err;
           }
         }

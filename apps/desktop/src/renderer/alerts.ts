@@ -1,6 +1,7 @@
 // One place that decides whether to show a system notification and play a sound, from the
 // person's Preferences (Notifications section).
 import { SETTINGS_EXTRA_DEFAULTS, type Settings } from '../shared/bridge.ts';
+import { tr } from './i18n/index.ts';
 import { playSound } from './sounds.ts';
 
 type AlertPrefs = Pick<Settings, 'sound' | 'notifyFor' | 'showPreviews' | 'quietFrom' | 'quietTo'>;
@@ -35,6 +36,7 @@ export function alertUser(kind: 'message' | 'personal' | 'reminder', title: stri
     if (prefs.notifyFor === 'none' || inQuietHours()) return;
     if (prefs.notifyFor === 'mentions' && kind === 'message') return;
   }
-  window.dex.notify(title, prefs.showPreviews || kind === 'reminder' ? body : 'New message', link);
+  // a reminder's title is the app's own words (translated); a message's title is a name or conversation, kept as written
+  window.dex.notify(kind === 'reminder' ? tr(title) : title, prefs.showPreviews || kind === 'reminder' ? body : tr('New message'), link);
   if (!nativeSound) playSound(prefs.sound);
 }

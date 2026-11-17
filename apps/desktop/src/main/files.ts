@@ -11,6 +11,9 @@ import type { IncomingMessage } from 'node:http';
 import { app, protocol, shell } from 'electron';
 import type { FileInfo } from '@dex/core';
 import type { TunnelRequest, TunnelResponse } from '@dex/core/remote';
+import type { UploadPlan } from '@dex/core/e2e-client';
+import { DAMAGED_FILE } from '@dex/core/e2e-files';
+import { MINIAPP_PRIVILEGES } from './miniapps.ts';
 
 export interface HubAccess {
   host: string; port: number; fp: string; token: string;
@@ -20,9 +23,26 @@ export interface HubAccess {
 
 export const FILE_SCHEME = 'dexfile';
 
+type Bytes = AsyncIterable<Uint8Array>;
+/**
+ * End-to-end encrypted Direct attachments (set from main.ts with the E2E layer): how to plan an
+ * upload (encrypted here first when it is for an encrypted conversation), and how to read a
+ * download (decrypted here when this PC has the file's key from its message).
+ */
+let planner: (convId: string | undefined, file: { name: string; mime?: string; size: number }) => Promise<UploadPlan> = async (_c, file) => ({
+  path: `/files?name=${encodeURIComponent(file.name)}${file.mime ? `&type=${encodeURIComponent(file.mime)}` : ''}`, size: file.size, sealed: false,
+  transform: (src) => src as Bytes, done: (info) => info,
+});
+let decryptor: (fileId: string) => ((src: Bytes) => Bytes) | null = () => null;
+export function useEncryption(opts: { plan: typeof planner; decrypt: typeof decryptor }): void {
+  planner = opts.plan;
+  decryptor = opts.decrypt;
+}
+
 /** Must run before app 'ready'. */
 export function registerFileScheme(): void {
-  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
+  // one call registers every scheme: the tools' scheme is registered here too
+  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }, MINIAPP_PRIVILEGES]);
 }
 
 function pinnedRequest(access: HubAccess, method: string, pathname: string, headers: Record<string, string | number> = {}): Promise<{ req: ReturnType<typeof https.request>; res: Promise<IncomingMessage> }> {
@@ -50,47 +70,71 @@ async function readJson(res: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return {}; }
 }
 
-export interface UploadSource { path?: string; data?: ArrayBuffer; name: string; mime?: string }
+export interface UploadSource { path?: string; data?: ArrayBuffer; name: string; mime?: string; /** the conversation it is for (Direct files are encrypted here) */ convId?: string }
 
 export async function uploadFile(access: HubAccess, src: UploadSource, onProgress: (sent: number, total: number) => void): Promise<FileInfo> {
-  const size = src.path ? (await fsp.stat(src.path)).size : src.data!.byteLength;
+  const plainSize = src.path ? (await fsp.stat(src.path)).size : src.data!.byteLength;
   const name = src.name || (src.path ? path.basename(src.path) : 'file');
-  const q = `/files?name=${encodeURIComponent(name)}${src.mime ? `&type=${encodeURIComponent(src.mime)}` : ''}`;
-  if (access.tunnel) {
-    let sent = 0;
-    let last = 0;
-    async function* chunks(): AsyncIterable<Uint8Array> {
-      const stream: AsyncIterable<Buffer> = src.path ? fs.createReadStream(src.path, { highWaterMark: 256 * 1024 }) as AsyncIterable<Buffer> : Readable.from([Buffer.from(src.data!)]) as AsyncIterable<Buffer>;
-      for await (const c of stream) {
-        sent += c.length;
-        const now = Date.now();
-        if (now - last > 120 || sent === size) { last = now; onProgress(sent, size); }
-        yield new Uint8Array(c.buffer, c.byteOffset, c.length);
-      }
+  const plan = await planner(src.convId, { name, mime: src.mime, size: plainSize });
+  const size = plan.size;
+  const q = plan.path;
+  // the file streams from disk (and through encryption) without being read into memory
+  const read = (): Bytes => (src.path ? fs.createReadStream(src.path, { highWaterMark: 256 * 1024 }) : Readable.from([Buffer.from(src.data!)])) as Bytes;
+  let sent = 0;
+  let last = 0;
+  async function* chunks(): AsyncIterable<Uint8Array> {
+    for await (const c of plan.transform(read())) {
+      sent += c.length;
+      const now = Date.now();
+      if (now - last > 120 || sent === size) { last = now; onProgress(sent, size); }
+      yield c;
     }
+  }
+  if (access.tunnel) {
     const r = await access.tunnel({ method: 'POST', path: q, headers: { authorization: `Bearer ${access.token}`, 'content-length': String(size), 'content-type': 'application/octet-stream' }, body: chunks() });
     const parts: Uint8Array[] = [];
     for await (const p of r.body) parts.push(p);
     let json: FileInfo & { error?: string };
     try { json = JSON.parse(Buffer.concat(parts).toString('utf8')); } catch { json = {} as FileInfo & { error?: string }; }
     if (r.status !== 200) throw new Error(json.error ?? `Upload failed (${r.status}).`);
-    return json;
+    return plan.done(json);
   }
   const { req, res } = await pinnedRequest(access, 'POST', q, { 'content-length': size, 'content-type': 'application/octet-stream' });
-  let sent = 0;
-  let last = 0;
-  const tick = (n: number) => {
-    sent += n;
-    const now = Date.now();
-    if (now - last > 120 || sent === size) { last = now; onProgress(sent, size); }
-  };
-  const body: Readable = src.path ? fs.createReadStream(src.path, { highWaterMark: 256 * 1024 }) : Readable.from([Buffer.from(src.data!)]);
-  body.on('data', (c: Buffer) => tick(c.length));
+  const body = Readable.from(chunks(), { objectMode: false });
+  body.on('error', (err) => req.destroy(err));
   body.pipe(req);
   const r = await res;
   const json = await readJson(r) as FileInfo & { error?: string };
   if ((r.statusCode ?? 0) !== 200) throw new Error(json.error ?? `Upload failed (${r.statusCode}).`);
-  return json;
+  return plan.done(json);
+}
+
+/** Write a download to `part`, decrypting it on the way when it is an encrypted attachment. */
+async function writeDownload(id: string, body: Bytes, part: string, total: number, onProgress?: Progress): Promise<void> {
+  const decrypt = decryptor(id);
+  let got = 0;
+  let last = 0;
+  async function* counted(): Bytes {
+    for await (const p of body) {
+      got += p.length;
+      if (onProgress && (Date.now() - last > 100 || got === total)) { last = Date.now(); onProgress(got, total || got); }
+      yield p;
+    }
+  }
+  const out = fs.createWriteStream(part);
+  const closed = new Promise<void>((res, rej) => { out.on('finish', () => res()); out.on('error', rej); });
+  try {
+    for await (const p of decrypt ? decrypt(counted()) : counted()) {
+      if (!out.write(p)) await new Promise<void>((res) => out.once('drain', () => res()));
+    }
+    out.end();
+    await closed;
+  } catch (e) {
+    out.destroy();
+    await fsp.rm(part, { force: true });
+    const msg = (e as Error).message;
+    throw new Error(msg === DAMAGED_FILE ? msg : `Download interrupted: ${msg}`);
+  }
 }
 
 const cacheDir = () => path.join(app.getPath('userData'), 'file-cache');
@@ -100,28 +144,26 @@ const safeName = (n: string) => n.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').sli
 /** Downloads in progress, so two requests for one file (a video asks more than once) share one. */
 const inFlight = new Map<string, Promise<string>>();
 
-function fetchToCache(access: HubAccess, id: string, name: string): Promise<string> {
+type Progress = (got: number, total: number) => void;
+
+function fetchToCache(access: HubAccess, id: string, name: string, onProgress?: Progress): Promise<string> {
   const target = path.join(cacheDir(), id, safeName(name));
-  if (fs.existsSync(target)) return Promise.resolve(target);
+  if (fs.existsSync(target)) { if (onProgress) { const n = fs.statSync(target).size; onProgress(n, n); } return Promise.resolve(target); }
   const running = inFlight.get(target);
   if (running) return running;
-  const p = download(access, id, target).finally(() => inFlight.delete(target));
+  const p = download(access, id, target, onProgress).finally(() => inFlight.delete(target));
   inFlight.set(target, p);
   return p;
 }
 
-async function download(access: HubAccess, id: string, target: string): Promise<string> {
+async function download(access: HubAccess, id: string, target: string, onProgress?: Progress): Promise<string> {
   const dir = path.dirname(target);
   await fsp.mkdir(dir, { recursive: true });
+  const part = `${target}.part`;
   if (access.tunnel) {
     const r = await access.tunnel({ method: 'GET', path: `/files/${id}?download=1`, headers: { authorization: `Bearer ${access.token}` } });
     if (r.status !== 200) { for await (const _ of r.body) { /* drain */ } throw new Error(r.status === 404 ? 'That file is no longer available.' : `Download failed (${r.status}).`); }
-    const part = `${target}.part`;
-    const out = fs.createWriteStream(part);
-    try {
-      for await (const p of r.body) if (!out.write(p)) await new Promise<void>((res) => out.once('drain', () => res()));
-      await new Promise<void>((res, rej) => { out.end(() => res()); out.on('error', rej); });
-    } catch (e) { out.destroy(); await fsp.rm(part, { force: true }); throw new Error(`Download interrupted: ${(e as Error).message}`); }
+    await writeDownload(id, r.body, part, Number(r.headers['content-length'] ?? 0), onProgress);
     await fsp.rename(part, target);
     return target;
   }
@@ -129,14 +171,8 @@ async function download(access: HubAccess, id: string, target: string): Promise<
   req.end();
   const r = await res;
   if ((r.statusCode ?? 0) !== 200) { r.resume(); throw new Error(r.statusCode === 404 ? 'That file is no longer available.' : `Download failed (${r.statusCode}).`); }
-  const part = `${target}.part`;
-  await new Promise<void>((resolve, reject) => {
-    const out = fs.createWriteStream(part);
-    r.pipe(out);
-    out.on('finish', () => resolve());
-    out.on('error', reject);
-    r.on('aborted', () => reject(new Error('Download interrupted.')));
-  });
+  // an aborted response ends its iteration with an error, which writeDownload reports
+  await writeDownload(id, r as unknown as Bytes, part, Number(r.headers['content-length'] ?? 0), onProgress);
   await fsp.rename(part, target);
   return target;
 }
@@ -150,8 +186,8 @@ export async function openFile(access: HubAccess, id: string, name: string): Pro
   if (err) { shell.showItemInFolder(p); }
 }
 
-export async function saveFile(access: HubAccess, id: string, name: string): Promise<string> {
-  const cached = await fetchToCache(access, id, name);
+export async function saveFile(access: HubAccess, id: string, name: string, onProgress?: Progress): Promise<string> {
+  const cached = await fetchToCache(access, id, name, onProgress);
   const dir = app.getPath('downloads');
   const ext = path.extname(name);
   const base = safeName(path.basename(name, ext));

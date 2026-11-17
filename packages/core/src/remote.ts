@@ -55,7 +55,7 @@ const transcript = (hubId: string, deviceEph: Uint8Array, hubEph: Uint8Array) =>
 
 async function keys(shared: Uint8Array, deviceEph: Uint8Array, hubEph: Uint8Array) {
   const salt = new Uint8Array([...deviceEph, ...hubEph]);
-  const mk = async (label: string) => subtle().importKey('raw', hkdf(sha256, shared, salt, enc.encode(`${GW_PROTO} ${label}`), 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  const mk = async (label: string) => subtle().importKey('raw', new Uint8Array(hkdf(sha256, shared, salt, enc.encode(`${GW_PROTO} ${label}`), 32)), 'AES-GCM', false, ['encrypt', 'decrypt']);
   return { toHub: await mk('device-to-hub'), toDevice: await mk('hub-to-device') };
 }
 
@@ -180,6 +180,44 @@ export function parseSetupCode(raw: string): RemoteInfo | null {
     return { url: j.u.replace(/\/+$/, ''), hubId: j.h, fp: j.f, name: j.n || undefined };
   } catch { return null; }
 }
+
+// ------------------------------------------------------------------ pairing codes
+/** The public page a phone's camera opens from a pairing QR code (the code stays in the #fragment). */
+export const GET_PAGE = 'https://dexterity-admin.github.io/dexterity-connect/get/';
+
+/** "DXP1-…": adds a phone or laptop to *your* account, approved by the PC that made it. */
+export interface PairInfo {
+  hubId: string; fp: string; name?: string;
+  /** office addresses ("host:port") to try first */
+  lan: string[];
+  /** the gateway, when access from outside the office is on */
+  url: string | null;
+  token: string;
+  kind: 'phone' | 'laptop';
+}
+
+const b64url = (s: string) => b64(enc.encode(s)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+export function pairCode(p: PairInfo): string {
+  return `DXP1-${b64url(JSON.stringify({ h: p.hubId, f: p.fp, n: p.name ?? '', a: p.lan.slice(0, 4), u: p.url, t: p.token, k: p.kind }))}`;
+}
+
+export function parsePairCode(raw: string): PairInfo | null {
+  const m = raw.trim().match(/DXP1-([A-Za-z0-9_-]{20,3000})/);
+  if (!m) return null;
+  try {
+    const s = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    const j = JSON.parse(dec.decode(unb64(s + '='.repeat((4 - (s.length % 4)) % 4)))) as { h: string; f: string; n?: string; a?: unknown; u?: string | null; t: string; k?: string };
+    if (!/^[0-9A-Za-z_-]{6,64}$/.test(j.h) || !/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(j.f) || !/^[A-Za-z0-9_-]{16,64}$/.test(j.t)) return null;
+    if (j.u && !/^(https:\/\/[^\s/]+|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)(\/[^\s]*)?$/.test(j.u)) return null;
+    const lan = (Array.isArray(j.a) ? j.a : []).filter((x): x is string => typeof x === 'string' && /^[\w.\-]{1,253}:\d{1,5}$/.test(x)).slice(0, 4);
+    if (!lan.length && !j.u) return null;
+    return { hubId: j.h, fp: j.f, name: j.n || undefined, lan, url: j.u ? j.u.replace(/\/+$/, '') : null, token: j.t, kind: j.k === 'laptop' ? 'laptop' : 'phone' };
+  } catch { return null; }
+}
+
+/** The address a phone's camera opens: the download page, carrying the code in the fragment (never sent to a server). */
+export const pairLink = (code: string) => `${GET_PAGE}#${code}`;
 
 /** The gateway address a device connects to for this hub. */
 export const deviceUrl = (r: { url: string; hubId: string }) => `${r.url.replace(/^http/, 'ws').replace(/\/+$/, '')}/c/${encodeURIComponent(r.hubId)}`;

@@ -4,11 +4,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import type { Ops, RemoteView } from '@dex/core';
-import { setupCode } from '@dex/core/remote';
 import type { AppState } from '../../shared/bridge.ts';
 import { Dialog, Icon, Segmented, Toggle, relativeTime, useToast } from '../ui.tsx';
+import { CloudSetup } from './CloudSetup.tsx';
 
-function Qr({ text, size = 220 }: { text: string; size?: number }) {
+export function Qr({ text, size = 220 }: { text: string; size?: number }) {
   const svg = useMemo(() => {
     const q = qrcode(0, 'M');
     q.addData(text);
@@ -18,34 +18,9 @@ function Qr({ text, size = 220 }: { text: string; size?: number }) {
   return <div className="qr" style={{ width: size, height: size }} dangerouslySetInnerHTML={{ __html: svg }} role="img" aria-label="QR code with the setup link" />;
 }
 
-function SetupDialog({ info, onClose }: { info: Ops['remote.info']['res']; onClose: () => void }) {
-  const toast = useToast();
-  const code = setupCode({ url: info.url!, hubId: info.hubId, fp: info.fingerprint, name: info.name });
-  const link = `${info.url}/join#${code}`;
-  return (
-    <Dialog title="Set up a phone or laptop" onClose={onClose}>
-      <div className="setup-grid">
-        <Qr text={link} />
-        <ol className="setup-steps">
-          <li>Install Dexterity Connect on the phone or laptop.</li>
-          <li>Scan this code with the phone's camera, or open the app and choose <b>I'm outside the office</b> and paste the setup code.</li>
-          <li>An administrator approves the new device, as on the office network.</li>
-        </ol>
-      </div>
-      <textarea className="input mono" rows={3} readOnly value={code} onFocus={(e) => e.currentTarget.select()} aria-label="Setup code" />
-      <div className="dialog-actions">
-        <span className="faint">The code is not a password: it says where the office is and how to recognise it.</span>
-        <button className="btn" onClick={() => { void navigator.clipboard.writeText(code); toast('Setup code copied'); }}><Icon name="copy" size={15} />Copy code</button>
-        <button className="btn primary" onClick={onClose}>Done</button>
-      </div>
-    </Dialog>
-  );
-}
-
 /** Preferences ▸ Outside the office. */
 export function RemoteSettings({ state }: { state: AppState }) {
   const [info, setInfo] = useState<Ops['remote.info']['res'] | null>(null);
-  const [dialog, setDialog] = useState(false);
   const live = state.phase === 'ready';
   useEffect(() => { if (live) void window.dex.request('remote.info').then(setInfo).catch(() => {}); }, [live, state.via]);
   const outside = state.via === 'remote';
@@ -62,14 +37,6 @@ export function RemoteSettings({ state }: { state: AppState }) {
         </div>
         {outside && <span className="chip ok"><Icon name="lock" size={13} />Encrypted</span>}
       </div>
-      {info?.url && (
-        <div className="setting">
-          <Icon name="mobile" className="lead" />
-          <div className="txt"><div>Set up a phone or laptop</div><div className="faint">A QR code and setup code for a device that is not on the office network.</div></div>
-          <button className="btn" onClick={() => setDialog(true)}>Show code</button>
-        </div>
-      )}
-      {dialog && info?.url && <SetupDialog info={info} onClose={() => setDialog(false)} />}
     </section>
   );
 }
@@ -79,7 +46,6 @@ export function RemoteAdmin() {
   const toast = useToast();
   const [v, setV] = useState<RemoteView | null>(null);
   const [url, setUrl] = useState('');
-  const [dialog, setDialog] = useState(false);
   const load = () => void window.dex.request('admin.remote.get').then((x) => { setV(x); setUrl((u) => u || x.config.url || ''); }).catch((e: Error) => toast(e.message, true));
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const save = (patch: Ops['admin.remote.set']['req']) => void window.dex.request('admin.remote.set', patch).then((x) => { setV(x); toast('Saved'); }).catch((e: Error) => toast(e.message, true));
@@ -87,6 +53,7 @@ export function RemoteAdmin() {
   const s = v.status;
   return (
     <div className="org-admin">
+      <CloudSetup onChanged={load} />
       <section className="card">
         <div className="eyebrow">Access from outside the office</div>
         <p className="muted" style={{ marginTop: 0 }}>Phones and home laptops reach this hub through the office's own gateway on Cloudflare. The hub connects out to it, so no port is opened at the office, and every device's traffic is encrypted all the way to the hub: the gateway only passes it on.</p>
@@ -102,13 +69,14 @@ export function RemoteAdmin() {
         <div className={`gw-status ${v.config.enabled ? (s.connected ? 'ok' : 'warn') : 'off'}`} role="status">
           <span className="dot" />
           {!v.config.enabled ? 'Off' : s.connected
-            ? <>Connected{s.since ? ` ${relativeTime(s.since)}` : ''} · {s.devices} {s.devices === 1 ? 'device' : 'devices'} outside now{s.pinned ? ' · gateway pinned to this hub' : ''}</>
+            ? <>Connected{s.since ? ` ${relativeTime(s.since)}` : ''} · {s.devices === 1 ? '1 device outside now' : `${s.devices} devices outside now`}{s.pinned ? ' · gateway pinned to this hub' : ''}</>
             : <>Not connected{s.error ? `: ${s.error}` : ''}. Retrying.</>}
         </div>
         {v.config.enabled && s.connected && !s.pinned && (
-          <p className="warn-note"><Icon name="warning" size={14} /><span>Recommended: pin the gateway to this hub so nothing else can take its place. Run <span className="mono">npx wrangler secret put HUB_FINGERPRINT</span> in <span className="mono">apps/gateway</span> and paste the fingerprint below.</span></p>
+          <p className="warn-note"><Icon name="warning" size={14} /><span>Recommended: pin the gateway to this hub so nothing else can take its place. Set up with Cloudflare (above) pins it for you.</span></p>
         )}
       </section>
+      <MeetSite v={v} save={save} />
       <section className="card">
         <div className="eyebrow">Who may use it</div>
         <div className="setting">
@@ -125,10 +93,37 @@ export function RemoteAdmin() {
         <div className="eyebrow">This hub</div>
         <div className="kv"><span>Hub id</span><span className="mono selectable">{v.hubId}</span></div>
         <div className="kv"><span>Fingerprint</span><span className="mono selectable" style={{ wordBreak: 'break-all' }}>{v.fingerprint}</span></div>
-        {v.config.url && <button className="btn" style={{ marginTop: 10 }} onClick={() => setDialog(true)}><Icon name="mobile" size={15} />Setup code for a phone or laptop</button>}
       </section>
-      {dialog && v.config.url && <SetupDialog info={{ url: v.config.url, hubId: v.hubId, fingerprint: v.fingerprint, name: v.name, viaGateway: false }} onClose={() => setDialog(false)} />}
     </div>
+  );
+}
+
+/**
+ * Control room ▸ Outside the office ▸ Meeting site: the clean address of every meeting's page
+ * (Dexterity Meet), https://dexterity-meet.pages.dev by default or the office's own domain later.
+ * It is configuration, not code: changing it here moves new links at once, and old ones redirect.
+ */
+function MeetSite({ v, save }: { v: RemoteView; save: (patch: Ops['admin.remote.set']['req']) => void }) {
+  const [site, setSite] = useState(v.config.siteUrl ?? '');
+  const [org, setOrg] = useState(v.config.orgName ?? '');
+  const base = (v.config.siteUrl || v.config.url || '').replace(/\/+$/, '');
+  return (
+    <section className="card meet-site-card">
+      <div className="eyebrow">Meeting site · Dexterity Meet</div>
+      <p className="muted" style={{ marginTop: 0 }}>Every meeting has a page guests open from their invitation, at a clean address such as <span className="mono">{base ? `${base.replace(/^https?:\/\//, '')}/482-913-207` : 'dexterity-meet.pages.dev/482-913-207'}</span> or a name its host chose. The site passes everything to the gateway, so guests never see the gateway's own address. Deploy it with <span className="mono">Deploy-Gateway.cmd</span>, which prints the address to paste here.</p>
+      <label htmlFor="meet-site" className="field-label">Meeting site address</label>
+      <div className="gw-url-row">
+        <input id="meet-site" className="input mono" placeholder="https://dexterity-meet.pages.dev" value={site} onChange={(e) => setSite(e.target.value)} />
+        <button className="btn" disabled={site.trim().replace(/\/+$/, '') === (v.config.siteUrl ?? '')} onClick={() => save({ siteUrl: site.trim() || null })}>Save address</button>
+      </div>
+      <p className="faint site-note">{v.config.siteUrl ? 'Links made from now on use this address. Older links on the gateway\'s address and /m/ links are sent here.' : 'Empty: meeting pages are served on the gateway\'s own address until the site is set up.'} Your own domain later (for example meet.dexteritydesign.co.in): add it to the Pages project under Custom domains, then enter it here.</p>
+      <label htmlFor="meet-org" className="field-label site-label">Name on meeting pages</label>
+      <div className="gw-url-row">
+        <input id="meet-org" className="input" maxLength={80} placeholder="Dexterity Design Services" value={org} onChange={(e) => setOrg(e.target.value)} />
+        <button className="btn" disabled={org.trim() === (v.config.orgName ?? '')} onClick={() => save({ orgName: org.trim() })}>Save name</button>
+      </div>
+      <p className="faint site-note">Before the passcode, a page says only "Meeting with" this name, the date and the time (and the title, if its host allows it).</p>
+    </section>
   );
 }
 

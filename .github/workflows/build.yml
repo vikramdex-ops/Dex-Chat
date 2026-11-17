@@ -1,15 +1,21 @@
 name: build
 
-# Every push: tests, then the Windows installer, macOS DMGs, Android APK and hub package.
-# Installers go straight into a draft release in the public repository (never into Actions
-# storage, which is small for private repositories); the last job checks them, writes the
-# update feed and publishes. main = stable channel (everyone), other branches = beta (opt-in).
-# Version = <major.minor from package.json>.<run number>, so every build is newer than the last.
+# Run by hand only (Actions → build → Run workflow): releases are normally built on an office PC
+# with scripts/release/Build-Release.cmd (docs/RELEASING.md), so pushes start nothing here.
+# When run: tests, then the Windows installer, macOS DMGs, Android APK and hub package (zip and
+# DexterityConnectHub-Setup.exe), into a draft release in the public repository; the hub setup is
+# installed, repaired, upgraded, updated by the hub itself (and rolled back after a broken update)
+# and removed on a clean Windows runner; the last job writes the update feed (the hub's entry is
+# its setup) and publishes.
+# main = stable channel (everyone), other branches = beta (opt-in).
 on:
-  push:
-    branches: ["**"]
-  pull_request:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "stable: everyone's apps update and the landing page's links point at it; beta: only those who opted in. Empty: stable from main, beta from other branches"
+        type: choice
+        options: ["", stable, beta]
+        default: ""
 
 concurrency:
   group: build-${{ github.ref }}
@@ -51,8 +57,8 @@ jobs:
         run: |
           BASE=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
           echo "version=$BASE.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-          echo "channel=${{ github.ref_name == 'main' && 'stable' || 'beta' }}" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "push" ] && [ -n "$GH_TOKEN" ]; then
+          echo "channel=${{ inputs.channel != '' && inputs.channel || (github.ref_name == 'main' && 'stable' || 'beta') }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$GH_TOKEN" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -66,7 +72,7 @@ jobs:
           if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then RANGE="$BEFORE..HEAD"; else RANGE="-1"; fi
           git log --no-merges --format='- %s' $RANGE | head -n 30 > notes.md
           gh release create "v$VERSION" --repo "$PUBLIC_REPO" --draft \
-            --title "Dexterity Connect $VERSION${{ github.ref_name != 'main' && ' (beta)' || '' }}" --notes-file notes.md
+            --title "Dexterity Connect $VERSION${{ steps.v.outputs.channel == 'beta' && ' (beta)' || '' }}" --notes-file notes.md
 
   desktop:
     name: desktop (${{ matrix.name }})
@@ -123,20 +129,109 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: node apps/hub/scripts/build.mjs --sea
+      - name: Build the hub (its version stamped in, so it can update itself)
+        run: node apps/hub/scripts/build.mjs --sea --version $env:VERSION
       - name: Assemble service package
         shell: pwsh
         run: |
           $out = "hub-package/DexterityConnectHub"
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item apps/hub/dist/DexterityConnectHub.exe $out
+          # the relay for large Rooms (mediasoup's worker, ISC licence) runs beside the hub
+          Copy-Item node_modules/mediasoup/worker/out/Release/mediasoup-worker.exe $out
           Copy-Item apps/hub/packaging/* $out
           Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe" -OutFile "$out/DexterityConnectHubService.exe"
           Compress-Archive -Path $out -DestinationPath "hub-package/DexterityConnectHub-$env:VERSION-win-x64.zip"
+      - name: Build the hub setup (NSIS)
+        shell: pwsh
+        run: |
+          # NSIS is on the Windows runner image; install it if a newer image dropped it
+          $have = (Get-Command makensis -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe") -or (Test-Path "$env:ProgramFiles\NSIS\makensis.exe")
+          if (-not $have) { choco install nsis -y --no-progress; if ($LASTEXITCODE -ne 0) { throw 'could not install NSIS' } }
+          node apps/hub/scripts/build-setup.mjs --stage hub-package/DexterityConnectHub --version $env:VERSION --out "hub-package/DexterityConnectHub-Setup-$env:VERSION.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'the hub setup did not build' }
+      - name: Keep the hub files for the install test
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-package
+          path: |
+            hub-package/*.zip
+            hub-package/*.exe
+          retention-days: 7
+      # For the install test only, never published: the same hub stamped one version later (the
+      # update the hub installs itself), and one whose program cannot start (the update that must
+      # go back to the version before).
+      - name: Builds for the self-update test
+        shell: pwsh
+        run: |
+          $p = $env:VERSION.Split('.')
+          $next = "$($p[0]).$($p[1]).$([int64]$p[2] + 1)"
+          $broken = "$($p[0]).$($p[1]).$([int64]$p[2] + 2)"
+          node apps/hub/scripts/build.mjs --sea --no-cloud --version $next
+          if ($LASTEXITCODE -ne 0) { throw 'the next hub did not build' }
+          foreach ($b in @(@{ Name = 'next'; Version = $next }, @{ Name = 'broken'; Version = $broken })) {
+            $stage = "hub-smoke/$($b.Name)/DexterityConnectHub"
+            New-Item -ItemType Directory -Force $stage | Out-Null
+            Copy-Item hub-package/DexterityConnectHub/* $stage
+            if ($b.Name -eq 'next') { Copy-Item apps/hub/dist/DexterityConnectHub.exe $stage -Force }
+            else { Set-Content -LiteralPath "$stage/DexterityConnectHub.exe" -Value 'not a program' -NoNewline }
+            node apps/hub/scripts/build-setup.mjs --stage $stage --version $b.Version --out "hub-smoke/DexterityConnectHub-Setup-$($b.Version).exe"
+            if ($LASTEXITCODE -ne 0) { throw "the $($b.Name) setup did not build" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hub-smoke-builds
+          path: hub-smoke/*.exe
+          retention-days: 7
       - name: Upload to the release
         if: needs.prepare.outputs.publish == 'true'
         shell: bash
-        run: gh release upload "v$VERSION" hub-package/*.zip --repo "$PUBLIC_REPO" --clobber
+        run: gh release upload "v$VERSION" hub-package/*.zip hub-package/DexterityConnectHub-Setup-*.exe --repo "$PUBLIC_REPO" --clobber
+
+  # The real test of the hub setup: install it silently on a clean Windows runner, check the service,
+  # firewall rules and /health, run it again (repair), uninstall and reinstall, upgrade an install
+  # made the old way from the zip, then let the hub update itself to the next version and see a
+  # broken update go back to the version before. A broken hub setup must not ship, so publishing
+  # waits for this.
+  hub-smoke:
+    name: hub setup (install test)
+    needs: hub
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hub-package
+          path: hub-package
+      - uses: actions/download-artifact@v4
+        with:
+          name: hub-smoke-builds
+          path: hub-smoke
+      - name: Install, repair, upgrade, update itself, go back after a bad update, and remove the hub
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem hub-package -Filter 'DexterityConnectHub-Setup-*.exe' | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem hub-package -Filter 'DexterityConnectHub-*-win-x64.zip' | Select-Object -First 1).FullName
+          # the two test builds, by version: the lower is the good next version, the higher the broken one
+          $smoke = @(Get-ChildItem hub-smoke -Filter 'DexterityConnectHub-Setup-*.exe' | Sort-Object { [version]($_.BaseName -replace '^DexterityConnectHub-Setup-', '') })
+          ./apps/hub/installer/smoke-test.ps1 -Setup $setup -Zip $zip -Next $smoke[0].FullName -Broken $smoke[1].FullName
+      # the upload takes files from the workspace only: copy the logs in first
+      - name: Gather the logs
+        if: failure()
+        shell: pwsh
+        run: |
+          $dest = New-Item -ItemType Directory -Force hub-smoke-logs
+          foreach ($src in @('C:/ProgramData/Dexterity Connect Hub/setup.log', 'C:/ProgramData/Dexterity Connect Hub/hub-data/hub-update/result.json', 'C:/Program Files/Dexterity Connect Hub/logs', "$env:RUNNER_TEMP/hub-smoke")) {
+            if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $dest -Recurse -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-smoke-logs
+          path: hub-smoke-logs
+          if-no-files-found: ignore
 
   android:
     name: android (apk)
@@ -177,9 +272,28 @@ jobs:
         if: needs.prepare.outputs.publish == 'true'
         run: gh release upload "v$VERSION" apk/*.apk --repo "$PUBLIC_REPO" --clobber
 
+  # The remote-control helper (docs/HELP-DESK.md) can only run on Windows: compile it with Add-Type
+  # and move the pointer through its JSON protocol. A job of its own that nothing depends on, so
+  # it cannot hold up a release.
+  assist-helper:
+    name: input helper (windows)
+    needs: test
+    runs-on: windows-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Compile the helper, move the pointer and read it back
+        run: node apps/desktop/scripts/assist-helper-smoke.ts
+
   publish:
     name: publish (${{ needs.prepare.outputs.channel }})
-    needs: [prepare, desktop, hub, android]
+    needs: [prepare, desktop, hub, hub-smoke, android]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     concurrency:
@@ -205,6 +319,25 @@ jobs:
             --base-url "https://github.com/$PUBLIC_REPO/releases/download/v$VERSION" \
             --notes-file notes.md --out "feed/$CHANNEL.json"
           gh release upload "v$VERSION" release-files/SHA256SUMS.txt --repo "$PUBLIC_REPO" --clobber
+      - name: Fixed-name copies for direct download links
+        # releases/latest/download/<name> always points at the newest stable build, so the landing
+        # page links to it directly without asking GitHub's API (which limits each office IP)
+        run: |
+          mkdir -p alias
+          for f in release-files/*; do
+            n=$(basename "$f")
+            case "$n" in
+              DexterityConnectHub-Setup*.exe) a=DexterityConnectHub-Setup.exe ;;
+              *Setup*.exe) a=DexterityConnect-Setup.exe ;;
+              *mac-arm64.dmg) a=DexterityConnect-mac-arm64.dmg ;;
+              *mac-x64.dmg) a=DexterityConnect-mac-x64.dmg ;;
+              *.apk) a=DexterityConnect.apk ;;
+              *Hub*.zip) a=DexterityConnectHub-win-x64.zip ;;
+              *) continue ;;
+            esac
+            cp "$f" "alias/$a"
+          done
+          gh release upload "v$VERSION" alias/* --repo "$PUBLIC_REPO" --clobber
       - name: Publish the release
         run: |
           {
@@ -219,16 +352,18 @@ jobs:
             for f in release-files/*; do
               n=$(basename "$f")
               case "$n" in
+                DexterityConnectHub-Setup*.exe) d="Office hub: setup for the server PC (Windows 10/11, 64-bit)" ;;
                 *Setup*.exe) d="Windows 10/11 app" ;;
                 *mac-arm64.dmg) d="macOS, Apple Silicon" ;;
                 *mac-x64.dmg) d="macOS, Intel" ;;
                 *.apk) d="Android phones" ;;
-                *Hub*.zip) d="Office hub (Windows service)" ;;
+                *Hub*.zip) d="Office hub as a zip (Install-Hub.cmd), if the setup cannot be used" ;;
                 *) continue ;;
               esac
               echo "| \`$n\` | $d |"
             done
             echo
+            echo "The files without a version number are the same builds, for links that always get the newest."
             echo "Verify downloads with \`SHA256SUMS.txt\`."
           } > release-notes.md
           if [ "$CHANNEL" = "beta" ]; then FLAGS="--prerelease --latest=false"; else FLAGS="--latest"; fi
@@ -254,7 +389,7 @@ jobs:
   # A build that failed half-way leaves an unpublished draft behind: remove it.
   cleanup:
     name: remove failed draft
-    needs: [prepare, desktop, hub, android, publish]
+    needs: [prepare, desktop, hub, hub-smoke, android, publish]
     if: (failure() || cancelled()) && needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     env:

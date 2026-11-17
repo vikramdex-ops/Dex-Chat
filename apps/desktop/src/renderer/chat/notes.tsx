@@ -3,7 +3,7 @@
 // Slate (the office text editor); whatever is saved there comes back into the note.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Note, NoteSummary, PublicUser } from '@dex/core';
-import { Icon, relativeTime, useToast } from '../ui.tsx';
+import { Icon, confirmAction, relativeTime, useToast } from '../ui.tsx';
 import { renderBody } from './format.tsx';
 
 export function useNotes(convId: string | null): NoteSummary[] | null {
@@ -31,7 +31,7 @@ export function NotesList({ convId, users, onOpen, onNew }: { convId: string | n
       {list?.length === 0 && <div className="empty"><Icon name="doc" size={28} /><span>{convId ? 'Shared notes for everyone here: checklists, minutes, decisions.' : 'Personal notes only you can see.'}</span></div>}
       {list?.map((n) => (
         <button key={n.id} className="note-row" onClick={() => onOpen(n.id)}>
-          <b>{n.title}</b>
+          <b translate="no">{n.title}</b>
           <span className="faint">{n.preview || 'Empty'}</span>
           <span className="note-meta">{users.get(n.updatedBy)?.displayName.split(' ')[0] ?? 'Someone'} · {relativeTime(n.updatedAt)}</span>
         </button>
@@ -56,10 +56,13 @@ export function NoteEditor({ id, convId, users, meId, onClose }: { id: string | 
   const latest = useRef({ title: '', body: '' });
   latest.current = { title, body };
 
+  // load once per note: the Pane around it re-renders often, and must not reset what is being written
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!id) { setNote(null); setTitle(''); setBody(''); return; }
-    void window.dex.request('note.get', { id }).then((n) => { setNote(n); setTitle(n.title); setBody(n.body); version.current = n.version; }).catch((e: Error) => { toast(e.message, true); onClose(); });
-  }, [id, toast, onClose]);
+    void window.dex.request('note.get', { id }).then((n) => { setNote(n); setTitle(n.title); setBody(n.body); version.current = n.version; }).catch((e: Error) => { toast(e.message, true); closeRef.current(); });
+  }, [id, toast]);
 
   const save = useCallback(async (force = false) => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -138,7 +141,7 @@ export function NoteEditor({ id, convId, users, meId, onClose }: { id: string | 
             void (async () => {
               if (!noteId.current) await save();
               if (!noteId.current) return;
-              try { const where = await window.dex.editInSlate!(noteId.current, latest.current.title || 'Note', latest.current.body); toast(`Opened in ${where === 'slate' ? 'Slate' : 'your editor'}. Save there to update the note.`); } catch (e) { toast((e as Error).message, true); }
+              try { const where = await window.dex.editInSlate!(noteId.current, latest.current.title || 'Note', latest.current.body); toast(where === 'slate' ? 'Opened in Slate. Save there to update the note.' : 'Opened in your editor. Save there to update the note.'); } catch (e) { toast((e as Error).message, true); }
             })();
           }}><Icon name="open" size={14} />{window.dex.hasSlate ? 'Edit in Slate' : 'Edit in your editor'}</button>
         )}
@@ -148,7 +151,7 @@ export function NoteEditor({ id, convId, users, meId, onClose }: { id: string | 
         ? <div className="note-preview selectable">{body.trim() ? renderBody(body, users, meId) : <span className="faint">Nothing written yet.</span>}</div>
         : <textarea className="note-body" value={body} placeholder={'Write here. **bold**, *italic*, - lists, `code`, > quotes'} onChange={(e) => change(title, e.target.value)} autoFocus={!id} />}
       {note && (note.ownerId === meId || !note.convId) && (
-        <button className="link danger note-delete" onClick={() => { if (confirm(`Delete "${note.title}"?`)) void window.dex.request('note.delete', { id: note.id }).then(onClose).catch((e: Error) => toast(e.message, true)); }}>Delete note</button>
+        <button className="link danger note-delete" onClick={() => void confirmAction({ title: `Delete "${note.title}"?`, confirm: 'Delete', danger: true }).then((ok) => { if (ok) void window.dex.request('note.delete', { id: note.id }).then(onClose).catch((e: Error) => toast(e.message, true)); })}>Delete note</button>
       )}
     </div>
   );

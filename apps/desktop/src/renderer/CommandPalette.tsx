@@ -1,4 +1,4 @@
-// Ctrl+K: one box to find people and run commands. Arrow keys move, Enter runs, Esc closes.
+// Ctrl+G (GO TO): one box to find people and conversations and run commands. Arrow keys move, Enter runs, Esc closes.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Message, PublicUser } from '@dex/core';
 import { Avatar, Icon, presenceFor } from './ui.tsx';
@@ -6,12 +6,20 @@ import type { IconName } from './ui.tsx';
 
 interface Command { id: string; label: string; icon: IconName; run: () => void; hint?: string }
 
+/** How well a name matches what was typed: the start of the name, then the start of a word, then anywhere. */
+function rank(text: string, s: string): number {
+  const t = text.toLowerCase();
+  if (t.startsWith(s)) return 0;
+  if (new RegExp(`(^|[\\s,.:(/-])${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(t)) return 1;
+  return t.includes(s) ? 2 : 3;
+}
+
 type Hit = { message: Message; snippet: string };
 
 /** "a [[match]] here" → text with <mark>s */
 function Snippet({ text }: { text: string }) {
   const parts = text.replace(/<@[0-9A-Z]{26}>/g, '@…').split(/\[\[|\]\]/);
-  return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}</>;
+  return <>{parts.map((p, i) => (i % 2 ? <mark key={i} translate="no">{p}</mark> : <span key={i} translate="no">{p}</span>))}</>;
 }
 
 export function CommandPalette({ users, online, commands, onClose, onPerson, convName, onMessage, onSearch }: {
@@ -38,18 +46,25 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
   }, [q, onMessage]);
   const [index, setIndex] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { input.current?.focus(); }, []);
+  const list = useRef<HTMLUListElement>(null);
+  // focus goes back where it was when the palette closes
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    input.current?.focus();
+    return () => { if (before?.isConnected && (document.activeElement === document.body || !document.activeElement)) before.focus(); };
+  }, []);
 
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
     const people = users
       .filter((u) => u.role !== 'bot')
       .filter((u) => !s || [u.displayName, u.account, u.title ?? '', u.statusText ?? ''].some((f) => f.toLowerCase().includes(s)))
-      .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName))
+      .sort((a, b) => (s ? rank(a.displayName, s) - rank(b.displayName, s) : 0) || Number(online.has(b.id)) - Number(online.has(a.id)) || a.displayName.localeCompare(b.displayName))
       .slice(0, 8)
       .map((u) => ({ kind: 'person' as const, id: u.id, user: u }));
     const cmds = commands
       .filter((c) => !s || c.label.toLowerCase().includes(s))
+      .sort((a, b) => (s ? rank(a.label, s) - rank(b.label, s) : 0))
       .map((c) => ({ kind: 'command' as const, id: c.id, command: c }));
     const msgs = hits.map((h) => ({ kind: 'message' as const, id: `m-${h.message.id}`, hit: h }));
     const all = s.length >= 2 && onSearch ? [{ kind: 'command' as const, id: 'search-all', command: { id: 'search-all', label: `Search everything for “${q.trim()}” with filters`, icon: 'search' as IconName, hint: 'Search', run: () => onSearch(q.trim()) } }] : [];
@@ -58,6 +73,8 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
   }, [q, users, online, commands, hits, onSearch]);
 
   useEffect(() => { setIndex(0); }, [q]);
+  // the chosen row stays in view while the arrow keys move through a long list
+  useEffect(() => { list.current?.children[index]?.scrollIntoView({ block: 'nearest' }); }, [index, results]);
 
   const run = (i: number) => {
     const r = results[i];
@@ -70,45 +87,47 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
 
   return (
     <div className="scrim palette-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Search and commands">
+      <div className="palette" role="dialog" aria-modal="true" aria-label="Go to">
         <div className="palette-input">
-          <Icon name="search" size={18} />
+          <span className="palette-goto">Go to ▸</span>
           <input
             ref={input}
             value={q}
-            placeholder="Find a person, a conversation or a command"
+            placeholder="A person, a conversation, a command or words in a message"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(results.length - 1, i + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => Math.max(0, i - 1)); }
               else if (e.key === 'Enter') { e.preventDefault(); run(index); }
               else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+              else if (e.key === 'Tab') e.preventDefault(); // the palette keeps the keyboard until it closes
             }}
+            role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-label="Go to"
             aria-activedescendant={results[index] ? `pal-${results[index].id}` : undefined}
           />
           <span className="kbd">Esc</span>
         </div>
-        <ul className="palette-list" role="listbox">
+        <ul ref={list} id="palette-list" className="palette-list" role="listbox" aria-label="Results">
           {results.length === 0 && <li className="palette-empty">{searching ? 'Searching messages…' : `Nothing matches “${q}”.`}</li>}
           {results.map((r, i) => (
             <li key={r.id} id={`pal-${r.id}`} role="option" aria-selected={i === index}
               onMouseEnter={() => setIndex(i)} onMouseDown={(e) => { e.preventDefault(); run(i); }}>
               {r.kind === 'message' ? (
                 <>
-                  <span className="pal-icon"><Icon name="chat" size={16} /></span>
+                  <span className="pal-icon"><Icon name="doc" size={16} /></span>
                   <span className="pal-main pal-snippet"><Snippet text={r.hit.snippet} /></span>
-                  <span className="pal-meta">{users.find((u) => u.id === r.hit.message.authorId)?.displayName.split(' ')[0]} · {convName?.(r.hit.message.convId) ?? ''}</span>
+                  <PalWhere author={users.find((u) => u.id === r.hit.message.authorId)?.displayName ?? ''} where={convName?.(r.hit.message.convId) ?? ''} />
                 </>
               ) : r.kind === 'person' ? (
                 <>
                   <Avatar user={r.user} presence={presenceFor(r.id)} size="sm" />
-                  <span className="pal-main">{r.user.displayName}</span>
+                  <span className="pal-main" translate="no" title={r.user.displayName}>{r.user.displayName}</span>
                   <span className="pal-meta mono">{r.user.account}</span>
                 </>
               ) : (
                 <>
                   <span className="pal-icon"><Icon name={r.command.icon} size={16} /></span>
-                  <span className="pal-main">{r.command.label}</span>
+                  <span className="pal-main" translate={r.command.id.startsWith('conv-') ? 'no' : undefined} title={r.command.id.startsWith('conv-') ? r.command.label : undefined}>{r.command.label}</span>
                   <span className="pal-meta">{r.command.hint ?? 'Command'}</span>
                 </>
               )}
@@ -118,4 +137,10 @@ export function CommandPalette({ users, online, commands, onClose, onPerson, con
       </div>
     </div>
   );
+}
+
+/** Who wrote a message and where: "Ravi · Site team", or just "Ravi Kulkarni" in a Direct with him. */
+function PalWhere({ author, where }: { author: string; where: string }) {
+  const text = !where || where === author ? author : `${author.split(' ')[0]} · ${where}`;
+  return <span className="pal-meta" translate="no" title={text}>{text}</span>;
 }

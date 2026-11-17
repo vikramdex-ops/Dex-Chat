@@ -2,7 +2,9 @@
 // the largest upload, whether PCs may message each other directly while the hub is off, whether
 // calls may be recorded) and the usage report: activity per day, busiest Spaces, storage, calls.
 import type { DatabaseSync } from 'node:sqlite';
-import type { OfficePolicy, Ops, PublicUser, UsageReport } from '@dex/core';
+import type { OfficeLine, OfficePolicy, Ops, PublicUser, UsageReport } from '@dex/core';
+import { ulid } from '@dex/core';
+import { validCidr, validDlpRules } from '@dex/core/dlp';
 import type { FileStore } from './files.ts';
 import type { Store } from './store.ts';
 
@@ -57,9 +59,28 @@ export class Policies {
       maxUploadMb: Number.isFinite(up) && up >= 1 ? up : Math.max(1, Math.ceil(this.defaultBytes / 1024 / 1024)),
       peerFallback: this.meta('policy_peer') !== '0',
       allowRecording: this.meta('policy_recording') !== '0',
+      cameraConsent: this.meta('policy_camera_consent') === '1',
+      requireE2E: this.meta('policy_require_e2e') === '1',
+      personalDevices: this.meta('policy_personal_devices') !== '0',
+      memberEmoji: this.meta('policy_member_emoji') !== '0',
+      dlp: this.json('policy_dlp', []),
+      blockedFileTypes: this.json('policy_blocked_types', []),
+      outsideNetworks: this.json('policy_outside_networks', []),
       defaultSpaces: (() => { try { return JSON.parse(this.meta('policy_default_spaces') ?? '[]') as string[]; } catch { return []; } })(),
+      // meetings (Control room ▸ Policies ▸ Meetings)
+      meetingLobby: (['off', 'outside', 'everyone'] as const).find((v) => v === this.meta('policy_meeting_lobby')) ?? 'outside',
+      guestLinks: this.meta('policy_guest_links') !== '0',
+      joinBeforeHost: this.meta('policy_join_before_host') !== '0',
+      recordingMaxMb: (() => { const v = Number(this.meta('policy_recording_mb')); return Number.isInteger(v) && v >= 50 ? v : 2048; })(),
     };
   }
+
+  private json<T>(key: string, fallback: T): T {
+    try { const v = this.meta(key); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
+  }
+
+  lines(): OfficeLine[] { return this.json<OfficeLine[]>('office_lines', []); }
+  linesChanged: (list: OfficeLine[]) => void = () => {};
 
   /** The upload limit in bytes: the administrator's choice, or what the hub was started with. */
   private uploadBytes(): number {
@@ -131,8 +152,29 @@ export class Policies {
 
   handle(op: string, me: PublicUser, d: Record<string, unknown>): unknown {
     if (op === 'policy.get') return this.get() satisfies Ops['policy.get']['res'];
+    if (op === 'lines.office') return this.lines() satisfies Ops['lines.office']['res'];
     if (me.role !== 'owner' && me.role !== 'admin') throw new PolicyError('Only administrators can do that.');
     switch (op) {
+      case 'admin.lines.add': {
+        const text = typeof d.text === 'string' ? d.text.replace(/\s+/g, ' ').trim().slice(0, 280) : '';
+        if (text.length < 3) throw new PolicyError('Write the line first.');
+        const by = typeof d.by === 'string' && d.by.trim() ? d.by.trim().slice(0, 80) : null;
+        const date = typeof d.date === 'string' && d.date ? d.date : null;
+        if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new PolicyError('Choose a date, or none for any day.');
+        const list = this.lines();
+        if (list.length >= 500) throw new PolicyError('The office can keep up to 500 lines.');
+        list.push({ id: ulid(), text, by, date, addedBy: me.id, addedAt: Date.now() });
+        this.setMeta('office_lines', JSON.stringify(list));
+        this.store.audit(me.id, 'lines.add', null, { date });
+        this.linesChanged(list);
+        return list satisfies Ops['admin.lines.add']['res'];
+      }
+      case 'admin.lines.remove': {
+        const list = this.lines().filter((l) => l.id !== d.id);
+        this.setMeta('office_lines', JSON.stringify(list));
+        this.linesChanged(list);
+        return list satisfies Ops['admin.lines.remove']['res'];
+      }
       case 'admin.policy.set': {
         if (d.editWindowMinutes !== undefined) {
           const v = d.editWindowMinutes;
@@ -147,6 +189,34 @@ export class Policies {
         }
         if (typeof d.peerFallback === 'boolean') this.setMeta('policy_peer', d.peerFallback ? '1' : '0');
         if (typeof d.allowRecording === 'boolean') this.setMeta('policy_recording', d.allowRecording ? '1' : '0');
+        if (typeof d.cameraConsent === 'boolean') this.setMeta('policy_camera_consent', d.cameraConsent ? '1' : '0');
+        if (typeof d.requireE2E === 'boolean') this.setMeta('policy_require_e2e', d.requireE2E ? '1' : '0');
+        if (typeof d.personalDevices === 'boolean') this.setMeta('policy_personal_devices', d.personalDevices ? '1' : '0');
+        if (typeof d.memberEmoji === 'boolean') this.setMeta('policy_member_emoji', d.memberEmoji ? '1' : '0');
+        if (d.meetingLobby !== undefined) {
+          if (d.meetingLobby !== 'off' && d.meetingLobby !== 'outside' && d.meetingLobby !== 'everyone') throw new PolicyError('Choose who waits in the lobby: guests and people from outside, everyone, or only guests from a browser.');
+          this.setMeta('policy_meeting_lobby', d.meetingLobby);
+        }
+        if (typeof d.guestLinks === 'boolean') this.setMeta('policy_guest_links', d.guestLinks ? '1' : '0');
+        if (typeof d.joinBeforeHost === 'boolean') this.setMeta('policy_join_before_host', d.joinBeforeHost ? '1' : '0');
+        if (d.recordingMaxMb !== undefined) {
+          const v = d.recordingMaxMb;
+          if (typeof v !== 'number' || !Number.isInteger(v) || v < 50 || v > 16384) throw new PolicyError('Choose a recording limit between 50 MB and 16 GB.');
+          this.setMeta('policy_recording_mb', String(v));
+        }
+        if (d.dlp !== undefined) this.setMeta('policy_dlp', JSON.stringify(validDlpRules(d.dlp)));
+        if (d.blockedFileTypes !== undefined) {
+          if (!Array.isArray(d.blockedFileTypes)) throw new PolicyError('List file types like exe, bat, ps1.');
+          const types = [...new Set(d.blockedFileTypes.map((t) => String(t).trim().toLowerCase().replace(/^\./, '')).filter((t) => /^[a-z0-9]{1,10}$/.test(t)))].slice(0, 100);
+          this.setMeta('policy_blocked_types', JSON.stringify(types));
+        }
+        if (d.outsideNetworks !== undefined) {
+          if (!Array.isArray(d.outsideNetworks)) throw new PolicyError('List networks like 203.0.113.0/24.');
+          const nets = d.outsideNetworks.map((n) => String(n).trim()).filter(Boolean).slice(0, 100);
+          const bad = nets.find((n) => !validCidr(n));
+          if (bad) throw new PolicyError(`"${bad.slice(0, 60)}" is not an address or network. Write it like 203.0.113.0/24.`);
+          this.setMeta('policy_outside_networks', JSON.stringify(nets));
+        }
         if (Array.isArray(d.defaultSpaces)) this.setMeta('policy_default_spaces', JSON.stringify(d.defaultSpaces.filter((x): x is string => typeof x === 'string').slice(0, 30)));
         const p = this.get();
         this.files.maxBytes = this.uploadBytes();

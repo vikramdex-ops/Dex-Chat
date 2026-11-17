@@ -9,6 +9,8 @@
 import { ed25519, x25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { isSealedFileMeta } from './e2e-files.ts';
+import type { SealedFileMeta } from './e2e-files.ts';
 
 export const SEALED_PREFIX = 'e2e1:';
 const INFO = new TextEncoder().encode('dexconnect-e2e-v1');
@@ -88,6 +90,9 @@ interface Envelope {
   s: string;
   /** Ed25519 signature over the content */
   g: string;
+  /** encrypted attachments' keys and real names (JSON, sealed with the content key), and its nonce */
+  f?: string;
+  fn?: string;
 }
 
 export const isSealed = (body: unknown): boolean => typeof body === 'string' && body.startsWith(SEALED_PREFIX);
@@ -96,12 +101,16 @@ function parse(body: string): Envelope | null {
   if (!isSealed(body)) return null;
   try {
     const v = JSON.parse(atob(body.slice(SEALED_PREFIX.length))) as Envelope;
-    return typeof v.e === 'string' && typeof v.n === 'string' && typeof v.c === 'string' && v.k && typeof v.k === 'object' && typeof v.s === 'string' && typeof v.g === 'string' ? v : null;
+    const files = v.f === undefined ? v.fn === undefined : typeof v.f === 'string' && typeof v.fn === 'string';
+    return typeof v.e === 'string' && typeof v.n === 'string' && typeof v.c === 'string' && v.k && typeof v.k === 'object' && typeof v.s === 'string' && typeof v.g === 'string' && files ? v : null;
   } catch { return null; }
 }
 const serialise = (v: Envelope) => SEALED_PREFIX + btoa(JSON.stringify(v));
 
-const signed = (convId: string, v: Pick<Envelope, 'e' | 'n' | 'c' | 's'>) => sha256(enc(`dexconnect-msg-v1|${convId}|${v.s}|${v.e}|${v.n}|${v.c}`));
+// attachments are covered by the signature too (messages without them sign exactly as before)
+const signed = (convId: string, v: Pick<Envelope, 'e' | 'n' | 'c' | 's' | 'f' | 'fn'>) =>
+  sha256(enc(`dexconnect-msg-v1|${convId}|${v.s}|${v.e}|${v.n}|${v.c}${v.f ? `|files|${v.fn}|${v.f}` : ''}`));
+const filesAad = (convId: string) => enc(`dexconnect-files-v1|${convId}`);
 
 async function aes(key: Uint8Array, iv: Uint8Array, data: Uint8Array, aad: Uint8Array | undefined, decrypt: boolean): Promise<Uint8Array> {
   const k = await subtle().importKey('raw', key as BufferSource, 'AES-GCM', false, [decrypt ? 'decrypt' : 'encrypt']);
@@ -128,13 +137,20 @@ async function wrapFor(contentKey: Uint8Array, eph: { secret: Uint8Array; pub: U
 export async function seal(opts: {
   convId: string; text: string; senderDeviceId: string; sign: (payload: Uint8Array) => string | Promise<string>;
   recipients: Array<{ deviceId: string; encKey: string }>;
+  /** Encrypted attachments: their keys and real names go inside the envelope. */
+  files?: SealedFileMeta[];
 }): Promise<string> {
   const contentKey = rand(32);
   const nonce = rand(12);
   const ephSecret = x25519.utils.randomSecretKey();
   const eph = { secret: ephSecret, pub: x25519.getPublicKey(ephSecret) };
   const c = await aes(contentKey, nonce, enc(opts.text), enc(opts.convId), false);
-  const v = { e: b64(eph.pub), n: b64(nonce), c: b64(c), s: opts.senderDeviceId };
+  let v: Pick<Envelope, 'e' | 'n' | 'c' | 's' | 'f' | 'fn'> = { e: b64(eph.pub), n: b64(nonce), c: b64(c), s: opts.senderDeviceId };
+  if (opts.files?.length) {
+    const fn = rand(12);
+    const list = opts.files.map((x) => ({ id: x.id, k: x.k, n: x.n, name: x.name, mime: x.mime, size: x.size }));
+    v = { ...v, fn: b64(fn), f: b64(await aes(contentKey, fn, enc(JSON.stringify(list)), filesAad(opts.convId), false)) };
+  }
   const g = await opts.sign(signed(opts.convId, v));
   return serialise({ ...v, k: await wrapFor(contentKey, eph, opts.recipients), g });
 }
@@ -147,21 +163,34 @@ async function contentKey(v: Envelope, myDeviceId: string, mySecret: Uint8Array)
   try { return await aes(kek({ mySecret, ephPub: unb64(v.e) }, myPub), ZERO_IV, unb64(wrapped), undefined, true); } catch { return null; }
 }
 
-export type Opened = { text: string; verified: boolean } | { error: 'not-for-this-device' | 'damaged' };
+export type Opened = { text: string; verified: boolean; files?: SealedFileMeta[] } | { error: 'not-for-this-device' | 'damaged' };
 
 export interface OpenOptions { convId: string; body: string; myDeviceId: string; mySecret: string; signKeyOf: (deviceId: string) => Uint8Array | null }
+
+/** Decrypt the text (and attachment keys) with the content key, and check the sender's signature. */
+async function openWith(v: Envelope, key: Uint8Array, opts: OpenOptions): Promise<Opened> {
+  let text: string;
+  try { text = new TextDecoder().decode(await aes(key, unb64(v.n), unb64(v.c), enc(opts.convId), true)); } catch { return { error: 'damaged' }; }
+  let files: SealedFileMeta[] | undefined;
+  if (v.f && v.fn) {
+    try {
+      const list = JSON.parse(new TextDecoder().decode(await aes(key, unb64(v.fn), unb64(v.f), filesAad(opts.convId), true))) as unknown;
+      if (!Array.isArray(list) || list.length > 50 || !list.every(isSealedFileMeta)) return { error: 'damaged' };
+      files = list.map((x) => ({ id: x.id, k: x.k, n: x.n, name: x.name, mime: x.mime, size: x.size }));
+    } catch { return { error: 'damaged' }; }
+  }
+  const signer = opts.signKeyOf(v.s);
+  let verified = false;
+  if (signer) { try { verified = ed25519.verify(unb64(v.g), signed(opts.convId, v), signer); } catch { verified = false; } }
+  return files ? { text, verified, files } : { text, verified };
+}
 
 async function openOriginal(opts: OpenOptions): Promise<Opened> {
   const v = parse(opts.body);
   if (!v) return { error: 'damaged' };
   const key = await contentKey(v, opts.myDeviceId, unb64(opts.mySecret));
   if (!key) return { error: 'not-for-this-device' };
-  let text: string;
-  try { text = new TextDecoder().decode(await aes(key, unb64(v.n), unb64(v.c), enc(opts.convId), true)); } catch { return { error: 'damaged' }; }
-  const signer = opts.signKeyOf(v.s);
-  let verified = false;
-  if (signer) { try { verified = ed25519.verify(unb64(v.g), signed(opts.convId, v), signer); } catch { verified = false; } }
-  return { text, verified };
+  return openWith(v, key, opts);
 }
 
 /** Wrap a message's key for more devices (sharing history with a new device of your own). */
@@ -195,14 +224,14 @@ export async function open(opts: OpenOptions): Promise<Opened> {
   if (entry && entry.includes('.')) {
     const key = await openRewrapped(entry, opts.mySecret);
     if (!key) return { error: 'damaged' };
-    let text: string;
-    try { text = new TextDecoder().decode(await aes(key, unb64(v.n), unb64(v.c), enc(opts.convId), true)); } catch { return { error: 'damaged' }; }
-    const signer = opts.signKeyOf(v.s);
-    let verified = false;
-    if (signer) { try { verified = ed25519.verify(unb64(v.g), signed(opts.convId, v), signer); } catch { verified = false; } }
-    return { text, verified };
+    return openWith(v, key, opts);
   }
   return openOriginal(opts);
+}
+
+/** Does a sealed body carry encrypted attachments? (Visible without a key: the hub uses it.) */
+export function sealsFiles(body: string): boolean {
+  return !!parse(body)?.f;
 }
 
 /** Devices a sealed message is readable on. */

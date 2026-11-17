@@ -13,7 +13,11 @@ export class Ice {
   private readonly getConfig: () => IceConfig & { token?: string };
   private readonly remoteOn: () => boolean;
 
-  constructor(getConfig: () => IceConfig & { token?: string }, remoteOn: () => boolean, fetchFn: typeof fetch = fetch) {
+  private readonly rtc: string;
+
+  /** `rtc`: Cloudflare's Realtime API (a stand-in in tests: DEX_CLOUDFLARE_RTC, src/cfdeploy.ts). */
+  constructor(getConfig: () => IceConfig & { token?: string }, remoteOn: () => boolean, fetchFn: typeof fetch = fetch, rtc = 'https://rtc.live.cloudflare.com') {
+    this.rtc = rtc.replace(/\/+$/, '');
     this.getConfig = getConfig;
     this.remoteOn = remoteOn;
     this.fetchFn = fetchFn;
@@ -29,7 +33,7 @@ export class Ice {
       if (this.cache && Date.now() - this.cache.at < this.cache.ttl / 2) return this.cache.servers;
       try {
         const ttl = 24 * 3600;
-        const r = await this.fetchFn(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(c.keyId)}/credentials/generate-ice-servers`, {
+        const r = await this.fetchFn(`${this.rtc}/v1/turn/keys/${encodeURIComponent(c.keyId)}/credentials/generate-ice-servers`, {
           method: 'POST',
           headers: { authorization: `Bearer ${c.token}`, 'content-type': 'application/json' },
           body: JSON.stringify({ ttl }),

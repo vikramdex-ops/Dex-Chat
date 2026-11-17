@@ -4,8 +4,10 @@
 import { alertUser, isPopout } from '../alerts.ts';
 import { readImageText } from '../ocr.ts';
 import { useSyncExternalStore } from 'react';
+import { toShareable } from './sharepaths.ts';
 import type { Conversation, FileInfo, Message, PublicUser } from '@dex/core';
 import { plainPreview } from './format.tsx';
+import { observeMessages, startLocalSearch } from '../localsearch/service.ts';
 
 export interface PendingMessage extends Message {
   pending: true;
@@ -36,17 +38,25 @@ const state: ChatState = {
   ready: false, meId: '', conversations: new Map(), timelines: new Map(), typing: new Map(), drafts: new Map(), version: 0,
 };
 const listeners = new Set<() => void>();
-/** The conversation currently on screen (no notification for it while the window is focused). */
-let activeConv: string | null = null;
+/** Conversations on screen in a Pane, counted (no notification for them while the window is focused). */
+const onScreen = new Map<string, number>();
 let directory: () => PublicUser[] = () => [];
 /** Conversations the reader marked unread: not marked read again until they leave and come back. */
 const held = new Set<string>();
-export function setActiveConversation(id: string | null): void {
-  if (activeConv && activeConv !== id) held.delete(activeConv);
-  activeConv = id;
+/** A Pane shows a conversation; call the returned function when it stops showing it. */
+export function showConversation(id: string): () => void {
+  onScreen.set(id, (onScreen.get(id) ?? 0) + 1);
+  return () => {
+    const n = (onScreen.get(id) ?? 1) - 1;
+    if (n > 0) onScreen.set(id, n);
+    else { onScreen.delete(id); held.delete(id); }
+  };
 }
 export function holdUnread(convId: string): void { held.add(convId); }
 let snapshot = { ...state };
+
+/** Conversations change by replacing the map (copy on write), so screens that read it see the change. */
+function putConversation(c: Conversation): void { state.conversations = new Map(state.conversations).set(c.id, c); }
 
 let lastBadge = -1;
 function changed(): void {
@@ -65,6 +75,8 @@ export function useChat<T>(select: (s: ChatState) => T): T {
 }
 
 export const chatState = () => snapshot;
+/** The signed-in person, as the directory knows them. */
+export const meUser = (): PublicUser | undefined => directory().find((u) => u.id === state.meId);
 export const tlKey = (convId: string, parentId?: string | null) => (parentId ? `${convId}/${parentId}` : convId);
 
 // ------------------------------------------------------------------ sync with the hub
@@ -80,11 +92,18 @@ export async function startChat(meId: string, users: () => PublicUser[]): Promis
     typingTimer = setInterval(() => {
       const now = Date.now();
       let dirty = false;
-      for (const m of state.typing.values()) for (const [u, exp] of m) if (exp < now) { m.delete(u); dirty = true; }
+      for (const [key, m] of state.typing) {
+        if (![...m.values()].some((exp) => exp < now)) continue;
+        // a new map for the key, so whoever shows it sees the change
+        state.typing.set(key, new Map([...m].filter(([, exp]) => exp >= now)));
+        dirty = true;
+      }
       if (dirty) changed();
     }, 1500);
   }
   await refreshConversations();
+  // end-to-end encrypted Direct text is searched from an index on this device (localsearch/)
+  startLocalSearch(meId);
 }
 
 export function stopChat(): void {
@@ -95,10 +114,13 @@ export async function refreshConversations(): Promise<void> {
   try {
     const list = await window.dex.request('conv.list');
     state.conversations = new Map(list.map((c) => [c.id, c]));
+    const first = !state.ready;
     state.ready = true;
     // conversations we had open may have missed messages while offline: reload them
     for (const [key, tl] of state.timelines) if (tl.loaded && !key.includes('/')) void loadLatest(key);
     changed();
+    // start-up timing (read by the performance runs): the first paint with the conversations in it
+    if (first) requestAnimationFrame(() => setTimeout(() => performance.mark('dex:usable'), 0));
   } catch { /* offline: keep what we have */ }
 }
 
@@ -106,20 +128,22 @@ function onEvent(name: string, data: unknown): void {
   switch (name) {
     case 'conv.updated': {
       const c = data as Conversation;
-      state.conversations.set(c.id, c);
+      putConversation(c);
       changed();
       break;
     }
     case 'conv.removed': {
       const { convId } = data as { convId: string };
-      state.conversations.delete(convId);
+      const next = new Map(state.conversations);
+      next.delete(convId);
+      state.conversations = next;
       changed();
       break;
     }
     case 'read': {
       const r = data as { convId: string; userId: string; messageId: string };
       const c = state.conversations.get(r.convId);
-      if (c) { state.conversations.set(r.convId, { ...c, reads: { ...c.reads, [r.userId]: r.messageId } }); changed(); }
+      if (c) { putConversation({ ...c, reads: { ...c.reads, [r.userId]: r.messageId } }); changed(); }
       break;
     }
     case 'msg.new':
@@ -128,15 +152,15 @@ function onEvent(name: string, data: unknown): void {
       upsertMessage(m);
       if (name === 'msg.new') notifyIncoming(m);
       // a message from someone clears their typing indicator
-      state.typing.get(tlKey(m.convId, m.parentId))?.delete(m.authorId);
+      const writing = state.typing.get(tlKey(m.convId, m.parentId));
+      if (writing?.has(m.authorId)) { const next = new Map(writing); next.delete(m.authorId); state.typing.set(tlKey(m.convId, m.parentId), next); }
       changed();
       break;
     }
     case 'typing': {
       const t = data as { convId: string; userId: string; parentId: string | null };
       const key = tlKey(t.convId, t.parentId);
-      if (!state.typing.has(key)) state.typing.set(key, new Map());
-      state.typing.get(key)!.set(t.userId, Date.now() + 5000);
+      state.typing.set(key, new Map(state.typing.get(key)).set(t.userId, Date.now() + 5000));
       changed();
       break;
     }
@@ -147,6 +171,7 @@ function onEvent(name: string, data: unknown): void {
 }
 
 function upsertMessage(m: AnyMessage): void {
+  observeMessages([m]);
   const tl = state.timelines.get(tlKey(m.convId, m.parentId));
   if (!tl) return;
   const msgs = tl.messages.slice();
@@ -169,6 +194,7 @@ export async function loadLatest(convId: string, parentId?: string): Promise<voi
   changed();
   try {
     const res = await window.dex.request('msg.list', { convId, parentId, limit: 60 });
+    observeMessages(res.messages);
     const pending = (state.timelines.get(key)?.messages ?? []).filter((m) => 'pending' in m);
     state.timelines.set(key, { messages: [...res.messages, ...pending], hasMore: res.hasMore, loaded: true, loading: false });
   } catch {
@@ -186,6 +212,7 @@ export async function loadOlder(convId: string): Promise<void> {
   changed();
   try {
     const res = await window.dex.request('msg.list', { convId, before: oldest?.id, limit: 60 });
+    observeMessages(res.messages);
     const now = state.timelines.get(convId)!;
     state.timelines.set(convId, { ...now, messages: [...res.messages, ...now.messages], hasMore: res.hasMore, loading: false });
   } catch {
@@ -197,8 +224,11 @@ export async function loadOlder(convId: string): Promise<void> {
 // ------------------------------------------------------------------ actions
 const newClientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export async function sendMessage(convId: string, body: string, parentId?: string | null, files: FileInfo[] = [], opts: { alsoToConv?: boolean } = {}): Promise<void> {
+export async function sendMessage(convId: string, rawBody: string, parentId?: string | null, files: FileInfo[] = [], opts: { alsoToConv?: boolean } = {}): Promise<void> {
   held.delete(convId);
+  // share paths are stored as UNC (this PC's mapped letters become \\server\share\…), so the
+  // message is right for everyone; each reader, the writer too, sees their own drive letter
+  const body = toShareable(rawBody);
   const clientId = newClientId();
   const optimistic: PendingMessage = {
     id: `~${clientId}`, convId, authorId: state.meId, body, parentId: parentId ?? null, createdAt: Date.now(),
@@ -267,7 +297,7 @@ export function markRead(convId: string): void {
   const tl = state.timelines.get(convId);
   const last = tl?.messages.filter((m) => !('pending' in m)).at(-1);
   if (!c || !last || (c.unread === 0 && c.lastReadId && c.lastReadId >= last.id)) return;
-  state.conversations.set(convId, { ...c, unread: 0, mentions: 0, lastReadId: last.id });
+  putConversation({ ...c, unread: 0, mentions: 0, lastReadId: last.id });
   changed();
   void window.dex.request('conv.read', { convId, messageId: last.id }).catch(() => {});
 }
@@ -286,7 +316,7 @@ export function loadDrafts(): void {
 export function addConversation(c: Conversation): void {
   const cur = state.conversations.get(c.id);
   if (cur && (cur.lastMessage?.id ?? '') >= (c.lastMessage?.id ?? '') && cur.joined === c.joined) return;
-  state.conversations.set(c.id, c);
+  putConversation(c);
   changed();
 }
 
@@ -302,12 +332,15 @@ function notifyIncoming(m: Message): void {
   const c = state.conversations.get(m.convId);
   const mentioned = m.mentions.includes(state.meId) || m.mentions.includes('all');
   if (c?.muted && !mentioned) return;
-  if (activeConv === m.convId && document.hasFocus()) return;
-  if (directory().find((u) => u.id === state.meId)?.availability === 'dnd') return; // do not disturb
+  if (onScreen.has(m.convId) && document.hasFocus()) return;
+  if (directory().find((u) => u.id === state.meId)?.availability === 'dnd') return; // no interruptions
   const users = new Map(directory().map((u) => [u.id, u] as const));
   const who = users.get(m.authorId)?.displayName ?? 'Someone';
-  const where = c?.kind === 'space' ? ` in ${c.name}` : c && c.members.length > 2 ? ' in a group' : '';
-  const title = mentioned ? `${who} mentioned you${where}` : m.parentId ? `${who} replied${where}` : `${who}${where}`;
+  // "@ you in P-12 Piping · Vikram", "Side-track in P-12 Piping · Vikram", "P-12 Piping · Vikram"
+  const where = c?.kind === 'space' ? c.name ?? 'a Space' : c && c.members.length > 2 ? 'a group' : '';
+  const title = mentioned ? `@ you${where ? ` in ${where}` : ''} · ${who}`
+    : m.parentId ? `Side-track${where ? ` in ${where}` : ''} · ${who}`
+      : where ? `${where} · ${who}` : who;
   const personal = mentioned || c?.kind === 'direct' || (!!m.parentId && state.timelines.get(tlKey(m.convId))?.messages.some((p) => p.id === m.parentId && p.authorId === state.meId));
   alertUser(personal ? 'personal' : 'message', title, plainPreview(m.body, users).slice(0, 200), `dexconnect://conversation/${m.convId}`);
 }

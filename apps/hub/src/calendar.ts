@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS event_reminders_sent (
 interface EventRow {
   id: string; title: string; description: string | null; location: string | null; venue_id: string | null; start_at: number; end_at: number;
   all_day: number; organizer_id: string; conv_id: string | null; online: number; recurrence: Recurrence; until_at: number | null;
-  reminder_min: number | null; cancelled: number; created_at: number;
+  reminder_min: number | null; cancelled: number; created_at: number; time_zone?: string | null;
 }
 
 const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekdays', 'weekly', 'monthly'];
@@ -94,6 +94,9 @@ export function expand(ev: Pick<EventRow, 'start_at' | 'end_at' | 'recurrence' |
   return out;
 }
 
+/** An event from someone's own outside calendar (Zoho), kept by zoho.ts: read-only, times only for others. */
+export interface ExternalBlock { userId: string; key: string; title: string; startAt: number; endAt: number; allDay: boolean; calendar: string | null }
+
 const overlaps = (a: { startAt: number; endAt: number }, b: { startAt: number; endAt: number }) => a.startAt < b.endAt && b.startAt < a.endAt;
 
 function when(startAt: number, endAt: number, allDay: boolean): string {
@@ -109,6 +112,10 @@ export class Calendar {
   private readonly users: () => PublicUser[];
   private readonly deliver: (userIds: string[], name: string, data: (userId: string) => unknown) => void;
   private readonly broadcast: (name: string, data: unknown) => void;
+  /** Told after a meeting is made, changed, cancelled or answered (Zoho sync marks it to copy). */
+  changed: (eventId: string) => void = () => {};
+  /** People's events from their own Zoho Calendar between two times (none when Zoho is not set up). */
+  externals: (userIds: string[], from: number, to: number) => ExternalBlock[] = () => [];
 
   constructor(db: DatabaseSync, messaging: Messaging, users: Calendar['users'], deliver: Calendar['deliver'], broadcast: Calendar['broadcast']) {
     this.db = db;
@@ -117,6 +124,28 @@ export class Calendar {
     this.deliver = deliver;
     this.broadcast = broadcast;
     db.exec(SCHEMA);
+    try { db.exec('ALTER TABLE events ADD COLUMN time_zone TEXT'); } catch { /* already there */ }
+    // calendar feeds: a change bumps the sequence, so Outlook and phones replace their copy
+    try { db.exec('ALTER TABLE events ADD COLUMN seq INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+    try { db.exec('ALTER TABLE events ADD COLUMN updated_at INTEGER'); } catch { /* already there */ }
+  }
+
+  /** A meeting changed: calendars subscribed to it pick up the new version. */
+  touch(eventId: string, now = Date.now()): void {
+    this.db.prepare('UPDATE events SET seq = seq + 1, updated_at = ? WHERE id = ?').run(now, eventId);
+    this.changed(eventId);
+  }
+
+  /** Tell everyone who sees a meeting that it changed (after a change made outside these operations). */
+  pushEvent(eventId: string, removedFor: string[] = []): void {
+    this.changed(eventId);
+    const r = this.row(eventId);
+    if (!r) return;
+    const ev = this.view(r);
+    const audience = this.audience(r);
+    this.deliver(audience, 'cal.updated', () => ev);
+    const gone = removedFor.filter((u) => !audience.includes(u));
+    if (gone.length) this.deliver(gone, 'cal.removed', () => ({ eventId }));
   }
 
   // ------------------------------------------------------------ views
@@ -133,7 +162,7 @@ export class Calendar {
     return {
       id: r.id, title: r.title, description: r.description, location: r.location, venueId: r.venue_id, startAt: r.start_at, endAt: r.end_at,
       allDay: !!r.all_day, organizerId: r.organizer_id, convId: r.conv_id, online: !!r.online, recurrence: r.recurrence, until: r.until_at,
-      reminderMin: r.reminder_min, attendees: this.attendees(r.id), cancelled: !!r.cancelled, createdAt: r.created_at,
+      reminderMin: r.reminder_min, attendees: this.attendees(r.id), cancelled: !!r.cancelled, createdAt: r.created_at, timeZone: r.time_zone ?? null,
     };
   }
 
@@ -190,6 +219,12 @@ export class Calendar {
       description: pick('description', existing?.description ?? null, (v) => text(v, 4000)),
       location: pick('location', existing?.location ?? null, (v) => text(v, 140)),
       online: pick('online', !!existing?.online, (v) => v === true),
+      timeZone: pick('timeZone', existing?.time_zone ?? null, (v) => {
+        if (v === null || v === '') return null;
+        if (typeof v !== 'string' || v.length > 64) throw new CalError('Choose a time zone from the list.');
+        try { new Intl.DateTimeFormat('en', { timeZone: v }); } catch { throw new CalError('Choose a time zone from the list.'); }
+        return v;
+      }),
     };
   }
 
@@ -292,6 +327,15 @@ export class Calendar {
           const ev = this.view(r);
           for (const o of expand(r, from, to, 400)) out.push({ event: ev, ...o });
         }
+        if (d.external === true) {
+          for (const x of this.externals([me.id], from, to)) {
+            out.push({ startAt: x.startAt, endAt: x.endAt, event: {
+              id: `zoho:${x.key}`, title: x.title, description: null, location: null, venueId: null, startAt: x.startAt, endAt: x.endAt, allDay: x.allDay,
+              organizerId: me.id, convId: null, online: false, recurrence: 'none', until: null, reminderMin: null, attendees: [], cancelled: false, createdAt: 0,
+              timeZone: null, external: { source: 'zoho', calendar: x.calendar },
+            } });
+          }
+        }
         return out.sort((a, b) => a.startAt - b.startAt).slice(0, 2000) satisfies Ops['cal.list']['res'];
       }
 
@@ -310,11 +354,13 @@ export class Calendar {
         this.db.prepare(`INSERT INTO events (id, title, description, location, venue_id, start_at, end_at, all_day, organizer_id, conv_id, online, recurrence, until_at, reminder_min, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, v.title, v.description, v.location, v.venueId, v.startAt, v.endAt, v.allDay ? 1 : 0, me.id,
           v.convId, v.online ? 1 : 0, v.recurrence, v.until, v.reminderMin, Date.now());
+        this.db.prepare('UPDATE events SET time_zone = ? WHERE id = ?').run(v.timeZone, id);
         const ins = this.db.prepare('INSERT OR IGNORE INTO event_attendees (event_id, user_id, response) VALUES (?, ?, ?)');
         ins.run(id, me.id, 'yes');
         for (const u of v.attendees ?? []) ins.run(id, u, 'pending');
         const r = this.row(id)!;
         const ev = this.view(r);
+        this.changed(id);
         this.deliver(this.audience(r), 'cal.updated', () => ev);
         this.deliver((v.attendees ?? []).filter((u) => u !== me.id), 'cal.invited', () => ev);
         // a meeting set in a conversation is announced there
@@ -340,6 +386,8 @@ export class Calendar {
         this.db.prepare(`UPDATE events SET title = ?, description = ?, location = ?, venue_id = ?, start_at = ?, end_at = ?, all_day = ?, conv_id = ?, online = ?,
           recurrence = ?, until_at = ?, reminder_min = ? WHERE id = ?`).run(v.title, v.description, v.location, v.venueId, v.startAt, v.endAt, v.allDay ? 1 : 0,
           v.convId, v.online ? 1 : 0, v.recurrence, v.until, v.reminderMin, r.id);
+        this.db.prepare('UPDATE events SET time_zone = ? WHERE id = ?').run(v.timeZone, r.id);
+        this.touch(r.id);
         let added: string[] = [];
         if (v.attendees) {
           const cur = new Set(this.attendees(r.id).map((a) => a.userId));
@@ -364,6 +412,7 @@ export class Calendar {
         if (!r || !this.canSee(r, me.id)) throw new CalError('Meeting not found.');
         if (r.organizer_id !== me.id && !isAdmin) throw new CalError('Only the organiser can cancel this meeting.');
         this.db.prepare('UPDATE events SET cancelled = 1 WHERE id = ?').run(r.id);
+        this.touch(r.id);
         const ev = this.view(this.row(r.id)!);
         this.deliver(this.audience(r), 'cal.updated', () => ev);
         return ev;
@@ -377,6 +426,7 @@ export class Calendar {
         // members of the meeting's conversation can join it by answering
         this.db.prepare(`INSERT INTO event_attendees (event_id, user_id, response) VALUES (?, ?, ?)
           ON CONFLICT(event_id, user_id) DO UPDATE SET response = excluded.response`).run(r.id, me.id, response);
+        this.changed(r.id);
         const ev = this.view(r);
         this.deliver(this.audience(r), 'cal.updated', () => ev);
         return ev;
@@ -393,6 +443,8 @@ export class Calendar {
           const rows = this.db.prepare(`SELECT DISTINCT e.*, a.user_id AS who FROM events e JOIN event_attendees a ON a.event_id = e.id
             WHERE e.cancelled = 0 AND a.response != 'no' AND a.user_id IN (${ids.map(() => '?').join(',')}) AND e.start_at < ?`).all(...ids, to) as unknown as Array<EventRow & { who: string }>;
           for (const r of rows) for (const o of expand(r, from, to, 200)) out.push({ id: r.who, ...o });
+          // busy in their own Zoho Calendar (times only; all-day entries such as holidays are left out)
+          for (const x of this.externals(ids, from, to)) if (!x.allDay) out.push({ id: x.userId, startAt: x.startAt, endAt: x.endAt });
         }
         if (venue) {
           const rows = this.db.prepare('SELECT * FROM events WHERE cancelled = 0 AND venue_id = ? AND start_at < ?').all(venue, to) as unknown as EventRow[];

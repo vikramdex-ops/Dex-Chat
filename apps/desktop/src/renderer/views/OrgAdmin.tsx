@@ -1,9 +1,11 @@
-// Control room ▸ Organisation: departments, custom profile fields and importing the whole office
-// from a spreadsheet (CSV saved from Excel or Dexterity Sheets).
-import { useState } from 'react';
+// Control room ▸ Organisation: departments, rooms, the office managers who change seats on the floor
+// plan, custom profile fields and importing the whole office from a spreadsheet (CSV saved from
+// Excel or Dexterity Sheets).
+import { useEffect, useState } from 'react';
 import { parseCsv, rowsFromSheet } from '@dex/core';
 import type { ImportResult, ImportRow, PublicUser } from '@dex/core';
-import { Icon, useToast } from '../ui.tsx';
+import { Avatar, Icon, useToast } from '../ui.tsx';
+import { PersonPick } from '../nib/parts.tsx';
 import { useOrg } from '../org/store.ts';
 import { useCal } from '../calendar/store.ts';
 
@@ -89,6 +91,8 @@ export function OrgAdmin({ users }: { users: PublicUser[] }) {
         </form>
       </section>
 
+      <OfficeManagers users={users} />
+
       <section className="card">
         <div className="eyebrow">Custom profile fields</div>
         <p className="muted" style={{ marginTop: 0 }}>Extra details shown on everyone's profile, for example blood group or software skills.</p>
@@ -160,5 +164,37 @@ export function OrgAdmin({ users }: { users: PublicUser[] }) {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The office managers: people who put together seat move plans on the floor plan and apply them,
+ * as administrators can (docs/SEATING.md). Administrators need no naming; members only.
+ */
+function OfficeManagers({ users }: { users: PublicUser[] }) {
+  const toast = useToast();
+  const [ids, setIds] = useState<string[] | null>(null);
+  useEffect(() => { void window.dex.request('admin.seating.managers', {}).then((r) => setIds(r.managers)).catch(() => setIds([])); }, []);
+  const byId = new Map(users.map((u) => [u.id, u] as const));
+  const members = users.filter((u) => u.role === 'member');
+  const save = async (next: string[], ok: string) => {
+    try { setIds((await window.dex.request('admin.seating.managers', { userIds: next })).managers); toast(ok); } catch (e) { toast((e as Error).message, true); }
+  };
+  return (
+    <section className="card org-managers" aria-labelledby="org-managers-h">
+      <div className="eyebrow" id="org-managers-h">Office managers</div>
+      <p className="muted" style={{ marginTop: 0 }}>They change seats on the floor plan (Directory ▸ Org chart ▸ Floor): move plans, reserved seats, hot desks and the layout. Administrators can already.</p>
+      {ids === null ? <span className="spinner" /> : (
+        <>
+          <div className="nib-pick">
+            {ids.length === 0 && <span className="faint">No office managers yet: only administrators change seats.</span>}
+            {ids.map((id) => { const u = byId.get(id); return u ? <button key={id} type="button" className="nib-giver on rm" aria-pressed onClick={() => void save(ids.filter((x) => x !== id), `${u.displayName} is no longer an office manager`)} title="Remove" aria-label={`Remove ${u.displayName} from the office managers`}><Avatar user={u} size="sm" /><span className="nib-giver-name" translate="no" title={u.displayName}>{u.displayName}</span><Icon name="x" size={12} /></button> : null; })}
+          </div>
+          <div className="org-managers-add">
+            <PersonPick users={members} exclude={ids} onPick={(u) => void save([...ids, u.id], `${u.displayName} is now an office manager`)} placeholder="Add an office manager…" label="Add an office manager" />
+          </div>
+        </>
+      )}
+    </section>
   );
 }

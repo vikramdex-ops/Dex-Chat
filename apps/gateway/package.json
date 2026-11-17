@@ -5,11 +5,14 @@
   "type": "module",
   "description": "Dexterity Connect internet gateway: a relay on the office's own Cloudflare account",
   "scripts": {
+    "build": "node scripts/build-guest.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "typecheck": "node scripts/build-guest.mjs && tsc -p tsconfig.json && tsc -p meet/tsconfig.json && tsc -p webinar/tsconfig.json"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261114.1",
+    "esbuild": "^0.28.2",
     "wrangler": "^4.162.0"
   }
 }

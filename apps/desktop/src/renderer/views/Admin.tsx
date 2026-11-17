@@ -1,16 +1,28 @@
 // Admin console (Phase 0): approve devices, manage devices and roles, read the audit trail.
+import { onAdminTab, takeAdminTab } from './admin-tab.ts';
 import { useCallback, useEffect, useState } from 'react';
 import type { AuditEntry, DeviceRecord, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
+import { ZohoAdmin } from './ZohoCalendar.tsx';
 import { Integrations } from './Integrations.tsx';
+import { BotsAdmin } from '../bots/BotsAdmin.tsx';
 import { OrgAdmin } from './OrgAdmin.tsx';
 import { ComplianceAdmin, GuestsAdmin } from './GuestsCompliance.tsx';
 import { PoliciesAdmin, ReportsAdmin, UsageAdmin } from './PoliciesUsage.tsx';
 import { RemoteAdmin } from './Remote.tsx';
+import { AutomationsAdmin } from '../flows/FlowsPanel.tsx';
+import { ItDeskAdmin } from '../help/ItDesk.tsx';
+import { CONTINUITY_AUDIT, ContinuityAdmin } from './Continuity.tsx';
+import { HUB_UPDATE_AUDIT } from './HubUpdates.tsx';
 import { Avatar, Icon, ROLE_LABEL, Segmented, deviceCode, relativeTime, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
+import { auditLine } from './audit.ts';
+import { NibAdmin } from '../nib/NibAdmin.tsx';
+import { NoticeDesksAdmin } from '../notices/DesksAdmin.tsx';
+import { SetupCheck } from './SetupCheck.tsx';
 
-type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'audit';
+type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'nib' | 'notices' | 'continuity' | 'audit';
 
 const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }> = {
   pending: { cls: 'warn', label: 'Waiting' },
@@ -20,6 +32,7 @@ const STATUS_CHIP: Record<DeviceRecord['status'], { cls: string; label: string }
 };
 
 const AUDIT_TEXT: Record<string, string> = {
+  'holidays.circular': 'registered a holiday circular',
   'device.registered': 'registered a device',
   'device.approved': 'approved a device',
   'device.rejected': 'declined a device',
@@ -45,11 +58,108 @@ const AUDIT_TEXT: Record<string, string> = {
   'compliance.export': 'exported messages',
   'compliance.purged': 'removed messages past retention',
   'bot.commands': "changed an integration's commands",
+  'flow.created': 'created an automation',
+  'flow.updated': 'changed an automation',
+  'flow.enabled': 'turned an automation on',
+  'flow.disabled': 'turned an automation off',
+  'flow.deleted': 'removed an automation',
+  'flow.settings': 'changed whether automations may call the office network',
+  ...CONTINUITY_AUDIT,
+  ...HUB_UPDATE_AUDIT,
+  'help.staff.granted': 'put someone on the IT desk',
+  'help.staff.removed': 'took someone off the IT desk',
+  'device.paired': 'paired a phone or another PC',
+  'device.removedByOwner': 'removed one of their own devices',
+  'pair.created': 'started pairing a device',
+  'policy.set': 'changed the office policies',
+  'remote.set': 'changed access from outside the office',
+  'links.settings': 'changed link previews',
+  'ice.set': 'changed the call relay settings',
+  'lines.add': 'added a quote for the day\'s line',
+  'emoji.add': 'added a custom emoji',
+  'emoji.remove': 'removed a custom emoji',
+  'sticker.add': 'added a sticker',
+  'sticker.remove': 'removed a sticker',
+  'hook.created': 'created a webhook',
+  'hook.revoked': 'stopped a webhook',
+  'botflow.saved': 'saved a bot flow',
+  'nib.config': 'changed Nib and day sheets',
+  'seating.managers': 'changed the office managers',
+  'seating.apply': 'applied a seat move plan',
+  'seating.unschedule': 'took a seat move plan back to a draft',
+  'seating.undo': 'undid a seat move plan',
+  'seating.layout': 'changed the floor plan layout',
+  'seating.underlay': 'changed the drawing under the floor plan',
+  'notice.drafted': 'drafted a notice',
+  'notice.revising': 'started a revision of a notice',
+  'notice.issued': 'issued a notice',
+  'notice.scheduled': 'scheduled a notice',
+  'notice.unscheduled': 'took a scheduled notice back to a draft',
+  'notice.discarded': 'threw away a draft notice',
+  'notice.withdrawn': 'withdrew a notice',
+  'notice.expired': 'a notice expired into the archive',
+  'notice.purged': 'removed notices past retention',
+  'notice.asked': 'asked an issuing desk about a notice',
+  'notice.answered': 'answered a question about a notice',
+  'notice.faqAdded': 'added an answer to a notice for everyone',
+  'notice.reminded': 'reminded people to acknowledge a notice',
+  'notice.emailCopy': 'made an email copy of a notice',
+  'notice.desk': 'changed an issuing desk',
+  'notice.deskRemoved': 'removed an issuing desk',
+  'notice.retention': 'changed how long old notices are kept',
+  'notice.imported': 'moved pinned messages onto the notice board',
+  'notice.exported': 'exported the notice register',
+  'nib.leave': 'noted leave with Nib',
+  'nib.leaveCancelled': 'cancelled leave noted with Nib',
+  'botflow.removed': 'removed a bot flow',
+  'botflow.completed': 'finished a bot flow',
+  'miniapp.added': 'added a tool to a conversation',
+  'miniapp.uploaded': 'uploaded a tool',
+  'help.opened': 'asked IT for help',
+  'help.taken': 'took a help request',
+  'help.closed': 'closed a help request',
+  'help.session.started': 'started a support session',
+  'help.session.ended': 'ended a support session',
+  'help.consent.granted': 'allowed IT to see or use their PC',
+  'help.consent.revoked': 'stopped IT seeing or using their PC',
+  'help.diagnostics': 'sent their PC\'s details to IT',
+  'meeting.started': 'started a meeting',
+  'meeting.guestKnocked': 'asked to join a meeting from a browser',
+  'meeting.guestJoined': 'let a browser guest into a meeting',
+  'meeting.guestRemoved': 'took a browser guest out of a meeting',
+  'recording.stored': 'kept a meeting recording on the hub',
+  'recording.uploadStarted': 'started keeping a recording on the hub',
+  'recording.shared': 'shared a meeting recording',
+  'recording.downloaded': 'downloaded a meeting recording',
+  'recording.deleted': 'deleted a meeting recording',
+  'recording.purged': 'removed old recordings past the office\'s limit',
+  'webinar.created': 'planned a webinar',
+  'webinar.registered': 'registered for a webinar',
+  'webinar.practice': 'opened a webinar\'s practice session',
+  'webinar.live': 'took a webinar live',
+  'webinar.ended': 'ended a webinar',
+  'webinar.watching': 'started watching a webinar',
+  'webinar.attendeeJoined': 'joined a webinar\'s audience',
+  'webinar.invitedToSpeak': 'invited someone in the audience to speak',
+  'webinar.speaking': 'came on a webinar\'s stage to speak',
+  'webinar.backToAudience': 'went back to a webinar\'s audience',
+  'webinar.handoutAdded': 'added a handout to a webinar',
+  'webinar.followUp': 'sent a webinar\'s follow-up',
+  'webinar.streamSet': 'set up a webinar\'s live stream',
+  'webinar.streamStarted': 'started a webinar\'s live stream',
+  'webinar.streamStopped': 'stopped a webinar\'s live stream',
+  'setup.defaults': 'set the office\'s first-start defaults',
 };
+/** A role as people read it ("Admin"), not its code ("admin"). */
+const roleWord = (r: string | undefined) => (r && r in ROLE_LABEL ? ROLE_LABEL[r as PublicUser['role']] : r ?? '');
+/** An action the list above does not know yet, in words rather than its code ("webinar.streamSet" → "webinar: stream set"). */
+const auditWords = (action: string) => AUDIT_TEXT[action] ?? action.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace('.', ': ').replace(/\./g, ' ');
 
 export function Admin({ state, session }: { state: AppState; session: Session }) {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('approvals');
+  const [tab, setTab] = useState<Tab>(() => (takeAdminTab() as Tab | null) ?? 'approvals');
+  // a link to a part of the Control room while it is open ("Open Office holidays" in Nib's card)
+  useEffect(() => onAdminTab((t) => setTab(t as Tab)), []);
   const [openReports, setOpenReports] = useState(0);
   useEffect(() => {
     void window.dex.request('admin.reports.list', {}).then((r) => setOpenReports(new Set(r.map((x) => x.messageId)).size)).catch(() => {});
@@ -93,8 +203,9 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           <p className="muted">Approve who can join {session.hub.name} and keep track of every change.</p>
         </div>
       </div>
+      <SetupCheck live={live} />
       <div className="toolbar">
-        <Segmented<Tab> label="Admin section" value={tab} onChange={setTab} options={[
+        <Segmented<Tab> label="Admin section" className="seg-register" value={tab} onChange={setTab} options={[
           { value: 'approvals', label: 'Approvals', icon: 'check', badge: pending.length },
           { value: 'devices', label: 'Devices', icon: 'laptop' },
           { value: 'roles', label: 'People & roles', icon: 'people' },
@@ -106,6 +217,11 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           { value: 'remote', label: 'Outside the office', icon: 'globe' },
           { value: 'usage', label: 'Usage', icon: 'pulse' },
           { value: 'integrations', label: 'Integrations', icon: 'grid' },
+          { value: 'automations', label: 'Automations', icon: 'repeat' },
+          { value: 'bots', label: 'Bots & tools', icon: 'branch' },
+          { value: 'nib', label: 'Nib & day sheets', icon: 'nib' },
+          { value: 'notices', label: 'Notice desks', icon: 'notice' },
+          { value: 'continuity', label: 'Backups & leavers', icon: 'archive' },
           { value: 'audit', label: 'Audit log', icon: 'list' },
         ]} />
       </div>
@@ -153,7 +269,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
               <span>
                 {d.status === 'approved' && d.id !== session.deviceId && (
                   <button className="btn ghost danger" disabled={!live || busy === d.id}
-                    onClick={() => { if (confirm(`Remove ${d.hostname} for ${d.displayName}? It will be signed out immediately and must be approved again.`)) void act(d.id, () => window.dex.request('admin.revoke', { deviceId: d.id }), `Removed ${d.hostname}`); }}>
+                    onClick={() => void confirmAction({ title: `Remove ${d.hostname} for ${d.displayName}?`, body: 'It is signed out at once and must be approved again to come back.', confirm: 'Remove device', danger: true }).then((ok) => { if (ok) void act(d.id, () => window.dex.request('admin.revoke', { deviceId: d.id }), `Removed ${d.hostname}`); })}>
                     Remove
                   </button>
                 )}
@@ -163,27 +279,42 @@ export function Admin({ state, session }: { state: AppState; session: Session })
         </div>
       )}
 
+      {tab === 'roles' && <ItDeskAdmin session={session} live={live} />}
       {tab === 'roles' && (
         <div className="list">
           <div className="list-row roles list-head"><span /><span>Person</span><span>Windows account</span><span>Role</span></div>
-          {session.users.filter((u) => u.role !== 'bot').map((u: PublicUser) => {
-            const locked = u.role === 'owner' || u.id === session.me.id || (u.role === 'admin' && session.me.role !== 'owner');
-            return (
-              <div key={u.id} className="list-row roles">
-                <Avatar user={u} size="sm" />
-                <div style={{ fontWeight: 600 }}>{u.displayName}</div>
-                <div className="faint mono">{u.account}</div>
-                {locked ? <span className="chip">{ROLE_LABEL[u.role]}</span> : (
-                  <select className="input" value={u.role} disabled={!live || busy === u.id} aria-label={`Role for ${u.displayName}`}
-                    onChange={(e) => void act(u.id, () => window.dex.request('admin.setRole', { userId: u.id, role: e.target.value as 'admin' | 'member' | 'guest' }), `${u.displayName} is now ${ROLE_LABEL[e.target.value as PublicUser['role']].toLowerCase()}`)}>
-                    <option value="admin">Admin</option>
-                    <option value="member">Member</option>
-                    <option value="guest">Guest</option>
-                  </select>
-                )}
-              </div>
-            );
-          })}
+          {(() => {
+            const people = session.users.filter((u) => u.role !== 'bot');
+            const owners = people.filter((u) => u.role === 'owner').length;
+            const iAmOwner = session.me.role === 'owner';
+            const setRole = async (u: PublicUser, role: 'owner' | 'admin' | 'member' | 'guest') => {
+              const self = u.id === session.me.id;
+              if (role === 'owner' && !(await confirmAction({ title: `Make ${u.displayName} an owner?`, body: 'Owners can configure everything, choose the administrators and the other owners, and offboard anyone. The office always keeps at least one owner.', confirm: 'Make owner' }))) return;
+              if (self && !(await confirmAction({ title: 'Step down to administrator?', body: 'You keep the Control room, but only an owner can make you an owner again.', confirm: 'Step down' }))) return;
+              await act(u.id, () => window.dex.request('admin.setRole', { userId: u.id, role }), self ? 'You are now an administrator' : `${u.displayName} is now ${ROLE_LABEL[role].toLowerCase()}`);
+            };
+            return people.map((u: PublicUser) => {
+              const self = u.id === session.me.id;
+              // owners choose the owners and the administrators; an owner may step down while another owner remains
+              const editable = self ? iAmOwner && owners > 1 : (u.role === 'owner' || u.role === 'admin') ? iAmOwner : true;
+              return (
+                <div key={u.id} className="list-row roles">
+                  <Avatar user={u} size="sm" />
+                  <div style={{ fontWeight: 600 }}>{u.displayName}</div>
+                  <div className="faint mono">{u.account}</div>
+                  {!editable ? <span className="chip">{ROLE_LABEL[u.role]}</span> : (
+                    <select className="input" value={u.role} disabled={!live || busy === u.id} aria-label={`Role for ${u.displayName}`}
+                      onChange={(e) => void setRole(u, e.target.value as 'owner' | 'admin' | 'member' | 'guest')}>
+                      {iAmOwner && u.role !== 'guest' && <option value="owner">Owner</option>}
+                      <option value="admin">Admin</option>
+                      {!self && <option value="member">Member</option>}
+                      {!self && <option value="guest">Guest</option>}
+                    </select>
+                  )}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
 
@@ -194,14 +325,20 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'reports' && <ReportsAdmin users={session.users} onOpen={(convId, messageId) => window.dispatchEvent(new CustomEvent('dex-open-message', { detail: { convId, messageId } }))} />}
       {tab === 'remote' && <RemoteAdmin />}
       {tab === 'usage' && <UsageAdmin users={session.users} />}
+      {tab === 'integrations' && <ZohoAdmin users={session.users} live={live} />}
       {tab === 'integrations' && <Integrations state={state} />}
+      {tab === 'automations' && <AutomationsAdmin session={session} />}
+      {tab === 'bots' && <BotsAdmin users={session.users} />}
+      {tab === 'nib' && <NibAdmin session={session} />}
+      {tab === 'notices' && <NoticeDesksAdmin session={session} />}
+      {tab === 'continuity' && <ContinuityAdmin session={session} live={live} />}
 
       {tab === 'audit' && (audit.length === 0 ? (
         <div className="card empty"><Icon name="list" size={36} /><span>Nothing recorded yet.</span></div>
       ) : (
         <div className="list">
           {audit.map((a) => {
-            const actor = a.actor ? byId.get(a.actor)?.displayName ?? 'An administrator' : 'Someone';
+            const line = auditLine(a.action, a.actor ? byId.get(a.actor)?.displayName ?? 'An administrator' : null, a.detail, auditWords);
             const target = devices.find((d) => d.id === a.target);
             const subject = target ? `${target.displayName} (${target.hostname})` : a.target ? byId.get(a.target)?.displayName ?? '' : '';
             const detail = a.detail as { account?: string; from?: string; to?: string } | null;
@@ -209,10 +346,11 @@ export function Admin({ state, session }: { state: AppState; session: Session })
               <div key={a.id} className="list-row audit">
                 <span className="faint" title={new Date(a.at).toLocaleString()}>{relativeTime(a.at)}</span>
                 <span>
-                  <b>{a.action === 'device.registered' && !a.actor ? detail?.account ?? 'A new device' : actor}</b>{' '}
-                  {AUDIT_TEXT[a.action] ?? a.action}
+                  <b>{a.action === 'device.registered' && !a.actor ? detail?.account ?? 'A new device' : line.who}</b>{' '}
+                  {line.what}
                   {subject && a.action !== 'device.registered' ? <> · {subject}</> : null}
-                  {a.action === 'user.role' && detail ? <> · {detail.from} → {detail.to}</> : null}
+                  {a.action === 'user.role' && detail ? <> · {roleWord(detail.from)} → {roleWord(detail.to)}</> : null}
+                  {a.action.startsWith('hub.update') || a.action === 'hub.updated' ? (detail?.from && detail?.to ? <span className="mono"> · {detail.from} → {detail.to}</span> : null) : null}
                 </span>
               </div>
             );

@@ -1,8 +1,18 @@
-// Recording a call, on the PC of the person recording: every participant's camera (or their
-// initials), any shared screen, and everyone's voices mixed together, drawn into one video.
-// The hub tells everyone in the call that it is being recorded.
+// Recording a Room, on the PC of the person recording: every participant's camera (or their
+// tile), any shared screen, and everyone's voices mixed together, drawn into one video laid out
+// like the Room sheet (zone captions, a title strip). The hub tells everyone in the Room that it
+// is being recorded.
+//
+// While it records, it follows who is speaking (the Room's 10 Hz speaker detection, speech.ts)
+// and writes a chapter each time the speaker changes. When it stops, the video and its chapters
+// are kept on the hub (uploaded in 512 KB chunks over the hub connection, resuming after a drop)
+// for the Meet lens's Recordings shelf, unless the office's size limit or policy says no.
 import { useSyncExternalStore } from 'react';
-import { callState } from './engine.ts';
+import { RECORDING_CHUNK } from '@dex/core';
+import type { RecordingChapter, RecordingInfo } from '@dex/core';
+import { callState, capName, clock, sheetColumns, zoneRef } from './engine.ts';
+import { onVoiceTick } from './speech.ts';
+import { colorFor, initials } from '../ui.tsx';
 
 interface Rec {
   recorder: MediaRecorder;
@@ -13,9 +23,33 @@ interface Rec {
   sources: Map<string, MediaStreamAudioSourceNode>;
   videos: Map<string, HTMLVideoElement>;
   roomId: string;
+  chapters: RecordingChapter[];
+  stopVoices: () => void;
 }
 
-export interface Recording { blob: Blob; ms: number; convId: string; roomId: string }
+export interface Recording { blob: Blob; ms: number; convId: string; roomId: string; startedAt: number; title: string; chapters: RecordingChapter[] }
+
+/** Ticks someone must lead (at 10 Hz) before a new chapter starts: a cough is not a chapter. */
+const CHAPTER_TICKS = 8;
+
+/** Who spoke when: a chapter each time a different person has led the talking for a moment. */
+function followSpeakers(r: Rec, nameOf: (userId: string) => string, meId: string): () => void {
+  let leader: string | null = null;
+  let since = 0;
+  let ticks = 0;
+  return onVoiceTick((key) => {
+    if (!key) { ticks = 0; leader = null; return; }
+    const room = callState().room;
+    const userId = key.startsWith('self:') ? meId : room?.participants.find((p) => p.deviceId === key)?.userId;
+    if (!userId) return;
+    if (userId !== leader) { leader = userId; ticks = 1; since = Date.now() - 100; return; }
+    if (++ticks !== CHAPTER_TICKS) return;
+    const last = r.chapters[r.chapters.length - 1];
+    if (last?.userId === userId) return;
+    const name = room?.visitors?.find((v) => v.userId === userId)?.name ?? nameOf(userId);
+    r.chapters.push({ at: Math.max(0, since - r.started), userId, name });
+  });
+}
 
 let rec: Rec | null = null;
 let done: Recording | null = null;
@@ -55,8 +89,37 @@ function drawCover(ctx: CanvasRenderingContext2D, v: HTMLVideoElement, x: number
   ctx.restore();
 }
 
-function initials(name: string): string {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
+const MONO = '"Cascadia Mono", "JetBrains Mono", Consolas, monospace';
+const STRIP = 30; // the title strip along the bottom of the video
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** A drawing-callout caption: "A1 | PRIYA R." in the tile's top-left corner. */
+function caption(ctx: CanvasRenderingContext2D, x: number, y: number, zone: string, text: string, maxW: number): void {
+  ctx.font = `600 13px ${MONO}`;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const zw = ctx.measureText(zone).width + 14;
+  const tw = Math.min(ctx.measureText(text).width + 16, Math.max(0, maxW - zw));
+  ctx.fillStyle = '#172729'; ctx.fillRect(x, y, zw + tw, 24);
+  ctx.fillStyle = '#243a3d'; ctx.fillRect(x, y, zw, 24);
+  ctx.strokeStyle = 'rgba(232,242,243,.28)'; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, zw + tw - 1, 23);
+  ctx.fillStyle = '#7fd0d9'; ctx.fillText(zone, x + 7, y + 12.5);
+  ctx.save(); ctx.beginPath(); ctx.rect(x + zw, y, tw - 6, 24); ctx.clip();
+  ctx.fillStyle = '#e8f2f3'; ctx.fillText(text, x + zw + 8, y + 12.5);
+  ctx.restore();
+}
+
+function elapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
 /** Start recording the current call. Throws if the office does not allow it. */
@@ -70,7 +133,9 @@ export async function startRecording(nameOf: (userId: string) => string, meId: s
   const ctx = canvas.getContext('2d')!;
   const audio = new AudioContext();
   const mix = audio.createMediaStreamDestination();
-  const r: Rec = { recorder: null as unknown as MediaRecorder, chunks: [], started: Date.now(), timer: 0 as unknown as ReturnType<typeof setInterval>, audio, sources: new Map(), videos: new Map(), roomId };
+  const r: Rec = { recorder: null as unknown as MediaRecorder, chunks: [], started: Date.now(), timer: 0 as unknown as ReturnType<typeof setInterval>, audio, sources: new Map(), videos: new Map(), roomId, chapters: [], stopVoices: () => {} };
+  r.stopVoices = followSpeakers(r, nameOf, meId);
+  const title = s.room.title || '';
 
   const syncAudio = () => {
     const st = callState();
@@ -86,49 +151,56 @@ export async function startRecording(nameOf: (userId: string) => string, meId: s
     // the call ended (or we left): finish the file
     if (!st.room || st.room.id !== roomId) { if (r.recorder.state !== 'inactive') r.recorder.stop(); return; }
     syncAudio();
-    ctx.fillStyle = '#0d1416';
+    ctx.fillStyle = '#0f1d1f';
     ctx.fillRect(0, 0, W, H);
-    type T = { key: string; name: string; stream: MediaStream | null; camera: boolean };
-    const tiles: T[] = [{ key: 'me', name: nameOf(meId), stream: st.local, camera: st.camera }];
+    type T = { key: string; id: string; name: string; stream: MediaStream | null; camera: boolean };
+    const tiles: T[] = [{ key: 'me', id: meId, name: nameOf(meId), stream: st.local, camera: st.camera }];
     for (const p of st.room.participants) {
       const peer = st.peers.get(p.deviceId);
       if (!peer) continue;
-      tiles.push({ key: p.deviceId, name: nameOf(p.userId), stream: peer.streams[0] ?? null, camera: p.camera });
+      tiles.push({ key: p.deviceId, id: p.userId, name: nameOf(p.userId), stream: peer.streams[0] ?? null, camera: p.camera });
     }
-    // a shared screen takes the stage, people go in a strip on the right
+    // a shared screen is the sheet being discussed; people go in a column on the right
     const sharer = st.screen ?? [...st.peers.values()].map((p) => p.streams.find((x, i) => i > 0 && x.getVideoTracks().length)).find(Boolean) ?? null;
-    let area = { x: 0, y: 0, w: W, h: H };
+    const field = { x: 0, y: 0, w: W, h: H - STRIP };
+    let area = field;
     if (sharer) {
-      drawCover(ctx, videoFor(r, 'screen', sharer), 0, 0, W - 240, H, true);
-      area = { x: W - 240, y: 0, w: 240, h: H };
+      ctx.fillStyle = '#0b1416'; ctx.fillRect(8, 8, W - 256, field.h - 16);
+      drawCover(ctx, videoFor(r, 'screen', sharer), 8, 8, W - 256, field.h - 16, true);
+      area = { x: W - 240, y: 0, w: 240, h: field.h };
     }
     const n = tiles.length;
-    const cols = sharer ? 1 : Math.ceil(Math.sqrt(n));
+    const cols = sheetColumns(n, !!sharer);
     const rows = sharer ? Math.min(n, 5) : Math.ceil(n / cols);
     const tw = area.w / cols, th = sharer ? Math.min(area.h / rows, 135) : area.h / rows;
     tiles.slice(0, sharer ? 5 : 9).forEach((t, i) => {
-      const x = area.x + (i % cols) * tw + 4, y = area.y + Math.floor(i / cols) * th + 4, w = tw - 8, h = th - 8;
-      ctx.fillStyle = '#1b2a2d';
+      const x = area.x + (i % cols) * tw + 8, y = area.y + Math.floor(i / cols) * th + 8, w = tw - 16, h = th - 16;
+      ctx.fillStyle = '#172729';
       ctx.fillRect(x, y, w, h);
       const vt = t.stream?.getVideoTracks()[0];
       if (t.camera && vt && vt.readyState === 'live') drawCover(ctx, videoFor(r, t.key, t.stream!), x, y, w, h);
       else {
-        ctx.fillStyle = '#2b6f78';
-        const rad = Math.min(w, h) * 0.18;
-        ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, rad, 0, Math.PI * 2); ctx.fill();
+        // the person's tile: a rounded square in their colour with initials
+        const side = Math.min(w, h) * 0.34;
+        ctx.fillStyle = colorFor(t.id);
+        roundRect(ctx, x + (w - side) / 2, y + (h - side) / 2, side, side, side * 0.3);
+        ctx.fill();
         ctx.fillStyle = '#ffffff';
-        ctx.font = `600 ${Math.round(rad * 0.8)}px sans-serif`;
+        ctx.font = `600 ${Math.round(side * 0.38)}px "Outfit Variable", sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(initials(t.name), x + w / 2, y + h / 2);
+        ctx.fillText(initials(t.name), x + w / 2, y + h / 2 + 1);
       }
-      ctx.fillStyle = 'rgba(0,0,0,.55)';
-      ctx.font = '500 15px sans-serif';
-      const label = t.name;
-      const lw = ctx.measureText(label).width + 16;
-      ctx.fillRect(x + 8, y + h - 30, lw, 22);
-      ctx.fillStyle = '#ffffff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText(label, x + 16, y + h - 19);
+      ctx.strokeStyle = 'rgba(232,242,243,.16)'; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      caption(ctx, x + 8, y + 8, zoneRef(i, cols), capName(t.name), w - 16);
     });
+    // the title strip: what this is, when it started and how long it has run
+    ctx.fillStyle = '#172729'; ctx.fillRect(0, H - STRIP, W, STRIP);
+    ctx.fillStyle = 'rgba(232,242,243,.28)'; ctx.fillRect(0, H - STRIP, W, 1);
+    ctx.font = `600 13px ${MONO}`; ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left'; ctx.fillStyle = '#7fd0d9';
+    ctx.fillText(`ROOM RECORDING · ${new Date(r.started).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase()} · ${clock(r.started)}`, 12, H - STRIP / 2);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ef7d6d';
+    ctx.fillText(`● REC ${elapsed(Date.now() - r.started)}`, W - 12, H - STRIP / 2);
   };
 
   const stream = canvas.captureStream(15);
@@ -138,10 +210,11 @@ export async function startRecording(nameOf: (userId: string) => string, meId: s
   recorder.ondataavailable = (e) => { if (e.data.size) r.chunks.push(e.data); };
   recorder.onstop = () => {
     clearInterval(r.timer);
+    r.stopVoices();
     for (const n of r.sources.values()) n.disconnect();
     void audio.close();
     for (const v of r.videos.values()) v.srcObject = null;
-    done = { blob: new Blob(r.chunks, { type: 'video/webm' }), ms: Date.now() - r.started, convId: s.room?.convId ?? '', roomId };
+    done = { blob: new Blob(r.chunks, { type: 'video/webm' }), ms: Date.now() - r.started, convId: s.room?.convId ?? '', roomId, startedAt: r.started, title, chapters: [...r.chapters] };
     rec = null;
     changed();
   };
@@ -158,4 +231,56 @@ export function stopRecording(): void {
   const r = rec;
   void window.dex.request('room.record', { roomId: r.roomId, on: false }).catch(() => {});
   if (r.recorder.state !== 'inactive') r.recorder.stop();
+}
+
+// ------------------------------------------------------------------ keeping it on the hub
+export interface UploadState { status: 'idle' | 'uploading' | 'done' | 'failed'; sent: number; total: number; info: RecordingInfo | null; error: string | null }
+let upload: UploadState = { status: 'idle', sent: 0, total: 0, info: null, error: null };
+const upSubs = new Set<() => void>();
+const setUpload = (p: Partial<UploadState>) => { upload = { ...upload, ...p }; for (const f of upSubs) f(); };
+export const useUpload = () => useSyncExternalStore((f) => { upSubs.add(f); return () => upSubs.delete(f); }, () => upload);
+export const resetUpload = () => setUpload({ status: 'idle', sent: 0, total: 0, info: null, error: null });
+
+/** Bytes as base64, a slice at a time (a whole chunk at once would overflow the call stack). */
+function base64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Upload a finished recording to the hub in chunks. A chunk that fails is tried again (after 1, 2,
+ * 4 … seconds); asking the hub how much it has makes it resume exactly where it stopped, even
+ * after the connection to the hub dropped and came back.
+ */
+export async function keepOnHub(r: Recording): Promise<RecordingInfo> {
+  setUpload({ status: 'uploading', sent: 0, total: r.blob.size, info: null, error: null });
+  try {
+    const begin = await window.dex.request('rec.begin', { roomId: r.roomId || null, title: r.title, startedAt: r.startedAt, size: r.blob.size, mime: r.blob.type || 'video/webm' });
+    const chunk = Math.min(begin.chunk || RECORDING_CHUNK, RECORDING_CHUNK);
+    let offset = begin.received;
+    let failures = 0;
+    setUpload({ sent: offset });
+    while (offset < r.blob.size) {
+      try {
+        const bytes = new Uint8Array(await r.blob.slice(offset, offset + chunk).arrayBuffer());
+        const res = await window.dex.request('rec.chunk', { id: begin.id, offset, data: base64(bytes) });
+        offset = res.received;
+        failures = 0;
+        setUpload({ sent: offset });
+      } catch (err) {
+        if (++failures > 8) throw err;
+        await wait(Math.min(30_000, 1000 * 2 ** (failures - 1)));
+        offset = await window.dex.request('rec.status', { id: begin.id }).then((st) => st.received).catch(() => offset);
+      }
+    }
+    const info = await window.dex.request('rec.finish', { id: begin.id, durationMs: r.ms, chapters: r.chapters });
+    setUpload({ status: 'done', sent: r.blob.size, info });
+    return info;
+  } catch (err) {
+    setUpload({ status: 'failed', error: (err as Error).message });
+    throw err;
+  }
 }

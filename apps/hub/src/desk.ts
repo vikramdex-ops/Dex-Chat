@@ -4,7 +4,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
 import { isSealed } from '@dex/core/e2e';
-import type { Ops, PublicUser, Reminder, RepeatRule, SavedMessage, ScheduledMessage } from '@dex/core';
+import type { KeepKind, Ops, PublicUser, Reminder, RepeatRule, SavedMessage, ScheduledMessage } from '@dex/core';
+import { KEEP_KINDS } from '@dex/core';
 import type { FileStore } from './files.ts';
 import { MsgError } from './messaging.ts';
 import type { Messaging } from './messaging.ts';
@@ -89,6 +90,7 @@ export class Desk {
     this.deliver = deliver;
     this.user = user;
     db.exec(SCHEMA);
+    if (!(db.prepare('PRAGMA table_info(stars)').all() as Array<{ name: string }>).some((c) => c.name === 'kind')) db.exec("ALTER TABLE stars ADD COLUMN kind TEXT NOT NULL DEFAULT 'keep'");
   }
 
   // ------------------------------------------------------------ views
@@ -173,18 +175,19 @@ export class Desk {
       case 'msg.star': {
         const msg = typeof d.messageId === 'string' ? this.messaging.messageFor(d.messageId, me.id) : null;
         if (!msg || msg.deleted) throw new MsgError('Message not found.');
-        if (d.on === true) this.db.prepare('INSERT OR IGNORE INTO stars (user_id, message_id, created_at) VALUES (?, ?, ?)').run(me.id, msg.id, Date.now());
+        const kind: KeepKind = KEEP_KINDS.includes(d.kind as KeepKind) ? d.kind as KeepKind : 'keep';
+        if (d.on === true) this.db.prepare('INSERT INTO stars (user_id, message_id, created_at, kind) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, message_id) DO UPDATE SET kind = excluded.kind').run(me.id, msg.id, Date.now(), kind);
         else this.db.prepare('DELETE FROM stars WHERE user_id = ? AND message_id = ?').run(me.id, msg.id);
-        this.deliver([me.id], 'star.updated', () => ({ messageId: msg.id, on: d.on === true }));
+        this.deliver([me.id], 'star.updated', () => ({ messageId: msg.id, on: d.on === true, kind }));
         return { ok: true } satisfies Ops['msg.star']['res'];
       }
 
       case 'desk.saved': {
-        const rows = this.db.prepare('SELECT message_id, created_at FROM stars WHERE user_id = ? ORDER BY created_at DESC LIMIT 500').all(me.id) as Array<{ message_id: string; created_at: number }>;
+        const rows = this.db.prepare('SELECT message_id, created_at, kind FROM stars WHERE user_id = ? ORDER BY created_at DESC LIMIT 500').all(me.id) as Array<{ message_id: string; created_at: number; kind: string | null }>;
         const out: SavedMessage[] = [];
         for (const r of rows) {
           const m = this.messaging.messageFor(r.message_id, me.id);
-          if (m && !m.deleted) out.push({ message: m, savedAt: r.created_at });
+          if (m && !m.deleted) out.push({ message: m, savedAt: r.created_at, kind: (r.kind as KeepKind | null) ?? 'keep' });
         }
         return out satisfies Ops['desk.saved']['res'];
       }
@@ -260,6 +263,7 @@ export class Desk {
         for (const f of files) if (!this.files.info(f) || !this.files.canRead(me.id, f)) throw new MsgError('One of the files is no longer available.');
         if (!body && !files.length) throw new MsgError('Write something first.');
         if (body.length > (isSealed(body) ? 96_000 : 8000)) throw new MsgError('Messages can be up to 8000 characters.');
+        this.messaging.guardText(body, c.id);
         const open = (this.db.prepare('SELECT COUNT(*) AS n FROM scheduled WHERE user_id = ?').get(me.id) as { n: number }).n;
         if (open >= MAX_SCHEDULED) throw new MsgError('You have too many scheduled messages.');
         let parentId: string | null = null;

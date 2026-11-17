@@ -1,0 +1,547 @@
+/* Rooms, drawn like a drawing sheet: a ruled frame on the drafting grid, people in zones
+   (A1, B1 …), a schedule of who is in the Room top right, and a title block bottom right that
+   holds the controls. Amber marks what needs you (the Room chip, the banner, the speaker's
+   revision cloud); red is kept for recording. Every colour comes from the theme tokens. */
+
+/* ------------------------------------------------------------------ the stage */
+.room-stage {
+  position: fixed; inset: 0; z-index: 35; padding: 14px;
+  background-color: var(--window);
+  background-image:
+    linear-gradient(var(--subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--subtle) 1px, transparent 1px),
+    linear-gradient(var(--subtle-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--subtle-2) 1px, transparent 1px);
+  background-size: 8px 8px, 8px 8px, 40px 40px, 40px 40px;
+  background-position: 14px 14px;
+  animation: fade var(--med) var(--ease);
+}
+:root[data-platform='win32'] .room-stage { top: var(--titlebar); }
+/* folded into the title bar: kept alive (voices, a floated video) but out of sight */
+.room-stage.folded { visibility: hidden; pointer-events: none; animation: none; }
+
+.room-sheet {
+  position: relative; height: 100%;
+  display: grid; grid-template-columns: minmax(0, 1fr) 360px;
+  border: 1px solid var(--text-3);
+  outline: 1px solid var(--stroke-strong); outline-offset: 5px;
+  background: var(--layer);
+}
+/* centring marks on each edge of the frame, as on a drawing sheet */
+.room-sheet::before {
+  content: ''; position: absolute; inset: -9px; pointer-events: none;
+  background:
+    linear-gradient(var(--text-3), var(--text-3)) 50% 0 / 1px 12px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 50% 100% / 1px 12px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 0 50% / 12px 1px no-repeat,
+    linear-gradient(var(--text-3), var(--text-3)) 100% 50% / 12px 1px no-repeat;
+}
+
+/* recording: the one place red is used, a tag sitting on the frame's top edge */
+.rec-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 600 12px/1 var(--font-body); color: var(--danger);
+}
+.rec-chip b { font: 700 11px/1 var(--font-mono); letter-spacing: .1em; }
+.rec-chip .rec-dot { width: 8px; height: 8px; }
+.room-sheet > .rec-chip {
+  position: absolute; z-index: 2; top: -13px; left: 24px; height: 26px; padding: 0 12px;
+  background: var(--layer-solid); border: 1px solid var(--danger); border-radius: var(--radius-s);
+  box-shadow: var(--shadow-1); animation: drop var(--med) var(--ease);
+}
+.rec-note { font-weight: 400; color: var(--text-2); }
+.room-sheet.recording { border-color: var(--danger); }
+
+/* ------------------------------------------------------------------ the field of tiles */
+.room-field { position: relative; min-width: 0; min-height: 0; padding: 32px 28px; display: grid; align-content: center; gap: 16px; overflow: auto; }
+.room-grid { display: grid; grid-template-columns: repeat(var(--cols, 2), var(--tile-w, minmax(0, 1fr))); gap: 22px 18px; align-content: center; justify-content: center; }
+/* speaker and presentation: one large tile (or the shared sheet), a strip of everyone else below */
+.room-field.layout-speaker, .room-field.layout-presentation { grid-template-rows: minmax(0, 1fr) auto auto; align-content: stretch; padding-bottom: 22px; }
+.room-main { min-height: 0; display: grid; place-items: center; container-type: size; }
+.room-main .room-tile { width: min(100cqw, 160cqh); }
+.room-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 176px; grid-template-columns: none; gap: 16px; justify-content: center; align-content: end; }
+.room-strip .room-cap { height: 20px; font-size: 10.5px; }
+.room-strip .room-tile-menu { width: 24px; height: 24px; }
+/* a sheet number under the field when there are more tiles than fit */
+.room-pager { justify-self: center; display: inline-flex; align-items: center; gap: 2px; height: 28px; border: 1px solid var(--stroke-strong); border-radius: 2px; background: var(--layer-solid); }
+.room-pager .mono { padding: 0 10px; font-size: 10.5px; font-weight: 600; letter-spacing: .1em; color: var(--text-2); border-left: 1px solid var(--stroke); border-right: 1px solid var(--stroke); line-height: 26px; }
+.room-pager button { display: grid; place-items: center; width: 28px; height: 26px; border: 0; background: none; color: var(--text-2); }
+.room-pager button:hover:not(:disabled) { background: var(--subtle); color: var(--text); }
+.room-pager button:disabled { opacity: .35; }
+.room-pager .flip svg { transform: scaleX(-1); }
+
+.room-tile { position: relative; aspect-ratio: 16 / 10; min-width: 0; container: tile / inline-size; }
+.room-face {
+  position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; container-type: size;
+  border-radius: var(--radius-s); border: 1px solid var(--stroke-strong);
+  background-color: color-mix(in srgb, var(--tint, var(--accent)) 6%, var(--layer-solid));
+  background-image:
+    linear-gradient(var(--stroke) 1px, transparent 1px),
+    linear-gradient(90deg, var(--stroke) 1px, transparent 1px);
+  background-size: 16px 16px; background-position: center;
+}
+.room-tile.has-video .room-face { background: #0b1416; }
+.room-face video { position: absolute; inset: 0; width: 100%; height: 100%; }
+.room-face .avatar, .room-face .avatar.lg { --size: clamp(32px, 30cqh, 96px); box-shadow: 0 0 0 3px var(--layer-solid), 0 0 0 4px var(--stroke-strong); }
+
+/* the caption is a drawing callout: zone reference, then the name in capitals */
+.room-cap {
+  position: absolute; z-index: 1; top: 8px; left: 8px; max-width: calc(100% - 16px);
+  display: inline-flex; align-items: center; gap: 0; height: 22px; overflow: hidden;
+  font: 600 11px/1 var(--font-mono); letter-spacing: .06em; color: var(--text);
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 2px;
+}
+.room-cap b { align-self: stretch; display: grid; place-items: center; padding: 0 6px; background: var(--subtle-2); color: var(--accent-ink); border-right: 1px solid var(--stroke-strong); }
+.room-cap > span { padding: 0 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-cap svg { flex: none; margin-right: 6px; color: var(--text-3); }
+
+/* the speaker: an amber revision cloud around the tile */
+.room-tile::after {
+  content: ''; position: absolute; inset: -8px; pointer-events: none; opacity: 0;
+  transition: opacity var(--fast);
+  --c: color-mix(in srgb, var(--amber) 72%, var(--amber-ink));
+  background:
+    radial-gradient(circle at 50% 100%, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) top / 14px 8px repeat-x,
+    radial-gradient(circle at 50% 0, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) bottom / 14px 8px repeat-x,
+    radial-gradient(circle at 100% 50%, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) left / 8px 14px repeat-y,
+    radial-gradient(circle at 0 50%, transparent 5.6px, var(--c) 6px 7.4px, transparent 7.8px) right / 8px 14px repeat-y;
+  background-repeat: round no-repeat, round no-repeat, no-repeat round, no-repeat round;
+}
+.room-tile.speaking::after { opacity: 1; }
+.room-tile.speaking .room-cap { border-color: var(--amber); }
+.room-tile.speaking .room-cap b { background: var(--amber); color: #2b1a00; border-color: var(--amber); }
+
+/* nobody else here yet: an open seat, hatched, with a dimension line drawing itself */
+.room-tile.open-seat .room-face {
+  border-style: dashed; background-color: transparent;
+  background-image: repeating-linear-gradient(135deg, var(--subtle-2) 0 1px, transparent 1px 9px);
+  background-size: auto; align-content: center; gap: 14px;
+}
+.open-seat-text { font: 500 15px/1.3 var(--font-display); color: var(--text-2); padding: 4px 10px; background: var(--layer-solid); border-radius: var(--radius-s); }
+.open-seat-line { position: relative; width: 46%; height: 9px; border-left: 1px solid var(--text-3); border-right: 1px solid var(--text-3); }
+.open-seat-line::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: var(--amber);
+  transform-origin: left; animation: measure 1.8s var(--ease) infinite;
+}
+@keyframes measure { 0% { transform: scaleX(0); } 60%, 100% { transform: scaleX(1); opacity: 0; } 55% { opacity: 1; } }
+
+/* a shared screen is the sheet being discussed */
+.room-share { position: relative; margin: 0; min-height: 0; height: 100%; border-radius: var(--radius-s); overflow: hidden; background: #0b1416; border: 1px solid var(--stroke-strong); }
+.room-field.layout-presentation .room-share { grid-row: 1; }
+.room-share video { width: 100%; height: 100%; display: block; }
+
+/* ------------------------------------------------------------------ the side: panel with sheet tabs, then the title block */
+.room-side { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--layer-solid); border-left: 1px solid var(--text-3); }
+.room-panel { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.room-panel-body { flex: 1; min-height: 0; overflow: auto; }
+.room-block { border-top: 1px solid var(--text-3); }
+/* index tabs on the panel's edge, standing out of the sheet into the drawing area */
+.room-tabs { position: absolute; z-index: 2; right: 100%; top: 22px; display: flex; flex-direction: column; gap: 5px; }
+.room-tabs button {
+  position: relative; writing-mode: vertical-rl; padding: 12px 5px; min-height: 64px;
+  font: 600 10.5px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--text-2);
+  background: var(--layer); border: 1px solid var(--stroke-strong); border-right: 0; border-radius: 5px 0 0 5px;
+  transition: background var(--fast), color var(--fast);
+}
+.room-tabs button:hover { color: var(--text); background: var(--subtle); }
+.room-tabs button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.room-tabs button[aria-selected='true'] {
+  color: var(--accent-ink); background: var(--layer-solid); border-color: var(--text-3); margin-right: -1px; padding-right: 6px;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.room-tab-badge {
+  position: absolute; top: 4px; right: calc(100% + 3px); writing-mode: horizontal-tb; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center;
+  font: 700 10px/1 var(--font-mono); font-style: normal; letter-spacing: 0; color: #2b1a00; background: var(--amber); border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--layer-solid);
+}
+.room-tab-badge.hand { color: var(--amber-ink); background: var(--layer-solid); box-shadow: 0 0 0 1px var(--amber), 0 0 0 3px var(--layer-solid); }
+.room-schedule { border-bottom: 1px solid var(--stroke-strong); }
+.tb-head { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--stroke-strong);  white-space: nowrap; gap: 10px; }
+.tb-head .mono { font-size: 11px; color: var(--text-3); }
+.room-schedule table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.room-schedule td { height: 30px; padding: 0 6px; border-bottom: 1px solid var(--stroke); color: var(--accent-ink); }
+.room-schedule tr:last-child td { border-bottom: 0; }
+.room-schedule td.ref { width: 38px; padding-left: 12px; color: var(--text-3); font-size: 11px; font-weight: 600; }
+.room-schedule td.who { color: var(--text); max-width: 0; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-schedule td:last-child { padding-right: 8px; }
+.room-schedule td.hand-cell { width: 34px; padding: 0 2px; }
+.room-schedule td.act { width: 30px; }
+.room-schedule tr.hand-up td.ref { color: var(--amber-ink); }
+.row-menu { display: grid; place-items: center; width: 26px; height: 24px; border: 0; border-radius: 3px; background: none; color: var(--text-3); opacity: 0; }
+.room-schedule tr:hover .row-menu, .row-menu:focus-visible, .row-menu[aria-expanded='true'] { opacity: 1; }
+.row-menu:hover { background: var(--subtle); color: var(--text); }
+.role-tag { margin-left: 8px; padding: 1px 4px; font: 700 9.5px/1.3 var(--font-mono); letter-spacing: .08em; color: var(--accent-ink); border: 1px solid var(--accent); border-radius: 2px; vertical-align: 1px; }
+.room-schedule td.off { color: var(--text-3); }
+.room-schedule td svg { display: block; }
+.rec-tag { margin-left: 8px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; color: var(--danger); }
+.room-schedule .ringing td.who { color: var(--text-2); }
+.ring-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: var(--amber-ink); text-align: right; animation: pulse 1.4s var(--ease) infinite; }
+
+.tb-name { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 2px 10px; padding: 10px 12px 12px; border-bottom: 1px solid var(--stroke-strong); }
+.tb-name .label { grid-column: 1 / -1; font-size: 10px; }
+.tb-name h2 { margin: 0; min-width: 0; font: 600 20px/1.2 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-kind { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; color: var(--accent-ink); padding: 3px 6px; border: 1px solid var(--accent); border-radius: 2px; }
+.tb-id {
+  grid-column: 1; justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; height: 22px; padding: 0 7px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .06em; color: var(--text-2); background: var(--subtle); border: 1px dashed var(--stroke-strong); border-radius: 2px;
+}
+.tb-id:hover { color: var(--accent-ink); border-color: var(--accent); }
+.tb-lock { grid-column: 2; grid-row: 3; align-self: center; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--amber-ink); }
+.tb-facts { display: grid; grid-template-columns: 1fr 1fr 1.3fr; border-bottom: 1px solid var(--stroke-strong); }
+.tb-facts > div { display: grid; align-content: start; gap: 3px; padding: 7px 12px 9px; min-width: 0; }
+.tb-facts > div + div { border-left: 1px solid var(--stroke-strong); }
+.tb-facts .label { font-size: 10px; }
+.tb-facts .mono { font-size: 13px; }
+.tb-facts .tb-big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.q-good, .q-fair, .q-poor { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.q-good .mono, .q-fair .mono, .q-poor .mono { font-size: 11px; font-weight: 400; }
+.q-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.q-bars i { width: 3px; border-radius: 1px; background: currentColor; opacity: .25; }
+.q-bars i:nth-child(1) { height: 4px; } .q-bars i:nth-child(2) { height: 7px; } .q-bars i:nth-child(3) { height: 11px; }
+.q-good .q-bars i { opacity: 1; color: var(--accent); }
+.q-fair .q-bars i:nth-child(-n+2) { opacity: 1; color: var(--amber); }
+.q-poor .q-bars i:nth-child(1) { opacity: 1; color: var(--danger); }
+
+.tb-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tb-controls button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 54px; padding: 0 6px; min-width: 0;
+  border: 0; border-bottom: 1px solid var(--stroke-strong); border-right: 1px solid var(--stroke-strong); background: none; color: var(--text); text-align: center;
+  font-size: 11.5px; font-weight: 500; transition: background var(--fast), color var(--fast);
+}
+.tb-controls button:nth-child(3n) { border-right: 0; }
+.tb-controls button span:last-child { max-width: 100%; }
+.tb-controls button.hand { background: var(--amber-soft); color: var(--amber-ink); font-weight: 600; }
+.tb-controls button.hand svg { color: var(--amber-ink); }
+.tb-controls button[aria-expanded='true'] { background: var(--subtle); }
+.tb-controls button svg { flex: none; color: var(--text-2); }
+.tb-controls button span:last-child { overflow: hidden; line-height: 1.15; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.tb-controls button:hover { background: var(--subtle); }
+.tb-controls button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.tb-controls button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.tb-controls button.on svg { color: var(--accent-ink); }
+.tb-controls button.off { color: var(--text-2); background-image: repeating-linear-gradient(135deg, var(--subtle-2) 0 1px, transparent 1px 7px); }
+.tb-controls button.off svg { color: var(--text-3); }
+.tb-controls button.rec { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
+.tb-controls button.rec .rec-dot { width: 10px; height: 10px; margin: 0 4px; }
+
+.tb-foot { display: flex; align-items: center; gap: 0; padding: 9px 10px; }
+/* scoped: other sheets have a .tb-link of their own */
+.room-stage .tb-link { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: var(--radius-s); background: none; color: var(--text-2); font-size: 12.5px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.room-stage .tb-link:hover { background: var(--subtle); color: var(--text); }
+.room-stage .tb-link.square { width: 32px; padding: 0; justify-content: center; }
+.room-stage .tb-name { font: inherit; letter-spacing: normal; }
+.room-leave {
+  margin-left: auto; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 14px;
+  border: 1.5px solid var(--amber); border-radius: var(--radius-s); background: none;
+  color: var(--amber-ink); font-weight: 700; font-size: 13px; letter-spacing: .01em;
+  transition: background var(--fast);
+}
+.room-leave:hover { background: var(--amber-soft); }
+.room-leave:active { transform: translateY(1px); }
+
+/* toasts move clear of the title block while the Room is open; dialogs opened from it sit above it */
+body:has(.room-stage:not(.folded)) .toasts { right: 404px; bottom: 28px; }
+body:has(.room-stage:not(.folded)) .scrim { z-index: 40; }
+
+/* ------------------------------------------------------------------ tags, hands, reactions and the tile menu */
+.room-tile.hand-up .room-face { box-shadow: inset 0 0 0 2px var(--amber); }
+.room-tags { position: absolute; z-index: 1; top: 8px; right: 8px; display: flex; gap: 4px; pointer-events: none; }
+.room-hand {
+  display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 6px 0 4px;
+  font: 700 11px/1 var(--font-mono); color: #2b1a00; background: var(--amber); border-radius: 2px;
+}
+.room-schedule .room-hand { height: 18px; font-size: 10.5px; }
+.room-flag {
+  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px;
+  font: 700 10px/1 var(--font-mono); letter-spacing: .1em; color: var(--accent-ink); background: var(--layer-solid); border: 1px solid var(--accent); border-radius: 2px;
+}
+.room-tile-menu {
+  position: absolute; z-index: 1; right: 8px; bottom: 8px; display: grid; place-items: center; width: 28px; height: 28px;
+  border: 1px solid var(--stroke-strong); border-radius: 2px; background: var(--layer-solid); color: var(--text-2);
+  opacity: 0; transition: opacity var(--fast);
+}
+.room-tile:hover .room-tile-menu, .room-tile-menu:focus-visible { opacity: 1; }
+.room-tile-menu:hover { color: var(--text); border-color: var(--text-3); }
+/* a reaction rises from the tile's foot as a callout tag on a leader line */
+.room-reacts { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; border-radius: var(--radius-s); }
+.room-reacts span { position: absolute; bottom: 10%; display: grid; justify-items: center; animation: react-rise 2.4s var(--ease) forwards; }
+.room-reacts b {
+  display: grid; place-items: center; width: 40px; height: 40px; font-size: 22px; line-height: 1;
+  background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: 3px; box-shadow: var(--shadow-1);
+}
+.room-reacts span::after { content: ''; width: 1px; height: 16px; background: var(--text-3); }
+@keyframes react-rise {
+  0% { transform: translateY(16px) scale(.6); opacity: 0; }
+  12% { transform: translateY(0) scale(1); opacity: 1; }
+  78% { opacity: 1; }
+  100% { transform: translateY(-150px); opacity: 0; }
+}
+
+/* a host asks you to unmute: an amber strip across the top of the drawing area */
+.room-ask {
+  position: absolute; z-index: 3; top: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; white-space: nowrap;
+  background: var(--amber); color: #2b1a00; border-radius: var(--radius-s); box-shadow: 0 10px 28px rgba(19, 43, 46, .22);
+  animation: drop var(--med) var(--ease);
+}
+.room-ask > span { font-size: 13.5px; }
+.room-ask .rb-btn { height: 28px; }
+
+/* ------------------------------------------------------------------ the People tab */
+.room-people { display: flex; flex-direction: column; min-height: 100%; }
+.room-lobby { background: var(--amber-soft); border-bottom: 1px solid var(--amber); }
+.room-lobby .tb-head { border-bottom-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.room-lobby .tb-head .label, .room-lobby .tb-head .mono { color: var(--amber-ink); }
+.room-lobby ul { list-style: none; margin: 0; padding: 4px 0; }
+.room-lobby li { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 12px; }
+.room-lobby .who { flex: 1; min-width: 0; display: grid; line-height: 1.25; }
+.room-lobby .who b, .room-lobby .who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-lobby .who b { font-size: 13px; font-weight: 600; }
+.room-lobby .who small { font-size: 11px; color: var(--amber-ink); opacity: .85; }
+.room-lobby .btn.sm { height: 26px; padding: 0 10px; }
+.room-lobby-all { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: 2px 10px 8px; }
+.room-hostbox { margin-top: auto; border-top: 1px solid var(--stroke-strong); }
+.room-host-actions { display: grid; grid-template-columns: 1fr 1fr; }
+.room-host-actions button {
+  display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border: 0; background: none; color: var(--text); font-size: 12.5px; text-align: left;
+  border-bottom: 1px solid var(--stroke); border-right: 1px solid var(--stroke);
+}
+.room-host-actions button:nth-child(2n) { border-right: 0; }
+.room-host-actions button svg { color: var(--text-2); flex: none; }
+.room-host-actions button:hover:not(:disabled) { background: var(--subtle); }
+.room-host-actions button:disabled { color: var(--text-3); }
+.room-host-actions button.on { background: var(--amber-soft); color: var(--amber-ink); font-weight: 600; }
+.room-host-settings { display: grid; gap: 8px; padding: 8px 12px 0; }
+.room-host-settings summary { cursor: pointer; font-size: 10px; list-style: none; display: flex; align-items: center; gap: 6px; }
+.room-host-settings summary::-webkit-details-marker { display: none; }
+.room-host-settings summary::before { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--fast); }
+.room-host-settings[open] summary::before { transform: rotate(45deg); }
+.room-host-settings[open] { padding-bottom: 4px; }
+.room-setting { display: grid; gap: 4px; font-size: 12.5px; }
+.room-setting .label { font-size: 10px; }
+.room-setting .input { height: 30px; font-size: 12.5px; }
+.room-setting.check { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+.room-end {
+  display: block; margin: 8px 12px 12px; width: calc(100% - 24px); height: 30px; border: 1px solid var(--danger); border-radius: var(--radius-s);
+  background: none; color: var(--danger); font-weight: 600; font-size: 12.5px;
+}
+.room-end:hover { background: var(--danger-soft); }
+.room-hostnote { margin: auto 0 0; padding: 10px 12px; font-size: 12px; border-top: 1px solid var(--stroke); }
+
+/* ------------------------------------------------------------------ menus from the title block */
+.popover.menu.room-react-menu { width: max-content; overflow: visible; }
+.room-react-row { display: flex; gap: 0; padding: 2px 4px 4px; }
+.menu .room-react-row button { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; font-size: 22px; border-radius: 3px; }
+.room-react-row button + button { border-left: 1px solid var(--stroke); border-radius: 0; }
+.room-layout-menu { width: 330px; }
+.room-layout-menu button[aria-checked='true'] { color: var(--accent-ink); font-weight: 600; background: var(--accent-soft); }
+.room-layout-menu button { align-items: baseline; }
+.room-layout-note { margin-left: auto; padding-left: 10px; font-size: 11.5px; color: var(--text-3); text-align: right; }
+.room-layout-menu button[aria-checked='true'] .room-layout-note { color: var(--accent-ink); font-weight: 400; }
+.room-layout-menu button:disabled { color: var(--text-3); }
+.room-menu-empty { margin: 2px 10px 8px; font-size: 12.5px; line-height: 1.4; }
+.room-person-menu { width: 260px; }
+.room-person-menu .danger { color: var(--danger); }
+.room-bg-menu { width: 372px; }
+.room-bg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 4px 6px 8px; }
+.room-bg-grid button { display: grid !important; gap: 5px; justify-items: start; padding: 0 !important; height: auto !important; font-size: 12px; background: none; border: 0; text-align: left; }
+.bg-swatch {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; color: var(--text-2);
+  border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--subtle);
+  background-image: linear-gradient(var(--stroke) 1px, transparent 1px), linear-gradient(90deg, var(--stroke) 1px, transparent 1px); background-size: 8px 8px;
+}
+.bg-swatch img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.room-bg-grid button[aria-checked='true'] .bg-swatch { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.room-bg-grid button[aria-checked='true'] { color: var(--accent-ink); font-weight: 600; }
+.room-bg-grid button:hover .bg-swatch { border-color: var(--text-3); }
+
+.add-people { width: 280px; }
+.add-people .input { margin: 4px 4px 6px; width: calc(100% - 8px); }
+
+/* ------------------------------------------------------------------ the Room chip (title bar) */
+.room-chip {
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: stretch; height: 28px; flex: none;
+  border: 1px solid var(--amber); border-radius: var(--radius-s); background: var(--amber-soft);
+  color: var(--amber-ink); overflow: hidden; animation: drop var(--med) var(--ease);
+}
+.room-chip button { border: 0; background: none; color: inherit; display: inline-flex; align-items: center; transition: background var(--fast); }
+.room-chip button:hover { background: var(--amber-soft); }
+.room-chip button:focus-visible { box-shadow: inset 0 0 0 2px var(--amber); }
+.room-chip-main { gap: 8px; padding: 0 10px; }
+.room-chip-text { font: 700 11.5px/1 var(--font-mono); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.room-chip .rec-dot { width: 7px; height: 7px; }
+.room-chip-mic { width: 30px; justify-content: center; border-left: 1px solid var(--amber) !important; }
+.room-chip.muted .room-chip-mic { background-image: repeating-linear-gradient(135deg, var(--amber-soft) 0 1px, transparent 1px 5px); }
+.room-chip-wait { padding: 2px 5px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; color: #2b1a00; background: var(--amber); border-radius: 2px; }
+.room-chip-pip { width: 7px; height: 7px; flex: none; border-radius: 1px; background: var(--amber); transform: rotate(45deg); animation: pulse 1.6s var(--ease) infinite; }
+
+/* ------------------------------------------------------------------ "Open a Room" (conversation header) */
+.room-open {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px;
+  border: 1px solid var(--amber); border-radius: var(--radius-s); background: none;
+  color: var(--amber-ink); font-weight: 600; font-size: 13px; white-space: nowrap;
+}
+.room-open:hover { background: var(--amber-soft); }
+.room-open:disabled { opacity: .5; pointer-events: none; }
+.room-open.join { background: var(--amber); color: #2b1a00; }
+.room-open.join .room-chip-pip { background: #2b1a00; }
+.room-open.split { padding: 0; gap: 0; overflow: hidden; }
+.room-open.split:hover { background: none; }
+.room-open.split > button { height: 100%; border: 0; background: none; color: inherit; font: inherit; padding: 0 10px 0 12px; display: inline-flex; align-items: center; }
+.room-open.split > button:hover { background: var(--amber-soft); }
+.room-open.split > button:disabled { opacity: .5; }
+.room-open.split > .room-open-more { padding: 0 6px; border-left: 1px solid var(--amber); }
+.room-open-menu { width: 200px; }
+
+/* ------------------------------------------------------------------ the amber banner */
+.room-banner {
+  position: fixed; z-index: 45; top: var(--titlebar); left: 0; right: 0;
+  display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 9px 20px 13px;
+  background: var(--amber); color: #2b1a00;
+  box-shadow: 0 10px 28px rgba(19, 43, 46, .22);
+  animation: banner-drop var(--med) var(--ease);
+}
+/* a dimension scale along the bottom edge */
+.room-banner::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; pointer-events: none;
+  border-bottom: 1px solid rgba(43, 26, 0, .45);
+  background: repeating-linear-gradient(90deg, rgba(43, 26, 0, .45) 0 1px, transparent 1px 8px) bottom / 100% 4px no-repeat,
+    repeating-linear-gradient(90deg, rgba(43, 26, 0, .45) 0 1px, transparent 1px 40px) bottom / 100% 6px no-repeat;
+}
+@keyframes banner-drop { from { transform: translateY(-100%); opacity: 0; } }
+.room-banner .avatar { box-shadow: 0 0 0 2px var(--amber), 0 0 0 3.5px #2b1a00; animation: none; }
+.room-banner-text { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.room-banner-text strong { font: 600 16px/1.25 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-banner-text .mono { font-size: 11px; letter-spacing: .08em; color: rgba(43, 26, 0, .72); }
+.room-banner-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.rb-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px;
+  border: 1.5px solid #2b1a00; border-radius: var(--radius-s); background: none; color: #2b1a00;
+  font-weight: 600; font-size: 13px; white-space: nowrap; transition: background var(--fast), transform 60ms;
+}
+.rb-btn:hover { background: rgba(43, 26, 0, .1); }
+.rb-btn:active { transform: translateY(1px); }
+.rb-btn:focus-visible { box-shadow: 0 0 0 2px var(--amber), 0 0 0 4px #2b1a00; }
+.rb-btn.solid { background: #2b1a00; color: var(--amber); }
+.rb-btn.solid:hover { background: #45300a; }
+.rb-btn.plain { border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ------------------------------------------------------------------ screen picker + recording dialog */
+.screen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; max-height: 60vh; overflow: auto; width: 100%; padding: 2px; }
+.screen-option { display: grid; gap: 0; padding: 0; border-radius: var(--radius-s); border: 1px solid var(--stroke-strong); background: var(--layer-solid); text-align: left; font-size: 12.5px; overflow: hidden; transition: border-color var(--fast), box-shadow var(--fast); }
+.screen-option:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.screen-option img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #0b1416; }
+.screen-option span { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-top: 1px solid var(--stroke-strong); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.screen-option span b { font-size: 10.5px; color: var(--accent-ink); flex: none; }
+.dialog.screen-picker { width: min(760px, calc(100% - 32px)); }
+
+.rec-facts { margin: 0; width: 100%; display: grid; grid-template-columns: auto auto 1fr; border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); }
+.rec-facts > div { display: grid; gap: 3px; padding: 8px 12px; min-width: 0; }
+.rec-facts > div + div { border-left: 1px solid var(--stroke-strong); }
+.rec-facts dt { font-size: 10px; }
+.rec-facts dd { margin: 0; font-size: 13px; color: var(--text-2); }
+.rec-facts dd.mono { color: var(--text); font-size: 13px; }
+/* above a full-screen Room: the recording-ready dialog */
+.scrim:has(> .dialog[aria-label='Room recording ready']) { z-index: 40; }
+
+/* ------------------------------------------------------------------ small windows and phones */
+@media (max-width: 900px) {
+  .room-stage { padding: 8px; }
+  .room-sheet { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; outline: 0; }
+  .room-sheet::before { display: none; }
+  .room-field { padding: 22px 14px 14px; }
+  .room-strip { grid-auto-columns: 132px; }
+  .room-side { border-left: 0; border-top: 1px solid var(--text-3); }
+  /* the tabs run along the top of the panel; the panel takes a third of the height */
+  .room-tabs { position: static; flex-direction: row; gap: 0; border-bottom: 1px solid var(--stroke-strong); overflow-x: auto; scrollbar-width: none; }
+  .room-tabs::-webkit-scrollbar { display: none; }
+  .room-tabs button { writing-mode: horizontal-tb; min-height: 0; height: 34px; padding: 0 10px; border: 0; border-radius: 0; background: none; flex: none; }
+  .room-tabs button[aria-selected='true'] { margin: 0; box-shadow: inset 0 -2px 0 var(--accent); }
+  .room-tab-badge { position: static; display: inline-grid; margin-left: 6px; box-shadow: none; }
+  .room-panel { flex: none; max-height: 30vh; }
+  .room-panel-body { max-height: calc(30vh - 34px); }
+  body:has(.room-stage:not(.folded)) .toasts { right: 12px; bottom: 300px; }
+}
+@media (max-width: 720px) {
+  .room-banner { flex-wrap: wrap; padding: 10px 14px 14px; }
+  /* voice and video side by side, "Not now" on its own line under them: nothing runs off the edge */
+  .room-banner-actions { width: 100%; flex-wrap: wrap; }
+  .rb-btn { flex: 1; justify-content: center; height: 40px; }
+  .rb-btn.plain { flex: 1 0 100%; height: 36px; }
+  /* touch targets on phones: 40 px at least */
+  .room-tabs button { height: 40px; }
+  .room-panel-body { max-height: calc(30vh - 40px); }
+  .room-stage .tb-link { height: 40px; }
+  .room-stage .tb-link.square { width: 40px; }
+  .room-leave { height: 40px; }
+  .room-tile-menu, .room-strip .room-tile-menu { width: 40px; height: 40px; opacity: 1; }
+  .row-menu { width: 40px; height: 40px; opacity: 1; }
+  .room-schedule td { height: 40px; }
+  .room-lobby .btn.sm, .room-host-actions button, .room-end, .room-ask .rb-btn { height: 40px; }
+  .room-host-settings summary { min-height: 40px; }
+  .room-pager button { width: 40px; height: 38px; }
+  .room-pager { height: 40px; }
+  .tb-id { height: 32px; }
+  /* a tighter title block on phones, so the tiles keep some of the screen */
+  .room-stage .tb-name { padding: 6px 12px 8px; }
+  .room-stage .tb-name h2 { font-size: 17px; }
+  .tb-facts > div { padding: 4px 12px 6px; }
+  .tb-controls button { height: 50px; }
+  .tb-controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tb-controls button:nth-child(3n) { border-right: 1px solid var(--stroke-strong); }
+  .tb-controls button:nth-child(4n) { border-right: 0; }
+  .room-ask { white-space: normal; width: calc(100% - 24px); flex-wrap: wrap; }
+}
+/* small tiles (strips, phones): the caption keeps the zone and name, tags drop to the foot, the
+   open seat's words sit below the caption instead of under it */
+@container tile (max-width: 200px) {
+  .room-tags { top: auto; bottom: 6px; right: 6px; }
+  .room-cap { top: 5px; left: 5px; max-width: calc(100% - 10px); }
+  .open-seat-text { margin-top: 22px; padding: 2px 6px; font-size: 12px; text-align: center; }
+  .open-seat-line { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .open-seat-line::before, .room-chip-pip, .ring-tag { animation: none; }
+  .room-reacts span { animation: react-fade 2.4s linear forwards; }
+}
+@keyframes react-fade { 0%, 100% { opacity: 0; } 10%, 80% { opacity: 1; } }
+.tb-head > .label { flex: none; }
+.tb-head > .mono { margin-left: auto; padding-left: 12px; }
+
+/* ------------------------------------------------------------------ Meet on Pulse (phones: the lens strip is full) */
+.meet-pulse { display: none; }
+@media (max-width: 720px) { .meet-pulse { display: block; border-color: var(--accent); } }
+.meet-pulse-go { margin-left: auto; flex: none; color: var(--text-3); transform: rotate(-90deg); }
+
+/* ------------------------------------------------------------------ the lens bar with Meet in it, and with the Room chip beside it */
+/* seven lenses, GO TO and the Room chip share the title bar: the lenses drop their words first (their names stay as tooltips) */
+@media (max-width: 1120px) { .lens-bar .lens-label { display: none; } .lens-bar .lens { padding: 0 11px; } }
+@media (max-width: 1440px) {
+  .titlebar:has(.room-chip) .lens-bar .lens-label { display: none; }
+  .titlebar:has(.room-chip) .lens-bar .lens { padding: 0 11px; }
+  .titlebar:has(.room-chip) .goto-hint { display: none; }
+}
+
+/* phones: the Room's own buttons, fields, the pointer tools and the title-bar chip take a finger (40 px) */
+@media (max-width: 720px) {
+  .room-stage .btn, .room-stage .input, .room-stage select { min-height: 40px; }
+  .room-stage .icon-btn { width: 40px; height: 40px; }
+  .room-stage .pt-tool { width: 40px; height: 40px; }
+  .room-stage .ctl-ask { height: 40px; }
+  .room-chip { height: 40px; }
+  .room-chip-mic { width: 40px; }
+}
+/* phones: a tile too small for a 40 px menu button leaves it to the People tab's row menu */
+@media (max-width: 720px) {
+  @container tile (max-width: 200px) { .room-tile-menu, .room-strip .room-tile-menu { display: none; } }
+}
+/* Hindi and Tamil: the panel's tabs and the Room's captions in the body face (the mono face has no
+   Devanagari or Tamil letters, and capitals and wide tracking do not apply to them) */
+:root:is(:lang(hi), :lang(ta)) .room-tabs button { font: 600 12px/1 var(--font-body); letter-spacing: 0; }
+:root:is(:lang(hi), :lang(ta)) .room-cap > span, :root:is(:lang(hi), :lang(ta)) .tb-kind, :root:is(:lang(hi), :lang(ta)) .role-tag, :root:is(:lang(hi), :lang(ta)) .ring-tag { font-family: var(--font-body); letter-spacing: 0; }
+/* phones: the foot of the title block wraps rather than pushing the sheet wider (long words in Tamil) */
+@media (max-width: 720px) {
+  .tb-foot { flex-wrap: wrap; row-gap: 6px; }
+  .room-side, .room-block { min-width: 0; }
+}
