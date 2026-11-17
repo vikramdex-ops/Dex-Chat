@@ -93,9 +93,7 @@ try {
   await B.locator('.me-btn').click();
   await B.getByRole('menuitem').nth(0).waitFor();
   await B.locator('[role="menuitem"]').filter({ hasText: /कंट्रोल|Control/ }).first().click();
-  await B.locator('.nib-admin, .cr-nav, [role="tablist"]').first().waitFor();
-  const nibNav = B.getByRole('button', { name: /Nib/ }).first();
-  await nibNav.click();
+  await B.getByRole('button', { name: /निब और डे शीट/ }).click();
   await B.locator('.nib-admin').waitFor();
   await B.locator('.nib-admin-grid label').nth(1).locator('input').fill('18:15');
   await B.locator('.nib-admin-short').waitFor();
@@ -157,14 +155,14 @@ try {
   // ---------------------------------------------------------------- 3. the register at 18:30: asked 3×
   clock(18, 30);
   clock(18, 31);
-  const reg = await owner.request('nib.card' as never, { kind: 'register', ref: localToday } as never) as any;
+  const reg = await B.evaluate((d: string) => window.dex.request('nib.card', { kind: 'register', ref: d }), localToday) as any;
   const miss = reg.register.missing.find((m: any) => m.userId === ids.karthik);
   assert.equal(miss?.asks, 3, `Karthik: asked ${miss?.asks} times`);
   await B.getByRole('button', { name: /^Direct/ }).first().click();
   await B.locator('.sb-nib').click();
   await B.locator('.nib-card.k-register').waitFor({ timeout: 15000 });
   await B.locator('.nib-card.k-register [role="tab"]', { hasText: 'Leave and missing' }).click();
-  const row = B.locator('.nib-card.k-register li, .nib-card.k-register .nib-miss', { hasText: 'Karthik' }).first();
+  const row = B.locator('.nib-card.k-register .nib-who', { hasText: 'Karthik' }).first();
   await row.waitFor({ timeout: 8000 });
   const rowText = (await row.textContent()) ?? '';
   console.log('register row:', rowText.replace(/\s+/g, ' ').trim());
