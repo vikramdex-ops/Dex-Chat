@@ -41,7 +41,8 @@
     "./sharepaths": "./src/sharepaths.ts",
     "./nib": "./src/nib.ts",
     "./meet-threads": "./src/meet-threads.ts",
-    "./notices": "./src/notices.ts"
+    "./notices": "./src/notices.ts",
+    "./cfsetup": "./src/cfsetup.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",

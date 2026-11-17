@@ -1,6 +1,11 @@
 // Builds the hub into dist/hub.cjs (one bundled file). With --sea on Windows it also produces
 // DexterityConnectHub.exe: Node's single-executable format, so the hub PC needs no Node install.
+// It also builds dist/cloud-bundle.json (scripts/build-cloud.mjs): the gateway Worker and the
+// meeting site the Control room's "Set up with Cloudflare" deploys. The hub reads it from beside
+// hub.cjs, and the single executable carries it inside (a SEA asset), so the package is unchanged.
+//   --no-cloud   skip the Cloudflare parts (the hub then offers the manual setup only)
 import { build } from 'esbuild';
+import { buildCloudBundle } from './build-cloud.mjs';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,11 +26,13 @@ await build({
   logLevel: 'info',
 });
 
+const cloud = process.argv.includes('--no-cloud') ? null : await buildCloudBundle(path.join(dist, 'cloud-bundle.json'));
+
 if (process.argv.includes('--sea')) {
   const exeName = process.platform === 'win32' ? 'DexterityConnectHub.exe' : 'dexterity-connect-hub';
   const blob = path.join(dist, 'sea-prep.blob');
   const config = path.join(dist, 'sea-config.json');
-  fs.writeFileSync(config, JSON.stringify({ main: path.join(dist, 'hub.cjs'), output: blob, disableExperimentalSEAWarning: true }));
+  fs.writeFileSync(config, JSON.stringify({ main: path.join(dist, 'hub.cjs'), output: blob, disableExperimentalSEAWarning: true, ...(cloud ? { assets: { 'cloud-bundle.json': cloud } } : {}) }));
   execFileSync(process.execPath, ['--experimental-sea-config', config], { stdio: 'inherit' });
   const exe = path.join(dist, exeName);
   fs.copyFileSync(process.execPath, exe);
