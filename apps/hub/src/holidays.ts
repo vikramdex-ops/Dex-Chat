@@ -182,7 +182,8 @@ export class Holidays {
     if (!r || !r.read) throw new HolidaysError('That circular was not found.');
     const v = this.view(me, id);
     if (v.state === 'registered') return v;
-    if (v.state === 'already') throw new HolidaysError(`This circular was registered already${v.plan?.already?.ref ? ` (Ref ${v.plan.already.ref})` : ''}.`);
+    if (v.state === 'already' && v.plan?.already?.ref) throw new HolidaysError(`This circular was registered already, from Ref ${v.plan.already.ref}.`);
+    if (v.state === 'already') throw new HolidaysError('This circular was registered already.');
     if (!v.canRegister || !v.plan || !v.read) throw new HolidaysError('There is nothing in this circular to register.');
     const { read, plan } = v;
     const year = read.year ?? Number(plan.rows[0].date.slice(0, 4));
