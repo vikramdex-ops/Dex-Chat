@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addDays, buildLeadCard, buildRegister, buildWeek, checkNibConfig, effectiveWrapAt, findPerson, nudgePolicy, parseWork,
+  addDays, buildLeadCard, buildRegister, buildWeek, checkNibConfig, effectiveWrapAt, findPerson, nudgePlan, nudgePolicy, nudgeTimes, parseWork,
   progressOf, projectsFromText, qtyText, sheetAccess, unitOf, unitTotals, visibleItems, whenFromWords, NIB_DEFAULTS,
 } from '../src/nib.ts';
 import type { NibDay, NibItem, NudgeInput, RegisterPerson } from '../src/nib.ts';
@@ -230,7 +230,9 @@ test('nudges wait while someone is busy, offline or snoozed, and do not count', 
     assert.equal(r.ask, null);
   }
   // once the meeting ends, the first step comes
-  assert.equal(nudgePolicy(base({ now: T(18, 50), day: { state: 'open', started: true, asks: [], snoozeUntil: null } })).ask, 1);
+  assert.equal(nudgePolicy(base({ now: T(18, 30), day: { state: 'open', started: true, asks: [], snoozeUntil: null } })).ask, 1);
+  // free only at 18:50, ten minutes before the register: no room for another ask after it, so it is the message
+  assert.equal(nudgePolicy(base({ now: T(18, 50), day: { state: 'open', started: true, asks: [], snoozeUntil: null } })).ask, 3);
 });
 
 test('nudges: a limit of one makes the one ask the friendly message once it is late enough', () => {
@@ -238,6 +240,131 @@ test('nudges: a limit of one makes the one ask the friendly message once it is l
   assert.deepEqual([r.level, r.ask], [3, 3]);
   const early = nudgePolicy(base({ now: T(18, 1), limit: 1, day: { state: 'open', started: true, asks: [], snoozeUntil: null } }));
   assert.deepEqual([early.level, early.ask], [1, 1]);
+});
+
+// ---- asks spread across the window from the wrap-up to the register
+test('the ask plan: 18:00 to 18:30 fits three asks, 11 minutes apart, the last 8 minutes before the register', () => {
+  const t = nudgeTimes('18:00', '18:30', 3);
+  assert.deepEqual(t, { times: ['18:00', '18:11', '18:22'], fits: 3, limit: 3 });
+  assert.deepEqual(nudgePlan(30, 3), { offsets: [0, 11, 22], levels: [1, 2, 3], gap: 11, messageAfter: 22, limit: 3 });
+  // one to five asks a day in the same window: never closer than 7 minutes, so five become four
+  assert.deepEqual([1, 2, 3, 4, 5].map((n) => nudgeTimes('18:00', '18:30', n).times), [
+    ['18:00'], ['18:00', '18:22'], ['18:00', '18:11', '18:22'], ['18:00', '18:08', '18:15', '18:22'], ['18:00', '18:08', '18:15', '18:22'],
+  ]);
+  assert.deepEqual(nudgePlan(30, 4).levels, [1, 2, 2, 3]);
+  assert.equal(nudgeTimes('18:00', '18:30', 5).fits, 4);
+});
+
+test('the ask plan: a wide window keeps the old rhythm (drop, card 25 minutes later, message 15 before the register)', () => {
+  assert.deepEqual(nudgeTimes('18:00', '19:00', 3).times, ['18:00', '18:25', '18:45']);
+  assert.equal(nudgePlan(60, 3).gap, 20);
+  assert.deepEqual(nudgeTimes('18:00', '19:00', 2).times, ['18:00', '18:25']);
+  assert.deepEqual(nudgeTimes('18:00', '19:00', 1).times, ['18:00']);
+  assert.deepEqual(nudgeTimes('18:00', '21:00', 3).times, ['18:00', '18:25', '18:50']);
+  assert.deepEqual(nudgeTimes('18:00', '21:00', 5).times, ['18:00', '18:25', '18:50', '19:15', '19:40']);
+  assert.deepEqual(nudgePlan(180, 5).levels, [1, 2, 2, 2, 3]);
+});
+
+test('the ask plan: a very short window fits what it can, and the last of them is still the message', () => {
+  assert.deepEqual(nudgeTimes('18:00', '18:20', 3).times, ['18:00', '18:08', '18:15']);
+  const fifteen = nudgePlan(15, 3);
+  assert.deepEqual([fifteen.offsets, fifteen.levels], [[0, 10], [1, 3]]);
+  assert.deepEqual(nudgeTimes('18:00', '18:10', 3), { times: ['18:00'], fits: 1, limit: 3 });
+  assert.deepEqual(nudgePlan(10, 3).levels, [3]);
+  assert.deepEqual(nudgeTimes('18:00', '18:01', 5).times, ['18:00'], 'always at least the one ask at the wrap-up');
+  for (let w = 1; w <= 240; w++) for (let n = 1; n <= 5; n++) {
+    const p = nudgePlan(w, n);
+    assert.ok(p.offsets.length >= 1 && p.offsets.length <= n && p.offsets[0] === 0, `${w}/${n} starts at the wrap-up`);
+    for (let i = 1; i < p.offsets.length; i++) assert.ok(p.offsets[i] - p.offsets[i - 1] >= p.gap && p.gap >= 7, `${w}/${n} keeps the gap`);
+    if (p.offsets.length > 1) assert.ok(p.offsets[p.offsets.length - 1] <= w - 5, `${w}/${n} ends at least 5 minutes before the register`);
+    if (w >= 60 && n === 3) assert.deepEqual(p.offsets.slice(0, 2), [0, 25], `${w}: the old rhythm`);
+  }
+});
+
+const short = (over: Partial<NudgeInput> = {}) => base({ digestAt: T(18, 30), ...over });
+const open = (asks: NibDay['asks'] = [], snoozeUntil: number | null = null): NudgeInput['day'] => ({ state: 'open', started: true, asks, snoozeUntil });
+
+test('nudges, 18:00 to 18:30: the drop at 18:00, the card at 18:11, the message at 18:22, nothing after', () => {
+  const asks: NibDay['asks'] = [];
+  const at = (now: number) => nudgePolicy(short({ now, day: open(asks) }));
+  const made: string[] = [];
+  for (let m = 0; m < 40; m++) {
+    const now = T(18, 0) + m * 60_000;
+    const r = at(now);
+    if (r.ask) { asks.push({ at: now, level: r.ask, kind: 'wrap' }); made.push(`18:${String(m).padStart(2, '0')}=${r.ask}`); }
+  }
+  assert.deepEqual(made, ['18:00=1', '18:11=2', '18:22=3']);
+  assert.equal(at(T(18, 29)).level, 3);
+});
+
+test('nudges, 18:00 to 18:30: every limit from one to five, minute by minute', () => {
+  const walk = (limit: number) => {
+    const asks: NibDay['asks'] = [];
+    for (let m = 0; m < 30; m++) {
+      const now = T(18, m);
+      const r = nudgePolicy(short({ now, limit, day: open(asks) }));
+      if (r.ask) asks.push({ at: now, level: r.ask, kind: 'wrap' });
+    }
+    return asks.map((a) => `${new Date(a.at).getMinutes()}:${a.level}`);
+  };
+  assert.deepEqual(walk(1), ['0:1'], 'a limit of one: the drop, as before');
+  assert.deepEqual(walk(2), ['0:1', '22:3'], 'two: the second comes at the message time, so it is the message');
+  assert.deepEqual(walk(3), ['0:1', '11:2', '22:3']);
+  assert.deepEqual(walk(4), ['0:1', '8:2', '15:2', '22:3']);
+  assert.deepEqual(walk(5), ['0:1', '8:2', '15:2', '22:3'], 'four is all that fits');
+});
+
+test('nudges, 18:00 to 18:30: busy near the end, offline, and a snooze', () => {
+  const drop = [{ at: T(18), level: 1 as const, kind: 'wrap' as const }];
+  // in a meeting from 18:05 to 18:15: the card when it ends, the message at 18:26 (the gap after the card)
+  assert.equal(nudgePolicy(short({ now: T(18, 12), busy: true, day: open(drop) })).ask, null, 'not while busy');
+  const card = nudgePolicy(short({ now: T(18, 15), day: open(drop) }));
+  assert.equal(card.ask, 2);
+  const two = [...drop, { at: T(18, 15), level: 2 as const, kind: 'wrap' as const }];
+  assert.equal(nudgePolicy(short({ now: T(18, 22), day: open(two) })).ask, null, 'never within the gap');
+  assert.equal(nudgePolicy(short({ now: T(18, 26), day: open(two) })).ask, 3);
+  // in a meeting until 18:20: no room for two more, so the one that is left is the message
+  assert.equal(nudgePolicy(short({ now: T(18, 20), day: open(drop) })).ask, 3);
+  // busy from before the wrap-up until 18:20: one ask, the message, as soon as they are free
+  assert.equal(nudgePolicy(short({ now: T(18, 20), day: open() })).ask, 3);
+  // free a minute before the register: still asked, it is the message
+  assert.equal(nudgePolicy(short({ now: T(18, 29), day: open() })).ask, 3);
+  // busy until the register: missed, not counted
+  assert.equal(nudgePolicy(short({ now: T(18, 30), day: open() })).ask, null);
+  // offline at the drop: it comes when a device connects
+  assert.equal(nudgePolicy(short({ now: T(18, 0), online: false, day: open() })).ask, null);
+  assert.equal(nudgePolicy(short({ now: T(18, 4), day: open() })).ask, 1);
+  // a snooze moves the next ask and does not count
+  const snoozed = nudgePolicy(short({ now: T(18, 15), day: open(drop, T(18, 22)) }));
+  assert.deepEqual([snoozed.ask, snoozed.reason], [null, 'snoozed']);
+  assert.equal(nudgePolicy(short({ now: T(18, 22), day: open(drop, T(18, 22)) })).ask, 3, 'at the end of the snooze, the last ask is the message');
+});
+
+test('nudges: a window too short for the asks set', () => {
+  // 18:00 to 18:15 with three a day: the drop, then the message at 18:10
+  const asks: NibDay['asks'] = [];
+  for (let m = 0; m < 15; m++) {
+    const r = nudgePolicy(base({ now: T(18, m), digestAt: T(18, 15), day: open(asks) }));
+    if (r.ask) asks.push({ at: T(18, m), level: r.ask, kind: 'wrap' });
+  }
+  assert.deepEqual(asks.map((a) => [new Date(a.at).getMinutes(), a.level]), [[0, 1], [10, 3]]);
+  // 18:00 to 18:10: the one ask that fits is the message
+  assert.equal(nudgePolicy(base({ now: T(18, 0), digestAt: T(18, 10), day: open() })).ask, 3);
+  const after = nudgePolicy(base({ now: T(18, 5), digestAt: T(18, 10), day: open([{ at: T(18), level: 3, kind: 'wrap' }]) }));
+  assert.deepEqual([after.ask, after.reason], [null, 'message sent']);
+});
+
+test('the wrap-up time with the register at 18:30 keeps room for the asks', () => {
+  assert.equal(effectiveWrapAt('18:00', '18:20', [], '18:30'), '18:00', 'own time: never later than 30 minutes before the register for 3 asks');
+  assert.equal(effectiveWrapAt('18:00', '17:30', [], '18:30'), '17:30');
+  assert.equal(effectiveWrapAt('18:00', null, [1110, 1115, 1120, 1125, 1100], '18:30'), '18:00', 'a late habit cannot squeeze the asks');
+  assert.equal(effectiveWrapAt('18:00', null, [1075, 1080, 1085], '18:30'), '17:50', 'an early habit moves it earlier');
+  assert.equal(effectiveWrapAt('18:15', null, [], '18:30'), '18:15', 'an office time later than that is kept, never pulled earlier');
+  assert.equal(effectiveWrapAt('18:15', '18:25', [], '18:30'), '18:15');
+  assert.equal(effectiveWrapAt('18:00', '18:45', [], '19:00', 1), '18:45', 'one ask a day needs ten minutes');
+  assert.equal(effectiveWrapAt('18:00', '18:45', [], '19:00', 5), '18:10', 'five need fifty');
+  // the shifted wrap-up still gets its three asks
+  assert.deepEqual(nudgeTimes(effectiveWrapAt('18:00', null, [1075, 1080, 1085], '18:30'), '18:30', 3).times, ['17:50', '18:05', '18:20']);
 });
 
 test('the wrap-up time follows the person: their own, or their habit within bounds', () => {

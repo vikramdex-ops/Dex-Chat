@@ -3,7 +3,8 @@
 // change is in the audit log (nib.config).
 import { useEffect, useMemo, useState } from 'react';
 import type { NibConfig, NibGiver, NibGiverKind, PublicUser, Session } from '@dex/core';
-import { projectsFromText } from '@dex/core/nib';
+import { minutesOf, nudgeTimes, projectsFromText } from '@dex/core/nib';
+import { formatTime } from '../time.ts';
 import { Avatar, Icon, Segmented, Toggle, useToast } from '../ui.tsx';
 import { useOrg } from '../org/store.ts';
 import { PersonPick, Stepper } from './parts.tsx';
@@ -15,6 +16,20 @@ const KINDS: Array<{ k: NibGiverKind; label: string; hint: string; scope: string
   { k: 'team', label: 'Team leads', hint: 'Anyone else who gives people work.', scope: 'Modelling' },
 ];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const clock = (hm: string) => { const [h, m] = hm.split(':').map(Number); return formatTime(new Date(2000, 0, 1, h || 0, m || 0).getTime()); };
+
+/** When the asks go with these times, and a plain note when the window is too short for them all. */
+function AskTimes({ cfg }: { cfg: NibConfig }) {
+  const t = nudgeTimes(cfg.wrapAt, cfg.digestAt, cfg.nudgeLimit);
+  if (!/^\d\d:\d\d$/.test(cfg.wrapAt) || !/^\d\d:\d\d$/.test(cfg.digestAt) || minutesOf(cfg.wrapAt) >= minutesOf(cfg.digestAt)) return null;
+  const list = t.times.map(clock).join(' · ');
+  return (
+    <>
+      <div className="nib-admin-asks mono faint" data-fits={t.fits}>{`Nib asks at ${list}; the register goes at ${clock(cfg.digestAt)}.`}</div>
+      {t.fits < t.limit && <div className="nib-admin-short" role="note" data-fits={t.fits}>{t.fits === 1 ? 'With these times Nib can ask only once before the register.' : `With these times Nib can ask ${t.fits} times before the register.`}</div>}
+    </>
+  );
+}
 
 export function NibAdmin({ session }: { session: Session }) {
   const toast = useToast();
@@ -117,7 +132,11 @@ export function NibAdmin({ session }: { session: Session }) {
         </div>
         <div className="setting">
           <Icon name="bell" className="lead" />
-          <div className="txt"><div>Asks a day</div><div className="faint">At the wrap-up time a quiet mark, then a card, then one message. Never in a Room, a meeting or on Do not disturb.</div></div>
+          <div className="txt">
+            <div>Asks a day</div>
+            <div className="faint">At the wrap-up time a quiet mark, then a card, then one message. Never in a Room, a meeting or on Do not disturb.</div>
+            <AskTimes cfg={cfg} />
+          </div>
           <Stepper value={cfg.nudgeLimit} max={5} onChange={(v) => set({ nudgeLimit: Math.max(1, v) })} label="Asks a day" />
         </div>
         <div className="setting">

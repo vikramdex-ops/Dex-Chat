@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { DatabaseSync } from 'node:sqlite';
-import { minutesOf, summarize, uptimeText } from '@dex/core';
+import { minutesOf, nudgeTimes, summarize, uptimeText } from '@dex/core';
 import type { NibConfig, NoticeDesk, RemoteView, SetupCheck, SetupReport, ZohoAdminView } from '@dex/core';
 import type { OfficeDay } from '@dex/core/holidays';
 import type { Backups } from './backup.ts';
@@ -249,6 +249,12 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
     if (!c.enabled) return C('nib.times', 'Nib', 'Nib is off', 'info', 'Day sheets and the evening register are switched off.', 'If the office wants day sheets, turn Nib on in Control room ▸ Nib & day sheets.');
     const nextMorning = minutesOf(c.followUpAt) < minutesOf(c.digestAt);
     out.push(C('nib.times', 'Nib', 'Nib\'s times are set', 'pass', `Start of day ${c.startPromptAt}, wrap-up ${c.wrapAt}, register ${c.digestAt}, follow-up ${c.followUpAt}${nextMorning ? ' (the next working morning)' : ''}; ${dayRange(c.workdays)}.`));
+    const asks = nudgeTimes(c.wrapAt, c.digestAt, c.nudgeLimit);
+    if (asks.fits < asks.limit) {
+      out.push(C('nib.asks', 'Nib', 'Nib cannot ask as often as set', 'info', asks.fits === 1
+        ? `Between the wrap-up and the register there is room for one ask, at ${asks.times[0]}; the office set ${asks.limit} a day.`
+        : `Between the wrap-up and the register there is room for ${asks.fits} asks, at ${asks.times.join(', ')}; the office set ${asks.limit} a day.`, 'Move the wrap-up earlier or the register later in Control room ▸ Nib & day sheets ▸ 03, or set fewer asks a day.'));
+    }
     out.push(c.openSheets
       ? C('nib.private', 'Nib', 'Day sheets are open to everyone', 'info', 'An administrator chose to let every member see every day sheet.', 'Leave it only if the management wants day sheets open (Control room ▸ Nib & day sheets ▸ 04).')
       : C('nib.private', 'Nib', 'Day sheets are private', 'pass', 'Each person, the people who gave them work, and the management see a day sheet; nobody else.'));

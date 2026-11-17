@@ -72,7 +72,8 @@ function take(me: NibMe): void {
   set({ me, callout: state.open ? null : callout });
   void prev;
 }
-const askKey = (me: NibMe) => `${me.date}:${me.nudge?.kind}:${me.nudge?.level}`;
+// a wrap-up ask that shows the callout again (4 or 5 asks a day) brings it back after a Not now
+const askKey = (me: NibMe) => `${me.date}:${me.nudge?.kind}:${me.nudge?.level}${me.nudge?.kind === 'wrap' ? `:${me.nudge.asks}` : ''}`;
 
 // ------------------------------------------------------------------ the tray and the callout
 export function openTray(view: TrayView = { v: 'home' }, seed = ''): void {

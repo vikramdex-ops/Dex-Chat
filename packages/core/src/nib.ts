@@ -652,8 +652,62 @@ export interface NudgeResult {
   reason: string;
 }
 
-export const NUDGE_GAP_MS = 20 * 60_000;
-export const NUDGE_STEPS_MS: [number, number, number] = [0, 25 * 60_000, 50 * 60_000];
+/** The ladder's natural spacing: the card 25 minutes after the drop, the next ask 25 after that. */
+export const NUDGE_STEP_MIN = 25;
+/** Never two asks closer than the gap: 20 minutes when there is room, never under 7 in a short window. */
+export const NUDGE_GAP_MAX_MIN = 20;
+export const NUDGE_GAP_MIN_MIN = 7;
+/** Room a person's wrap-up keeps before the register: ten minutes for each ask a day (30 for 3). */
+export const NUDGE_ROOM_PER_ASK_MIN = 10;
+/** How long before the register the last planned ask goes: a quarter of the window, 5 to 15 minutes. */
+export const nudgeMargin = (windowMin: number): number => Math.max(5, Math.min(15, Math.round(windowMin / 4)));
+const askLimit = (n: number): number => Math.max(1, Math.min(5, Math.round(Number(n)) || 1));
+
+export interface NudgePlan {
+  /** Minutes after the wrap-up time of each ask that fits before the register, in order. */
+  offsets: number[];
+  /** What each of those asks shows: 1 the ink drop, 2 the callout, 3 the message. */
+  levels: Array<1 | 2 | 3>;
+  /** Never two asks closer than this many minutes. */
+  gap: number;
+  /** From this many minutes after the wrap-up, the last ask that still fits is the message. */
+  messageAfter: number;
+  /** The office's asks a day; more than offsets.length when the window is too short for them all. */
+  limit: number;
+}
+
+function fitAsks(windowMin: number, n: number): { offsets: number[]; gap: number } {
+  const usable = Math.max(0, windowMin - nudgeMargin(windowMin));
+  let k = n;
+  while (k > 1 && Math.floor(usable / (k - 1)) < NUDGE_GAP_MIN_MIN) k--;
+  const gap = k > 1 ? Math.max(NUDGE_GAP_MIN_MIN, Math.min(NUDGE_GAP_MAX_MIN, Math.floor(usable / (k - 1)))) : NUDGE_GAP_MAX_MIN;
+  // each ask at its natural step, pulled earlier only as far as the ones after it need
+  const offsets = Array.from({ length: k }, (_, i) => Math.max(0, Math.min(NUDGE_STEP_MIN * i, usable - (k - 1 - i) * gap)));
+  return { offsets, gap };
+}
+
+/**
+ * When the wrap-up asks go, for a window of `windowMin` minutes from the wrap-up to the register
+ * (docs/NIB.md §3.5). The asks keep the ladder's 25-minute steps where there is room and are spread
+ * evenly across a short window, the last one a margin before the register; when even 7 minutes
+ * apart they do not all fit, as many as fit are planned and the last of them is still the message.
+ */
+export function nudgePlan(windowMin: number, limit: number): NudgePlan {
+  const n = askLimit(limit);
+  const w = Math.max(0, Math.floor(windowMin));
+  const { offsets, gap } = fitAsks(w, n);
+  const ladder: Array<1 | 2 | 3> = n === 1 ? [1] : n === 2 ? [1, 2] : [1, ...Array<2>(n - 2).fill(2), 3];
+  const levels = offsets.length === n ? ladder : [...ladder.slice(0, offsets.length - 1), ladder[n - 1]];
+  const three = fitAsks(w, Math.max(n, 3)).offsets;
+  return { offsets, levels, gap, messageAfter: three[three.length - 1], limit: n };
+}
+
+/** The asks' clock times for a wrap-up and a register time (HH:MM), for the Control room and the setup check. */
+export function nudgeTimes(wrapAt: string, digestAt: string, limit: number): { times: string[]; fits: number; limit: number } {
+  const wrap = minutesOf(wrapAt);
+  const plan = nudgePlan(minutesOf(digestAt) - wrap, limit);
+  return { times: plan.offsets.map((o) => hhmm(wrap + o)), fits: plan.offsets.length, limit: plan.limit };
+}
 
 /** When Nib may ask, and how loudly (docs/NIB.md §3.5). Pure: the hub calls it once a minute for each person. */
 export function nudgePolicy(i: NudgeInput): NudgeResult {
@@ -672,14 +726,22 @@ export function nudgePolicy(i: NudgeInput): NudgeResult {
   // the wrap-up ladder
   if (i.now >= i.wrapAt) {
     if (i.now >= i.digestAt) return { kind: 'wrap', level: shownWrap, ask: null, reason: 'after the register' };
-    const third = Math.min(i.wrapAt + NUDGE_STEPS_MS[2], i.digestAt - 15 * 60_000);
-    const due = i.now >= third ? 3 : i.now >= i.wrapAt + NUDGE_STEPS_MS[1] ? 2 : 1;
-    const next = (shownWrap + 1) as 1 | 2 | 3;
-    if (shownWrap >= 3 || wrapAsks.length >= i.limit || next > due) return { kind: 'wrap', level: shownWrap, ask: null, reason: wrapAsks.length >= i.limit ? 'limit reached' : 'waiting for the next step' };
+    const plan = nudgePlan((i.digestAt - i.wrapAt) / 60_000, i.limit);
+    const slot = (k: number) => i.wrapAt + plan.offsets[k] * 60_000;
+    const k = wrapAsks.length;
+    const wait = (reason: string): NudgeResult => ({ kind: 'wrap', level: shownWrap, ask: null, reason });
+    if (shownWrap >= 3) return wait('message sent');
+    if (k >= plan.offsets.length) return wait(k >= plan.limit ? 'limit reached' : 'no more room before the register');
+    if (i.now < slot(k)) return wait('waiting for the next step');
     if (quiet) return { kind: 'wrap', level: Math.max(shownWrap, snoozed ? 1 : shownWrap) as 0 | 1 | 2 | 3, ask: null, reason: why };
-    if (lastAt && i.now - lastAt < NUDGE_GAP_MS) return { kind: 'wrap', level: shownWrap, ask: null, reason: 'too soon' };
-    // with one ask left, it is the friendly message
-    const level = (wrapAsks.length === i.limit - 1 && due === 3 ? 3 : next) as 1 | 2 | 3;
+    if (lastAt && i.now - lastAt < plan.gap * 60_000) return wait('too soon');
+    // An ask that waited (busy, offline, snoozed) goes as soon as the person is free, if that is
+    // still before the register. The steps it no longer has room for are missed and never counted;
+    // when no further ask fits before the register, this one is the message. The last planned ask
+    // is the message too once its time has come (with 1 or 2 asks a day, only when it is that late).
+    const squeezed = k + 1 < plan.offsets.length && Math.max(slot(k + 1), i.now + plan.gap * 60_000) >= i.digestAt;
+    const late = k + 1 >= plan.offsets.length && i.now >= i.wrapAt + plan.messageAfter * 60_000;
+    const level = squeezed || late ? 3 : plan.levels[k];
     return { kind: 'wrap', level, ask: level, reason: 'ask' };
   }
   // the start of the day: one gentle card
@@ -692,17 +754,22 @@ export function nudgePolicy(i: NudgeInput): NudgeResult {
   return none('not yet');
 }
 
-/** The wrap-up time for one person: their own, or the office's moved towards their habit (median of recent sends). */
-export function effectiveWrapAt(office: string, own: string | null, recentSendMinutes: number[], digestAt: string): string {
-  const digest = minutesOf(digestAt);
-  if (own) return hhmm(Math.min(minutesOf(own), digest - 30));
+/**
+ * The wrap-up time for one person: their own, or the office's moved towards their habit (median of
+ * recent sends). Never more than an hour before the office's time, and never so late that the asks
+ * lose their room: at least ten minutes for each ask a day before the register (30 for 3), unless
+ * the office's own time is later than that, which is then the latest.
+ */
+export function effectiveWrapAt(office: string, own: string | null, recentSendMinutes: number[], digestAt: string, asks = 3): string {
   const base = minutesOf(office);
+  const latest = Math.max(base, minutesOf(digestAt) - NUDGE_ROOM_PER_ASK_MIN * askLimit(asks));
+  if (own) return hhmm(Math.min(minutesOf(own), latest));
   const list = recentSendMinutes.filter((m) => Number.isFinite(m)).sort((a, b) => a - b);
-  if (list.length < 3) return hhmm(Math.min(base, digest - 30));
+  if (list.length < 3) return hhmm(Math.min(base, latest));
   const median = list.length % 2 ? list[(list.length - 1) / 2] : (list[list.length / 2 - 1] + list[list.length / 2]) / 2;
   // ask a little before they usually send, in five-minute steps
   const habit = Math.round((median - 10) / 5) * 5;
-  return hhmm(Math.max(base - 60, Math.min(habit, digest - 30)));
+  return hhmm(Math.max(base - 60, Math.min(habit, latest)));
 }
 
 // ---------------------------------------------------------------- permissions
