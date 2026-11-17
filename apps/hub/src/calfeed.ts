@@ -176,43 +176,56 @@ export class CalendarFeeds {
     const events: FeedEvent[] = [];
     for (const r of rows) {
       if (r.cancelled && (r.updated_at ?? r.created_at) < now - CANCELLED_DAYS * DAY) continue;
-      const organizer = person(r.organizer_id);
-      let link: string | null = null;
-      let id: string | null = null;
-      let page: string | null = null;
-      if (r.online && !r.cancelled && organizer) {
-        try { id = this.h.meetingFor(organizer, r.id); } catch { id = null; }
-        if (id) { link = meetingLink(id); page = this.h.pageUrl?.(id) ?? null; }
-      }
-      const venue = r.venue_id ? this.h.venueName(r.venue_id) : null;
-      const where = [venue, r.location].filter((x): x is string => !!x?.trim());
-      // the meeting's clean page opens in any calendar app and offers "Open in Dexterity Connect";
-      // the passcode is never in a feed (Google or Outlook keep a copy of it)
-      if (page) where.push(page); else if (link) where.push('Dexterity Connect');
-      const description = [
-        r.description?.trim() ?? '',
-        link && id ? `${page ? `Meeting page: ${page}\n` : ''}Join in Dexterity Connect: ${link}\nMeeting ID: ${formatMeetingId(id)}` : '',
-        organizer && organizer.id !== user.id ? `Organised by ${organizer.displayName}` : '',
-      ].filter(Boolean).join('\n\n');
-      events.push({
-        uid: `${r.id}@dexconnect-${this.h.hubId()}`,
-        title: r.title,
-        startAt: r.start_at,
-        endAt: r.end_at,
-        allDay: !!r.all_day,
-        recurrence: r.recurrence,
-        until: r.recurrence === 'none' ? null : r.until_at,
-        description: description || null,
-        location: [...new Set(where)].join(' · ') || null,
-        url: page ?? link,
-        organizer: { name: organizer?.displayName ?? 'Former colleague', email: organizer?.profile.email ?? null, id: r.organizer_id },
-        sequence: r.seq ?? 0,
-        modifiedAt: r.updated_at ?? r.created_at,
-        cancelled: !!r.cancelled,
-        tentative: r.response === 'maybe',
-      });
+      events.push(this.feedEvent(user, r, person));
     }
     return buildCalendarFeed({ name: `${user.displayName} · ${this.h.office()}`, office: this.h.office(), events, stamp: now, maxLength: FEED_MAX_LENGTH });
+  }
+
+  /** One meeting as calendars outside get it: the clean link without the passcode (DEXTERITY-MEET.md §6). */
+  private feedEvent(user: PublicUser, r: EventRow, person: (id: string) => PublicUser | null): FeedEvent {
+    const organizer = person(r.organizer_id);
+    let link: string | null = null;
+    let id: string | null = null;
+    let page: string | null = null;
+    if (r.online && !r.cancelled && organizer) {
+      try { id = this.h.meetingFor(organizer, r.id); } catch { id = null; }
+      if (id) { link = meetingLink(id); page = this.h.pageUrl?.(id) ?? null; }
+    }
+    const venue = r.venue_id ? this.h.venueName(r.venue_id) : null;
+    const where = [venue, r.location].filter((x): x is string => !!x?.trim());
+    // the meeting's clean page opens in any calendar app and offers "Open in Dexterity Connect";
+    // the passcode is never in a feed (Google or Outlook keep a copy of it)
+    if (page) where.push(page); else if (link) where.push('Dexterity Connect');
+    const description = [
+      r.description?.trim() ?? '',
+      link && id ? `${page ? `Meeting page: ${page}\n` : ''}Join in Dexterity Connect: ${link}\nMeeting ID: ${formatMeetingId(id)}` : '',
+      organizer && organizer.id !== user.id ? `Organised by ${organizer.displayName}` : '',
+    ].filter(Boolean).join('\n\n');
+    return {
+      uid: `${r.id}@dexconnect-${this.h.hubId()}`,
+      title: r.title,
+      startAt: r.start_at,
+      endAt: r.end_at,
+      allDay: !!r.all_day,
+      recurrence: r.recurrence,
+      until: r.recurrence === 'none' ? null : r.until_at,
+      description: description || null,
+      location: [...new Set(where)].join(' · ') || null,
+      url: page ?? link,
+      organizer: { name: organizer?.displayName ?? 'Former colleague', email: organizer?.profile.email ?? null, id: r.organizer_id },
+      sequence: r.seq ?? 0,
+      modifiedAt: r.updated_at ?? r.created_at,
+      cancelled: !!r.cancelled,
+      tentative: r.response === 'maybe',
+    };
+  }
+
+  /** A meeting's title, description and place as someone's own outside calendar gets them (Zoho sync). */
+  details(user: PublicUser, eventId: string): { title: string; description: string | null; location: string | null } | null {
+    const r = this.h.db.prepare(`SELECT e.*, a.response FROM events e LEFT JOIN event_attendees a ON a.event_id = e.id AND a.user_id = ? WHERE e.id = ?`).get(user.id, eventId) as EventRow | undefined;
+    if (!r) return null;
+    const f = this.feedEvent(user, r, (id) => this.h.userById(id));
+    return { title: f.title, description: f.description ?? null, location: f.location ?? null };
   }
 
   /** GET (or HEAD) /cal/<token>.ics on the hub's own address. */

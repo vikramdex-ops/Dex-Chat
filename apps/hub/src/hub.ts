@@ -61,6 +61,8 @@ import { Refs, RefError } from './refs.ts';
 import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
 import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
+import { ZohoError, ZohoSync } from './zoho.ts';
+import type { ZohoTestOptions } from './zoho.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 import { Nib, NibError } from './nib.ts';
@@ -85,6 +87,18 @@ export interface HubOptions {
   /** UDP port for discovery; `false` disables discovery (tests). */
   discoveryPort?: number | false;
   log?: (level: 'info' | 'warn' | 'error' | 'debug', msg: string, extra?: Record<string, unknown>) => void;
+  /** Zoho Calendar against a mock server (tests only; also DEX_ZOHO_TEST_DCS and DEX_ZOHO_CALLBACK_PORT). */
+  zoho?: ZohoTestOptions;
+}
+
+/** Test-only Zoho addresses from the environment (the e2e scripts' mock server); never set in an office. */
+function zohoTestEnv(): ZohoTestOptions | undefined {
+  const dcs = process.env.DEX_ZOHO_TEST_DCS;
+  const port = Number(process.env.DEX_ZOHO_CALLBACK_PORT) || undefined;
+  if (!dcs && !port) return undefined;
+  let parsed: ZohoTestOptions['dcs'];
+  try { parsed = dcs ? JSON.parse(dcs) as ZohoTestOptions['dcs'] : undefined; } catch { parsed = undefined; }
+  return { dcs: parsed, callbackPort: port, retryDelayMs: 50, kickMs: 300 };
 }
 
 interface Conn {
@@ -173,6 +187,8 @@ export class Hub {
   readonly backups: Backups;
   readonly offboarding: Offboarding;
   readonly feeds: CalendarFeeds;
+  /** Zoho Calendar sync for people who connect their Zoho account (zoho.ts, docs/ZOHO-CALENDAR.md). */
+  readonly zoho: ZohoSync;
   /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
   readonly nib: Nib;
   /** Meeting threads, action points and recaps (meet-threads.ts). */
@@ -415,6 +431,24 @@ export class Hub {
       venueName: (vid) => this.calendar.venues().find((v) => v.id === vid)?.name ?? null,
       audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
     });
+    this.zoho = new ZohoSync({
+      db: this.store.db, dataDir: opts.dataDir,
+      meta: (k) => this.store.meta(k, () => ''),
+      setMeta: (k, v) => this.setMeta(k, v),
+      userById: (uid) => this.store.userById(uid),
+      activeUsers: () => this.store.activeUsers(),
+      active: (uid) => this.canSignIn(uid),
+      details: (u, eventId) => this.feeds.details(u, eventId),
+      zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+      deliver: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      toAdmins: (name, data) => this.emit(name, data, (c) => this.isAdminConn(c)),
+      tell: (uid, text, key) => this.system.tell(uid, text, key),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      test: opts.zoho ?? zohoTestEnv(),
+    });
+    this.calendar.changed = (eventId) => this.zoho.changed(eventId);
+    this.calendar.externals = (userIds, from, to) => this.zoho.externals(userIds, from, to);
     this.backups = new Backups({
       db: this.store.db, dataDir: opts.dataDir, hubId: id, hubName: () => this.info.name, version: HUB_VERSION,
       systemId: () => this.system.id,
@@ -639,6 +673,7 @@ export class Hub {
       try { this.messaging.tick(); } catch (err) { this.log('error', 'mute timer failed', { error: (err as Error).message }); }
       try { this.guests.tick(); } catch (err) { this.log('error', 'guest timer failed', { error: (err as Error).message }); }
       try { this.calendar.tick(); } catch (err) { this.log('error', 'calendar timer failed', { error: (err as Error).message }); }
+      try { this.zoho.tick(); } catch (err) { this.log('error', 'zoho timer failed', { error: (err as Error).message }); }
       try { this.botflows.tick(); } catch (err) { this.log('error', 'flow timer failed', { error: (err as Error).message }); }
       void this.botflows.jobs.tick().catch((err: Error) => this.log('error', 'bot job timer failed', { error: err.message }));
       try { this.backups.tick(); } catch (err) { this.log('error', 'backup timer failed', { error: (err as Error).message }); }
@@ -714,6 +749,7 @@ export class Hub {
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.deskTimer) clearInterval(this.deskTimer);
+    this.zoho.stop();
     this.mirror?.stop();
     this.announcer?.stop();
     this.gateway.stop();
@@ -1204,6 +1240,8 @@ export class Hub {
   private presenceTick(now = Date.now()): void {
     // "in a meeting", from the calendar
     const meeting = this.calendar.inMeetingNow(now);
+    // an appointment in their own Zoho Calendar counts too (zoho.ts)
+    for (const u of this.zoho.busyNow(now)) meeting.add(u);
     for (const u of meeting) if (!this.inMeeting.has(u)) this.emit('meeting.busy', { userId: u, inMeeting: true });
     for (const u of this.inMeeting) if (!meeting.has(u)) this.emit('meeting.busy', { userId: u, inMeeting: false });
     this.inMeeting = meeting;
@@ -1731,6 +1769,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof GuestError || err instanceof MsgError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(zoho\.|admin\.zoho\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = await this.zoho.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof ZohoError) throw new OpError(err.message);
             throw err;
           }
         }

@@ -556,6 +556,8 @@ export interface CalEvent {
   createdAt: number;
   /** The time zone the organiser set it in (IANA, e.g. "Asia/Dubai"); null = the office's own. */
   timeZone?: string | null;
+  /** Set on an event from the person's own Zoho Calendar: shown read-only, never a Dexterity meeting. */
+  external?: { source: 'zoho'; calendar: string | null } | null;
 }
 
 /** One time a (possibly repeating) event happens. */
@@ -579,6 +581,8 @@ export interface EventInput {
   recurrence?: Recurrence;
   until?: number | null;
   reminderMin?: number | null;
+  /** The zone it was planned in (IANA); null or left out = the office's own. */
+  timeZone?: string | null;
 }
 
 // ---------------------------------------------------------------- desk (personal productivity)
@@ -1042,7 +1046,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'board.draw': { req: { boardId: string; op: BoardOp }; res: { seq: number } };
   'board.rename': { req: { boardId: string; title: string }; res: Board };
   'board.delete': { req: { boardId: string }; res: { ok: true } };
-  'cal.list': { req: { from: number; to: number }; res: Occurrence[] };
+  /** `external`: also the person's events from Zoho Calendar, read-only (zoho.ts). */
+  'cal.list': { req: { from: number; to: number; external?: boolean }; res: Occurrence[] };
   'cal.get': { req: { eventId: string }; res: CalEvent };
   'cal.create': { req: EventInput; res: CalEvent };
   'cal.update': { req: { eventId: string } & Partial<EventInput>; res: CalEvent };

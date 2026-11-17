@@ -94,6 +94,9 @@ export function expand(ev: Pick<EventRow, 'start_at' | 'end_at' | 'recurrence' |
   return out;
 }
 
+/** An event from someone's own outside calendar (Zoho), kept by zoho.ts: read-only, times only for others. */
+export interface ExternalBlock { userId: string; key: string; title: string; startAt: number; endAt: number; allDay: boolean; calendar: string | null }
+
 const overlaps = (a: { startAt: number; endAt: number }, b: { startAt: number; endAt: number }) => a.startAt < b.endAt && b.startAt < a.endAt;
 
 function when(startAt: number, endAt: number, allDay: boolean): string {
@@ -109,6 +112,10 @@ export class Calendar {
   private readonly users: () => PublicUser[];
   private readonly deliver: (userIds: string[], name: string, data: (userId: string) => unknown) => void;
   private readonly broadcast: (name: string, data: unknown) => void;
+  /** Told after a meeting is made, changed, cancelled or answered (Zoho sync marks it to copy). */
+  changed: (eventId: string) => void = () => {};
+  /** People's events from their own Zoho Calendar between two times (none when Zoho is not set up). */
+  externals: (userIds: string[], from: number, to: number) => ExternalBlock[] = () => [];
 
   constructor(db: DatabaseSync, messaging: Messaging, users: Calendar['users'], deliver: Calendar['deliver'], broadcast: Calendar['broadcast']) {
     this.db = db;
@@ -126,10 +133,12 @@ export class Calendar {
   /** A meeting changed: calendars subscribed to it pick up the new version. */
   touch(eventId: string, now = Date.now()): void {
     this.db.prepare('UPDATE events SET seq = seq + 1, updated_at = ? WHERE id = ?').run(now, eventId);
+    this.changed(eventId);
   }
 
   /** Tell everyone who sees a meeting that it changed (after a change made outside these operations). */
   pushEvent(eventId: string, removedFor: string[] = []): void {
+    this.changed(eventId);
     const r = this.row(eventId);
     if (!r) return;
     const ev = this.view(r);
@@ -318,6 +327,15 @@ export class Calendar {
           const ev = this.view(r);
           for (const o of expand(r, from, to, 400)) out.push({ event: ev, ...o });
         }
+        if (d.external === true) {
+          for (const x of this.externals([me.id], from, to)) {
+            out.push({ startAt: x.startAt, endAt: x.endAt, event: {
+              id: `zoho:${x.key}`, title: x.title, description: null, location: null, venueId: null, startAt: x.startAt, endAt: x.endAt, allDay: x.allDay,
+              organizerId: me.id, convId: null, online: false, recurrence: 'none', until: null, reminderMin: null, attendees: [], cancelled: false, createdAt: 0,
+              timeZone: null, external: { source: 'zoho', calendar: x.calendar },
+            } });
+          }
+        }
         return out.sort((a, b) => a.startAt - b.startAt).slice(0, 2000) satisfies Ops['cal.list']['res'];
       }
 
@@ -342,6 +360,7 @@ export class Calendar {
         for (const u of v.attendees ?? []) ins.run(id, u, 'pending');
         const r = this.row(id)!;
         const ev = this.view(r);
+        this.changed(id);
         this.deliver(this.audience(r), 'cal.updated', () => ev);
         this.deliver((v.attendees ?? []).filter((u) => u !== me.id), 'cal.invited', () => ev);
         // a meeting set in a conversation is announced there
@@ -407,6 +426,7 @@ export class Calendar {
         // members of the meeting's conversation can join it by answering
         this.db.prepare(`INSERT INTO event_attendees (event_id, user_id, response) VALUES (?, ?, ?)
           ON CONFLICT(event_id, user_id) DO UPDATE SET response = excluded.response`).run(r.id, me.id, response);
+        this.changed(r.id);
         const ev = this.view(r);
         this.deliver(this.audience(r), 'cal.updated', () => ev);
         return ev;
@@ -423,6 +443,8 @@ export class Calendar {
           const rows = this.db.prepare(`SELECT DISTINCT e.*, a.user_id AS who FROM events e JOIN event_attendees a ON a.event_id = e.id
             WHERE e.cancelled = 0 AND a.response != 'no' AND a.user_id IN (${ids.map(() => '?').join(',')}) AND e.start_at < ?`).all(...ids, to) as unknown as Array<EventRow & { who: string }>;
           for (const r of rows) for (const o of expand(r, from, to, 200)) out.push({ id: r.who, ...o });
+          // busy in their own Zoho Calendar (times only; all-day entries such as holidays are left out)
+          for (const x of this.externals(ids, from, to)) if (!x.allDay) out.push({ id: x.userId, startAt: x.startAt, endAt: x.endAt });
         }
         if (venue) {
           const rows = this.db.prepare('SELECT * FROM events WHERE cancelled = 0 AND venue_id = ? AND start_at < ?').all(venue, to) as unknown as EventRow[];
