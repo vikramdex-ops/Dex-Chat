@@ -81,7 +81,7 @@ from the hub's mirror when they have no internet. Pushing code builds nothing.
 
 ### Setting up the office
 
-The full go-live checklist, in order, is [`docs/GO-LIVE.md`](docs/GO-LIVE.md). In short:
+Step by step, every manual setting from the server to Dexterity Meet links: [`docs/OFFICE-SETUP.md`](docs/OFFICE-SETUP.md) (also as [`docs/Dexterity-Connect-Office-Setup.pdf`](docs/Dexterity-Connect-Office-Setup.pdf)). The go-live checklist is [`docs/GO-LIVE.md`](docs/GO-LIVE.md). In short:
 
 1. **Hub PC:** extract the hub zip to where it should live (for example `D:\Dexterity Connect Hub`) and double-click `Install-Hub.cmd`. It installs the service, opens its firewall ports and starts it.
 2. **Your PC:** install Dexterity Connect, open it, and click **Request access**. As the first person, you become the owner.

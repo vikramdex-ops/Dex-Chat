@@ -1,5 +1,7 @@
 # Going live: what the office has to do
 
+> For the setup itself, click by click, use [OFFICE-SETUP.md](OFFICE-SETUP.md) (or `Dexterity-Connect-Office-Setup.pdf`). This page is the wider checklist.
+
 The app is built and tested on the development machine. These steps need a person, an office PC, an
 account or a decision, so they cannot be done from here. Do them in this order. Each step says
 where it happens and how to tell it worked.
