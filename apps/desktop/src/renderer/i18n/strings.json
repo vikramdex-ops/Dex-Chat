@@ -760,7 +760,6 @@
  "Backups run every night": "../../../../hub/setupcheck.ts",
  "Backups run every night once a backup folder is chosen.": "../../../../hub/setupcheck.ts",
  "Call a colleague on another office PC; check you hear and see each other.": "../../../../hub/setupcheck.ts",
- "Calls": "../../../../hub/setupcheck.ts",
  "Calls across networks have a relay": "../../../../hub/setupcheck.ts",
  "Calls inside the office need no relay. From some mobile networks, calls cannot connect without one.": "../../../../hub/setupcheck.ts",
  "Check after the first working evening that the management received it.": "../../../../hub/setupcheck.ts",
