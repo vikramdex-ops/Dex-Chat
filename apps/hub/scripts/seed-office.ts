@@ -283,7 +283,10 @@ export function seedOffice(db: DatabaseSync, opts: SeedOptions): SeedResult {
     }
     // time order gives ULIDs in order, as the hub's own would be
     const order = drafts.map((_, i) => i).sort((a, b) => drafts[a].at - drafts[b].at);
-    for (const i of order) drafts[i].id = ulidAt(drafts[i].at);
+    // two messages in the same millisecond still get rising ids, as the hub's monotonic ulid() gives them
+    let prev = '';
+    const bump = (id: string) => { const c = [...id]; for (let k = c.length - 1; k >= 10; k--) { const v = ALPHABET.indexOf(c[k]); if (v < 31) { c[k] = ALPHABET[v + 1]; return c.join(''); } c[k] = ALPHABET[0]; } return c.join(''); };
+    for (const i of order) { let id = ulidAt(drafts[i].at); if (id <= prev) id = bump(prev); drafts[i].id = prev = id; }
     const insMsg = db.prepare('INSERT INTO messages (id, conv_id, author_id, body, parent_id, created_at, edited_at, deleted, pinned, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     // the search index as the hub writes it: in message order, with search_rows where the hub keeps them
     const hasRows = !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'search_rows'").get();
