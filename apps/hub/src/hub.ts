@@ -68,6 +68,7 @@ import type { ZohoTestOptions } from './zoho.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 import { Nib, NibError } from './nib.ts';
+import { Holidays, HolidaysError } from './holidays.ts';
 import { NoticeBoard, NoticeError } from './notices.ts';
 import { Seating, SeatingError } from './seating.ts';
 import { applyDefaults, autoBackup } from './firstrun.ts';
@@ -92,6 +93,8 @@ export interface HubOptions {
   updates?: Omit<MirrorOptions, 'dir' | 'log'> | false;
   /** UDP port for discovery; `false` disables discovery (tests). */
   discoveryPort?: number | false;
+  /** Register the built-in 2026 holiday circular on first start (default on; most tests turn it off). */
+  holidaySeed?: boolean;
   log?: (level: 'info' | 'warn' | 'error' | 'debug', msg: string, extra?: Record<string, unknown>) => void;
   /**
    * The automatic backup folder on the first start (firstrun.ts): tests pass their own disk
@@ -202,6 +205,8 @@ export class Hub {
   readonly feeds: CalendarFeeds;
   /** Zoho Calendar sync for people who connect their Zoho account (zoho.ts, docs/ZOHO-CALENDAR.md). */
   readonly zoho: ZohoSync;
+  /** The office's days off and compensatory working days, and the holiday circulars read (holidays.ts). */
+  readonly holidays: Holidays;
   /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
   readonly nib: Nib;
   /** Meeting threads, action points and recaps (meet-threads.ts). */
@@ -238,6 +243,12 @@ export class Hub {
 
     this.server = https.createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' }, (req, res) => this.http(req, res));
     this.files = new FileStore(this.store.db, path.join(opts.dataDir, 'files'), opts.maxFileBytes);
+    // the office's days off: holidays, Saturdays off, compensatory days (holidays.ts, docs/HOLIDAYS.md)
+    this.holidays = new Holidays({
+      db: this.store.db, store: this.store, files: this.files, seed: opts.holidaySeed !== false,
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail ?? {}),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     this.messaging = new Messaging(this.store.db, (userIds, name, data) => this.deliver(userIds, name, data), () => this.store.activeUsers(), this.files);
     this.work = new Work(this.store.db, () => this.store.activeUsers(), (uid) => {
       // a connected device counts as seen now
@@ -316,6 +327,7 @@ export class Hub {
       deliver: (userIds, name, data) => this.deliver(userIds, name, () => data),
       // the office's working days are Nib's (made below; read when a job asks)
       calendar: () => ({ workdays: this.nib ? this.nib.workingDay().workdays : [1, 2, 3, 4, 5, 6] }),
+      days: this.holidays,
     });
     this.miniapps = new MiniApps({ store: this.store, messaging: this.messaging, files: this.files, deliver: (u, n, d) => this.deliver(u, n, d), broadcast: (n, d) => this.emit(n, d) });
     this.messaging.extraView = (r) => ({ ...this.botflows.view(r), ...this.miniapps.view(r) });
@@ -493,7 +505,7 @@ export class Hub {
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
     this.nib = new Nib({
-      db: this.store.db, store: this.store, messaging: this.messaging, desk: this.desk, calendar: this.calendar, work: this.work,
+      db: this.store.db, store: this.store, messaging: this.messaging, desk: this.desk, calendar: this.calendar, work: this.work, days: this.holidays,
       deliver: (userIds, name, data) => this.deliver(userIds, name, data),
       online: (uid) => [...this.conns].some((c) => c.ready && c.userId === uid),
       busy: (uid) => {
@@ -1916,7 +1928,7 @@ export class Hub {
             if (op === 'nib.leave' && typeof d.from === 'string') this.botflows.net.emitAway(me.id, d.from, typeof d.to === 'string' ? d.to : null);
             if (result !== undefined) return result;
           } catch (err) {
-            if (err instanceof NibError || err instanceof MsgError || err instanceof CalError) throw new OpError(err.message);
+            if (err instanceof NibError || err instanceof MsgError || err instanceof CalError || err instanceof HolidaysError) throw new OpError(err.message);
             throw err;
           }
         }

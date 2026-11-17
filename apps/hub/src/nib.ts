@@ -20,6 +20,8 @@ import type { Store } from './store.ts';
 import type { Desk } from './desk.ts';
 import type { Calendar } from './calendar.ts';
 import type { Work } from './work.ts';
+import type { Holidays } from './holidays.ts';
+import type { HolidayReadView } from '@dex/core/holidays';
 import { localDate } from './work.ts';
 
 export class NibError extends Error {}
@@ -105,6 +107,8 @@ export interface NibDeps {
   desk: Desk;
   calendar: Calendar;
   work: Work;
+  /** The office's days off and compensatory working days: Nib does not ask or send on a day off. */
+  days?: Holidays;
   /** Events to people: each gets their own copy. */
   deliver: (userIds: string[], name: string, data: (uid: string) => unknown) => void;
   /** One of their devices is connected now. */
@@ -178,7 +182,13 @@ export class Nib {
     this.cfgCache = cfg;
   }
   private exempt(uid: string, cfg = this.config()): boolean { return (cfg.exempt ?? cfg.managers).includes(uid); }
-  private workday(date: string, cfg = this.config()): boolean { return cfg.workdays.includes(weekdayOf(date)); }
+  /** One of the office's workdays (or a compensatory working day), and not a holiday or a day off. */
+  private workday(date: string, cfg = this.config()): boolean {
+    const days = this.d.days;
+    return (cfg.workdays.includes(weekdayOf(date)) || !!days?.isExtra(date)) && !days?.isOff(date);
+  }
+  /** For the hub's other clocks (meeting action points): a working day as Nib counts one. */
+  isWorkday(date: string): boolean { return this.workday(date); }
   private prevWorkday(date: string): string | null {
     for (let i = 1; i <= 7; i++) { const d = addDays(date, -i); if (this.workday(d)) return d; }
     return null;
@@ -477,9 +487,9 @@ export class Nib {
   awayOn(uid: string, date: string): boolean { return !!this.leaveOn(uid, date); }
 
   /** The working day, for reminders that should only arrive in working hours. */
-  workingDay(): { workdays: number[]; start: string; end: string } {
+  workingDay(): { workdays: number[]; start: string; end: string; isWorkday: (date: string) => boolean } {
     const cfg = this.config();
-    return { workdays: cfg.workdays, start: cfg.startPromptAt, end: cfg.wrapAt };
+    return { workdays: cfg.workdays, start: cfg.startPromptAt, end: cfg.wrapAt, isWorkday: (date) => this.workday(date, cfg) };
   }
 
   /** After a sheet is sent (or changed after sending): every lead it names gets their card, or sees it change. */
@@ -575,6 +585,33 @@ export class Nib {
       }
 
       case 'nib.card': return this.card(me, String(d.kind ?? ''), String(d.ref ?? ''), typeof d.messageId === 'string' ? d.messageId : null);
+
+      // holiday circulars (docs/HOLIDAYS.md): read one picked in Office holidays (the card also goes
+      // to the conversation with Nib), take the text the desktop read from a scan, register one
+      case 'nib.holidays.read': {
+        const days = this.d.days;
+        if (!days) throw new NibError('Holiday circulars are not available on this hub.');
+        if (typeof d.id === 'string' && typeof d.text === 'string') {
+          const v = days.readText(me, d.id, d.text);
+          this.d.deliver([me.id], 'nib.changed', () => ({ date: this.today(), kinds: ['holidays'] }));
+          return v;
+        }
+        if (typeof d.fileId !== 'string') throw new NibError('Choose the circular’s PDF.');
+        const v = days.read(me, d.fileId);
+        this.postCircular(me, v);
+        return v;
+      }
+      case 'nib.holidays.register': {
+        const days = this.d.days;
+        if (!days) throw new NibError('Holiday circulars are not available on this hub.');
+        const v = days.register(me, String(d.id ?? ''));
+        const c = v.done?.counts;
+        const summary = c ? `Registered ${v.plan?.rows.length ?? 0} days from Ref ${v.read?.ref ?? '—'}: ${c.holiday} holidays, ${c.weekoff} Saturdays off, ${c.compoff} compensatory days off, ${c.compwork} compensatory working days.` : 'Registered.';
+        this.post(me.id, 'holidaysDone', v.id, summary);
+        // the read's card, wherever it is open, shows it registered
+        this.d.deliver([me.id], 'nib.changed', () => ({ date: this.today(), kinds: ['holidays'] }));
+        return v;
+      }
 
       case 'nib.ack': {
         const date = isDate(d.date) ? d.date : this.today();
@@ -713,6 +750,10 @@ export class Nib {
       case 'joiner': case 'hello': {
         if (ref !== me.id) throw denied();
         return kind === 'joiner' ? { kind, userId: me.id, meet: this.peopleToMeet(me) } : { kind, userId: me.id };
+      }
+      case 'holidays': case 'holidaysDone': {
+        if (!this.d.days) throw denied();
+        return { kind, view: this.d.days.view(me, ref) };
       }
       case 'reply': {
         const r = this.db.prepare('SELECT * FROM nib_replies WHERE id = ? AND user_id = ?').get(ref, me.id) as { text: string; parse: string; item_id: string | null } | undefined;
@@ -866,6 +907,12 @@ export class Nib {
   /** Someone wrote to Nib: read it with the same rules as the app, act, and answer with a card. */
   onPosted(author: PublicUser, convId: string, msg: Message): void {
     if (!this.nibId || author.id === this.nibId || author.role === 'bot' || author.role === 'guest' || msg.parentId) return;
+    // a PDF given to Nib: a holiday circular to read (docs/HOLIDAYS.md)
+    const pdfs = (msg.files ?? []).filter((f) => f.mime === 'application/pdf' || /\.pdf$/i.test(f.name));
+    if (pdfs.length && this.d.days && this.isNibConv(convId)) {
+      for (const f of pdfs.slice(0, 3)) this.readCircular(author, f.id);
+      return;
+    }
     if (!msg.body || isSealed(msg.body) || !this.isNibConv(convId)) return;
     const cfg = this.config();
     const users = this.d.store.activeUsers().filter((u) => u.role !== 'bot' && u.role !== 'guest');
@@ -886,6 +933,24 @@ export class Nib {
     const fallback = itemId ? `Noted: ${[p.activity, p.project, qtyText(p.qty)].filter(Boolean).join(' · ')}` : p.intent === 'nothing' ? 'Nothing today. Fair enough.' : 'Here is what I found.';
     this.post(author.id, 'reply', id, fallback);
     if (itemId) this.pushMe([author.id]);
+  }
+
+  /** Read a holiday circular and answer with what it says (a card the app draws from nib.card). */
+  private readCircular(me: PublicUser, fileId: string): HolidayReadView | null {
+    const days = this.d.days;
+    if (!days) return null;
+    let v: HolidayReadView;
+    try { v = days.read(me, fileId); } catch (err) { this.d.log('warn', 'nib could not read the circular', { error: (err as Error).message }); return null; }
+    this.postCircular(me, v);
+    return v;
+  }
+  private postCircular(me: PublicUser, v: HolidayReadView): void {
+    const fallback = v.state === 'denied' ? 'Office holidays are registered by an administrator.'
+      : v.state === 'textless' ? 'That PDF is a scan with no text in it.'
+      : v.state === 'notCircular' ? 'That PDF does not read like a holiday circular.'
+      : v.state === 'unreadable' ? `I could not read that PDF: ${v.error ?? ''}`
+      : `Holiday circular ${v.read?.ref ?? ''} for ${v.read?.year ?? ''}: ${v.plan?.rows.length ?? 0} days read.`.replace(/\s+/g, ' ');
+    this.post(me.id, 'holidays', v.id, fallback);
   }
 
   /** A new member: Nib says hello (with a tour on their first days). */

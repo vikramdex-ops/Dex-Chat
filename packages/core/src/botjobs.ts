@@ -23,7 +23,13 @@ const MAX_TIMES = 6;
 export interface OfficeCalendar {
   /** 0 = Sunday … 6 = Saturday. */
   workdays: number[];
-  holidays: Array<{ date: string; name: string }>;
+  /** Days nobody works: holidays, the Saturdays off and compensatory days off (`kind` from the circular). */
+  holidays: Array<{ date: string; name: string; kind?: string }>;
+  /**
+   * Compensatory working days on a day the office does not normally work (a Saturday worked to
+   * make up for a day off when the week is Monday to Friday): working days after all.
+   */
+  extraWorkdays?: Array<{ date: string; name: string }>;
   /** Minutes east of UTC (330 for IST). */
   tzOffset: number;
   /** "During office hours". */
@@ -78,8 +84,8 @@ const dowOf = (date: string): number => { const [y, m, d] = date.split('-').map(
 const daysInMonth = (y: number, m: number): number => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
 export const holidayOn = (cal: OfficeCalendar, date: string): { date: string; name: string } | undefined => cal.holidays.find((h) => h.date === date);
-/** A working day: one of the office's working days and not a holiday. */
-export const isWorkingDay = (cal: OfficeCalendar, date: string): boolean => cal.workdays.includes(dowOf(date)) && !holidayOn(cal, date);
+/** A working day: one of the office's working days (or a compensatory working day) and not a day off. */
+export const isWorkingDay = (cal: OfficeCalendar, date: string): boolean => (cal.workdays.includes(dowOf(date)) || !!cal.extraWorkdays?.some((d) => d.date === date)) && !holidayOn(cal, date);
 export const inQuiet = (minutes: number): boolean => minutes >= QUIET_FROM || minutes < QUIET_TO;
 
 // ---------------------------------------------------------------- reading the words

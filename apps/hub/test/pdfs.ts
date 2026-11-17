@@ -119,3 +119,18 @@ export function drawingSheet(opts: { title: string[]; rev: string; number: strin
   }
   return lines.join('\n');
 }
+
+/** A holiday circular's text (lines with cells three spaces apart) drawn as a PDF: four columns, 26 lines a page. */
+export function circularPdf(lines: string[]): Buffer {
+  const pages: string[] = [];
+  for (let i = 0; i < lines.length; i += 26) {
+    const ops: string[] = [];
+    lines.slice(i, i + 26).forEach((l, j) => {
+      const cells = l.replace(/’/g, "'").split(/\s{3,}/).filter(Boolean);
+      const xs = cells.length === 4 ? [50, 120, 250, 400] : [50, 400];
+      cells.forEach((c, k) => ops.push(at(xs[Math.min(k, xs.length - 1)], 560 - j * 20, c, 10)));
+    });
+    pages.push(ops.join('\n'));
+  }
+  return buildPdf({ pages: pages.map((content) => ({ content, compress: true })) });
+}

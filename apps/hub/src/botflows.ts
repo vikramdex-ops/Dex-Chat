@@ -32,6 +32,7 @@ import type { NetBot, NetHost } from './botnet.ts';
 import { BotJobs } from './botjobs.ts';
 import { DEFAULT_CALENDAR } from '@dex/core/botjobs';
 import type { OfficeCalendar } from '@dex/core/botjobs';
+import type { Holidays } from './holidays.ts';
 import { trailOf } from '@dex/core/botnet';
 
 export class BotFlowsError extends Error {
@@ -177,6 +178,8 @@ export interface BotFlowsDeps {
   deliver?: (userIds: string[], name: string, data: unknown) => void;
   /** The office's working days, holidays and hours, in its time zone (Nib's working days). */
   calendar?: () => Pick<OfficeCalendar, 'workdays'>;
+  /** The office's days off and compensatory working days (holidays.ts). */
+  days: Holidays;
 }
 
 export class BotFlows {
@@ -259,6 +262,7 @@ export class BotFlows {
     };
     this.jobs = new BotJobs({
       db: this.db, store: deps.store, messaging: deps.messaging, desk: deps.desk, log: deps.log, now: () => this.now(), calendar: () => this.calendar(),
+      days: deps.days,
       deliver: (u, n, d) => deps.deliver?.(u, n, d), host, net: this.net, items: this.items,
       startFor: (person, name) => this.startForJob(person, name),
       leadOf: (uid) => this.items.leadOf(uid),
@@ -267,8 +271,7 @@ export class BotFlows {
 
   /** The office's working week and holidays, in IST. */
   calendar(): OfficeCalendar {
-    const holidays = (() => { try { return JSON.parse(this.d.store.meta('office_holidays', () => '[]')) as OfficeCalendar['holidays']; } catch { return []; } })();
-    return { ...DEFAULT_CALENDAR, workdays: this.d.calendar?.().workdays ?? DEFAULT_CALENDAR.workdays, holidays: Array.isArray(holidays) ? holidays : [] };
+    return { ...DEFAULT_CALENDAR, workdays: this.d.calendar?.().workdays ?? DEFAULT_CALENDAR.workdays, ...this.d.days.calendarPart() };
   }
 
   /** A live bot as the network sees it. */

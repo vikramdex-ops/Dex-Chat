@@ -98,7 +98,7 @@ export interface ThreadDeps {
     status(itemId: string, status: 'going' | 'done'): void;
     gone(itemId: string): void;
     away(uid: string, date: string): boolean;
-    hours(): { workdays: number[]; start: string; end: string };
+    hours(): { workdays: number[]; start: string; end: string; isWorkday?: (date: string) => boolean };
   };
   audit(actor: string | null, action: string, target: string | null, meta?: Record<string, unknown>): void;
   log(level: 'info' | 'warn', msg: string, extra?: Record<string, unknown>): void;
@@ -707,8 +707,9 @@ export class MeetThreads {
   /** Once a working day, in working hours, each owner gets one message listing their overdue points. */
   private remindOverdue(now: number): void {
     const h = this.d.nib.hours();
-    if (!inWorkingHours(now, h.workdays, h.start, h.end)) return;
     const today = localDate(now);
+    // a working day as Nib counts one: not on a holiday or a Saturday off, yes on a compensatory working day
+    if (h.isWorkday ? !h.isWorkday(today) || !inWorkingHours(now, [0, 1, 2, 3, 4, 5, 6], h.start, h.end) : !inWorkingHours(now, h.workdays, h.start, h.end)) return;
     const rows = this.db.prepare(`SELECT a.* FROM action_points a JOIN messages m ON m.id = a.message_id WHERE a.status = 'open' AND a.owner_id IS NOT NULL
       AND a.due IS NOT NULL AND a.due < ? AND m.deleted = 0 AND (a.reminded_on IS NULL OR a.reminded_on < ?) ORDER BY a.due LIMIT 2000`).all(today, today) as unknown as ApRow[];
     const by = new Map<string, ApRow[]>();

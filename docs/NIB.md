@@ -136,7 +136,8 @@ cards follow ("changed after sending").
 
 `nudgePolicy()` in `packages/core/src/nib.ts`, called by the hub every minute for each person.
 
-1. **Never** on a non-workday, for people the office exempted (by default the management
+1. **Never** on a non-workday (a day off in the office's holiday list counts as one; a compensatory
+   working day does not, see [`HOLIDAYS.md`](HOLIDAYS.md)), for people the office exempted (by default the management
    subscribers themselves), on leave, after "Nothing today", or once the sheet is sent.
 2. **Never while busy**: in a Room, in a calendar meeting, on Do not disturb or Heads-down. A
    nudge that falls in a busy spell waits until it ends; it is not counted.
@@ -259,6 +260,7 @@ every skill runs with that person's own access (their search, their calendar, th
 | **My next meeting** | Its time, place and a **Join** button. |
 | **New joiners** | A welcome card on their first day: a five-stop tour, the people to meet (manager, department head, three colleagues) and a button to the office drawing. |
 | **Help with the app** | "how do I share my screen": short steps and a **Show me** button that takes you there. |
+| **Holiday circular** | An administrator drops management's holiday circular PDF into the conversation: Nib reads it, checks every row (weekday, year, duplicates, what each compensatory working day makes up for), shows a card and registers the days on **Register N days**. See [`HOLIDAYS.md`](HOLIDAYS.md). |
 
 ## 8. Configuration (Control room ▸ Nib & day sheets)
 
@@ -316,7 +318,8 @@ refresh. The message body is a short English line for notifications and search.
 
 **Operations**: `nib.me`, `nib.start`, `nib.item.save`, `nib.item.delete`, `nib.wrap`, `nib.day`
 (nothing / snooze / wrap-up time), `nib.card`, `nib.ack`, `nib.sheet`, `nib.leave`,
-`nib.leave.cancel`, `nib.welcome.seen`, `admin.nib.get`, `admin.nib.set`, `admin.nib.preview`.
+`nib.leave.cancel`, `nib.welcome.seen`, `nib.holidays.read`, `nib.holidays.register` (holiday circulars,
+[`HOLIDAYS.md`](HOLIDAYS.md)), `admin.nib.get`, `admin.nib.set`, `admin.nib.preview`.
 Events: `nib.me` (your own state), `nib.changed`.
 
 **Performance**: the register for 200 people and 800 items is built in about 2 ms on the hub

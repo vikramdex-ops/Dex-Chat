@@ -1,0 +1,482 @@
+{
+ "source": {
+  "file": "holidays-2026.pdf",
+  "hash": "8ddd1f7b59ebd79b6838b51476477ca64bf85b77a29727a26a55912db7bad0b3",
+  "ref": "HRD/CIR/2026/011",
+  "refDate": "2026-03-26",
+  "pages": 3
+ },
+ "read": {
+  "year": 2026,
+  "period": {
+   "from": "2026-01-01",
+   "to": "2026-12-31"
+  },
+  "ref": "HRD/CIR/2026/011",
+  "refDate": "2026-03-26",
+  "rows": [
+   {
+    "sl": 1,
+    "dateText": "01-Jan-2026",
+    "date": "2026-01-01",
+    "dayText": "Thursday",
+    "name": "New Year’s Day",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 2,
+    "dateText": "10-Jan-2026",
+    "date": "2026-01-10",
+    "dayText": "Saturday",
+    "name": "Compensatory work for 14-Jan-2026",
+    "kind": "compwork",
+    "for": "2026-01-14",
+    "problems": []
+   },
+   {
+    "sl": 3,
+    "dateText": "14-Jan-2026",
+    "date": "2026-01-14",
+    "dayText": "Wednesday",
+    "name": "Compensatory Off",
+    "kind": "compoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 4,
+    "dateText": "15-Jan-2026",
+    "date": "2026-01-15",
+    "dayText": "Thursday",
+    "name": "Pongal",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 5,
+    "dateText": "16-Jan-2026",
+    "date": "2026-01-16",
+    "dayText": "Friday",
+    "name": "Thiruvalluvar day",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 6,
+    "dateText": "17-Jan-2026",
+    "date": "2026-01-17",
+    "dayText": "Saturday",
+    "name": "Uzhavar Thirunaal",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 7,
+    "dateText": "24-Jan-2026",
+    "date": "2026-01-24",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 8,
+    "dateText": "26-Jan-2026",
+    "date": "2026-01-26",
+    "dayText": "Monday",
+    "name": "Republic Day",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 9,
+    "dateText": "07-Feb-2026",
+    "date": "2026-02-07",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 10,
+    "dateText": "21-Feb-2026",
+    "date": "2026-02-21",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 11,
+    "dateText": "07-Mar-2026",
+    "date": "2026-03-07",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 12,
+    "dateText": "21-Mar-2026",
+    "date": "2026-03-21",
+    "dayText": "Saturday",
+    "name": "Ramzan",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 13,
+    "dateText": "03-Apr-2026",
+    "date": "2026-04-03",
+    "dayText": "Friday",
+    "name": "Good Friday",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 14,
+    "dateText": "04-Apr-2026",
+    "date": "2026-04-04",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 15,
+    "dateText": "05-Apr-2026",
+    "date": "2026-04-05",
+    "dayText": "Sunday",
+    "name": "Easter Sunday",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 16,
+    "dateText": "14-Apr-2026",
+    "date": "2026-04-14",
+    "dayText": "Tuesday",
+    "name": "Tamil New Year",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 17,
+    "dateText": "18-Apr-2026",
+    "date": "2026-04-18",
+    "dayText": "Saturday",
+    "name": "Compensatory Work For 24-Apr-26",
+    "kind": "compwork",
+    "for": "2026-04-24",
+    "problems": []
+   },
+   {
+    "sl": 18,
+    "dateText": "23-Apr-2026",
+    "date": "2026-04-23",
+    "dayText": "Thursday",
+    "name": "TN Election Day",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 19,
+    "dateText": "24-Apr-2026",
+    "date": "2026-04-24",
+    "dayText": "Friday",
+    "name": "Compensatory Off",
+    "kind": "compoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 20,
+    "dateText": "25-Apr-2026",
+    "date": "2026-04-25",
+    "dayText": "Saturday",
+    "name": "Compensatory Off",
+    "kind": "compoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 21,
+    "dateText": "01-May -2026",
+    "date": "2026-05-01",
+    "dayText": "Friday",
+    "name": "May Day",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 22,
+    "dateText": "02-May -2026",
+    "date": "2026-05-02",
+    "dayText": "Saturday",
+    "name": "Compensatory Work For 25-Apr-26",
+    "kind": "compwork",
+    "for": "2026-04-25",
+    "problems": []
+   },
+   {
+    "sl": 23,
+    "dateText": "16-May -2026",
+    "date": "2026-05-16",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 24,
+    "dateText": "28-May -2026",
+    "date": "2026-05-28",
+    "dayText": "Thursday",
+    "name": "Bakrid",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 25,
+    "dateText": "06-June-2026",
+    "date": "2026-06-06",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 26,
+    "dateText": "26-June-2026",
+    "date": "2026-06-26",
+    "dayText": "Friday",
+    "name": "Muharram",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 27,
+    "dateText": "27-June-2026",
+    "date": "2026-06-27",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 28,
+    "dateText": "11-July-2026",
+    "date": "2026-07-11",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 29,
+    "dateText": "25-July-2026",
+    "date": "2026-07-25",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 30,
+    "dateText": "08-Aug-2026",
+    "date": "2026-08-08",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 31,
+    "dateText": "15-Aug-2026",
+    "date": "2026-08-15",
+    "dayText": "Saturday",
+    "name": "Independence Day",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 32,
+    "dateText": "29-Aug-2026",
+    "date": "2026-08-29",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 33,
+    "dateText": "05-Sept-2026",
+    "date": "2026-09-05",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 34,
+    "dateText": "12-Sept-2026",
+    "date": "2026-09-12",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 35,
+    "dateText": "14-Sept-2026",
+    "date": "2026-09-14",
+    "dayText": "Monday",
+    "name": "Vinayakar Chathurthi",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 36,
+    "dateText": "02-Oct-2026",
+    "date": "2026-10-02",
+    "dayText": "Friday",
+    "name": "Gandhi Jayanthi",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 37,
+    "dateText": "03-Oct-2026",
+    "date": "2026-10-03",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 38,
+    "dateText": "17-Oct-2026",
+    "date": "2026-10-17",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 39,
+    "dateText": "19-Oct-2026",
+    "date": "2026-10-19",
+    "dayText": "Monday",
+    "name": "Ayudha Pooja",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 40,
+    "dateText": "6-Nov-2026",
+    "date": "2026-11-06",
+    "dayText": "Friday",
+    "name": "Compensatory Off",
+    "kind": "compoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 41,
+    "dateText": "7-Nov-2026",
+    "date": "2026-11-07",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 42,
+    "dateText": "8-Nov-2026",
+    "date": "2026-11-08",
+    "dayText": "Sunday",
+    "name": "Diwali",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 43,
+    "dateText": "21-Nov-2026",
+    "date": "2026-11-21",
+    "dayText": "Saturday",
+    "name": "Compensatory Work for 06-Nov",
+    "kind": "compwork",
+    "for": "2026-11-06",
+    "problems": []
+   },
+   {
+    "sl": 44,
+    "dateText": "05-Dec-2026",
+    "date": "2026-12-05",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 45,
+    "dateText": "25-Dec-2026",
+    "date": "2026-12-25",
+    "dayText": "Friday",
+    "name": "Christmas",
+    "kind": "holiday",
+    "for": null,
+    "problems": []
+   },
+   {
+    "sl": 46,
+    "dateText": "26-Dec-2026",
+    "date": "2026-12-26",
+    "dayText": "Saturday",
+    "name": "Week-Off",
+    "kind": "weekoff",
+    "for": null,
+    "problems": []
+   }
+  ],
+  "warnings": [],
+  "textless": false
+ }
+}

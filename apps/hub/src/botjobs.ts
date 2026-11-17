@@ -10,6 +10,8 @@ import type { BotFlowAnswer, BotFlowDefinition, BotJob, BotJobLane, BotJobPeople
 import { renderTemplate, testCondition } from '@dex/core/botflows';
 import { describeRule, hm, inQuiet, isWorkingDay, nextRuns, officeParts, parseSchedule, planDue, runsBetween } from '@dex/core/botjobs';
 import type { JobState, OfficeCalendar, ScheduleRule } from '@dex/core/botjobs';
+import { HolidaysError } from './holidays.ts';
+import type { Holidays } from './holidays.ts';
 import type { BotItems } from './botitems.ts';
 import type { BotNet, NetBot, NetHost } from './botnet.ts';
 import type { Desk } from './desk.ts';
@@ -58,6 +60,8 @@ export interface BotJobsDeps {
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
   now: () => number;
   calendar: () => OfficeCalendar;
+  /** The office's days off, with their kinds and sources (holidays.ts). */
+  days: Holidays;
   deliver: (userIds: string[], name: string, data: unknown) => void;
   host: NetHost;
   net: BotNet;
@@ -85,6 +89,8 @@ export class BotJobs {
     this.d = deps;
     this.db = deps.db;
     this.db.exec(SCHEMA);
+    // schedules read "every working day" against the calendar: read them again after it changes
+    deps.days.changed.push(() => this.rules.clear());
   }
 
   // ------------------------------------------------------------ reading
@@ -334,7 +340,7 @@ export class BotJobs {
     const cal = this.d.calendar();
     const lanes = bots.flatMap((b) => (b.def.jobs ?? []).map((j) => this.lane(b, j, from, to, me)));
     const fromDate = officeParts(from, cal.tzOffset).date; const toDate = officeParts(to, cal.tzOffset).date;
-    return { scope, from, to, lanes, holidays: cal.holidays.filter((h) => h.date >= fromDate && h.date <= toDate), now: this.d.now(), tzOffset: cal.tzOffset };
+    return { scope, from, to, lanes, holidays: cal.holidays.filter((h) => h.date >= fromDate && h.date <= toDate), extraWorkdays: (cal.extraWorkdays ?? []).filter((h) => h.date >= fromDate && h.date <= toDate), now: this.d.now(), tzOffset: cal.tzOffset };
   }
 
   private own(me: PublicUser, flow: string, job: string): { b: NetBot; j: BotJob } {
@@ -376,20 +382,9 @@ export class BotJobs {
     const jobId = String(d.job ?? '');
     switch (op) {
       case 'botjob.calendar':
-        return { holidays: cal.holidays, workdays: cal.workdays, tzOffset: cal.tzOffset, hours: cal.hours };
+        return { holidays: cal.holidays, workdays: cal.workdays, tzOffset: cal.tzOffset, hours: cal.hours, extraWorkdays: cal.extraWorkdays ?? [], days: this.d.days.list(), circulars: this.d.days.circulars() };
       case 'admin.botjob.holidays': {
-        if (me.role !== 'owner' && me.role !== 'admin') throw new BotJobsError('Only administrators can change the office’s holidays.');
-        const list = (Array.isArray(d.holidays) ? d.holidays : []).slice(0, 80).map((h) => {
-          const r = (h ?? {}) as Record<string, unknown>;
-          const date = typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : '';
-          const name = typeof r.name === 'string' ? r.name.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 60) : '';
-          if (!date || !name) throw new BotJobsError('Each holiday has a date (2026-11-08) and a name.');
-          return { date, name };
-        }).sort((a, b) => a.date.localeCompare(b.date));
-        this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('office_holidays', JSON.stringify(list));
-        this.rules.clear();
-        this.d.store.audit(me.id, 'botjob.holidays', null, { count: list.length });
-        return { holidays: list };
+        try { return { holidays: this.d.days.setByAdmin(me, d.holidays) }; } catch (err) { if (err instanceof HolidaysError) throw new BotJobsError(err.message); throw err; }
       }
       case 'botjob.sheet': {
         const scope = d.scope === 'office' || d.scope === 'bot' ? d.scope : 'mine';

@@ -12,6 +12,7 @@ import { BotMarkTile } from './BotMark.tsx';
 import { openBotMaker } from './maker/open.ts';
 import { openBotNetwork, openJobSheet } from './net/open.ts';
 import { KIND_TAG, kindOf } from './maker/model.ts';
+import { OfficeHolidays } from './OfficeHolidays.tsx';
 import './bots.css';
 
 type AdminFlow = Ops['admin.botflows.list']['res'][number];
@@ -99,39 +100,8 @@ function Flows({ users }: { users: PublicUser[] }) {
           </div>
         ))}
       </div>
-      <Holidays />
+      <OfficeHolidays users={users} />
     </>
-  );
-}
-
-/** The office's holidays: no scheduled bot job runs on one (working days are Nib's). */
-function Holidays() {
-  const toast = useToast();
-  const [list, setList] = useState<Array<{ date: string; name: string }> | null>(null);
-  const [date, setDate] = useState('');
-  const [name, setName] = useState('');
-  useEffect(() => { void window.dex.request('botjob.calendar').then((c) => setList(c.holidays)).catch(() => setList([])); }, []);
-  const save = (next: Array<{ date: string; name: string }>) => void window.dex.request('admin.botjob.holidays', { holidays: next }).then((r) => { setList(r.holidays); toast('Office holidays saved'); }).catch((e: Error) => toast(e.message, true));
-  return (
-    <section className="bots-holidays" aria-labelledby="bots-hol-h">
-      <h3 id="bots-hol-h" className="label">Office holidays</h3>
-      <p className="faint" style={{ margin: '0 0 8px', fontSize: 12.5 }}>Scheduled bot jobs never run on these days, nor on days that are not working days (Control room → Nib & day sheets).</p>
-      <div className="list">
-        {list?.map((h) => (
-          <div key={h.date} className="list-row">
-            <span className="mono">{h.date}</span>
-            <span className="grow">{h.name}</span>
-            <button type="button" className="icon-btn sm" aria-label={`Remove ${h.name}`} onClick={() => save(list.filter((x) => x.date !== h.date))}><Icon name="trash" size={14} /></button>
-          </div>
-        ))}
-        {list?.length === 0 && <div className="list-row faint">No holidays yet.</div>}
-      </div>
-      <form className="row-actions" style={{ marginTop: 8 }} onSubmit={(e) => { e.preventDefault(); if (!date || !name.trim() || !list) return; save([...list.filter((x) => x.date !== date), { date, name: name.trim() }]); setDate(''); setName(''); }}>
-        <input className="input" type="date" aria-label="Holiday date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <input className="input" aria-label="Holiday name" placeholder="Diwali" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
-        <button className="btn" disabled={!date || !name.trim()}><Icon name="plus" size={14} />Add holiday</button>
-      </form>
-    </section>
   );
 }
 

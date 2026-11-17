@@ -6,7 +6,7 @@ import type { FileInfo } from '@dex/core';
 type Job = { file: FileInfo; convKind: 'space' | 'direct' };
 const queue: Job[] = [];
 let running = false;
-let worker: { recognize: (img: Blob) => Promise<{ data: { text: string } }>; terminate: () => Promise<unknown> } | null = null;
+let worker: { recognize: (img: Blob) => Promise<{ data: { text: string } }>; setParameters: (p: Record<string, string>) => Promise<unknown>; terminate: () => Promise<unknown> } | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let disabled = false;
 
@@ -60,4 +60,53 @@ export function readImageText(files: FileInfo[], convKind: 'space' | 'direct'): 
   if (convKind !== 'space' || /Android/i.test(navigator.userAgent)) return;
   for (const file of files) if (IMAGE.test(file.mime)) queue.push({ file, convKind });
   if (queue.length) setTimeout(() => void run(), 1500);
+}
+
+/** OCR is there on this device (the PC app; not phones, where the engine is not shipped). */
+export const canReadScans = (): boolean => !disabled && !/Android/i.test(navigator.userAgent) && typeof document !== 'undefined';
+
+/**
+ * The text of a scanned PDF, read on this PC: each page drawn with PDF.js at print resolution and
+ * read by the same engine as images. For a holiday circular with no text layer (docs/HOLIDAYS.md);
+ * the text goes to the hub, which reads it like any circular. At most `maxPages` pages.
+ */
+export async function readScanText(file: Pick<FileInfo, 'id' | 'name'>, onPage: (n: number, of: number) => void, maxPages = 6): Promise<string> {
+  const [{ openPdf }, { fileBlob }] = await Promise.all([import('./pdf/pdfjs.ts'), import('./pdf/source.ts')]);
+  const { doc } = await openPdf(await fileBlob(file), async () => null);
+  const out: string[] = [];
+  let restore: (() => Promise<unknown>) | null = null;
+  try {
+    const of = Math.min(doc.numPages, maxPages);
+    const w = await getWorker();
+    // a table: read the page as one column of lines (the default, one block, loses most rows), keeping
+    // the wide gaps between cells
+    await w.setParameters({ tessedit_pageseg_mode: '4', preserve_interword_spaces: '1' });
+    restore = () => w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '0' });
+    for (let n = 1; n <= of; n++) {
+      onPage(n, of);
+      const page = await doc.getPage(n);
+      const vp1 = page.getViewport({ scale: 1 });
+      // about 200 dpi on an A4 page: enough for 10-point table text
+      const vp = page.getViewport({ scale: Math.min(3, 1700 / vp1.width) });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(vp.width));
+      canvas.height = Math.max(1, Math.round(vp.height));
+      await page.render({ canvas, viewport: vp, background: '#ffffff' }).promise;
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+      canvas.width = 0; canvas.height = 0;
+      if (!blob) continue;
+      const { data } = await w.recognize(blob);
+      out.push(data.text.replace(/[ \t]+\n/g, '\n').trim());
+    }
+  } catch (e) {
+    if (/Failed to load|wasm|Worker/i.test(String((e as Error).message))) disabled = true;
+    throw e;
+  } finally {
+    // pictures sent to Spaces are read with the engine's usual settings
+    await restore?.().catch(() => {});
+    void doc.loadingTask.destroy().catch(() => {});
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { void worker?.terminate(); worker = null; }, 60_000);
+  }
+  return out.join('\n');
 }

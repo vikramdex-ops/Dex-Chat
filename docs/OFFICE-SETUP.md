@@ -150,9 +150,12 @@ and go on to C2. If it says **Backups need a second disk or a network share**, d
 3. **Office managers** (people who may move seats): type a name in **Add an office manager…** and pick them.
 4. **Conference rooms and cabins**: add each room with its number of seats, so meetings can book them.
 
-**C3. Office holidays.** Go to **13 Bots & tools**, find **Office holidays**. For each holiday, choose the date,
-type the name (for example *Diwali*) and click **Add holiday**. Nib, scheduled bot jobs and hot-desk booking skip
-these days.
+**C3. Office holidays.** The 2026 holidays from management's circular (Ref HRD/CIR/2026/011) are already
+registered on a new hub. Each year, give the new holiday circular's PDF to Nib (drop it into your conversation
+with Nib), or go to **13 Bots & tools → Office holidays → Read a holiday circular…**. Check what Nib read (any
+row in doubt is listed and left out) and click **Register N days**. Week-offs and compensatory days off are days
+off; a compensatory working day is worked. Nib, scheduled bot jobs and hot-desk booking skip the days off. A day
+can still be added by hand there (date, name, kind, **Add day**). See [`HOLIDAYS.md`](HOLIDAYS.md).
 
 **C4. Notice desks.** Go to **15 Notice desks**. The desks **Admin, HR, IT and Management** are already there.
 Under each desk, use **Add an issuer…** to choose who issues notices for it (for example the HR manager under
