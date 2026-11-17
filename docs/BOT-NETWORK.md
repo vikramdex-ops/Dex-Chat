@@ -139,8 +139,9 @@ it as it is typed, marks what it understood on the words, and lists the next fiv
 Times are `9:15`, `09:15`, `9.15`, `9am`, `5 pm`, `noon`. Up to six times a day, at most every 15
 minutes, at least every 12 hours for a window. Times between 21:00 and 08:00 are **quiet hours**
 and refused. Everything is in **office time, IST** (UTC+05:30), whatever the PC's own zone. Working
-days are Nib's (Control room → Nib); the office's holidays are kept by administrators
-(`admin.botjob.holidays`), and no job runs on one.
+days are Nib's (Control room → Nib); the office's days off come from management's holiday circular,
+read by Nib and registered by an administrator ([`HOLIDAYS.md`](HOLIDAYS.md)), and no job runs on one. A
+compensatory working day is a working day even on a weekday the office does not normally work.
 
 ### What a job does
 
@@ -251,8 +252,8 @@ many). `missed` is `skip` (the default) or `once`.
 | `botjob.set { flow, job, paused?, skipNext?, unskip?, move? }` | the bot's maker, administrators | pause, skip the next run, move one run |
 | `botjob.run { flow, job, dry? }` | the bot's maker, administrators | run now, or a dry run |
 | `botjob.history { flow, job }` | the bot's maker, administrators | the runs, newest first |
-| `botjob.calendar` | members | working days, holidays, the office's zone |
-| `admin.botjob.holidays { holidays }` | administrators | the office's holidays |
+| `botjob.calendar` | members | working days, days off, compensatory working days, every day with its kind and source, the circulars registered, the office's zone |
+| `admin.botjob.holidays { holidays }` | administrators | the office's days (date, name, kind); unchanged days keep their source |
 
 Events: `botnet.pulse { from, to, kind, status, at }` (to administrators and both bots' makers)
 and `botjob.changed { flow, job }`.

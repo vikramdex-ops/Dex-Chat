@@ -17,11 +17,11 @@ fs.mkdirSync(OUT, { recursive: true });
 const DESKTOP = process.env.DEX_DESKTOP ?? path.join(ROOT, 'apps/desktop');
 const ELECTRON = createRequire(import.meta.url)('electron') as unknown as string;
 
-export async function startOffice(tag: string) {
+export async function startOffice(tag: string, opts: { /** the built-in 2026 holiday circular (off: walks do not depend on the day they run) */ holidaySeed?: boolean } = {}) {
   const dir = fs.mkdtempSync(path.join(OUT, `hub-${tag}-`));
   // POL1_ISOLATED=1: a hub on a free port with no discovery (apps join by address), so walks need not wait for 47900
   const iso = process.env.POL1_ISOLATED === '1';
-  const hub = new Hub({ dataDir: dir, name: 'E2E Hub', updates: false, ...(iso ? { port: 0, discoveryPort: false } : {}) });
+  const hub = new Hub({ dataDir: dir, name: 'E2E Hub', updates: false, holidaySeed: opts.holidaySeed ?? false, ...(iso ? { port: 0, discoveryPort: false } : {}) });
   await hub.start();
   isoPort = iso ? hub.port : 0;
   const owner = new HubClient({ identity: createIdentity(), account: { username: 'vikram', domain: 'DEX', displayName: 'Vikram Shah', hostname: 'VIKRAM-PC' } });

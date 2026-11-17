@@ -57,8 +57,8 @@ hot desk that anyone can book for a day (today or up to two weeks ahead). A pers
 seat.
 
 Booking a hot desk: click it on the plan; the seat's callout shows who has it today, a **Book for**
-day (today, then each working day up to two weeks ahead: the office's working week and holidays,
-the same calendar scheduled bot jobs use) and the days it is already booked, with who. **Book for
+day (today, then each working day up to two weeks ahead: the office's working week, its days off and
+compensatory working days ([`HOLIDAYS.md`](HOLIDAYS.md)), the same calendar scheduled bot jobs use) and the days it is already booked, with who. **Book for
 today** (or **Book for Tue 17 Nov**) books the chosen day; **Cancel my booking** frees it. A person
 has one hot desk a day: booking another for the same day moves the booking. The hub refuses a day
 that is not a working day, and a day further than two weeks out (`seating.book`; the days it

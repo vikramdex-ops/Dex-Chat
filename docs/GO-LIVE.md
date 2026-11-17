@@ -111,7 +111,7 @@ All of these are in the **Control room**, reached from your tile at the top righ
 | **04 Organisation → Office managers** | The people who may move seats (administrators can already). |
 | **03 People & roles → IT desk** | The IT people who get Help me requests and run support sessions. |
 | **Notice desks** | The issuing desks (Admin, HR, IT, Management) and who issues for each. |
-| **13 Bots & tools → Office holidays** | This year's holidays. Nib, scheduled bot jobs and hot-desk booking skip them. |
+| **13 Bots & tools → Office holidays** | 2026 is built in from the circular. Next year: give the new circular's PDF to Nib (or **Read a holiday circular…**) and register it. Nib, scheduled bot jobs and hot-desk booking skip the days off and work on compensatory working days ([`HOLIDAYS.md`](HOLIDAYS.md)). |
 | **14 Nib & day sheets** | 01 the activity givers (**Add the department heads** fills it); 02 who receives the management register; 03 times and workdays (defaults 09:45, 18:00, 19:00, 21:00, Mon–Sat); 04 the job codes, one per line (`P-12 Refinery revamp`), and whether day sheets are private (default) or open. Then **Send me a register now** to see it before the first evening. |
 | **08 Policies** | Read the defaults once: the edit window, upload limit, call recording, meetings, PC-to-PC fallback. |
 | **05 Guests**, **06 Compliance** | Who may invite guests; retention and legal holds, if the office has rules for them. |

@@ -18,7 +18,7 @@ import { BOT_TEMPLATES } from '@dex/core/botmaker';
 import { officeTime } from '@dex/core/botjobs';
 import { Hub } from '../src/hub.ts';
 import { office, me, cleanups, until } from './office.ts';
-import { buildPdf, at } from './pdfs.ts';
+import { buildPdf, circularPdf } from './pdfs.ts';
 import { HubClient as Client } from '@dex/core/client';
 import { createIdentity } from '@dex/core';
 
@@ -29,20 +29,6 @@ const waitFor = async <T>(fn: () => Promise<T | undefined | null | false>, ms = 
 };
 const REAL = fs.readFileSync(path.join(import.meta.dirname, '../../../packages/core/test/fixtures/holiday-circular-2026.txt'), 'utf8').split('\n');
 
-/** The circular's text drawn as a PDF: three columns of cells a page, 26 lines a page. */
-function circularPdf(lines: string[]): Buffer {
-  const pages: string[] = [];
-  for (let i = 0; i < lines.length; i += 26) {
-    const ops: string[] = [];
-    lines.slice(i, i + 26).forEach((l, j) => {
-      const cells = l.replace(/’/g, "'").split(/\s{3,}/).filter(Boolean);
-      const xs = cells.length === 4 ? [50, 120, 250, 400] : [50, 400];
-      cells.forEach((c, k) => ops.push(at(xs[Math.min(k, xs.length - 1)], 560 - j * 20, c, 10)));
-    });
-    pages.push(ops.join('\n'));
-  }
-  return buildPdf({ pages: pages.map((content) => ({ content, compress: true })) });
-}
 const scanPdf = () => buildPdf({ pages: [{ content: '0.5 g 40 40 500 500 re f 0 0 m 300 300 l S' }] });
 
 function upload(hub: Hub, c: HubClient, name: string, data: Buffer): Promise<FileInfo> {
