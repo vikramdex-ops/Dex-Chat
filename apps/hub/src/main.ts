@@ -1,7 +1,8 @@
 // Dexterity Connect Hub — entry point. Runs as a Windows service on the office's always-on PC.
 //
 // Settings (all optional, via environment variables):
-//   DEXCONNECT_DATA_DIR   where the database, certificate and files live (default: ./hub-data beside the program)
+//   DEXCONNECT_DATA_DIR   where the database, certificate and files live (default: the folder named in
+//                         hub-data-location.txt beside the program, else ./hub-data beside it; see data-dir.ts)
 //   DEXCONNECT_HUB_NAME   name shown to colleagues on first start
 //   DEXCONNECT_PORT       TCP port for the app connection (default 47900)
 //   DEXCONNECT_LOG_LEVEL  error | warn | info | debug (default info)
@@ -9,10 +10,10 @@
 // Restoring a backup (the hub service stopped first; see docs/BACKUP.md):
 //   DexterityConnectHub.exe --restore "E:\DexConnectBackup"            the newest copy there
 //   DexterityConnectHub.exe --restore "E:\DexConnectBackup\snapshots\2026-11-15_0200"   that copy
-import path from 'node:path';
 import { DEFAULT_HUB_PORT } from '@dex/core';
 import { Hub } from './hub.ts';
 import { restoreBackup } from './backup.ts';
+import { resolveDataDir } from './data-dir.ts';
 
 // node:sqlite prints an "experimental" notice on every start; it is stable for our use.
 process.removeAllListeners('warning');
@@ -28,8 +29,7 @@ function log(level: Level, msg: string, extra?: Record<string, unknown>): void {
 }
 
 // Packaged as a single executable, process.execPath is the .exe; in development it is node.
-const baseDir = process.env.DEXCONNECT_DATA_DIR
-  ?? path.join(path.basename(process.execPath).toLowerCase().startsWith('node') ? process.cwd() : path.dirname(process.execPath), 'hub-data');
+const baseDir = resolveDataDir({ env: process.env, execPath: process.execPath, cwd: process.cwd() });
 
 const restoreAt = process.argv.indexOf('--restore');
 if (restoreAt >= 0) {

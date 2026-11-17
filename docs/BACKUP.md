@@ -68,9 +68,12 @@ old.
 Use this after the hub's disk failed, the database was damaged, or to move the hub to a new PC.
 
 1. **Stop the hub service.** Services → Dexterity Connect Hub → Stop, or in an administrator Command
-   Prompt in the hub's folder: `DexterityConnectHubService.exe stop`. The restore refuses to run
+   Prompt in the hub's program folder (`C:\Program Files\Dexterity Connect Hub` after the setup, the
+   zip's folder otherwise): `DexterityConnectHubService.exe stop`. The restore refuses to run
    while the hub is running; it never stops the service itself.
-2. **Run the restore**, in the hub's folder (Command Prompt as administrator):
+2. **Run the restore**, in the hub's program folder (Command Prompt as administrator). It restores
+   into the hub's data folder wherever that is (`hub-data-location.txt` beside the program names it;
+   without that file, `hub-data` beside the program):
 
    ```
    DexterityConnectHub.exe --restore "E:\DexConnectBackup"
@@ -85,8 +88,8 @@ What the restore does:
 
 - checks the copy first (SQLite's integrity check, and that every file it needs is in the backup
   folder), and changes nothing if it is not sound;
-- moves the current data folder aside to `hub-data-before-restore-<date>-<time>` (it never deletes
-  it: remove it yourself once the hub works);
+- moves the current data folder aside to `hub-data-before-restore-<date>-<time>`, beside it (it
+  never deletes it: remove it yourself once the hub works);
 - puts the copy's database, certificate and files in `hub-data`, and writes `restored-from.txt`.
 
 Everything since the backup was taken is not in the restored hub: messages sent after it, files
@@ -94,8 +97,8 @@ shared after it. Devices approved after it have to be approved again.
 
 ### On a new PC
 
-Install the hub from the hub zip as usual (`Install-Hub.cmd`), stop the service, run the restore,
-start the service. Give the new PC the old PC's address if you can (the DHCP reservation); apps find
+Install the hub with `DexterityConnectHub-Setup.exe` (or from the hub zip with `Install-Hub.cmd`),
+stop the service, run the restore, start the service. Give the new PC the old PC's address if you can (the DHCP reservation); apps find
 the hub on the network either way, and trust it because its certificate is restored.
 
 ### From a source checkout

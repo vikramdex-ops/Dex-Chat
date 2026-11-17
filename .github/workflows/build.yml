@@ -2,8 +2,10 @@ name: build
 
 # Run by hand only (Actions → build → Run workflow): releases are normally built on an office PC
 # with scripts/release/Build-Release.cmd (docs/RELEASING.md), so pushes start nothing here.
-# When run: tests, then the Windows installer, macOS DMGs, Android APK and hub package, into a draft
-# release in the public repository; the last job writes the update feed and publishes.
+# When run: tests, then the Windows installer, macOS DMGs, Android APK and hub package (zip and
+# DexterityConnectHub-Setup.exe), into a draft release in the public repository; the hub setup is
+# installed, repaired, upgraded and removed on a clean Windows runner; the last job writes the
+# update feed and publishes.
 # main = stable channel (everyone), other branches = beta (opt-in).
 on:
   workflow_dispatch:
@@ -138,10 +140,57 @@ jobs:
           Copy-Item apps/hub/packaging/* $out
           Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe" -OutFile "$out/DexterityConnectHubService.exe"
           Compress-Archive -Path $out -DestinationPath "hub-package/DexterityConnectHub-$env:VERSION-win-x64.zip"
+      - name: Build the hub setup (NSIS)
+        shell: pwsh
+        run: |
+          # NSIS is on the Windows runner image; install it if a newer image dropped it
+          $have = (Get-Command makensis -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe") -or (Test-Path "$env:ProgramFiles\NSIS\makensis.exe")
+          if (-not $have) { choco install nsis -y --no-progress; if ($LASTEXITCODE -ne 0) { throw 'could not install NSIS' } }
+          node apps/hub/scripts/build-setup.mjs --stage hub-package/DexterityConnectHub --version $env:VERSION --out "hub-package/DexterityConnectHub-Setup-$env:VERSION.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'the hub setup did not build' }
+      - name: Keep the hub files for the install test
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-package
+          path: |
+            hub-package/*.zip
+            hub-package/*.exe
+          retention-days: 7
       - name: Upload to the release
         if: needs.prepare.outputs.publish == 'true'
         shell: bash
-        run: gh release upload "v$VERSION" hub-package/*.zip --repo "$PUBLIC_REPO" --clobber
+        run: gh release upload "v$VERSION" hub-package/*.zip hub-package/DexterityConnectHub-Setup-*.exe --repo "$PUBLIC_REPO" --clobber
+
+  # The real test of the hub setup: install it silently on a clean Windows runner, check the service,
+  # firewall rules and /health, run it again (repair), uninstall and reinstall, and upgrade an install
+  # made the old way from the zip. A broken hub setup must not ship, so publishing waits for this.
+  hub-smoke:
+    name: hub setup (install test)
+    needs: hub
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hub-package
+          path: hub-package
+      - name: Install, repair, upgrade and remove the hub
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem hub-package -Filter 'DexterityConnectHub-Setup-*.exe' | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem hub-package -Filter 'DexterityConnectHub-*-win-x64.zip' | Select-Object -First 1).FullName
+          ./apps/hub/installer/smoke-test.ps1 -Setup $setup -Zip $zip
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-smoke-logs
+          path: |
+            C:/ProgramData/Dexterity Connect Hub/setup.log
+            C:/Program Files/Dexterity Connect Hub/logs/
+            ${{ runner.temp }}/hub-smoke/**/logs/
+          if-no-files-found: ignore
 
   android:
     name: android (apk)
@@ -203,7 +252,7 @@ jobs:
 
   publish:
     name: publish (${{ needs.prepare.outputs.channel }})
-    needs: [prepare, desktop, hub, android]
+    needs: [prepare, desktop, hub, hub-smoke, android]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     concurrency:
@@ -237,6 +286,7 @@ jobs:
           for f in release-files/*; do
             n=$(basename "$f")
             case "$n" in
+              DexterityConnectHub-Setup*.exe) a=DexterityConnectHub-Setup.exe ;;
               *Setup*.exe) a=DexterityConnect-Setup.exe ;;
               *mac-arm64.dmg) a=DexterityConnect-mac-arm64.dmg ;;
               *mac-x64.dmg) a=DexterityConnect-mac-x64.dmg ;;
@@ -261,11 +311,12 @@ jobs:
             for f in release-files/*; do
               n=$(basename "$f")
               case "$n" in
+                DexterityConnectHub-Setup*.exe) d="Office hub: setup for the server PC (Windows 10/11, 64-bit)" ;;
                 *Setup*.exe) d="Windows 10/11 app" ;;
                 *mac-arm64.dmg) d="macOS, Apple Silicon" ;;
                 *mac-x64.dmg) d="macOS, Intel" ;;
                 *.apk) d="Android phones" ;;
-                *Hub*.zip) d="Office hub (Windows service)" ;;
+                *Hub*.zip) d="Office hub as a zip (Install-Hub.cmd), if the setup cannot be used" ;;
                 *) continue ;;
               esac
               echo "| \`$n\` | $d |"
@@ -297,7 +348,7 @@ jobs:
   # A build that failed half-way leaves an unpublished draft behind: remove it.
   cleanup:
     name: remove failed draft
-    needs: [prepare, desktop, hub, android, publish]
+    needs: [prepare, desktop, hub, hub-smoke, android, publish]
     if: (failure() || cancelled()) && needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     env:

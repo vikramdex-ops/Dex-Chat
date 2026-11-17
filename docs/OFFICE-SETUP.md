@@ -12,7 +12,7 @@ Follow this from top to bottom once. Each part says where to do it, and how to c
 
 | Part | Where | Time |
 | --- | --- | --- |
-| A. The server (office hub) | The server PC | 20 min |
+| A. The server (office hub) | The server PC | 10 min |
 | B. Your app, and becoming the owner | Your own PC | 10 min |
 | C. Configure the office | Your PC, in the app's Control room | 45 min |
 | D. Working from outside, and Dexterity Meet links | Cloudflare website + your PC | 45 min |
@@ -27,7 +27,7 @@ Follow this from top to bottom once. Each part says where to do it, and how to c
 - [ ] **An office email address** that is not anyone's personal one (for example an IT mailbox). You will make the
       Cloudflare account with it, so that whoever looks after the system later can sign in.
 - [ ] **The two download links** (they always give the newest version):
-  - Office hub (server): <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-win-x64.zip>
+  - Office hub (server): <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe>
   - App for Windows (everyone): <https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnect-Setup.exe>
   - The same links are on the landing page: <https://dexterity-admin.github.io/dexterity-connect/#start>
 
@@ -41,41 +41,46 @@ Follow this from top to bottom once. Each part says where to do it, and how to c
 
 *On the server PC, signed in to Windows as a user with administrator rights.*
 
-**A1. Keep the PC awake.**
-
-1. Open **Settings → System → Power** (on Windows 10: **Settings → System → Power & sleep**).
-2. Under **Screen and sleep**, set **When plugged in, put my device to sleep after** to **Never**. The screen may
-   turn off; the PC must not sleep.
-
-**A2. Give it a fixed address.** Ask whoever manages the office router to make a **DHCP reservation** for this
+**A1. Give it a fixed address.** Ask whoever manages the office router to make a **DHCP reservation** for this
 PC, so its IP address never changes (for example `192.168.1.20`). Write the address down. The apps find the
 hub on their own, but a fixed address makes it dependable and lets people type it in if they ever need to.
 
-**A3. Download and unpack the hub.**
+**A2. Install the hub.**
 
-1. Download the **Office hub** zip (link above).
-2. Right-click it, choose **Extract All…**, and extract it to **`D:\`** (any drive except C: is fine). You get
-   **`D:\DexterityConnectHub`**. Keep this folder where it is: the hub runs from it, and its data is kept in
-   `hub-data` inside it.
-
-**A4. Install the hub.**
-
-1. In `D:\DexterityConnectHub`, double-click **`Install-Hub.cmd`**.
+1. Download the **Office hub** setup (link above) and double-click **`DexterityConnectHub-Setup.exe`**.
+   - If Windows says **"Windows protected your PC"**, click **More info → Run anyway** (the setup is not
+     code-signed yet).
 2. Click **Yes** when Windows asks for permission.
-3. It installs the hub as a Windows service that starts with the PC and restarts itself. It also opens the ports
-   it needs in Windows Firewall:
+3. Click **Next** through the pages. The defaults are right for most offices:
+   - programs in `C:\Program Files\Dexterity Connect Hub`;
+   - data in `C:\ProgramData\Dexterity Connect Hub\hub-data`. If drive C: is small, choose a folder on
+     another disk of this PC (not a network share). Messages and shared files are kept here.
+   - **Keep this PC awake while plugged in**: leave it ticked. The screen may still turn off; the PC must not
+     sleep.
+4. Setup checks the PC (64-bit Windows 10 or 11, free space, that nothing else uses the hub's ports), installs
+   the hub as a Windows service that starts with the PC and restarts itself, opens the ports it needs in
+   Windows Firewall, starts the hub and waits until it answers:
    - TCP 47900 for the apps;
    - UDP 47901 for finding the hub;
    - 47910–47999 for meetings of more than 8 people.
 
-**Check it worked:** press **Win + R**, type `services.msc`, press Enter. **Dexterity Connect Hub** shows
-**Running**.
+**Check it worked:** the last page says **The hub is running**, with this PC's address. If something stopped
+it, setup says what, and the details are in `C:\ProgramData\Dexterity Connect Hub\setup.log`.
 
-**A5. Only if your office network is split.** If PCs are on different network segments (VLANs, a separate staff
+Running the setup again is always safe: it repairs or upgrades the hub and never touches its data. To upgrade the
+hub later, download and run the newest setup the same way. A hub installed earlier from the zip
+(`Install-Hub.cmd`) is found and upgraded where it is, with its data.
+
+**No setup allowed on the server?** The zip
+(<https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-win-x64.zip>)
+does the same: extract it to where the hub should live (for example `D:\DexterityConnectHub`; its data is kept
+in `hub-data` inside it) and double-click **`Install-Hub.cmd`**.
+
+**A3. Only if your office network is split.** If PCs are on different network segments (VLANs, a separate staff
 Wi-Fi), ask whoever manages the network to let those PCs reach the server PC on **TCP 47900**, **UDP 47901**
 and **TCP/UDP 47910–47999**. On a simple office network there is nothing to do.
 
-**A6. Optional: live-streaming webinars to YouTube.** This needs ffmpeg on the server PC. Skip it if you will not
+**A4. Optional: live-streaming webinars to YouTube.** This needs ffmpeg on the server PC. Skip it if you will not
 stream webinars.
 
 1. Click Start and type `PowerShell`. Right-click **Windows PowerShell** and choose **Run as administrator**.
@@ -99,7 +104,7 @@ stream webinars.
 2. Dexterity Connect opens on **Welcome to Dexterity Connect**:
    - **Your name, as colleagues will see it**: type your name.
    - **Office hub**: pick the hub shown with **Secure**. If none appears, click **Enter the hub address yourself**
-     and type the server's address from A2, for example `192.168.1.20`.
+     and type the server's address from A1, for example `192.168.1.20`.
    - Click **Request access**.
 3. You are the first person, so you become the **owner** at once.
 
@@ -376,8 +381,8 @@ Owners and admins can both configure everything. Only owners choose who the owne
 | What you see | What to do |
 | --- | --- |
 | "Windows protected your PC" when installing | **More info → Run anyway**. The installers are not code-signed yet. |
-| The app keeps looking for the office hub | Check the PC is on the office network, not guest Wi-Fi. Click **Enter the hub address yourself** and type the server's address (A2). Check `services.msc` on the server. |
-| A PC on another floor or Wi-Fi cannot find the hub | Part A5: the network must let it reach the server's ports. |
+| The app keeps looking for the office hub | Check the PC is on the office network, not guest Wi-Fi. Click **Enter the hub address yourself** and type the server's address (A1). Check `services.msc` on the server. |
+| A PC on another floor or Wi-Fi cannot find the hub | Part A3: the network must let it reach the server's ports. |
 | `Deploy-Gateway.cmd` says *Install Node.js 22* | Do D3 step 1, then run it again. |
 | It fails at the meeting site with a Pages message | The token is missing **Account · Cloudflare Pages · Edit** (D2 step 3). Edit the token in Cloudflare, add it, run again. |
 | *Cloudflare would not create the Pages project* | The name is taken: run `Deploy-Gateway.cmd -SiteName dexmeet-office`. |
