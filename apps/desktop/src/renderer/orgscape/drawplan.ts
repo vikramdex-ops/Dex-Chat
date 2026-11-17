@@ -13,6 +13,7 @@ import type { PlanModel, PlanSeatView } from './plan.ts';
 import { K } from './plan.ts';
 import type { Ink, Scene } from './render.ts';
 import { caps, cloud, drawOffsite, drawSpots, drawWalk, fit, intersects, introAlpha, northArrow, rrect, sheetBackground, tag, tile } from './render.ts';
+import { initials } from '../ui.tsx';
 
 /** What the plan adds to the scene: modes, overlays and the editor's state. */
 export interface PlanScene {
@@ -197,6 +198,11 @@ export function drawPlanFloor(ctx: CanvasRenderingContext2D, f: Floor, s: Scene,
   }
   ctx.globalAlpha = 1;
   drawOffsite(ctx, f, s, cam);
+  // names from the office drawing whose people have not joined yet: on their seat like anyone away
+  for (const sv of m.seats) {
+    if (sv.holder?.kind !== 'named' || !intersects(sv.x - 40, sv.y - 40, 80, 80, v)) continue;
+    drawNamed(ctx, sv.holder.name, sv.x, sv.y, 30, ink, z);
+  }
   drawWalk(ctx, s, walk, px);
   drawSpots(ctx, f, s, cam, 30);
   // the drag: a ghost under the pointer, and the seat it would land on
@@ -263,6 +269,22 @@ function drawSeat(ctx: CanvasRenderingContext2D, m: PlanModel, sv: PlanSeatView,
     }
   }
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+/** A name from the drawing on its seat: a tile the way an absent person's is drawn, with the name under it. */
+function drawNamed(ctx: CanvasRenderingContext2D, name: string, cx: number, cy: number, size: number, ink: Ink, z: number): void {
+  const x = cx - size / 2, y = cy - size / 2;
+  ctx.beginPath(); rrect(ctx, x, y, size, size, size * 0.3);
+  ctx.fillStyle = ink.paper; ctx.fill(); ctx.strokeStyle = ink.text3; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.fillStyle = ink.text2; ctx.font = `600 ${Math.round(size * 0.4)}px ${ink.display}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(initials(name), cx, cy + 0.5);
+  ctx.textBaseline = 'alphabetic';
+  if (z > 0.55) {
+    ctx.font = `600 10.5px ${ink.body}`; ctx.fillStyle = ink.text;
+    ctx.fillText(fit(ctx, name, 80), cx, cy + size / 2 + 13);
+  }
+  ctx.textAlign = 'left';
 }
 
 const podDesk = new WeakMap<object, Set<string>>();

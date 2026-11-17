@@ -116,12 +116,15 @@ export async function seedOffice(hub: any, owner: any, people: P[], skip: string
   }
   return { depts, ids, async profiles(extra: Record<string, string> = {}) {
     for (const [u, id] of Object.entries(extra)) ids.set(u, id);
+    // people who already took their seat from the office drawing (Vikram, Manoj…) keep it: their
+    // Seat field comes from the floor plan, so their old free-text seat is left out
+    const onPlan = (id: string) => !!hub.store.userById(id)?.profile.seatId;
     for (const p of people) {
       const id = ids.get(p.u);
       if (!id) continue;
       await owner.request('admin.org.setProfile', {
         userId: id, title: p.title, departmentId: depts.get(p.dept), managerId: p.mgr ? ids.get(p.mgr) ?? null : null,
-        location: p.seat ?? null, extension: p.ext ?? null, joinedOn: p.joined ?? null, birthday: p.bday ?? null,
+        ...(onPlan(id) ? {} : { location: p.seat ?? null }), extension: p.ext ?? null, joinedOn: p.joined ?? null, birthday: p.bday ?? null,
       });
     }
     // department heads

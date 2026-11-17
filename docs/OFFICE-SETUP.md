@@ -180,15 +180,20 @@ recorded).
 
 **C7. Seating (the real floor plan of Level 01 is already in the app).**
 
-1. In the app, open **Directory → Org chart → Floor → Arrange → Import**.
-2. Click **Open a CSV** and choose `seat-names-from-drawing.csv` (the seat list read from your drawing, sent to you
-   separately; it is not kept in the code because it has people's names).
-3. Click **Match names**. Full names are matched for certain. For first names only, tick **Use line …** where the
-   suggestion is right.
-4. Open **Move plan** and click **Apply now**.
-5. In **Layout**, rename **Room A (unlabelled)** and check that the two MD cabins are the right way round.
+The 40 names written on your seating drawing are already on their seats; there is nothing to import. Each
+person takes their seat when they join: at once when it is certainly them (their full name, or a first name
+nobody else has), otherwise it waits for you.
 
-**Check it worked:** the floor plan shows people at their seats; **17 Audit log** lists every change you made.
+1. In the app, open **Directory → Org chart → Floor → Arrange**. The number on **Arrange** is how many names
+   wait.
+2. Under **Waiting to be matched**, check each suggestion (pick the right person where there are two) and click
+   **Confirm**.
+3. In **Layout**, rename **Room A (unlabelled)** and check that the two MD cabins are the right way round.
+
+After that, seat changes are real moves: use a **Move plan**.
+
+**Check it worked:** the floor plan shows the names on their seats, and people at theirs as they join;
+**17 Audit log** lists each seat taken (`seating.claim`) and every change you made.
 
 ---
 

@@ -463,7 +463,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     const rev = sv.revisions[0];
     const c = renderPlan({
       view: sv, people, users, ink, labels, words, deptName, deptColor, wash, office: tr(`Seating plan · ${sv.plan.name}`), today,
-      tb: { title: tr('Drawing'), drawing: tr('Seats'), drgNo: tr('Drg no.'), rev: tr('Rev'), date: tr('Date'), scale: rev ? new Date(rev.at).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : '', seats: tr(`${Object.values(sv.holders).filter((h) => h.kind === 'person').length} of ${sv.plan.seats.length} held`) },
+      tb: { title: tr('Drawing'), drawing: tr('Seats'), drgNo: tr('Drg no.'), rev: tr('Rev'), date: tr('Date'), scale: rev ? new Date(rev.at).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : '', seats: tr(`${Object.values(sv.holders).filter((h) => h.kind === 'person' || h.kind === 'named').length} of ${sv.plan.seats.length} held`) },
     });
     const name = `${sv.plan.drawingNo}-Rev${rev?.rev ?? 'A'}.${format}`;
     download(format === 'pdf' ? await toPdf(c) : await toPng(c), name);
@@ -514,12 +514,20 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     return people.filter((u) => [u.displayName, u.title ?? '', deptName(u.profile.departmentId ?? ''), u.profile.location ?? '', u.profile.extension ?? '']
       .some((f) => f.toLowerCase().includes(q))).sort((a, b) => Number(!a.displayName.toLowerCase().startsWith(q)) - Number(!b.displayName.toLowerCase().startsWith(q)) || a.displayName.localeCompare(b.displayName)).slice(0, 8);
   }, [query, people, deptName]);
-  /** Seats whose ID matches what is typed (on the real plan): "W-A1" finds W-A1, W-A10… */
+  /**
+   * Seats whose ID matches what is typed (on the real plan): "W-A1" finds W-A1, W-A10…; and seats
+   * held by a name from the office drawing whose person has not joined yet ("Shar" finds Sharada).
+   */
   const seatResults = useMemo(() => {
+    if (!plan) return [];
+    const typed = query.trim().toLowerCase();
+    const byName = typed.length < 2 ? [] : plan.seats.filter((x) => x.holder?.kind === 'named' && (x.holder.name.toLowerCase().startsWith(typed) || x.holder.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(typed))))
+      .sort((a, b) => (a.holder?.kind === 'named' && b.holder?.kind === 'named' ? a.holder.name.localeCompare(b.holder.name) : 0)).slice(0, 6).map((x) => x.seat.id);
     const q = query.trim().toUpperCase().replace(/\s+/g, '');
-    if (!plan || q.length < 2 || !/^[A-Z]+[-A-Z0-9]*$/.test(q)) return [];
+    if (q.length < 2 || !/^[A-Z]+[-A-Z0-9]*$/.test(q)) return byName;
     const key = (x: string) => x.replace(/-/g, '');
-    return plan.plan.seats.filter((x) => key(x.id).startsWith(key(q))).sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })).slice(0, 4).map((x) => x.id);
+    const ids = plan.plan.seats.filter((x) => key(x.id).startsWith(key(q))).sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })).slice(0, 4).map((x) => x.id);
+    return [...byName, ...ids.filter((x) => !byName.includes(x))].slice(0, 8);
   }, [query, plan]);
   const pickSeat = (seatId: string) => { setSelected(null); setSeatSel(seatId); flyToSeat(seatId); setAnnounce(seatTip(seatId)); };
   const refOf = (id: string) => {
@@ -558,7 +566,7 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
     const sv2 = m?.byId.get(seatId);
     if (!m || !sv2) return seatId;
     const zone = m.plan.zones.find((z) => z.id === sv2.seat.zone)?.name ?? '';
-    const who = sv2.occupant ? users.get(sv2.occupant)?.displayName ?? '' : sv2.holder?.kind === 'reserved' ? sv2.holder.label : sv2.holder?.kind === 'hot' ? tr('Hot desk') : tr('Free');
+    const who = sv2.occupant ? users.get(sv2.occupant)?.displayName ?? '' : sv2.holder?.kind === 'reserved' ? sv2.holder.label : sv2.holder?.kind === 'named' ? sv2.holder.name : sv2.holder?.kind === 'hot' ? tr('Hot desk') : tr('Free');
     const state = sv2.occupant ? (sv2.away ? tr('Away today') : sentence(tr(presenceText(sv2.occupant, presence.get(sv2.occupant) ?? 'off')))) : '';
     return [seatId, zone, who, state].filter(Boolean).join(' · ');
   };
@@ -942,7 +950,9 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                   <li key={`seat-${sid}`} id={`os-r-seat-${sid}`} role="option" aria-selected={i === hit} className={i === hit ? 'on' : ''}
                     onMouseDown={(e) => { e.preventDefault(); pickSeat(sid); setSearching(false); }}>
                     <span className="seat-badge sm mono" aria-hidden="true">{sid}</span>
-                    <span className="os-r-who"><b className="mono">{tr(`Seat ${sid}`)}</b><span className="faint" translate="no">{who}</span></span>
+                    {q?.holder?.kind === 'named'
+                      ? <span className="os-r-who"><b translate="no">{q.holder.name}</b><span className="faint">{tr(`Seat ${sid} · from the office drawing`)}</span></span>
+                      : <span className="os-r-who"><b className="mono">{tr(`Seat ${sid}`)}</b><span className="faint" translate="no">{who}</span></span>}
                   </li>
                 );
               })}
@@ -967,8 +977,8 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                 <Icon name="history" size={15} /><span>Revisions</span>
               </button>
               {canEdit && (
-                <button type="button" className={`os-tool${arrange ? ' on' : ''}`} aria-pressed={!!arrange} onClick={() => { if (arrange) { setArrange(null); setPreview(null); } else { setArrange(draft?.changes.length ? 'moves' : 'people'); setRevsOpen(false); setSchedule(false); setCompare(null); } }}>
-                  <Icon name="edit" size={15} /><span>Arrange</span>
+                <button type="button" className={`os-tool${arrange ? ' on' : ''}`} aria-pressed={!!arrange} onClick={() => { if (arrange) { setArrange(null); setPreview(null); } else { setArrange(!sv?.waiting?.length && draft?.changes.length ? 'moves' : 'people'); setRevsOpen(false); setSchedule(false); setCompare(null); } }}>
+                  <Icon name="edit" size={15} /><span>Arrange</span>{(sv?.waiting?.length ?? 0) > 0 && <span className="seat-count mono" aria-label={tr(`${sv!.waiting.length} waiting to be matched`)}>{sv!.waiting.length}</span>}
                 </button>
               )}
             </>
@@ -1042,7 +1052,8 @@ export function Orgscape({ people, users, departments, meId, focus, live, onOpen
                   <button type="button" className="icon-btn" aria-label="Close" onClick={() => { setSeatSel(null); stage.current?.focus(); }}><Icon name="x" size={15} /></button>
                 </div>
                 <dl className="os-co-cells">
-                  <div><dt className="tb-k">Held by</dt><dd>{h?.kind === 'person' ? <span translate="no">{users.get(h.userId)?.displayName ?? ''}</span> : h?.kind === 'reserved' ? <span translate="no">{h.label}</span> : h?.kind === 'hot' ? tr('Hot desk') : tr('Nobody: free')}</dd></div>
+                  <div><dt className="tb-k">Held by</dt><dd>{h?.kind === 'person' ? <span translate="no">{users.get(h.userId)?.displayName ?? ''}</span> : h?.kind === 'reserved' ? <span translate="no">{h.label}</span> : h?.kind === 'named' ? <span translate="no">{h.name}</span> : h?.kind === 'hot' ? tr('Hot desk') : tr('Nobody: free')}</dd></div>
+                  {h?.kind === 'named' && <div className="seat-named-note"><dt className="tb-k">Note</dt><dd>On the office drawing. Not joined yet: the seat becomes theirs when they do.</dd></div>}
                   {h?.kind === 'person' && q.away && <div><dt className="tb-k">Today</dt><dd>{modeOf(h.userId) === 'home' ? 'Working from home' : modeOf(h.userId) === 'site' ? 'On site' : 'At a client'}</dd></div>}
                   {h?.kind === 'hot' && <div><dt className="tb-k">Today</dt><dd>{q.booked ? <span translate="no">{users.get(q.booked)?.displayName ?? ''}</span> : tr('Not booked')}</dd></div>}
                   {(h?.kind === 'reserved' || h?.kind === 'hot') && h.departmentId && <div><dt className="tb-k">Dept</dt><dd translate="no">{deptName(h.departmentId)}</dd></div>}

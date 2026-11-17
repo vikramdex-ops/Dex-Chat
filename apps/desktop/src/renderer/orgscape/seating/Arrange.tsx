@@ -45,6 +45,7 @@ export default function Arrange({ view, people, users, departments, tab, onTab, 
         ))}
       </div>
       <div className="seat-body" role="tabpanel">
+        {tab === 'people' && <Waiting view={view} users={users} onFocusSeat={onFocusSeat} />}
         {tab === 'people' && <PeopleTab view={view} people={people} departments={departments} onDragStart={onDragStart} onFocusSeat={onFocusSeat} />}
         {tab === 'moves' && <MovesTab view={view} users={users} onFocusSeat={onFocusSeat} />}
         {tab === 'team' && <TeamTab view={view} people={people} users={users} departments={departments} onPreview={onPreview} />}
@@ -58,6 +59,57 @@ export default function Arrange({ view, people, users, departments, tab, onTab, 
 function changeLine(c: SeatChange, users: Map<string, PublicUser>): string {
   const who = c.userId ? users.get(c.userId)?.displayName ?? '' : c.label ?? '';
   return `${who}`;
+}
+
+// ------------------------------------------------------------------ names from the drawing to confirm
+/**
+ * Names from the office drawing that someone in the directory may be, but not certainly (a first
+ * name two people share, a name that only starts theirs). One click confirms who it is: they take
+ * the seat and are told, like anyone the hub matched itself.
+ */
+function Waiting({ view, users, onFocusSeat }: { view: SeatingView; users: Map<string, PublicUser>; onFocusSeat: (s: string) => void }) {
+  const toast = useToast();
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const waiting = view.waiting ?? [];
+  if (!waiting.length) return null;
+  const confirm = async (seatId: string, userId: string) => {
+    const name = users.get(userId)?.displayName ?? '';
+    setBusy(true);
+    try {
+      await window.dex.request('seating.claim', { seatId, userId });
+      toast(tr(`${name} now holds ${seatId}`));
+      await reloadSeating();
+    } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
+  };
+  return (
+    <section className="seat-waiting" aria-labelledby="seat-waiting-h">
+      <h3 id="seat-waiting-h" className="label">Waiting to be matched <span className="seat-count mono">{waiting.length}</span></h3>
+      <p className="faint seat-hint">Names from the office drawing that someone in the directory may be. Confirm who it is: they take the seat and are told.</p>
+      <ul className="seat-people seat-wait-list" aria-label="Waiting to be matched">
+        {waiting.map((w) => {
+          const chosen = pick[w.seatId] && w.suggestions.some((x) => x.userId === pick[w.seatId]) ? pick[w.seatId] : w.suggestions[0].userId;
+          const who = users.get(chosen)?.displayName ?? '';
+          return (
+            <li key={w.seatId} className="seat-wait">
+              <button type="button" className="chip mono" onClick={() => onFocusSeat(w.seatId)} aria-label={tr(`Show seat ${w.seatId}`)}>{w.seatId}</button>
+              <span className="seat-who"><b translate="no">{w.name}</b><span className="faint">On the drawing</span></span>
+              <button type="button" className="btn sm primary" disabled={busy} onClick={() => void confirm(w.seatId, chosen)} aria-label={tr(`Confirm ${who} for ${w.seatId}`)}>Confirm</button>
+              <span className="seat-wait-who">
+                {w.suggestions.length === 1
+                  ? <><span className="faint">Suggested</span> <b translate="no">{who}</b></>
+                  : (
+                    <select className="input" value={chosen} onChange={(e) => setPick((p) => ({ ...p, [w.seatId]: e.target.value }))} aria-label={tr(`Who is ${w.name} on the drawing?`)}>
+                      {w.suggestions.map((x) => <option key={x.userId} value={x.userId} translate="no">{users.get(x.userId)?.displayName ?? ''}</option>)}
+                    </select>
+                  )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 // ------------------------------------------------------------------ people to drag

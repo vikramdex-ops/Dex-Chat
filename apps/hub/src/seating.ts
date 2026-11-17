@@ -9,14 +9,15 @@
 // The clock is injected (now(), setClock) so effective dates can be tested and walked through.
 import type { DatabaseSync } from 'node:sqlite';
 import {
-  SEATING_LIMITS, applyMoves, checkMoves, diffHolders, effectiveMoves, flowMoves, isSeatId, isYmd, matchName, natural, nextRevLetter, parseSeatList,
-  sameHolder, seatFromText, seatLabel, seatOfPeople, ulid, validatePlan, ymd,
+  SEATING_LIMITS, applyMoves, checkMoves, diffHolders, drawingClaims, drawingNameFits, effectiveMoves, flowMoves, isSeatId, isYmd, matchName, natural, nextRevLetter,
+  parseSeatList, sameHolder, seatFromText, seatLabel, seatOfPeople, ulid, validatePlan, ymd,
 } from '@dex/core';
 import type {
   FloorPlan, Holders, ImportRowMatch, MovePlanStatus, MovePlanView, Ops, PublicUser, SeatChange, SeatHolder, SeatMove, SeatNotice, SeatRevision, SeatingView,
 } from '@dex/core';
 import type { Store } from './store.ts';
 import seed from '../seed/floor-l01.json' with { type: 'json' };
+import seedNames from '../seed/floor-l01-names.json' with { type: 'json' };
 
 export class SeatingError extends Error {}
 
@@ -94,6 +95,16 @@ interface RevRow { rev: string; n: number; kind: SeatRevision['kind']; at: numbe
 /** Role names on the drawing's half-cabins: the seed reserves those seats for the role. */
 const SEED_RESERVED: Record<string, string> = { 'HC-04': 'Knowledge HUB', 'HC-05': '3D-Manager', 'HC-07': 'E&I Manager', 'HC-08': 'Civil-Manager', 'HC-10': 'Piping-Manager' };
 
+/**
+ * The names written on the drawing's seats (seed/floor-l01-names.json): each one holds its seat,
+ * by name, until that person joins and takes it (docs/SEATING.md, "Names from the drawing").
+ */
+const DRAWING_NAMES: Array<{ seatId: string; name: string }> = (seedNames as { seats: Array<{ seatId: string; name: string }> }).seats
+  .filter((x) => isSeatId(x.seatId) && typeof x.name === 'string' && x.name.trim()).map((x) => ({ seatId: x.seatId, name: x.name.trim().slice(0, SEATING_LIMITS.label) }));
+const DRAWING_SOURCE = (seedNames as { source: string }).source;
+/** Set once the drawing's names have been put on the plan, so they are never put back. */
+const NAMES_FLAG = 'seating.drawingNames';
+
 const parse = <T>(s: string | null | undefined, d: T): T => { try { return s ? JSON.parse(s) as T : d; } catch { return d; } };
 const clean = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max) : '');
 const dayName = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
@@ -107,7 +118,7 @@ export interface SeatingDeps {
   tell: (userId: string, key: string, text: string) => void;
   /** A person's details changed (their seat field). */
   userChanged: (userId: string) => void;
-  audit: (actor: string, action: string, target: string | null, detail?: Record<string, unknown>) => void;
+  audit: (actor: string | null, action: string, target: string | null, detail?: Record<string, unknown>) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
   /** The office's working days (0 = Sunday) and holidays, for booking hot desks ahead. */
   calendar?: () => { workdays: number[]; holidays: Array<{ date: string }> };
@@ -124,6 +135,7 @@ export class Seating {
     this.db = d.db;
     this.db.exec(SCHEMA);
     if (!this.db.prepare('SELECT 1 FROM seat_layouts LIMIT 1').get()) this.seed();
+    try { this.applyDrawingNames(); } catch (err) { this.d.log('warn', 'names from the drawing not applied', { error: (err as Error).message }); }
   }
 
   // ------------------------------------------------------------ the clock
@@ -141,9 +153,90 @@ export class Seating {
     this.db.prepare('INSERT INTO seat_layouts (version, plan, note, created_by, created_at) VALUES (1, ?, ?, NULL, ?)').run(JSON.stringify(plan), 'The office drawing of 18-Jul-2026', now);
     const holders: Holders = {};
     for (const [seat, label] of Object.entries(SEED_RESERVED)) if (plan.seats.some((s) => s.id === seat)) holders[seat] = { kind: 'reserved', label };
+    // the names written on the drawing hold their seats until their people join
+    let named = 0;
+    for (const x of DRAWING_NAMES) if (!holders[x.seatId] && plan.seats.some((s) => s.id === x.seatId)) { holders[x.seatId] = { kind: 'named', name: x.name }; named++; }
     for (const [seat, h] of Object.entries(holders)) this.db.prepare('INSERT INTO seat_holders (seat_id, holder, since) VALUES (?, ?, ?)').run(seat, JSON.stringify(h), now);
     this.db.prepare('INSERT INTO seat_revs (rev, n, kind, at, by, note, changes, holders, layout, plan_id) VALUES (?, 1, ?, ?, NULL, ?, ?, ?, 1, NULL)')
-      .run('A', 'seed', now, 'The office drawing of 18-Jul-2026 built in', JSON.stringify(diffHolders({}, holders)), JSON.stringify(holders));
+      .run('A', 'seed', now, named ? `The office drawing of 18-Jul-2026 built in, with the ${named} names written on it` : 'The office drawing of 18-Jul-2026 built in', JSON.stringify(diffHolders({}, holders)), JSON.stringify(holders));
+    this.markNamesApplied(named);
+  }
+
+  private markNamesApplied(seats: number): void {
+    this.db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(NAMES_FLAG, JSON.stringify({ source: DRAWING_SOURCE, seats, at: this.now() }));
+  }
+
+  /**
+   * A hub that was running before the names came: put each name from the drawing on its seat, once,
+   * where the seat is still empty and nobody seated already fits the name. Nobody is displaced, and
+   * a restart never puts a name back (the meta flag).
+   */
+  private applyDrawingNames(): void {
+    if (this.db.prepare('SELECT 1 FROM meta WHERE key = ?').get(NAMES_FLAG)) return;
+    const { plan } = this.layout();
+    const ids = new Set(plan.seats.map((s) => s.id));
+    const h = this.holders();
+    const seatedNames = [...seatOfPeople(h).keys()].map((uid) => this.d.store.userById(uid)?.displayName ?? '').filter(Boolean);
+    const after: Holders = { ...h };
+    let n = 0;
+    for (const x of DRAWING_NAMES) {
+      if (!ids.has(x.seatId) || after[x.seatId]) continue;
+      if (seatedNames.some((dn) => drawingNameFits(x.name, dn))) continue;
+      after[x.seatId] = { kind: 'named', name: x.name };
+      n++;
+    }
+    if (n) this.commit(after, 'seed', `Names from the drawing ${DRAWING_SOURCE} put on ${n} empty seats`, null, null);
+    this.markNamesApplied(n);
+    this.d.audit(null, 'seating.names', null, { source: DRAWING_SOURCE, seats: n, skipped: DRAWING_NAMES.length - n });
+  }
+
+  /** People who can hold a seat: in the office, not a guest, a bot or a leaver. */
+  private seatable(): PublicUser[] {
+    return this.d.store.activeUsers().filter((u) => (u.role === 'member' || u.role === 'admin' || u.role === 'owner') && !(u as PublicUser & { leftAt?: number }).leftAt);
+  }
+
+  private namedSeats(h: Holders): Array<{ seatId: string; name: string }> {
+    return Object.entries(h).flatMap(([seatId, v]) => (v.kind === 'named' ? [{ seatId, name: v.name }] : [])).sort((a, b) => natural(a.seatId, b.seatId));
+  }
+
+  /** Who might be each name still on a seat (editors see this as "Waiting to be matched"). */
+  private waiting(): SeatingView['waiting'] {
+    const h = this.holders();
+    const named = this.namedSeats(h);
+    if (!named.length) return [];
+    return drawingClaims(named, DRAWING_NAMES.map((x) => x.name), this.seatable(), new Set(seatOfPeople(h).keys())).waiting;
+  }
+
+  /** Tell someone once that their seat from the drawing is theirs on the plan. */
+  private tellClaimed(userId: string, seatId: string): void {
+    const planId = `drawing-${seatId}`;
+    if (this.db.prepare('SELECT 1 FROM seat_told WHERE user_id = ? AND plan_id = ?').get(userId, planId)) return;
+    this.db.prepare('INSERT INTO seat_told (user_id, plan_id, seat_id, from_seat, effective, told_at) VALUES (?, ?, ?, NULL, ?, ?)').run(userId, planId, seatId, this.today(), this.now());
+    const text = `Your seat is on the office floor plan: ${seatLabel(this.layout().plan, seatId)}. Walk there: dexconnect://floor/${seatId}`;
+    try { this.d.tell(userId, `seat-${planId}`, text); } catch (err) { this.d.log('warn', 'seat notice not sent', { error: (err as Error).message }); }
+  }
+
+  /**
+   * People who joined (or were renamed) take the seat the drawing names them on, when that is certain
+   * (drawingClaims). Each is a revision, in the audit log, and the person is told once. The hub calls
+   * this when someone's first device is approved, after an import of people, a rename, and at start.
+   */
+  claimNamed(): void {
+    const h = this.holders();
+    const named = this.namedSeats(h);
+    if (!named.length) return;
+    const { claims } = drawingClaims(named, DRAWING_NAMES.map((x) => x.name), this.seatable(), new Set(seatOfPeople(h).keys()));
+    if (!claims.length) return;
+    const after: Holders = { ...h };
+    for (const c of claims) after[c.seatId] = { kind: 'person', userId: c.userId };
+    const who = (uid: string) => this.d.store.userById(uid)?.displayName ?? 'Someone';
+    const note = claims.length === 1 ? `${claims[0].seatId} taken by ${who(claims[0].userId)} ("${claims[0].name}" on the drawing)` : `${claims.length} people took their seats from the drawing`;
+    this.commit(after, 'moves', note, null, null);
+    for (const c of claims) {
+      this.d.audit(null, 'seating.claim', c.seatId, { userId: c.userId, name: c.name, auto: true });
+      this.tellClaimed(c.userId, c.seatId);
+    }
+    this.changed();
   }
 
   // ------------------------------------------------------------ reading
@@ -212,7 +305,7 @@ export class Seating {
     const bookings = (this.db.prepare('SELECT seat_id, day, user_id FROM seat_bookings WHERE day >= ? ORDER BY day LIMIT 2000').all(this.today()) as Array<{ seat_id: string; day: string; user_id: string }>)
       .map((b) => ({ seatId: b.seat_id, day: b.day, userId: b.user_id }));
     const ul = edit ? this.db.prepare('SELECT x, y, w, h, opacity FROM seat_underlay WHERE id = 1').get() as SeatingView['underlay'] | undefined : undefined;
-    return { plan, version, holders: this.holders(), plans, revisions, canEdit: edit, managers: this.managers(), notice, bookings, bookDays: this.bookDays(), underlay: ul ?? null };
+    return { plan, version, holders: this.holders(), plans, revisions, canEdit: edit, managers: this.managers(), notice, bookings, bookDays: this.bookDays(), underlay: ul ?? null, waiting: edit ? this.waiting() : [] };
   }
 
   // ------------------------------------------------------------ changing who sits where
@@ -239,7 +332,11 @@ export class Seating {
       if (to && typeof to === 'object') {
         const dept = typeof to.departmentId === 'string' && deps.has(to.departmentId) ? to.departmentId : null;
         if (to.kind === 'person') h = { kind: 'person', userId: this.person(to.userId).id };
-        else if (to.kind === 'reserved') {
+        else if (to.kind === 'named') {
+          const name = clean(to.name, SEATING_LIMITS.label);
+          if (!name) throw new SeatingError('Say whose name is on the seat.');
+          h = { kind: 'named', name };
+        }        else if (to.kind === 'reserved') {
           const label = clean(to.label, SEATING_LIMITS.label);
           if (!label) throw new SeatingError('Say who the seat is reserved for.');
           h = { kind: 'reserved', label, ...(dept ? { departmentId: dept } : {}) };
@@ -586,6 +683,22 @@ export class Seating {
         this.db.prepare('INSERT INTO seat_bookings (seat_id, day, user_id, at) VALUES (?, ?, ?, ?)').run(d.seatId, day, me.id, this.now());
         this.changed();
         return { ok: true } satisfies Ops['seating.book']['res'];
+      }
+
+      case 'seating.claim': {
+        edit();
+        const h = this.holders();
+        const seatId = isSeatId(d.seatId) ? d.seatId : null;
+        const there = seatId ? h[seatId] : undefined;
+        if (!seatId || there?.kind !== 'named') throw new SeatingError('That seat has no name from the drawing waiting for its person.');
+        const u = this.person(d.userId);
+        const mine = seatOfPeople(h).get(u.id);
+        if (mine) throw new SeatingError(`${u.displayName} already has seat ${mine}. Use a move plan to move them.`);
+        this.commit({ ...h, [seatId]: { kind: 'person', userId: u.id } }, 'moves', `${seatId} taken by ${u.displayName} ("${there.name}" on the drawing)`, me.id, null);
+        this.d.audit(me.id, 'seating.claim', seatId, { userId: u.id, name: there.name, auto: false });
+        this.tellClaimed(u.id, seatId);
+        this.changed();
+        return { ok: true } satisfies Ops['seating.claim']['res'];
       }
 
       case 'seating.seen':

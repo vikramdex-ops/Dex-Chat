@@ -71,9 +71,14 @@ export interface FloorPlan {
   labels: PlanLabel[];
 }
 
-/** Who holds a seat: a person, a reservation for a role or department, or a hot desk booked by the day. */
+/**
+ * Who holds a seat: a person, a reservation for a role or department, a hot desk booked by the day,
+ * or a name from the office's drawing whose person has not joined yet (shown like a person; the
+ * person takes the seat over when they join, see `drawingClaims`).
+ */
 export type SeatHolder =
   | { kind: 'person'; userId: string }
+  | { kind: 'named'; name: string }
   | { kind: 'reserved'; label: string; departmentId?: string | null }
   | { kind: 'hot'; departmentId?: string | null };
 export type Holders = Record<string, SeatHolder>;
@@ -130,7 +135,12 @@ export interface SeatingView {
   /** The days a hot desk can be booked for: today, then the office's working days up to two weeks ahead. */
   bookDays: string[];
   underlay: { x: number; y: number; w: number; h: number; opacity: number } | null;
+  /** Editors only: names from the drawing that someone in the directory may be, to confirm. */
+  waiting: SeatWaiting[];
 }
+
+/** A name from the drawing still on its seat, and who in the directory might be that person. */
+export interface SeatWaiting { seatId: string; name: string; suggestions: Array<{ userId: string; score: number }> }
 
 export interface ImportRowMatch {
   line: number;
@@ -240,8 +250,9 @@ export const sameHolder = (a: SeatHolder | null | undefined, b: SeatHolder | nul
   if (!a || !b) return !a && !b;
   if (a.kind !== b.kind) return false;
   if (a.kind === 'person') return a.userId === (b as typeof a).userId;
+  if (a.kind === 'named') return a.name === (b as typeof a).name;
   if (a.kind === 'reserved') return a.label === (b as typeof a).label && (a.departmentId ?? null) === ((b as typeof a).departmentId ?? null);
-  return (a.departmentId ?? null) === ((b as { departmentId?: string | null }).departmentId ?? null);
+  return ((a as { departmentId?: string | null }).departmentId ?? null) === ((b as { departmentId?: string | null }).departmentId ?? null);
 };
 
 /** Where each person sits. */
@@ -302,7 +313,7 @@ export function diffHolders(before: Holders, after: Holders): SeatChange[] {
   return out.sort((p, q) => natural(p.to ?? p.from ?? '', q.to ?? q.from ?? ''));
 }
 
-export const holderLabel = (h: SeatHolder): string => (h.kind === 'reserved' ? h.label : h.kind === 'hot' ? 'Hot desk' : '');
+export const holderLabel = (h: SeatHolder): string => (h.kind === 'reserved' ? h.label : h.kind === 'named' ? h.name : h.kind === 'hot' ? 'Hot desk' : '');
 
 /** Seats in reading order: by ID, numerically (W-A2 before W-A10). */
 export const seatOrder = (a: { id: string }, b: { id: string }): number => natural(a.id, b.id);
@@ -546,6 +557,82 @@ export function matchName(written: string, people: Array<{ id: string; displayNa
   return { userId: sure ? top.userId : null, sure, suggestions: scored.slice(0, 4) };
 }
 
+const words = (s: string): string[] => clean(s).split(' ').filter(Boolean);
+
+/**
+ * A name as written on the drawing fits a person's name, word by word from the start: each word is
+ * the same word, or a single letter (an initial) their word starts with. "Logesh M" fits "Logesh
+ * Murugan", "Karthikeyan A S" fits "Karthikeyan A Senthil", "Sharada" fits "Sharada Venkat"; "Sam"
+ * does not fit "Samuel". Case, spaces and dots do not matter.
+ */
+export function drawingNameFits(drawing: string, displayName: string): boolean {
+  const d = words(drawing), n = words(displayName);
+  if (!d.length || d.length > n.length) return false;
+  return d.every((t, i) => t === n[i] || (t.length === 1 && n[i].startsWith(t)));
+}
+
+/**
+ * How likely a person is the name on the drawing, for a suggestion (0: not at all). Their first name
+ * must be the drawing's, start it, or be one letter away ("Anand" for "Anandh"): a surname that
+ * happens to look like a first name ("Suresh" and "Mukesh") suggests nobody.
+ */
+function drawingSuggestion(drawing: string, p: { displayName: string; account?: string }): number {
+  if (drawingNameFits(drawing, p.displayName)) return Math.max(0.9, nameScore(drawing, p));
+  if (drawingNameFits(p.displayName, drawing)) return 0.7;
+  const a = words(drawing)[0] ?? '', b = words(p.displayName)[0] ?? '';
+  const short = Math.min(a.length, b.length);
+  const near = !!a && !!b && (a === b || (short >= 4 && (a.startsWith(b) || b.startsWith(a) || editDistance(a, b) <= 1)));
+  return near ? Math.max(0.55, nameScore(drawing, p)) : 0;
+}
+
+/**
+ * Who takes which named seat from the drawing (docs/SEATING.md, "Names from the drawing"). A person
+ * with no seat takes a named seat only when it is certain: of every name on the drawing (`drawing`,
+ * taken or not), the longest that fits them is one name, it is still on exactly one seat, and no
+ * other person without a seat fits it. Every other named seat that someone might be is waiting,
+ * with suggestions, for an editor to confirm.
+ */
+export function drawingClaims(named: Array<{ seatId: string; name: string }>, drawing: string[], people: Array<{ id: string; displayName: string; account?: string }>, seated: Set<string>):
+  { claims: Array<{ seatId: string; name: string; userId: string }>; waiting: SeatWaiting[] } {
+  let free = people.filter((p) => !seated.has(p.id) && words(p.displayName).length > 0);
+  let left = named;
+  const all = [...new Map(drawing.map((d) => [clean(d), d] as const)).entries()].filter(([k]) => k);
+  const claims: Array<{ seatId: string; name: string; userId: string }> = [];
+  // round by round: someone seated in one round no longer stands in another's way in the next
+  for (let round = 0; round < 50; round++) {
+    const onSeats = new Map<string, Array<{ seatId: string; name: string }>>();
+    for (const n of left) { const k = clean(n.name); if (k) onSeats.set(k, [...(onSeats.get(k) ?? []), n]); }
+    const found: typeof claims = [];
+    for (const p of free) {
+      const fits = all.filter(([, d]) => drawingNameFits(d, p.displayName));
+      if (!fits.length) continue;
+      const longest = Math.max(...fits.map(([k]) => k.split(' ').length));
+      const top = fits.filter(([k]) => k.split(' ').length === longest);
+      if (top.length !== 1) continue;
+      const seats = onSeats.get(top[0][0]);
+      if (seats?.length !== 1) continue;
+      if (free.some((q) => q.id !== p.id && drawingNameFits(top[0][1], q.displayName))) continue;
+      found.push({ seatId: seats[0].seatId, name: seats[0].name, userId: p.id });
+    }
+    if (!found.length) break;
+    claims.push(...found);
+    const t = new Set(found.map((c) => c.seatId)), u = new Set(found.map((c) => c.userId));
+    left = left.filter((n) => !t.has(n.seatId));
+    free = free.filter((p) => !u.has(p.id));
+  }
+  const took = new Set(claims.map((c) => c.seatId)), placed = new Set(claims.map((c) => c.userId));
+  const waiting: SeatWaiting[] = [];
+  for (const n of named) {
+    if (took.has(n.seatId)) continue;
+    const suggestions = free.filter((p) => !placed.has(p.id))
+      .map((p) => ({ userId: p.id, score: Math.round(drawingSuggestion(n.name, p) * 100) / 100 }))
+      .filter((x) => x.score >= 0.45).sort((a, b) => b.score - a.score).slice(0, 4);
+    if (suggestions.length) waiting.push({ seatId: n.seatId, name: n.name, suggestions });
+  }
+  waiting.sort((a, b) => natural(a.seatId, b.seatId));
+  return { claims, waiting };
+}
+
 /**
  * A seat from someone's old free-text "Seat or location", when it names one plainly: a seat ID
  * ("W-A14", "Desk WA14"), or a room that has exactly one seat ("MD's cabin 01", "Reception").
@@ -602,6 +689,8 @@ declare module './protocol.ts' {
     'seating.importProfiles': { req: void; res: { moves: SeatMove[]; skipped: Array<{ userId: string; location: string }> } };
     /** Book a hot desk for a day (today or up to two weeks ahead); null seat cancels my booking that day. */
     'seating.book': { req: { seatId: string | null; day: string }; res: { ok: true } };
+    /** Confirm that a person is the name from the drawing on a seat (editors): they take the seat. */
+    'seating.claim': { req: { seatId: string; userId: string }; res: { ok: true } };
     /** I have seen my seat notice. */
     'seating.seen': { req: { planId: string }; res: { ok: true } };
     'admin.seating.managers': { req: { userIds?: string[] }; res: { managers: string[] } };
