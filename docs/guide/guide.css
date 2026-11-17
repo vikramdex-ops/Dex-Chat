@@ -8,7 +8,7 @@
 
 @page {
   size: A4; margin: 19mm 15mm 17mm 15mm;
-  @top-left { content: "Dexterity Connect User Guide  ·  DDSP-IT-DXC-UG-001  ·  Rev 2"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
+  @top-left { content: "Dexterity Connect User Guide  ·  DDSP-IT-DXC-UG-001  ·  Rev 3"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
   @top-right { content: "Dexterity Design Services Private Limited"; font: 400 7.5pt "Onest", sans-serif; color: #5B6275; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
   @top-center { content: ""; vertical-align: bottom; padding-bottom: 3.2mm; border-bottom: 0.6pt solid #D5E2E3; }
   @bottom-center { content: ""; vertical-align: top; padding-top: 3.2mm; border-top: 0.6pt solid #D5E2E3; }
@@ -148,3 +148,4 @@ dl.kv dd { margin: 0 0 2pt 0; }
 
 .small { font-size: 8.8pt; color: var(--muted); }
 .pb { break-before: page; }
+ul.checks { list-style: none; padding-left: 4pt; }

@@ -5,7 +5,7 @@
 <title>Dexterity Connect User Guide</title>
 <link rel="stylesheet" href="guide.css">
 <script id="meta" type="application/json">
-{"title": "Dexterity Connect User Guide", "doc_no": "DDSP-IT-DXC-UG-001", "rev": "2", "date": "16-Nov-2026",
+{"title": "Dexterity Connect User Guide", "doc_no": "DDSP-IT-DXC-UG-001", "rev": "3", "date": "17-Nov-2026",
  "company": "Dexterity Design Services Private Limited", "classification": "Internal use only",
  "subject": "User guide for Dexterity Connect for Windows 10/11, macOS and Android, and the office hub"}
 </script>
@@ -26,14 +26,14 @@
   <p class="cover__lead">This guide explains how to use Dexterity Connect, the office's own messenger, meetings and
   collaboration app. It runs on our own hub on the office network, keeps working with the internet unplugged, and
   reaches you at home or on site through the office's gateway. Each section shows a screenshot of the screen it
-  describes and says what every button and setting does. It is written for all DDSP staff; section 19 is for
-  administrators.</p>
+  describes and says what every button and setting does. It is written for all DDSP staff; sections 19 and 20 are for
+  administrators, and section 20 is the office's setup, step by step.</p>
   <div class="cover__control">
     <table class="control">
       <tr><th colspan="2">Document control</th></tr>
       <tr><td>Document No.</td><td>DDSP-IT-DXC-UG-001</td></tr>
-      <tr><td>Revision</td><td>2</td></tr>
-      <tr><td>Date</td><td>16-Nov-2026</td></tr>
+      <tr><td>Revision</td><td>3</td></tr>
+      <tr><td>Date</td><td>17-Nov-2026</td></tr>
       <tr><td>Applies to</td><td>Dexterity Connect for Windows 10/11, macOS and Android, and the office hub</td></tr>
       <tr><td>Issued by</td><td>Office of the Managing Director</td></tr>
       <tr><td>Approved by</td><td class="pending">Pending approval</td></tr>
@@ -67,13 +67,20 @@
     <li><span class="n">19</span><span class="t">For administrators</span><span class="toc-page" data-sec="19"></span></li>
     <li class="sub"><span class="n">19.1</span><span class="t">The Control room, section by section</span><span class="toc-page" data-sec="19.1"></span></li>
     <li class="sub"><span class="n">19.2</span><span class="t">Nib and day sheets</span><span class="toc-page" data-sec="19.2"></span></li>
-    <li class="sub"><span class="n">19.3</span><span class="t">The meeting site (Dexterity Meet)</span><span class="toc-page" data-sec="19.3"></span></li>
-    <li class="sub"><span class="n">19.4</span><span class="t">Installing the office hub</span><span class="toc-page" data-sec="19.4"></span></li>
-    <li class="sub"><span class="n">19.5</span><span class="t">Backing up and restoring the hub</span><span class="toc-page" data-sec="19.5"></span></li>
-    <li class="sub"><span class="n">19.6</span><span class="t">When someone leaves</span><span class="toc-page" data-sec="19.6"></span></li>
-    <li class="sub"><span class="n">19.7</span><span class="t">Releasing updates</span><span class="toc-page" data-sec="19.7"></span></li>
-    <li><span class="n">20</span><span class="t">Keyboard shortcuts</span><span class="toc-page" data-sec="20"></span></li>
-    <li><span class="n">21</span><span class="t">Troubleshooting and support</span><span class="toc-page" data-sec="21"></span></li>
+    <li class="sub"><span class="n">19.3</span><span class="t">Office holidays from the circular</span><span class="toc-page" data-sec="19.3"></span></li>
+    <li class="sub"><span class="n">19.4</span><span class="t">Working from outside and meeting links (Set up with Cloudflare)</span><span class="toc-page" data-sec="19.4"></span></li>
+    <li class="sub"><span class="n">19.5</span><span class="t">Zoho Calendar for the office</span><span class="toc-page" data-sec="19.5"></span></li>
+    <li class="sub"><span class="n">19.6</span><span class="t">Installing the office hub</span><span class="toc-page" data-sec="19.6"></span></li>
+    <li class="sub"><span class="n">19.7</span><span class="t">The hub updates itself</span><span class="toc-page" data-sec="19.7"></span></li>
+    <li class="sub"><span class="n">19.8</span><span class="t">Backing up and restoring the hub</span><span class="toc-page" data-sec="19.8"></span></li>
+    <li class="sub"><span class="n">19.9</span><span class="t">When someone leaves</span><span class="toc-page" data-sec="19.9"></span></li>
+    <li class="sub"><span class="n">19.10</span><span class="t">Releasing updates</span><span class="toc-page" data-sec="19.10"></span></li>
+    <li><span class="n">20</span><span class="t">Setting up the office</span><span class="toc-page" data-sec="20"></span></li>
+    <li class="sub"><span class="n">20.1</span><span class="t">Already done for you</span><span class="toc-page" data-sec="20.1"></span></li>
+    <li class="sub"><span class="n">20.2</span><span class="t">The steps, in order</span><span class="toc-page" data-sec="20.2"></span></li>
+    <li class="sub"><span class="n">20.3</span><span class="t">If something goes wrong</span><span class="toc-page" data-sec="20.3"></span></li>
+    <li><span class="n">21</span><span class="t">Keyboard shortcuts</span><span class="toc-page" data-sec="21"></span></li>
+    <li><span class="n">22</span><span class="t">Troubleshooting and support</span><span class="toc-page" data-sec="22"></span></li>
   </ol>
   <div class="conventions">
     <h3>Conventions used in this guide</h3>
@@ -82,7 +89,8 @@
     <b>Preferences → Your devices</b> means: open Preferences, then go to Your devices. <code>\\nas01\Project</code> is a
     path or address as you would type it.</p>
     <p>The screenshots show a demonstration office (40 colleagues, the P-12 Piping and P-14 Structural steel jobs,
-    Priya Raman as the reader). None of the people, messages or files are real. Your screens show your own office.
+    Priya Raman as the reader). None of the people, messages or files are real, except the first names on empty seats of the
+    floor plan, which are the ones written on the office's own seating drawing. Your screens show your own office.
     Most screenshots are of the light theme; the dark theme has the same layout.</p>
     <p><b>Policy.</b> Dexterity Connect is DDSP's official channel for internal messages, calls and meetings. Use it for
     work. Do not install it on a device that is not yours, do not share your pairing codes, and tell IT at once if a
@@ -111,7 +119,7 @@
 
   <h3>1.1 How it fits together</h3>
   <dl class="kv">
-    <dt>The office hub</dt><dd>One always-on PC in the office runs the hub as a Windows service. It holds the Directory and the approvals, the history of Spaces, the shared files, the Calendar and recordings. It backs itself up every night (section 19.5).</dd>
+    <dt>The office hub</dt><dd>One always-on PC in the office runs the hub as a Windows service. It holds the Directory and the approvals, the history of Spaces, the shared files, the Calendar and recordings. It backs itself up every night (section 19.8) and installs its own updates (section 19.7).</dd>
     <dt>The app</dt><dd>Dexterity Connect on your Windows PC, Mac or Android phone. On the office network it finds the hub by itself and talks to it directly. Each device has its own key; there is no password to remember, because you are signed in through Windows.</dd>
     <dt>The gateway</dt><dd>For home, site and mobile data, the office runs a small relay on Cloudflare. The hub connects out to it, so no port is opened at the office, and your device's traffic is encrypted all the way to the hub: the gateway only passes it on and cannot read it (section 17).</dd>
   </dl>
@@ -151,7 +159,7 @@
     <li><b>Android:</b> an Android phone; the app is installed from a link or QR code (section 16).</li>
     <li><b>Network:</b> the office network (wired or Wi-Fi). From outside the office, any internet connection, once an administrator has turned on access from outside (section 17).</li>
     <li><b>Calls:</b> a headset or speakers and microphone; a camera for video. A camera is not needed to take part.</li>
-    <li><b>The hub:</b> one office PC that stays on, running Windows, with a second disk or a network share for backups (section 19.4).</li>
+    <li><b>The hub:</b> one office PC that stays on, running Windows, with a second disk or a network share for backups (sections 19.6 and 20).</li>
   </ul>
 </section>
 
@@ -197,7 +205,7 @@
         <li>Read out your device code. The administrator sees the same code in <b>Control room → Approvals</b> and checks it matches before clicking <b>Approve</b>.</li>
         <li>The screen moves on by itself once you are approved, and Pulse opens. (<b>Choose a different hub</b> goes back if you picked the wrong one.)</li>
       </ol>
-      <div class="note tip"><b>The first person to join</b> a new hub becomes its owner and is approved straight away (section 19.4).</div>
+      <div class="note tip"><b>The first person to join</b> a new hub becomes its owner and is approved straight away (section 20.2).</div>
     </div>
     <figure><img src="figures/fig-waiting.png" alt="Waiting for an administrator, with the device code"><figcaption><b>Fig. 2-2</b> Waiting for an administrator, with the device code to read out</figcaption></figure>
   </div>
@@ -268,7 +276,7 @@
         <dt>Show me as</dt><dd><b>At my desk</b> (notifications on), <b>Heads-down</b> (focused; notifications still on), <b>No interruptions</b> (no notifications or sounds) and <b>Unlisted</b> (you appear offline). After choosing one, pick how long: <b>Till lunch</b>, <b>Till</b> the office's closing time, <b>Rest of today</b> or <b>Until I change it</b>. The app also shows you as away when you are idle or lock the screen, and <i>in a meeting</i> during a Calendar meeting.</dd>
         <dt>Away from the office…</dt><dd>For leave and site visits: the date you are <b>Back on</b>, a note, and who to contact for anything urgent. Colleagues see it on your profile and when they write to you, with an automatic reply.</dd>
         <dt>Help me…</dt><dd>Ask IT for help (section 14).</dd>
-        <dt>Preferences, Keyboard shortcuts</dt><dd>Section 15 and section 20.</dd>
+        <dt>Preferences, Keyboard shortcuts</dt><dd>Section 15 and section 21.</dd>
         <dt>Control room</dt><dd>Administrators only (section 19).</dd>
         <dt>Check for updates</dt><dd>Looks for a new version now (section 15.6).</dd>
         <dt>Offices</dt><dd>The office you are in; <b>Join another office…</b> adds a second hub on the same device.</dd>
@@ -750,10 +758,11 @@
     </div>
     <figure><img src="figures/fig-nib-wrap.png" alt="The wrap-up: each item with Ongoing, Done or Blocked, numbers and words"><figcaption><b>Fig. 8-3</b> The wrap-up, pre-filled. The button at the foot names who receives it.</figcaption></figure>
   </div>
-  <div class="note tip"><b>Nib asks politely, and not often.</b> At your wrap-up time a hollow ink drop appears on Nib's tile. About
-  25 minutes later the wrap-up callout opens, and Pulse shows a card. If the sheet is still not sent, Nib sends one message in its
-  conversation. That is all: never more than the office's limit a day, never twice within 20 minutes, never while you are in a
-  Room, in a meeting, on <b>No interruptions</b> or <b>Heads-down</b>, and never on leave or after <b>Nothing today</b>. Section 19.2 has the details.</div>
+  <div class="note tip"><b>Nib asks politely, and not often.</b> With the office's times (wrap-up 18:00, register 18:30) Nib asks three
+  times: at 18:00 a hollow ink drop appears on Nib's tile; at 18:11 the wrap-up callout opens, and Pulse shows a card; at 18:22, if the
+  sheet is still not sent, Nib sends one message in its conversation. That is all: never more than the office's limit a day, never
+  while you are in a Room, in a meeting, on <b>No interruptions</b> or <b>Heads-down</b>, never on an office holiday, and never on
+  leave or after <b>Nothing today</b>. A snooze never runs past the register: <b>In 30 min</b> at 18:11 comes back at 18:22. Section 19.2 has the details.</div>
 
   <h3>8.6 For leads: the daily card</h3>
   <div class="cols w40">
@@ -774,7 +783,7 @@
   </div>
 
   <h3>8.7 For management: the register</h3>
-  <p>The management (named by the administrator) receives <b>one daily register</b> at the register time (19:00 unless changed),
+  <p>The management (named by the administrator) receives <b>one daily register</b> at the register time (18:30 unless changed),
   as one card in their conversation with Nib: <span class="tag">DAILY REGISTER</span> and the date (Fig. 8-5). It is built for 40 to
   200 people and is read from the top down:</p>
   <div class="cols w40">
@@ -813,7 +822,7 @@
   </div>
   <p>The register is a snapshot taken when it was sent, so it reads the same tomorrow. It never contains one message per person:
   leave is one grouped line. <b>The follow-up:</b> if any sheet comes in after the register, <b>one</b> follow-up card
-  (<span class="tag">FOLLOW-UP</span>) is sent at the follow-up time (21:00 unless changed) with only the late sheets and who is still
+  (<span class="tag">FOLLOW-UP</span>) is sent at the follow-up time (19:00 unless changed) with only the late sheets and who is still
   missing. No late sheets, no follow-up. <b>The week:</b> on the last workday of the week, <span class="tag">THE WEEK</span> card shows
   reporting by day, everyone day by day, and each job's week with a bar per day.</p>
 
@@ -890,6 +899,28 @@
       colleagues see you as <i>in a meeting</i>.</p>
     </div>
   </div>
+  <h4>Your Zoho Calendar</h4>
+  <p>The office's mail is Zoho, so your other appointments live in Zoho Calendar. Connect it once and the two calendars keep each other
+  up to date: the meetings you organise, or said <b>Going</b> to, appear in your Zoho Calendar and follow every change; your Zoho
+  appointments for the next four weeks appear in your week here, hatched and read-only (Fig. 9-4). Colleagues planning a meeting see that
+  time as busy, without its title.</p>
+  <figure><img src="figures/fig-zoho-card.png" alt="The card above the week: See your Zoho Calendar here, Connect once, with Not now and Connect Zoho Calendar"><figcaption><b>Fig. 9-3</b> The card above your week, until you connect</figcaption></figure>
+  <ol class="steps">
+    <li>On your Windows PC, click <b>Connect Zoho Calendar</b> on the card above your week (Fig. 9-3), or in <b>Preferences → Calendar</b>.</li>
+    <li>Your browser opens Zoho's sign-in page. Sign in with your office Zoho account and allow access. The browser then says <i>Zoho is connected. You can close this tab and go back to Dexterity Connect.</i></li>
+    <li>Back in the app, the line above your week reads <b>Zoho Calendar · Connected as</b> <i>you@…</i> <b>· last synced just now</b>. The first sync has already run.</li>
+  </ol>
+  <ul>
+    <li><b>Not now</b> hides the card; you can connect later in Preferences. If the button is greyed out with <i>Your office's Zoho
+    connection isn't set up yet.</i>, IT has not done the office's one-time step (section 19.5).</li>
+    <li>Click a Zoho appointment to see it; it says <i>From your Zoho Calendar</i> and is changed in Zoho, not here. Change your Dexterity
+    Connect meetings here: an edit made to their copy in Zoho is put back.</li>
+    <li>The copy in Zoho carries the meeting's link, never its passcode.</li>
+    <li>If Zoho stops accepting the connection, the card turns amber with <b>Reconnect Zoho Calendar</b>, and you get one message about it.
+    Click it and sign in again: what was missed is copied, and nothing is copied twice.</li>
+    <li>Connect from the Windows app; the phone app shows the status, but connecting starts on the PC. It keeps syncing while your PC is off.</li>
+  </ul>
+  <figure><img src="figures/fig-zoho-week.png" alt="The Calendar week with the line Zoho Calendar, Connected as priya@dexterity.example, last synced just now, and a hatched Pump vendor call (Zoho) on Thursday afternoon among the office's meetings"><figcaption><b>Fig. 9-4</b> Connected: a Zoho appointment, hatched, among your meetings</figcaption></figure>
 
   <h3>9.2 Planning a meeting</h3>
   <div class="cols w60">
@@ -911,11 +942,11 @@
       </table>
       <p>Click <b>Save</b>. Invitations go to everyone you added.</p>
     </div>
-    <figure><img src="figures/fig-new-meeting.png" alt="The New meeting dialog"><figcaption><b>Fig. 9-3</b> <b>New meeting</b></figcaption></figure>
+    <figure><img src="figures/fig-new-meeting.png" alt="The New meeting dialog"><figcaption><b>Fig. 9-5</b> <b>New meeting</b></figcaption></figure>
   </div>
 
   <h3>9.3 The Meet lens</h3>
-  <figure><img src="figures/fig-meet.png" alt="The Meet lens: start a meeting, join a meeting, webinars, your personal room, coming up"><figcaption><b>Fig. 9-4</b> The Meet lens</figcaption></figure>
+  <figure><img src="figures/fig-meet.png" alt="The Meet lens: start a meeting, join a meeting, webinars, your personal room, coming up"><figcaption><b>Fig. 9-6</b> The Meet lens</figcaption></figure>
   <table class="t">
     <tr><th style="width:36mm">Panel</th><th>What it does</th></tr>
     <tr><td>Start a meeting</td><td>A meeting now. Optionally say <b>What is it about?</b> and <b>Ring people in</b>; choose the <b>Lobby</b> rule (<b>Guests and people from outside wait</b>, <b>Everyone waits to be let in</b> or <b>Only guests from a browser wait</b>) and whether to <b>Start with my camera on</b>. <b>Start meeting</b> opens it, with its own ID and a Space for its chat and files.</td></tr>
@@ -928,7 +959,7 @@
   </table>
 
   <h3>9.4 In a Room</h3>
-  <figure><img src="figures/fig-room.png" alt="A meeting with three people on camera, the people table, host controls and the title block"><figcaption><b>Fig. 9-5</b> A meeting with three people. The cameras show placeholder pictures in this demonstration.</figcaption></figure>
+  <figure><img src="figures/fig-room.png" alt="A meeting with three people on camera, the people table, host controls and the title block"><figcaption><b>Fig. 9-7</b> A meeting with three people. The cameras show placeholder pictures in this demonstration.</figcaption></figure>
   <p>A <b>Room</b> is any call: from <b>Open a Room</b> in a conversation, from a profile, from a meeting, or a lounge. When
   someone rings you, a banner offers <b>Join with video</b>, <b>Join with voice</b> or <b>Not now</b>. Up to 8 people talk PC to
   PC; larger meetings (up to 50) run through the hub's relay on the office network.</p>
@@ -958,7 +989,7 @@
     <li><b>Recordings.</b> When a recording stops it is uploaded to the hub. Only the person who recorded it (and administrators) can watch it until it is shared with the meeting's conversation or by a link for the office. The Meet lens's <b>Recordings</b> shelf plays it, with the chapters as a list and a strip under the video.</li>
   </ul>
   <div class="cols w40">
-    <figure><img src="figures/fig-breakouts.png" alt="Breakout rooms: rooms, timer, deal out at random, columns"><figcaption><b>Fig. 9-6</b> Setting up <b>Breakout rooms</b></figcaption></figure>
+    <figure><img src="figures/fig-breakouts.png" alt="Breakout rooms: rooms, timer, deal out at random, columns"><figcaption><b>Fig. 9-8</b> Setting up <b>Breakout rooms</b></figcaption></figure>
     <div>
       <h4>Breakout rooms</h4>
       <ol class="steps">
@@ -984,7 +1015,7 @@
         <tr><td>A webinar</td><td>Its backstage Space, for the organisers and panelists.</td></tr>
       </table>
     </div>
-    <figure><img src="figures/fig-meet-thread.png" alt="The thread of the P-12 pump skid weekly review before the meeting: Ravi's agenda with the GA, and Deepa's note"><figcaption><b>Fig. 9-7</b> Before the meeting: the agenda and the GA, shared in its thread</figcaption></figure>
+    <figure><img src="figures/fig-meet-thread.png" alt="The thread of the P-12 pump skid weekly review before the meeting: Ravi's agenda with the GA, and Deepa's note"><figcaption><b>Fig. 9-9</b> Before the meeting: the agenda and the GA, shared in its thread</figcaption></figure>
   </div>
   <ul>
     <li><b>Where to find it.</b> On the Spaces lens, under the meeting's name, or with <b>Open</b> on the meeting under <b>Recent meetings</b> on the Meet lens.</li>
@@ -1011,28 +1042,28 @@
       <ol class="steps">
         <li><b>From the chat.</b> Start a line with <code>/action</code>, <code>/ap</code>, <code>AP:</code>, <code>Action:</code>, <code>→</code> or <code>-&gt;</code>,
         in the Room's chat or in any thread's Dock, and write it as you would say it: <code>/action Ravi to send the revised GA by Fri</code>. As you type,
-        a card above the box shows what was read (Fig. 9-8): the task (<i>Send the revised GA</i>), the <b>OWNER</b> (Ravi Kumar) and the <b>DUE</b> date
+        a card above the box shows what was read (Fig. 9-10): the task (<i>Send the revised GA</i>), the <b>OWNER</b> (Ravi Kumar) and the <b>DUE</b> date
         (Friday). Change the owner or the date there if Nib's reading is wrong, then press <kbd>Enter</kbd> (<span class="tag">ENTER LOGS IT</span>).
         Names, <i>by Friday</i>, <i>20/11</i> and <i>kal tak</i> are read the way Nib reads them.</li>
         <li><b>One key in the Room.</b> Press <kbd>A</kbd> on the stage (when you are not typing), <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd>,
-        or click <b>Action point</b> at the foot of the stage. A strip opens along the top of the stage (Fig. 9-9) with the next number: type the
+        or click <b>Action point</b> at the foot of the stage. A strip opens along the top of the stage (Fig. 9-11) with the next number: type the
         line, check the owner and the date, and press <kbd>Enter</kbd> or click <b>Log</b>. <kbd>Esc</kbd> closes it. The note-taker can log points this way without leaving the stage.</li>
         <li><b>Make an action point</b> from any message: the button beside a line of the Room's chat (a guest's line too), or the message's menu in
         the thread. A small dialog asks <b>What needs doing</b>, the <b>Owner</b> (<b>Someone from outside…</b> for a client or a vendor) and the
-        <b>Due date</b> (Fig. 9-10); click <b>Log action point</b>.</li>
+        <b>Due date</b> (Fig. 9-12); click <b>Log action point</b>.</li>
       </ol>
     </div>
-    <figure><img src="figures/fig-ap-chat.png" alt="The Room's chat with /action Ravi to send the revised GA by Fri typed, and the card above the box reading the task, owner Ravi Kumar and due date"><figcaption><b>Fig. 9-8</b> <code>/action</code> in the Room's chat: the card reads the owner and the date as you type</figcaption></figure>
+    <figure><img src="figures/fig-ap-chat.png" alt="The Room's chat with /action Ravi to send the revised GA by Fri typed, and the card above the box reading the task, owner Ravi Kumar and due date"><figcaption><b>Fig. 9-10</b> <code>/action</code> in the Room's chat: the card reads the owner and the date as you type</figcaption></figure>
   </div>
-  <figure><img src="figures/fig-ap-strip.png" alt="A Room with the action point strip open on the stage: AP-02, Deepa to check the nozzle loads by 20 Nov, owner Deepa Krishnan, due 20 Nov, and Log"><figcaption><b>Fig. 9-9</b> The strip opened with <kbd>A</kbd> on the stage. The line before it is in the chat as <i>AP-01 · Ravi Kumar</i>.</figcaption></figure>
+  <figure><img src="figures/fig-ap-strip.png" alt="A Room with the action point strip open on the stage: AP-02, Deepa to check the nozzle loads by 20 Nov, owner Deepa Krishnan, due 20 Nov, and Log"><figcaption><b>Fig. 9-11</b> The strip opened with <kbd>A</kbd> on the stage. The line before it is in the chat as <i>AP-01 · Ravi Kumar</i>.</figcaption></figure>
   <div class="cols w40">
-    <figure><img src="figures/fig-ap-make.png" alt="The Make an action point dialog: what needs doing, owner Anand Pillai, due date"><figcaption><b>Fig. 9-10</b> <b>Make an action point</b> from Ravi's line</figcaption></figure>
+    <figure><img src="figures/fig-ap-make.png" alt="The Make an action point dialog: what needs doing, owner Anand Pillai, due date"><figcaption><b>Fig. 9-12</b> <b>Make an action point</b> from Ravi's line</figcaption></figure>
     <div>
       <h4>What happens then</h4>
       <ul>
         <li><b>The owner hears once</b>: one quiet notification, a <span class="tag">TO DO</span> on their Desk (with a reminder on the due date, at the
         start of the working day), and an item on their Nib day sheet, given by the meeting's organiser. Someone from outside gets none of these.</li>
-        <li><b>The card</b> in the thread shows the number, <b>OWNER</b>, <b>DUE</b> and the state (Fig. 9-11). The pencil changes the owner or the date;
+        <li><b>The card</b> in the thread shows the number, <b>OWNER</b>, <b>DUE</b> and the state (Fig. 9-13). The pencil changes the owner or the date;
         <b>Drop it</b> takes a point off the register.</li>
         <li><b>Ticking it done.</b> The owner, the organiser or whoever logged it ticks the box: on the card, in the Register, in the recap or on the
         Desk. The Desk reminder and the Nib item close with it, and ticking the Nib item done ticks the action point. <b>Done: open it again</b> undoes it.</li>
@@ -1043,14 +1074,14 @@
       </ul>
     </div>
   </div>
-  <figure><img src="figures/fig-ap-card.png" alt="Ravi's view of the action point card in the thread: AP-01, owner You, due Fri, Nov 20, open, and TO DO"><figcaption><b>Fig. 9-11</b> An action point in the thread, as its owner sees it</figcaption></figure>
+  <figure><img src="figures/fig-ap-card.png" alt="Ravi's view of the action point card in the thread: AP-01, owner You, due Fri, Nov 20, open, and TO DO"><figcaption><b>Fig. 9-13</b> An action point in the thread, as its owner sees it</figcaption></figure>
   <div class="note info"><b>In an encrypted Direct conversation</b> the words of an action point stay end-to-end encrypted in the message; the
   register keeps only the owner, the date and the state.</div>
 
   <h3>9.8 The Register and the note-taker</h3>
   <div class="cols w60">
     <div>
-      <p>The Room's <b>Register</b> tab is the meeting's register (Fig. 9-12):</p>
+      <p>The Room's <b>Register</b> tab is the meeting's register (Fig. 9-14):</p>
       <ul>
         <li><b>01 Agenda</b>, with time boxes. <b>Write the agenda</b> (before or during the meeting): one item a line, minutes first
         (<code>10 The client's GA comments</code>), then <b>Save the agenda</b>; <b>Change</b> edits it. Tick each item off as it is covered. The item
@@ -1062,17 +1093,17 @@
       <p><b>The note-taker.</b> The host gives the role from a person's menu on the <b>People</b> tab (<b>Ravi takes the notes</b>, or
       <b>I take the notes</b>); the person is tagged <span class="tag">NOTE-TAKER</span>, and the recap names them.</p>
       <p><b>Joined late?</b> If you come in more than three minutes after the start, a card on the stage says <span class="tag amber">WHAT YOU MISSED</span>:
-      since when, how many messages and action points (Fig. 9-13). <b>Read the chat</b> and <b>See the register</b> take you there; the <b>×</b> closes it.</p>
+      since when, how many messages and action points (Fig. 9-15). <b>Read the chat</b> and <b>See the register</b> take you there; the <b>×</b> closes it.</p>
     </div>
-    <figure><img src="figures/fig-meet-register.png" alt="The Register tab: the agenda with three items and NOW, three action points with owners and dates, and the box to log another"><figcaption><b>Fig. 9-12</b> The <b>Register</b> tab</figcaption></figure>
+    <figure><img src="figures/fig-meet-register.png" alt="The Register tab: the agenda with three items and NOW, three action points with owners and dates, and the box to log another"><figcaption><b>Fig. 9-14</b> The <b>Register</b> tab</figcaption></figure>
   </div>
-  <figure><img src="figures/fig-meet-missed-card.png" alt="What you missed: since 10:43 PM, messages, 3 action points, Read the chat, See the register"><figcaption><b>Fig. 9-13</b> Anand joined twelve minutes late</figcaption></figure>
+  <figure><img src="figures/fig-meet-missed-card.png" alt="What you missed: since 10:43 PM, messages, 3 action points, Read the chat, See the register"><figcaption><b>Fig. 9-15</b> Anand joined twelve minutes late</figcaption></figure>
 
   <h3>9.9 The recap</h3>
   <div class="cols w40">
-    <figure><img src="figures/fig-recap-card.png" alt="The recap card in the thread: MEETING RECAP, the title, date and time, people, files, actions open, done, decisions, and Open the recap"><figcaption><b>Fig. 9-14</b> The recap card, posted in the thread when the meeting ends</figcaption></figure>
+    <figure><img src="figures/fig-recap-card.png" alt="The recap card in the thread: MEETING RECAP, the title, date and time, people, files, actions open, done, decisions, and Open the recap"><figcaption><b>Fig. 9-16</b> The recap card, posted in the thread when the meeting ends</figcaption></figure>
     <div>
-      <p>When a meeting ends, a <span class="tag">MEETING RECAP</span> card is posted in its thread (Fig. 9-14): the title, date, time and length,
+      <p>When a meeting ends, a <span class="tag">MEETING RECAP</span> card is posted in its thread (Fig. 9-16): the title, date, time and length,
       its drawing number (<i>MTG-174490695-01</i>), and a ruled line of counts: PEOPLE, FILES, ACTIONS OPEN, DONE and DECISIONS. A recap is posted when anything was captured; a meeting that never started has none.</p>
       <p>Times on the recap card and sheet, on the <span class="tag">MEETING STARTED</span> line and in <i>What you missed</i> follow your <b>Time format</b>
       (<i>1:30 PM</i> or <i>13:30</i>, section 15.2).</p>
@@ -1080,7 +1111,7 @@
       <b>Open the recap</b>), from the Meet lens (<b>Recent meetings → Recap</b>) and from search, which finds its chat and files.</p>
     </div>
   </div>
-  <figure><img src="figures/fig-recap-sheet.png" alt="The recap sheet: the title block with date, time, duration, organiser, note-taker and drawing number; attendance, recording and action points"><figcaption><b>Fig. 9-15</b> The recap sheet</figcaption></figure>
+  <figure><img src="figures/fig-recap-sheet.png" alt="The recap sheet: the title block with date, time, duration, organiser, note-taker and drawing number; attendance, recording and action points"><figcaption><b>Fig. 9-17</b> The recap sheet</figcaption></figure>
   <p>The sheet is drawn as a drawing's title block over a register. The title block holds the DATE, TIME, DURATION,
   ORGANISER, NOTE-TAKER and DRG NO. Below it, in order: <b>01 Attendance</b> (who came and for how long, two devices counted
   once; who was invited and not there, marked <span class="tag">ABSENT</span>), <b>02 Recording</b> (with its chapters, once processed),
@@ -1091,7 +1122,7 @@
     <div>
       <ul>
         <li><b>Copy recap</b> puts the recap on the clipboard as plain text, to paste into a mail or a report.</li>
-        <li><b>Send by email</b> opens a panel (Fig. 9-16): choose <b>For colleagues</b> or <b>For guests</b> (only the action points and files, for
+        <li><b>Send by email</b> opens a panel (Fig. 9-18): choose <b>For colleagues</b> or <b>For guests</b> (only the action points and files, for
         example), tick the parts to send (<b>Attendance</b>, <b>Action points</b>, <b>Decisions</b>, <b>Files</b>, <b>Polls</b>, <b>Recording</b>,
         <b>Chat</b>), add addresses under <b>To (email addresses, optional)</b>, and click <b>Open the email draft</b>. Your mail program opens a
         ready-made draft for you to check and send from your own mailbox.</li>
@@ -1099,7 +1130,7 @@
       </ul>
       <p>A colleague who came from outside the meeting's Space sees a recap of only what they could see in the meeting, and a line that says so.</p>
     </div>
-    <figure><img src="figures/fig-recap-email.png" alt="Send by email in the recap: For colleagues, For guests, the parts to send, the addresses and Open the email draft"><figcaption><b>Fig. 9-16</b> <b>Send by email</b>, set for guests</figcaption></figure>
+    <figure><img src="figures/fig-recap-email.png" alt="Send by email in the recap: For colleagues, For guests, the parts to send, the addresses and Open the email draft"><figcaption><b>Fig. 9-18</b> <b>Send by email</b>, set for guests</figcaption></figure>
   </div>
 
   <h3>9.10 Guests from a browser</h3>
@@ -1136,7 +1167,7 @@
         switch on <b>Guests from outside can join from a browser</b>.</li>
         <li>Give the page a name in the box beside the site's address, or leave it empty to use the meeting ID.</li>
         <li>Choose whether to <b>Show the title on the invitation page</b>, and the <b>Lobby</b> rule.</li>
-        <li>Click <b>Send invitations</b> (or <b>Save</b>). The dialog stays open on the invitation (Fig. 9-17).</li>
+        <li>Click <b>Send invitations</b> (or <b>Save</b>). The dialog stays open on the invitation (Fig. 9-19).</li>
       </ol>
       <p>The invitation block shows the <b>Link</b> with <b>Copy</b>, the <b>Passcode</b> with <b>Renew</b> (a new passcode: the old link
       stops working), the <b>Name</b> with <b>Save name</b>, the <b>Page</b> setting, <b>Afterwards</b> (a note guests read when they leave,
@@ -1150,7 +1181,7 @@
       </ul>
       <p>The same block is in the meeting's card in the Calendar for the organiser, and in the Room's host controls.</p>
     </div>
-    <figure><img src="figures/fig-meet-invite.png" alt="The invitation block: link, passcode, name, page, afterwards, lobby, and Copy invitation, Download invitation (.ics), Send by email"><figcaption><b>Fig. 9-17</b> The meeting's page and invitation, in the meeting dialog</figcaption></figure>
+    <figure><img src="figures/fig-meet-invite.png" alt="The invitation block: link, passcode, name, page, afterwards, lobby, and Copy invitation, Download invitation (.ics), Send by email"><figcaption><b>Fig. 9-19</b> The meeting's page and invitation, in the meeting dialog</figcaption></figure>
   </div>
   <div class="note info"><b>Show the title on the invitation page.</b> Before a guest types the passcode (or opens the link with it),
   the page says only <i>Meeting with Dexterity Design Services</i>, the date and the time. With this setting on, it also shows the
@@ -1158,7 +1189,7 @@
   and off for instant meetings and personal rooms, whose working titles and links tend to be passed around. The page never shows the
   list of people invited, email addresses or anything else of the office.</div>
   <h4>What the guest sees</h4>
-  <figure><img src="figures/fig-meet-landing-1.png" alt="The meeting page before the start: countdown, add to calendar, camera and microphone check, name and Ask to join, with the time ruler, readiness tags and revisions on the right"><figcaption><b>Fig. 9-18</b> The meeting page before the meeting starts</figcaption></figure>
+  <figure><img src="figures/fig-meet-landing-1.png" alt="The meeting page before the start: countdown, add to calendar, camera and microphone check, name and Ask to join, with the time ruler, readiness tags and revisions on the right"><figcaption><b>Fig. 9-20</b> The meeting page before the meeting starts</figcaption></figure>
   <p>The page is drawn as one of our drawing sheets. On the left, the guest works down the form: the countdown, the time in their own
   time zone, <b>Add to calendar</b> (<b>Calendar file</b>, <b>Google Calendar</b>, <b>Outlook.com</b>), <b>Check camera and mic</b>,
   <b>Test speakers</b> and <b>Choose devices</b>, then their name and <b>Ask to join</b>. The room opens ten minutes before the start,
@@ -1174,11 +1205,11 @@
     <i>ISSUED</i> with the time spent, afterwards.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-meet-landing-2.png" alt="The lobby: the host will let you in, with a timer, Mic on and Leave the lobby"><figcaption><b>Fig. 9-19</b> In the lobby: <i>The host will let you in</i></figcaption></figure>
-    <figure><img src="figures/fig-meet-landing-3.png" alt="The closing page: thanks for joining, time in the meeting, the host's note, the next meeting and Join again"><figcaption><b>Fig. 9-20</b> After the meeting: the host's note and the next date</figcaption></figure>
+    <figure><img src="figures/fig-meet-landing-2.png" alt="The lobby: the host will let you in, with a timer, Mic on and Leave the lobby"><figcaption><b>Fig. 9-21</b> In the lobby: <i>The host will let you in</i></figcaption></figure>
+    <figure><img src="figures/fig-meet-landing-3.png" alt="The closing page: thanks for joining, time in the meeting, the host's note, the next meeting and Join again"><figcaption><b>Fig. 9-22</b> After the meeting: the host's note and the next date</figcaption></figure>
   </div>
-  <p>In the lobby (Fig. 9-19) the guest waits until a host admits them (section 9.5), with <b>Mic on</b> and <b>Leave the lobby</b>.
-  When they leave, the page says <i>Thanks for joining</i> (Fig. 9-20), with the time spent, your note from <b>Afterwards</b>, the next
+  <p>In the lobby (Fig. 9-21) the guest waits until a host admits them (section 9.5), with <b>Mic on</b> and <b>Leave the lobby</b>.
+  When they leave, the page says <i>Thanks for joining</i> (Fig. 9-22), with the time spent, your note from <b>Afterwards</b>, the next
   date of a repeating meeting (<b>Add the next one</b>) and <b>Join again</b> while the meeting runs. Staff who open a meeting link get
   the same page, with <b>Open in Dexterity Connect</b> to join from the app.</p>
   <h4>Rescheduling and cancelling</h4>
@@ -1204,7 +1235,7 @@
       thank-you with the recording and an optional survey, and reads the report. The hub sends no email: the app writes the
       invitations, reminders and follow-ups for you to send from your own mailbox.</p>
     </div>
-    <figure><img src="figures/fig-webinar-plan.png" alt="The Plan a webinar dialog"><figcaption><b>Fig. 9-21</b> <b>Plan a webinar</b></figcaption></figure>
+    <figure><img src="figures/fig-webinar-plan.png" alt="The Plan a webinar dialog"><figcaption><b>Fig. 9-23</b> <b>Plan a webinar</b></figcaption></figure>
   </div>
 </section>
 
@@ -1269,6 +1300,10 @@
   <ul>
     <li><b>People on their seats.</b> A tile on a desk means the person is in the office today; a dashed desk means they work elsewhere today
     (home, a site or a client); a dashed chair is a free seat; a hatched desk is reserved for a role or a team. <b>Key</b> explains every mark.</li>
+    <li><b>Names from the office drawing.</b> The plan starts with the names written on the office's seating drawing, each on its seat.
+    Until that person joins, the seat shows their name like the seat of someone away, and its callout says <i>On the office drawing. Not
+    joined yet: the seat becomes theirs when they do.</i> (Fig. 10-11). <b>Find</b> finds these names too: type <i>Shar</i> and choose
+    <i>Sharada · Seat W-A31 · from the office drawing</i>.</li>
     <li><b>Departments</b> washes each department's seats in its own colour.</li>
     <li><b>Schedule</b> lists everyone by room, for keyboard and screen-reader use.</li>
   </ul>
@@ -1296,7 +1331,7 @@
         <li><b>Walk there</b> (on a seat, on a person's callout, or on your seat notice) draws the walk from the entrance, or from your own seat,
         round the desks, with a dotted line and about how many steps it is (Fig. 10-10).</li>
         <li><b>Hot desks</b> are seats anyone can use for a day. Click one: its callout shows who has it <b>Today</b>, a <b>Book for</b> day
-        (today, or a working day up to two weeks ahead; office holidays are left out) and, under <b>Booked</b>, the days it is already booked and by whom.
+        (today, or a working day up to two weeks ahead; office days off are left out, and a compensatory working day is offered) and, under <b>Booked</b>, the days it is already booked and by whom.
         Choose the day and click <b>Book for today</b> (for another day the button names it: <b>Book for Tue, Nov 17</b>); <b>Cancel my booking</b> gives that day back. You have one hot
         desk a day: booking another for the same day moves your booking.</li>
       </ul>
@@ -1311,6 +1346,13 @@
     <figure><img src="figures/fig-seat-callout.png" alt="A free seat's callout: W-A08, Left benches, held by Nobody: free, type Bench desk, Walk there, Reserve, Make it a hot desk"><figcaption><b>Fig. 10-9</b> A free seat, as the office manager sees it (<b>Reserve…</b> and <b>Make it a hot desk</b> are only for them)</figcaption></figure>
   </div>
   <figure><img src="figures/fig-seat-walk.png" alt="Priya's seat notice, From Monday your seat is W-A19, with the walk drawn from W-A11 to W-A19 round the desks"><figcaption><b>Fig. 10-10</b> Priya's seat notice, and <b>Walk there</b> from her old seat to the new one</figcaption></figure>
+  <h4>When you join: your seat from the drawing</h4>
+  <p>If your name is on the office drawing, you do not have to look for your seat. When your first device is approved, the hub matches
+  your name with the drawing's, word by word (<i>Sharada</i> is Sharada Venkat, <i>Logesh M</i> is Logesh Murugan), and the seat becomes
+  yours at once. Nib (or the system bot) tells you once, with a link that walks you there, and the Floor sheet shows your seat notice
+  with <b>Walk there</b> and <b>Got it</b>. Your Directory card shows the seat from then on. When the match is not certain (two people
+  called Pavithra, or a name that is only close), nothing is given: the office manager confirms who it is (section 10.4).</p>
+  <figure><img src="figures/fig-seat-named.png" alt="The Floor sheet zoomed in on the left benches: Anita, Sanjay and Kavya on their seats, and the drawing's names Sharada, Madhu, Sharali, Praveen, Santhosh and Mukesh on theirs; Sharada's seat W-A31 found by name, with its callout: held by Sharada, on the office drawing, not joined yet"><figcaption><b>Fig. 10-11</b> Names from the office drawing on their seats: <i>Shar</i> finds Sharada's seat, W-A31</figcaption></figure>
 
   <h3>10.4 For office managers: arranging seats</h3>
   <p>Seats are changed only by administrators and the <b>office managers</b> they name. An office manager sees <b>Arrange</b> and
@@ -1324,8 +1366,19 @@
     <li>Each change appears in the <b>Audit log</b> (Control room → <b>Audit log</b>) as <i>changed the office managers</i>.</li>
   </ol>
   <p>Only members can be named: administrators can arrange seats already.</p>
-  <figure class="narrow"><img src="figures/fig-cr-office-managers.png" alt="Control room, Organisation, Office managers: Bhavna Shah's chip, and Add an office manager with a name being typed and the list of matches"><figcaption><b>Fig. 10-11</b> <b>Office managers</b> in <b>Control room → Organisation</b></figcaption></figure>
-  <figure><img src="figures/fig-seat-arrange.png" alt="Arrange seats: the People tab with the list of people and their seats, and a dashed arrow for Priya's move to W-A19 on the plan"><figcaption><b>Fig. 10-12</b> <b>Arrange</b>: Priya dragged from the list onto W-A19. The dashed arrow is a move still to take effect.</figcaption></figure>
+  <figure class="narrow"><img src="figures/fig-cr-office-managers.png" alt="Control room, Organisation, Office managers: Bhavna Shah's chip, and Add an office manager with a name being typed and the list of matches"><figcaption><b>Fig. 10-12</b> <b>Office managers</b> in <b>Control room → Organisation</b></figcaption></figure>
+  <figure><img src="figures/fig-seat-arrange.png" alt="Arrange seats: the People tab with the list of people and their seats, and a dashed arrow for Priya's move to W-A19 on the plan"><figcaption><b>Fig. 10-13</b> <b>Arrange</b>: Priya dragged from the list onto W-A19. The dashed arrow is a move still to take effect.</figcaption></figure>
+  <h4>Names waiting to be matched</h4>
+  <p>When someone joins whose name only might be one on the drawing, their seat waits for you. The <b>Arrange</b> button shows how many
+  wait (Fig. 10-14), and the <b>People</b> tab starts with <b>Waiting to be matched</b>: each seat with the drawing's name, <i>On the drawing</i>,
+  and the person it may be (<b>Suggested</b>, or a list to choose from when two people fit).</p>
+  <ol class="steps">
+    <li>Click the seat ID to see the seat on the plan.</li>
+    <li>If two people fit, choose the right one in the list.</li>
+    <li>Click <b>Confirm</b>. The seat is theirs at once (<i>Pavithra Ramesh now holds W-A45</i>), they are told, and the audit log records who confirmed it.</li>
+  </ol>
+  <p>A name nobody will claim, or whose person has left, is changed like any other seat: <b>Free it</b>, a reservation or a move plan.</p>
+  <figure><img src="figures/fig-seat-waiting.png" alt="Arrange seats, People tab: Waiting to be matched 3, with W-A45 Pavithra and a choice of Pavithra Ramesh or Pavithra Suresh, W-B06 Anand Pandey and W-C13 Anandh both suggesting Anand Kumar, each with Confirm"><figcaption><b>Fig. 10-14</b> <b>Waiting to be matched</b>, at the top of <b>Arrange → People</b></figcaption></figure>
   <p>Every change goes into a <b>move plan</b>: a list of moves, drawn on the plan as dashed arrows (amber while it is a draft, teal once
   published), which takes effect on a day you choose. Nothing changes for anyone until then. <b>Arrange</b> opens the panel, with five tabs:</p>
   <dl class="kv">
@@ -1337,12 +1390,12 @@
     link that walks them to their new seat; their Directory seat changes on the day. Until then, <b>Take back</b> returns a published plan to a draft.
     Under <b>Last applied</b>, <b>Undo</b> takes back the latest plan, as long as its seats have not changed since: everyone goes back to the seat they had.</dd>
     <dt>Move a team</dt><dd>A whole <b>Department</b> into a zone (<b>To</b>), optionally <b>Starting at seat</b>. <b>Preview</b> lists who goes where
-    (<i>W-C07 → W-B04</i>); <b>Add to the move plan</b> adds them (Fig. 10-13).</dd>
+    (<i>W-C07 → W-B04</i>); <b>Add to the move plan</b> adds them (Fig. 10-15).</dd>
     <dt>Import</dt><dd>Paste lines of seat and name under <b>Seats and names</b> (<code>W-A14, Priya Raman</code>), or <b>Open a CSV</b>, and click
     <b>Match names</b>. A full name or a Windows user name is matched for certain; a first name or an initial is only <b>Suggested</b>, and is used
     only when you tick <b>Use line …</b>. <b>From the directory's Seat field</b> takes seats from people's old free-text seats, where they name a seat
     plainly (<i>W-A14</i>, <i>Reception</i>).</dd>
-    <dt>Layout</dt><dd><b>Edit the layout</b> changes the drawing itself (Fig. 10-15): drag seats, nudge them with the arrow keys (by 3 inches; with
+    <dt>Layout</dt><dd><b>Edit the layout</b> changes the drawing itself (Fig. 10-17): drag seats, nudge them with the arrow keys (by 3 inches; with
     <kbd>Shift</kbd>, a foot), turn them with <kbd>R</kbd>, <b>Duplicate (Ctrl+D)</b>, <b>Remove (Delete)</b>, <b>Select its bench</b>, <b>Add a bench of</b>
     a number of seats, <b>Add a pod of 6</b>, rename rooms, and type exact <b>X (ft)</b>, <b>Y (ft)</b> and <b>Facing (°)</b>. <b>Undo (Ctrl+Z)</b> and
     <b>Redo (Ctrl+Y)</b> work as usual. Overlapping seats and duplicate IDs are listed under <b>Problems</b> and marked; a layout with problems cannot be
@@ -1350,22 +1403,22 @@
     <b>Add an underlay</b> lays a new drawing (a PDF page or an image) faintly under the plan, to trace when the office changes; only people who arrange seats see it.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-seat-team.png" alt="Move a team: Structural to the North-east benches, with the preview of who goes where"><figcaption><b>Fig. 10-13</b> <b>Move a team</b>, with its preview</figcaption></figure>
-    <figure><img src="figures/fig-seat-moveplan.png" alt="The move plan: Structural to North-east benches, six moves, From Monday, Apply from Mon, Nov 16, and the dashed arrows on the plan"><figcaption><b>Fig. 10-14</b> The <b>Move plan</b>, set for Monday</figcaption></figure>
+    <figure><img src="figures/fig-seat-team.png" alt="Move a team: Structural to the North-east benches, with the preview of who goes where"><figcaption><b>Fig. 10-15</b> <b>Move a team</b>, with its preview</figcaption></figure>
+    <figure><img src="figures/fig-seat-moveplan.png" alt="The move plan: Structural to North-east benches, six moves, From Monday, Apply from Mon, Nov 16, and the dashed arrows on the plan"><figcaption><b>Fig. 10-16</b> The <b>Move plan</b>, set for Monday</figcaption></figure>
   </div>
   <p><b>Seats from a callout.</b> On a free seat, <b>Reserve…</b> keeps it for a role or a team (<i>Piping · hot desk</i>), and <b>Make it a hot desk</b>
   makes it bookable by anyone; on a held seat, <b>Free it</b> empties it. Each is added to the move plan like any other move.</p>
-  <figure><img src="figures/fig-seat-layout.png" alt="The layout editor with a new bench of four seats selected"><figcaption><b>Fig. 10-15</b> The layout editor: a bench of 4 added, selected</figcaption></figure>
+  <figure><img src="figures/fig-seat-layout.png" alt="The layout editor with a new bench of four seats selected"><figcaption><b>Fig. 10-17</b> The layout editor: a bench of 4 added, selected</figcaption></figure>
   <div class="cols w60">
     <div>
       <h4>Revisions, compare and print</h4>
       <p>Every change that takes effect is a <b>revision</b> of the plan, lettered like a drawing's: Rev A is the drawing as it was built in,
       then B, C and so on, each with its date, who made it and what changed. <b>Revisions</b> lists them. Choose two under <b>Compare</b> and
       <b>with</b> and click <b>Compare</b>: the later one is drawn with a revision cloud and triangle round every seat that changed, and a notice says
-      how many (Fig. 10-16). <b>Stop comparing</b> ends it.</p>
+      how many (Fig. 10-18). <b>Stop comparing</b> ends it.</p>
       <p><b>For the notice wall</b>: <b>PDF</b> and <b>PNG</b> print the current plan on an A3 sheet with its title block and the names on the seats.</p>
     </div>
-    <figure><img src="figures/fig-seat-compare.png" alt="Revisions B and C compared: revision clouds round the seats that changed, and the list of revisions"><figcaption><b>Fig. 10-16</b> Rev B and Rev C compared</figcaption></figure>
+    <figure><img src="figures/fig-seat-compare.png" alt="Revisions B and C compared: revision clouds round the seats that changed, and the list of revisions"><figcaption><b>Fig. 10-18</b> Rev B and Rev C compared</figcaption></figure>
   </div>
 </section>
 
@@ -1746,7 +1799,7 @@
     <li>Choose <b>If the hub was off at the time</b>: <b>Skip the runs it missed</b>, or <b>Catch up once when it is back</b>.</li>
     <li><b>Save bot</b>.</li>
   </ol>
-  <p>Jobs run on the office's working days (Nib's workdays), never on the office's holidays (section 19.1, Bots &amp; tools) and never between
+  <p>Jobs run on the office's working days (Nib's workdays, and the compensatory working days of the holiday circular), never on the office's days off (section 19.3) and never between
   21:00 and 08:00, in office time (IST) whatever the PC's own time zone. Up to six times a day, at most every 15 minutes.</p>
   <h4>Two templates that run on a schedule</h4>
   <ul>
@@ -1908,7 +1961,10 @@
       <dl class="kv">
         <dt>Your devices</dt><dd>Every PC, laptop and phone signed in as you, with <span class="tag">THIS ONE</span> for the device you are on. <b>Add my phone</b> and <b>Add my laptop</b> (section 2.4); <b>Remove</b> signs a device out.</dd>
         <dt>Your network drives</dt><dd>This PC's drive letters and the shares they stand for, with <b>Refresh</b> (section 5.9).</dd>
-        <dt>Calendar</dt><dd><b>Show my meetings in Outlook or on my phone</b> makes a private calendar address. Copy it into Outlook (<b>Add calendar ▸ Subscribe from web</b>) or your phone's calendar. It lists meetings you organise or are invited to, with their links; your calendar app cannot change anything here. Turning it off stops the address at once.</dd>
+        <dt>Calendar</dt><dd><b>Zoho Calendar</b> at the top: <b>Connect Zoho Calendar</b> (section 9.1), then <span class="tag">CONNECTED</span>,
+        <i>Connected as … · last synced …</i> and <b>Sync now</b>; <b>Copy my meetings into</b> (your Zoho default calendar unless you choose
+        another), with how many meetings are copied and how many Zoho events are shown as busy; and <b>Disconnect</b>, which removes the
+        copies of your coming meetings from Zoho (Fig. 15-6). Below it, <b>Show my meetings in Outlook or on my phone</b> makes a private calendar address. Copy it into Outlook (<b>Add calendar ▸ Subscribe from web</b>) or your phone's calendar. It lists meetings you organise or are invited to, with their links; your calendar app cannot change anything here. Turning it off stops the address at once.</dd>
         <dt>Outside the office</dt><dd>Whether you are <i>Connected on the office network</i> or <i>Connected through the internet gateway</i>, or that your administrator has not turned access from outside on (section 17).</dd>
         <dt>Office hub</dt><dd>The hub's name, version, address and certificate fingerprint, and <b>This PC</b> with its device code. <b>Disconnect</b> leaves this hub (you can join it or another again from the welcome screen).</dd>
         <dt>Updates</dt><dd><b>Check for updates</b>; the <b>Update channel</b> (<b>Stable</b>, or <b>Beta</b> for new features first); and <b>Download updates automatically</b>. The app checks when it opens and every 4 hours, downloads in the background, and installs when you restart or quit. Without internet it updates from the hub's copy.</dd>
@@ -1916,6 +1972,7 @@
     </div>
     <figure><img src="figures/fig-prefs-devices.png" alt="Your devices, Calendar, Outside the office and Office hub"><figcaption><b>Fig. 15-5</b> Your devices, Calendar, Outside the office and Office hub</figcaption></figure>
   </div>
+  <figure class="narrow"><img src="figures/fig-prefs-zoho.png" alt="Preferences, Calendar: Zoho Calendar Connected, Connected as priya@dexterity.example, last synced just now, Sync now, Copy my meetings into My Calendar, and Disconnect"><figcaption><b>Fig. 15-6</b> <b>Preferences → Calendar</b>, connected to Zoho Calendar</figcaption></figure>
 </section>
 
 <!-- ===================================================== 16 -->
@@ -1967,7 +2024,7 @@
     <li><b>There is nothing to switch.</b> The app tries the office network first and uses the gateway when the office is out of reach. When it sees the hub on the office Wi-Fi again, it moves back. While it goes through the internet, the title bar shows a globe.</li>
     <li><b>It is as safe as the office network.</b> Your device and the hub have their own encrypted channel inside the gateway's connection, pinned to the hub's certificate. The gateway passes on encrypted data and cannot read messages, files, names or calls. The office opens no ports to the internet.</li>
     <li><b>Calls</b> from outside go through a relay on the internet when a direct path is not possible; they stay encrypted end to end.</li>
-    <li><b>Your administrator decides</b> whether access from outside is on, whether new devices may ask to join from outside, whether the Control room works from outside, and from which networks (section 19.1).</li>
+    <li><b>Your administrator decides</b> whether access from outside is on, whether new devices may ask to join from outside, whether the Control room works from outside, and from which networks (sections 19.1 and 19.4).</li>
   </ul>
   <div class="note warn"><b>If it says your administrator has not turned on access from outside</b>, the app only works on the office network. Ask IT.
   The calendar address you made in Preferences works from anywhere only when it is given out <b>From anywhere</b>; the <b>On the office network</b> one works only at the office.</div>
@@ -2018,15 +2075,33 @@
   the Control room works only on the office network (section 19.1, Outside the office).</div>
 
   <h3>19.1 The Control room, section by section</h3>
-  <p>The Control room is a sheet with a numbered register of seventeen sections, <b>01 Approvals</b> to <b>17 Audit log</b>.</p>
-  <figure><img src="figures/fig-cr-approvals.png" alt="Control room, Approvals: Nisha Varma waiting, with her device code"><figcaption><b>Fig. 19-1</b> <b>01 Approvals</b>: a new joiner waiting, with the device code to compare</figcaption></figure>
+  <p>The Control room is a sheet with the <b>Setup check</b> at the top, then a numbered register of seventeen sections, <b>01 Approvals</b> to <b>17 Audit log</b>.</p>
+  <h4>The setup check</h4>
+  <p>The <b>Setup check</b> is what the hub can find out about itself, live: the hub service and its version, the database, free space,
+  backups, the hub's own updates, the floor plan, the notice desks, Nib, the audit log, access from outside, the call relay, this
+  year's office holidays and Zoho Calendar. It replaces a checklist on paper (Fig. 19-1).</p>
+  <figure><img src="figures/fig-cr-setupcheck.png" alt="The setup check: 3 things need doing; Passed 14, Failed 0, To do 3, By hand 4, Hub running 0 min, version 0.1.26111409; Nobody receives the evening register, Working from outside is not set up, Zoho Calendar is not set up for the office, each with what to do; and Show all 22 checks, and what to check by hand"><figcaption><b>Fig. 19-1</b> The <b>Setup check</b> at the top of the Control room, on a new hub</figcaption></figure>
+  <ul>
+    <li>The headline says <i>3 things need doing</i>, <i>1 check failed</i>, or <i>Everything the hub can check passes</i>. Under it, the cells
+    <b>Passed</b>, <b>Failed</b>, <b>To do</b>, <b>By hand</b> and <b>Hub running</b> (how long, and the hub's version).</li>
+    <li>Only what needs doing is listed, each with its stamp (<span class="tag amber">TO DO</span> or <span class="tag amber">FAILED</span>), what it is
+    about, what the hub found, and after the arrow the one thing to do and where.</li>
+    <li><b>Show all … checks, and what to check by hand</b> opens every check, the passes and notes too, and four rows marked <span class="tag">BY HAND</span>
+    (Fig. 19-2): <i>Two PCs can message each other</i>, <i>A call between two PCs works</i>, <i>A phone on mobile data can send a message</i> and
+    <i>A meeting link works from outside, with a guest</i>. The hub cannot see these, so they are never marked passed (section 20.2, step 8).</li>
+    <li><b>Check again</b> looks at once; the sheet also looks again every minute, and after a change to backups, notices or policies.
+    <b>Copy report</b> and <b>Download</b> give the whole check as text, for example to send to whoever looks after the hub.</li>
+  </ul>
+  <figure class="narrow"><img src="figures/fig-cr-setupcheck-all.png" alt="The setup check opened: the three things to do, then the four checks made by hand, each with BY HAND and what to try"><figcaption><b>Fig. 19-2</b> Every check, with the four that only a person can make</figcaption></figure>
+  <h4>The sections</h4>
+  <figure><img src="figures/fig-cr-approvals.png" alt="Control room, Approvals: Nisha Varma waiting, with her device code"><figcaption><b>Fig. 19-3</b> <b>01 Approvals</b>: a new joiner waiting, with the device code to compare</figcaption></figure>
   <dl class="kv">
-    <dt>01 Approvals</dt><dd>Devices waiting to join: the person, their Windows account, the PC's name, when they asked, and the <b>device code</b>. Ask the person to read out the code on their screen; if it matches, click <b>Approve</b>, otherwise <b>Decline</b>. The first device of a new colleague creates their Directory entry.</dd>
+    <dt>01 Approvals</dt><dd>Devices waiting to join: the person, their Windows account, the PC's name, when they asked, and the <b>device code</b>. Ask the person to read out the code on their screen; if it matches, click <b>Approve</b>, otherwise <b>Decline</b>. The first device of a new colleague creates their Directory entry, and if their name is on the office drawing, gives them their seat (section 10.3).</dd>
     <dt>02 Devices</dt><dd>Every device with its owner, PC name, status (<span class="tag amber">WAITING</span>, <span class="tag">APPROVED</span>, declined or removed) and when it was last seen. <b>Remove</b> signs a device out at once, for example a lost phone; the person must be approved again on it.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-cr-devices.png" alt="Control room, Devices"><figcaption><b>Fig. 19-2</b> <b>02 Devices</b></figcaption></figure>
-    <figure><img src="figures/fig-cr-roles.png" alt="Control room, People and roles, with the IT desk"><figcaption><b>Fig. 19-3</b> <b>03 People &amp; roles</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-devices.png" alt="Control room, Devices"><figcaption><b>Fig. 19-4</b> <b>02 Devices</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-roles.png" alt="Control room, People and roles, with the IT desk"><figcaption><b>Fig. 19-5</b> <b>03 People &amp; roles</b></figcaption></figure>
   </div>
   <dl class="kv">
     <dt>03 People &amp; roles</dt><dd>Everyone with their Windows account and <b>Role</b>: <b>Owner</b>, <b>Admin</b>, <b>Member</b> or <b>Guest</b>. At the top, the <b>IT desk</b>: <b>Add someone to the IT desk…</b> gives them the Help desk queue and support sessions (section 14).
@@ -2035,138 +2110,273 @@
         <li><b>More than one owner</b>: an owner picks <b>Owner</b> for a member or an administrator and confirms <b>Make owner</b>. A guest is made a member first.</li>
         <li><b>Handing over</b>: once someone else is an owner, an owner can pick <b>Admin</b> on their own row and confirm <b>Step down</b>. They keep the Control room; only an owner can make them an owner again.</li>
         <li>The office always keeps at least one owner: the last owner cannot step down or be offboarded. Every change is in the audit log.</li>
+        <li>Everything set in the Control room belongs to the office, not to the person who set it: making owners, stepping down or offboarding the person who set the office up changes no setting, seat, backup or connection.</li>
       </ul></dd>
-    <dt>04 Organisation</dt><dd>Departments (nested under each other, each with its head), designations, reporting lines, extensions, seats, joining dates, birthdays and custom fields: what the Directory and the office drawing show. Import it from a CSV saved from Excel or Dexterity Sheets, including people who have not joined yet. Further down, <b>Conference rooms and cabins</b> that people can book with a meeting, and <b>Office managers</b>, the members who arrange seats on the floor plan: type part of a name in <b>Add an office manager…</b> and pick the person; the <b>×</b> on a chip takes them off (section 10.4). Each change shows in the audit log as <i>changed the office managers</i>.</dd>
+    <dt>04 Organisation</dt><dd>Departments (nested under each other, each with its head), designations, reporting lines, extensions, seats, joining dates, birthdays and custom fields: what the Directory and the office drawing show. Import it from a CSV saved from Excel or Dexterity Sheets, including people who have not joined yet (<b>Import people → Template</b> gives the columns). Further down, <b>Conference rooms and cabins</b> that people can book with a meeting, and <b>Office managers</b>, the members who arrange seats on the floor plan: type part of a name in <b>Add an office manager…</b> and pick the person; the <b>×</b> on a chip takes them off (section 10.4). Each change shows in the audit log as <i>changed the office managers</i>.</dd>
   </dl>
-  <figure><img src="figures/fig-cr-organisation.png" alt="Control room, Organisation: departments with their heads"><figcaption><b>Fig. 19-4</b> <b>04 Organisation</b></figcaption></figure>
+  <figure><img src="figures/fig-cr-organisation.png" alt="Control room, Organisation: departments with their heads"><figcaption><b>Fig. 19-6</b> <b>04 Organisation</b></figcaption></figure>
   <dl class="kv">
     <dt>05 Guests</dt><dd>Consultants and client engineers join with an invite code. <b>Invite a guest</b>: choose the Spaces they can use, how long access lasts, how long the code works, how many guests can use it and a note for yourself, then <b>Create invite code</b> (it is shown once). Guests are approved straight away, see only those Spaces and their people, and lose access when their time is up. Extend or end a guest's access any time.</dd>
     <dt>06 Compliance</dt><dd><b>How long messages are kept</b> in Spaces and in Direct conversations; <b>Legal holds</b> on a person or a conversation (every version of edited or deleted messages is kept); and <b>Export</b> of chosen Spaces or people for a period, as <b>Readable (HTML)</b>, <b>Spreadsheet (CSV)</b> or <b>Data (JSON)</b>. Direct messages are private: an export shows that they exist and when, never what they say.</dd>
     <dt>07 Reports</dt><dd>Messages people reported with <b>Report to administrators…</b>: open the message, remove it with a reason, or close the report.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-cr-guests.png" alt="Control room, Guests"><figcaption><b>Fig. 19-5</b> <b>05 Guests</b></figcaption></figure>
-    <figure><img src="figures/fig-cr-compliance.png" alt="Control room, Compliance"><figcaption><b>Fig. 19-6</b> <b>06 Compliance</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-guests.png" alt="Control room, Guests"><figcaption><b>Fig. 19-7</b> <b>05 Guests</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-compliance.png" alt="Control room, Compliance"><figcaption><b>Fig. 19-8</b> <b>06 Compliance</b></figcaption></figure>
   </div>
   <dl class="kv">
-    <dt>08 Policies</dt><dd>The office's rules: how long people can edit or delete their messages and the largest file people can share; link cards (whether the hub fetches web page previews, also for guests, and which office hosts it may preview); whether Direct messages must be end-to-end encrypted; whether Direct messages may pass straight between PCs when the hub is off; who can add office emoji and stickers; whether people can record calls; meetings (the <b>Meetings</b> card: the default lobby, joining before the host, guest links, the largest recording, and <b>Join meetings with the camera off and ask before turning it on</b>); whether <b>People can add their own phones and laptops</b>; the default Spaces for new people; the office's own lines for the day's line on Pulse; and <b>Data protection</b> (stop or mask card, Aadhaar, PAN and bank numbers and chosen words, blocked file types, and the networks allowed to connect from outside).</dd>
+    <dt>08 Policies</dt><dd>The office's rules: how long people can edit or delete their messages and the largest file people can share; link cards (whether the hub fetches web page previews, also for guests, and which office hosts it may preview); whether Direct messages must be end-to-end encrypted; whether Direct messages may pass straight between PCs when the hub is off; who can add office emoji and stickers; whether people can record calls; meetings (the <b>Meetings</b> card: the default lobby, joining before the host, guest links, the largest recording, and <b>Join meetings with the camera off and ask before turning it on</b>); whether <b>People can add their own phones and laptops</b>; the default Spaces for new people; the office's own lines for the day's line on Pulse; and <b>Data protection</b> (stop or mask card, Aadhaar, PAN and bank numbers and chosen words, blocked file types, and the networks allowed to connect from outside). The defaults apply from the first start, without anyone opening this section.</dd>
   </dl>
-  <figure><img src="figures/fig-cr-policies.png" alt="Control room, Policies"><figcaption><b>Fig. 19-7</b> <b>08 Policies</b> (the first of several screens)</figcaption></figure>
+  <figure><img src="figures/fig-cr-policies.png" alt="Control room, Policies"><figcaption><b>Fig. 19-9</b> <b>08 Policies</b> (the first of several screens)</figcaption></figure>
   <dl class="kv">
-    <dt>09 Outside the office</dt><dd>The <b>Gateway address</b> (<b>Save address</b>), the switch <b>Allow access from outside the office</b> (turning it off disconnects everyone outside at once), <b>Who may use it</b> (<b>New devices may ask to join from outside</b>, <b>The Control room works from outside</b>), this hub's id and fingerprint for pinning the gateway, and <b>Calls across networks</b> (the TURN relay for calls between home and office). Setting up the gateway itself is described in <code>docs/REMOTE-ACCESS.md</code>; IT deploys it with <code>scripts\release\Deploy-Gateway.cmd</code>. Further down, <b>Meeting site · Dexterity Meet</b> sets the address of the meeting pages (section 19.3).</dd>
+    <dt>09 Outside the office</dt><dd>First the <b>Set up with Cloudflare</b> card, which puts the gateway, the meeting site and the call relay in place from one token (section 19.4). Then <b>Access from outside the office</b>: the <b>Gateway address</b> (<b>Save address</b>), the switch <b>Allow access from outside the office</b> (turning it off disconnects everyone outside at once) and the status line; <b>Who may use it</b> (<b>New devices may ask to join from outside</b>, <b>The Control room works from outside</b>); this hub's id and fingerprint; <b>Calls across networks</b> (the TURN relay for calls between home and office); and <b>Meeting site · Dexterity Meet</b>, the address of the meeting pages and the <b>Name on meeting pages</b>.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-cr-remote.png" alt="Control room, Outside the office"><figcaption><b>Fig. 19-8</b> <b>09 Outside the office</b></figcaption></figure>
-    <figure><img src="figures/fig-cr-usage.png" alt="Control room, Usage"><figcaption><b>Fig. 19-9</b> <b>10 Usage</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-remote.png" alt="Control room, Outside the office"><figcaption><b>Fig. 19-10</b> <b>09 Outside the office</b>, before it is set up</figcaption></figure>
+    <figure><img src="figures/fig-cr-usage.png" alt="Control room, Usage"><figcaption><b>Fig. 19-11</b> <b>10 Usage</b></figcaption></figure>
   </div>
   <dl class="kv">
     <dt>10 Usage</dt><dd>For 7, 30 or 90 days: people active, messages, Rooms, files stored, messages per day, the busiest Spaces and who writes most, and meetings by week (count, hours, average size, browser guests, recordings), with <b>Show as table</b> and CSV.</dd>
-    <dt>11 Integrations</dt><dd>Tokens for office tools that post into Dexterity Connect (Hopper file alerts, Sheets mentions, Sleuth reports): give a name and <b>Create token</b>; revoke one any time. <b>Webhooks for other tools</b> accept Slack-style messages into a chosen Space. <b>For tool builders: the Bot API</b> explains the rest (see <code>docs/INTEGRATIONS.md</code>).</dd>
+    <dt>11 Integrations</dt><dd><b>Zoho Calendar · one step for the whole office</b> (section 19.5). Tokens for office tools that post into Dexterity Connect (Hopper file alerts, Sheets mentions, Sleuth reports): give a name and <b>Create token</b>; revoke one any time. <b>Webhooks for other tools</b> accept Slack-style messages into a chosen Space. <b>For tool builders: the Bot API</b> explains the rest (see <code>docs/INTEGRATIONS.md</code>).</dd>
     <dt>12 Automations</dt><dd>Every rule in the office, office-wide rules that watch every Space (drafted from words like a conversation's rules, section 13), and the switch <b>Webhooks may call the office network</b> (off: automations call only addresses on the internet).</dd>
-    <dt>13 Bots &amp; tools</dt><dd><b>Flows</b>: the office's bots, with bots people asked to make office-wide waiting for review (approve, or send back with a note), pause or retire. <b>Tools in conversations</b>: small tools that can be added to a Space, each reviewed before use. <b>Bot network</b> and <b>Job sheet</b> show the whole office's (sections 12.11 and 12.13). <b>Office holidays</b>: the days no scheduled bot job runs (<b>Holiday date</b>, <b>Holiday name</b>, <b>Add holiday</b>); days that are not working days are set in <b>Nib &amp; day sheets</b> (Fig. 19-14).</dd>
+    <dt>13 Bots &amp; tools</dt><dd><b>Flows</b>: the office's bots, with bots people asked to make office-wide waiting for review (approve, or send back with a note), pause or retire. <b>Tools in conversations</b>: small tools that can be added to a Space, each reviewed before use. <b>Bot network</b> and <b>Job sheet</b> show the whole office's (sections 12.11 and 12.13). <b>Office holidays</b>: the office's days off by year, each with its kind and where it came from, and <b>Read a holiday circular…</b> (section 19.3).</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-cr-integrations.png" alt="Control room, Integrations"><figcaption><b>Fig. 19-10</b> <b>11 Integrations</b></figcaption></figure>
-    <figure><img src="figures/fig-cr-bots.png" alt="Control room, Bots and tools"><figcaption><b>Fig. 19-11</b> <b>13 Bots &amp; tools</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-integrations.png" alt="Control room, Integrations"><figcaption><b>Fig. 19-12</b> <b>11 Integrations</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-bots.png" alt="Control room, Bots and tools"><figcaption><b>Fig. 19-13</b> <b>13 Bots &amp; tools</b></figcaption></figure>
   </div>
   <dl class="kv">
     <dt>14 Nib &amp; day sheets</dt><dd>Who gives work, who receives the register, when Nib asks, the job codes and who sees day sheets (section 19.2).</dd>
-    <dt>15 Notice desks</dt><dd>The notice board's issuing desks and who issues for each, how long withdrawn and expired notices are kept, the export of the register, and moving the Office space's pinned messages onto the board (section 11.10).</dd>
-    <dt>16 Backups &amp; leavers</dt><dd><b>Backups</b> (section 19.5) and <b>Someone leaving</b> (section 19.6).</dd>
-    <dt>17 Audit log</dt><dd>Every administrative event, newest first: approvals and removals, role changes, policy changes, exports, guests, meetings, recordings, support-session consents, automations, backups, notices, seat moves and the bots' exchanges and scheduled runs. People connecting from outside show as <i>internet &lt;address&gt; (&lt;country&gt;)</i>.</dd>
+    <dt>15 Notice desks</dt><dd>The notice board's issuing desks (Admin, HR, IT and Management come set up) and who issues for each, how long withdrawn and expired notices are kept, the export of the register, and moving the Office space's pinned messages onto the board (section 11.10).</dd>
+    <dt>16 Backups &amp; leavers</dt><dd>Three tabs: <b>Backups</b> (section 19.8), <b>Hub updates</b> (section 19.7) and <b>Someone leaving</b> (section 19.9).</dd>
+    <dt>17 Audit log</dt><dd>Every administrative event, newest first: approvals and removals, role changes, policy changes, exports, guests, meetings, recordings, support-session consents, automations, backups, hub updates, notices, holiday circulars, seat moves and seats taken from the drawing, the Cloudflare setup and the bots' exchanges and scheduled runs. People connecting from outside show as <i>internet &lt;address&gt; (&lt;country&gt;)</i>. It is always on.</dd>
   </dl>
   <div class="cols">
-    <figure><img src="figures/fig-cr-automations.png" alt="Control room, Automations"><figcaption><b>Fig. 19-12</b> <b>12 Automations</b></figcaption></figure>
-    <figure><img src="figures/fig-cr-audit.png" alt="Control room, Audit log"><figcaption><b>Fig. 19-13</b> <b>17 Audit log</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-automations.png" alt="Control room, Automations"><figcaption><b>Fig. 19-14</b> <b>12 Automations</b></figcaption></figure>
+    <figure><img src="figures/fig-cr-audit.png" alt="Control room, Audit log"><figcaption><b>Fig. 19-15</b> <b>17 Audit log</b></figcaption></figure>
   </div>
-  <figure class="narrow"><img src="figures/fig-cr-holidays.png" alt="Control room, Bots and tools: Office holidays, with Guru Nanak Jayanti and Christmas, and Add holiday"><figcaption><b>Fig. 19-14</b> <b>Office holidays</b>, in <b>13 Bots &amp; tools</b></figcaption></figure>
-
 
   <h3>19.2 Nib and day sheets</h3>
   <p><b>Control room → Nib &amp; day sheets</b> sets up the day sheets for the office (chapter 8): who gives work, who receives the
-  register, and when Nib asks. Change what you need and click <b>Save</b>; <i>Not saved yet.</i> shows while there are changes.
+  register, and when Nib asks. A new hub sets the times, the workdays and private day sheets itself, once, on its first start; what an
+  administrator changes afterwards stays changed. Change what you need and click <b>Save</b>; <i>Not saved yet.</i> shows while there are changes.
   <b>Send me a register now</b> puts today's register in your own conversation with Nib, to check how it looks before the first evening.
   Every change is recorded in the audit log.</p>
-  
+
   <p>The sheet has four parts: <b>01 Activity givers</b>, <b>02 Management</b>, <b>03 Times</b> and <b>04 Jobs and privacy</b>.</p>
   <table class="t">
-    <tr><th style="width:42mm">Field</th><th>What it does</th><th style="width:28mm">When first set up</th></tr>
-    <tr><td>Activity givers</td><td>The people who hand out work, in three lists: <b>Area leads</b> (an area of a plant or a job), <b>Discipline leads</b> (piping, structural, E&amp;I, civil…) and <b>Team leads</b> (anyone else). Add each with <b>Add someone</b> and give them a scope (<i>Area 4</i>, <i>Piping</i>), shown under their tile on the start of the day card. The button <i>Add the 6 department heads</i> (it counts them) fills the discipline leads from <b>04 Organisation</b>. People can still name anyone else.</td><td>Nobody</td></tr>
-    <tr><td>Who receives the register</td><td>The office manager, the directors: they get the daily register, the follow-up for late sheets and the week. Never a message for each person.</td><td>Nobody</td></tr>
+    <tr><th style="width:42mm">Field</th><th>What it does</th><th style="width:28mm">On a new hub</th></tr>
+    <tr><td>Activity givers</td><td>The people who hand out work, in three lists: <b>Area leads</b> (an area of a plant or a job), <b>Discipline leads</b> (piping, structural, E&amp;I, civil…) and <b>Team leads</b> (anyone else). Add each with <b>Add someone</b> and give them a scope (<i>Area 4</i>, <i>Piping</i>), shown under their tile on the start of the day card. The button <b>Add the … department heads</b> (it counts them) fills the discipline leads from <b>04 Organisation</b>. People can still name anyone else.</td><td>Nobody</td></tr>
+    <tr><td>Who receives the register</td><td>The office manager, the directors: they get the daily register, the follow-up for late sheets and the week. Never a message for each person. Until someone is chosen, the setup check says <i>Nobody receives the evening register</i>.</td><td>Nobody</td></tr>
     <tr><td>Who keeps a day sheet</td><td><b>All but the management</b>, or <b>Choose</b> the people who keep none.</td><td>All but the management</td></tr>
-    <tr><td>When Nib asks, and when the register goes</td><td><b>Start of the day card</b> (if someone has not started their day by then, the card opens by itself), <b>Wrap-up</b>, <b>Register</b> and <b>Follow-up</b>. A follow-up time before the register time means the next workday's morning.</td><td>09:45, 18:00, 19:00, 21:00</td></tr>
-    <tr><td>Asks a day</td><td>How many times Nib may ask one person for their sheet in a day, 1 to 5.</td><td>3</td></tr>
-    <tr><td>Workdays</td><td>No asks and no register on other days.</td><td>Mon to Sat</td></tr>
+    <tr><td>When Nib asks, and when the register goes</td><td><b>Start of the day card</b> (if someone has not started their day by then, the card opens by itself), <b>Wrap-up</b>, <b>Register</b> and <b>Follow-up</b>. A follow-up time before the register time means the next workday's morning.</td><td>09:45, 18:00, 18:30, 19:00</td></tr>
+    <tr><td>Asks a day</td><td>How many times Nib may ask one person for their sheet in a day, 1 to 5. Under it, when the asks go with these times: <i>Nib asks at 6:00 PM · 6:11 PM · 6:22 PM; the register goes at 6:30 PM.</i> (Fig. 19-17). If the times leave too little room, it says so: <i>With these times Nib can ask 2 times before the register.</i></td><td>3</td></tr>
+    <tr><td>Workdays</td><td>No asks and no register on other days, nor on the office's days off (section 19.3). A compensatory working day is a workday.</td><td>Mon to Sat</td></tr>
     <tr><td>Job codes</td><td>One per line, the code then its name (<code>P-12 Hydrotreater revamp</code>). Nib reads them in people's words and totals the register by them.</td><td>None</td></tr>
     <tr><td>Who sees day sheets</td><td><b>Private</b> or <b>Open to the office</b> (below).</td><td>Private</td></tr>
     <tr><td>Day sheets</td><td>On or off. Off: Nib still does leave notes, reminders and its other skills.</td><td>On</td></tr>
   </table>
-  <figure class="narrow"><img src="figures/fig-cr-nib.png" alt="Control room, Nib and day sheets: the activity givers, with Meera Nair as an area lead and six discipline leads"><figcaption><b>Fig. 19-15</b> <b>14 Nib &amp; day sheets</b>: the activity givers</figcaption></figure>
+  <div class="cols">
+    <figure><img src="figures/fig-cr-nib.png" alt="Control room, Nib and day sheets: the activity givers, with Meera Nair as an area lead and six discipline leads"><figcaption><b>Fig. 19-16</b> <b>14 Nib &amp; day sheets</b>: the activity givers</figcaption></figure>
+    <figure><img src="figures/fig-cr-nib-times.png" alt="Nib and day sheets, Times: start of the day card 9:45 AM, wrap-up 6:00 PM, register 6:30 PM, follow-up 7:00 PM; Asks a day 3, Nib asks at 6:00 PM, 6:11 PM and 6:22 PM, the register goes at 6:30 PM; workdays Monday to Saturday"><figcaption><b>Fig. 19-17</b> <b>03 Times</b>: the office's times and when Nib asks</figcaption></figure>
+  </div>
   <h4>How Nib asks, in plain words</h4>
   <ul>
-    <li><b>At the wrap-up time</b> a quiet ink drop appears on the person's Nib tile. Nothing moves.</li>
-    <li><b>25 minutes later</b> the wrap-up card opens under the tile, and Pulse shows it too.</li>
-    <li><b>50 minutes after the wrap-up time</b>, or 15 minutes before the register if that is sooner, Nib writes one message in its conversation, which notifies like any message.</li>
-    <li>That is the most it does: at most <b>Asks a day</b> in all, and never twice within 20 minutes.</li>
-    <li>Never on a day that is not a workday, never to people who keep no day sheet, never on leave, never after <b>Nothing today</b>, and never once the sheet is sent.</li>
+    <li><b>Between the wrap-up time and the register.</b> Nib spreads the day's asks over that window, and keeps the last a few minutes
+    before the register so there is time to send. With the office's times and three asks: <b>18:00</b>, <b>18:11</b> and <b>18:22</b>, before the register at 18:30.</li>
+    <li><b>The first ask</b> is a quiet ink drop on the person's Nib tile. Nothing moves.</li>
+    <li><b>The middle ask</b> opens the wrap-up card under the tile, and Pulse shows it too.</li>
+    <li><b>The last ask</b> is one message in Nib's conversation, which notifies like any message.</li>
+    <li>That is the most it does: at most <b>Asks a day</b> in all, never closer together than 7 minutes. If the window is too short for all of them,
+    Nib asks fewer times, and both this sheet and the setup check say so.</li>
+    <li>Never on a day that is not a workday or is an office day off, never to people who keep no day sheet, never on leave, never after <b>Nothing today</b>, and never once the sheet is sent.</li>
     <li>Never while the person is busy: in a Room, in a Calendar meeting, on <b>No interruptions</b> or <b>Heads-down</b>. An ask that falls in a busy spell waits until it ends.</li>
-    <li>A snooze moves the next ask and does not count. An ask made while none of the person's devices is connected does not count either, so <i>asked 3×</i> in the register is true.</li>
-    <li>If a person usually sends at another time, Nib moves their wrap-up time towards it (never more than an hour earlier than the office's, and never later than 30 minutes before the register). People can also set their own.</li>
+    <li>A snooze moves the next ask and does not count, and never runs past the register (<b>In 30 min</b> at 18:11 comes back at 18:22). An ask made while none of the person's devices is connected does not count either, so <i>asked 3×</i> in the register is true.</li>
+    <li>If a person usually sends at another time, Nib moves their wrap-up time towards it (never more than an hour earlier than the office's), but never so late that the asks lose their room: with three asks and an 18:30 register, nobody is asked later than 18:00. People can also set their own.</li>
     <li>If yesterday's sheet was never sent, the next morning's card offers to send it first.</li>
   </ul>
   <h4>Who sees a day sheet</h4>
   <ul>
-    <li>With <b>Private</b> (the setting when first set up): each person sees their own sheet; a lead sees only the items they gave, with
+    <li>With <b>Private</b> (the setting on a new hub): each person sees their own sheet; a lead sees only the items they gave, with
     the person's note and blockers; the management sees everyone's.</li>
     <li>With <b>Open to the office</b>: every member sees every sheet.</li>
     <li>Guests and bots never see day sheets. Nib's <i>Who's in</i> and other skills never use them.</li>
     <li>Nib reads only its own conversation with each person, never their Direct conversations, which are end-to-end encrypted.</li>
   </ul>
 
-  <h3>19.3 The meeting site (Dexterity Meet)</h3>
-  <p>Meeting pages (section 9.11) are served by a small free site on the office's Cloudflare account, next to the gateway (section 17).
-  It is set up once, on any PC with Node.js 22 and a copy of the app's source, after the gateway itself. Until it is set up, meeting
-  pages are served on the gateway's own address, so nothing breaks in the meantime. The full description is in <code>docs/DEXTERITY-MEET.md</code>.</p>
+  <h3>19.3 Office holidays from the circular</h3>
+  <p>The office's days off are one list, used everywhere: Nib does not ask for day sheets or send the register on them, scheduled bot jobs
+  do not run, hot desks cannot be booked, and overdue action points are not reminded. Every year management issues a <b>holiday
+  circular</b> as a PDF; nobody types the days in. The 2026 circular (<i>HRD/CIR/2026/011</i>) is built into the hub and was registered on
+  its first start.</p>
+  <table class="t">
+    <tr><th style="width:42mm">Kind (as the card shows it)</th><th>In the circular</th><th>What it means</th></tr>
+    <tr><td><span class="tag">HOLIDAY</span></td><td>A named day: <i>Pongal</i>, <i>Diwali</i>, <i>Christmas</i></td><td>Nobody works. Kept even on a Sunday.</td></tr>
+    <tr><td><span class="tag">WEEK-OFF</span></td><td><i>Week-Off</i></td><td>One of the office's alternating Saturdays off.</td></tr>
+    <tr><td><span class="tag">COMPENSATORY OFF</span></td><td><i>Compensatory Off</i></td><td>A day off given back for a Saturday worked.</td></tr>
+    <tr><td><span class="tag">COMPENSATORY WORK</span></td><td><i>Compensatory work for 15-Apr-2027</i></td><td>A <b>working</b> day, even on a day the office does not normally work. It names the day off it makes up for.</td></tr>
+  </table>
+  <h4>Registering next year's circular</h4>
   <ol class="steps">
-    <li><b>Allow Pages in the Cloudflare token.</b> At dash.cloudflare.com open <b>My Profile → API Tokens</b>. Edit the token made for the
-    gateway (or make a new one with the <b>Edit Cloudflare Workers</b> template). Under <b>Permissions</b>, choose <b>+ Add more</b>, then
-    <b>Account · Cloudflare Pages · Edit</b>. Choose <b>Continue to summary</b>, then <b>Update token</b> (or <b>Create token</b>), and copy the
-    token if Cloudflare shows it: it is shown only once.</li>
-    <li><b>Deploy.</b> Double-click <code>scripts\release\Deploy-Gateway.cmd</code>. Paste the token when it asks (nothing shows as you
-    paste, and it is not saved), then the <b>Account ID</b> (on Cloudflare's <b>Workers &amp; Pages</b> overview, on the right). The script
-    deploys the gateway, then the meeting site, and prints both addresses, for example <code>https://dexterity-meet.pages.dev</code>. If
-    Cloudflare says the name <code>dexterity-meet</code> is taken, run <code>Deploy-Gateway.cmd -SiteName dexmeet-&lt;something&gt;</code>.</li>
-    <li><b>Tell the hub.</b> In <b>Control room → Outside the office</b>, under <b>Meeting site · Dexterity Meet</b> (Fig. 19-16), paste the
-    address into <b>Meeting site address</b> and click <b>Save address</b>. Leave <b>Name on meeting pages</b> as <i>Dexterity Design
-    Services</i>, or change it and click <b>Save name</b>.</li>
-    <li><b>Check it.</b> Open the site's address in a browser: it should say <i>Join a meeting with Dexterity Design Services</i>. Copy your
+    <li>Open your conversation with Nib (<b>Direct</b>, at the top of the Switchboard).</li>
+    <li>Drop the circular's PDF into it (or attach it with the paperclip) and send. Nib reads it and answers with a card (Fig. 19-18).</li>
+    <li>Check the card: <span class="tag">HOLIDAY CIRCULAR</span> and the year; the source line (the reference, its date, the file and the
+    first characters of its fingerprint); the period; the days counted by kind, with <b>In doubt</b>. Rows in doubt come first, in amber,
+    each with the reason (<i>Oct 2, 2027 is a Saturday, not a Friday.</i>). The rows show six at a time; <b>Show all 13 rows</b> shows the rest.</li>
+    <li>Check each row in doubt against the paper. A row in doubt is never registered: once you know the right date, add it by hand in Office holidays (below).</li>
+    <li>Click <b>Register 12 days</b> (the button counts the days). Nib posts a summary, with <b>Open Office holidays</b>.</li>
+  </ol>
+  <figure class="narrow"><img src="figures/fig-nib-holidays.png" alt="Nib's card for the 2027 holiday circular HRD/CIR/2026/041: 8 holidays, 2 week-offs, 1 compensatory off, 1 compensatory work, 1 in doubt; Gandhi Jayanti in doubt because Oct 2, 2027 is a Saturday, not a Friday; the first rows; Show all 13 rows; Register 12 days"><figcaption><b>Fig. 19-18</b> Nib's card for next year's circular, with one row in doubt</figcaption></figure>
+  <ul>
+    <li>The same card opens from <b>Control room → Bots &amp; tools → Office holidays → Read a holiday circular…</b>, and also arrives in your conversation with Nib, as a record.</li>
+    <li><b>The same file twice</b> changes nothing: the card says <i>Already registered on … Nothing changes.</i> <b>A revised circular</b> for the same year shows
+    what changes (<i>2 new, 1 changed, 0 removed, 41 the same</i>), and each row is marked <i>New</i>, <i>Same</i> or <i>Changed</i>; registering applies it.
+    Days typed in by hand, and other years, are never removed by a circular.</li>
+    <li><b>A scanned circular</b> has no text for the hub to read: the card says so and, on a PC, offers <b>Read the scan on this PC</b>. Check every row
+    afterwards; a scan never removes a registered day.</li>
+    <li>Only owners and administrators register. Anyone else who sends Nib a circular is told that an administrator registers office holidays.</li>
+  </ul>
+  <h4>Office holidays in the Control room</h4>
+  <p><b>Control room → Bots &amp; tools → Office holidays</b> (Fig. 19-19) lists the days by year (one tab a year). Each day shows its date and
+  weekday, its name, its kind, and where it came from: <i>Ref HRD/CIR/2026/041 · Holiday circular 2027.pdf · SHA eced26df · Sl. 1</i>, or <i>Added
+  by hand</i>. A compensatory working day says which day it makes up for. The bin removes a day. To add one, give the <b>Holiday date</b>, its name
+  and the <b>Kind of day</b>, and click <b>Add day</b>; changing a day that came from a circular makes it yours. <b>Circulars registered</b>
+  lists each circular with its reference, file and fingerprint, and <i>Built into the hub on …</i> or <i>Registered on … by …</i>.
+  Every circular registered is in the audit log.</p>
+  <figure><img src="figures/fig-cr-holidays.png" alt="Office holidays, 2027 tab: each day with its date and weekday, name, kind (Holiday, Week-off, Compensatory off, Compensatory work) and source line Ref HRD/CIR/2026/041, file, SHA and serial number; the form to add a day; Circulars registered"><figcaption><b>Fig. 19-19</b> <b>Office holidays</b>, in <b>13 Bots &amp; tools</b>: 2027 after registering</figcaption></figure>
+
+  <h3>19.4 Working from outside and meeting links</h3>
+  <p>Phones and home laptops reach the hub through the office's own <b>gateway</b> on Cloudflare, and guests open meeting pages on the
+  office's <b>meeting site</b> beside it (sections 9.11 and 17). The hub puts both in place itself, with Cloudflare's own tools: the owner makes
+  a free Cloudflare account and one token, and pastes the token once. No command prompt, no copy of the source, and no addresses or
+  fingerprints to copy. It takes about ten minutes. The account and the token are the office's, so these steps are the owner's.</p>
+  <figure class="narrow"><img src="figures/fig-cr-cloud-start.png" alt="Set up with Cloudflare: Put the office online in one step, 01 create a free Cloudflare account, 02 create an API token with Open the token form and the four permissions, 03 the Cloudflare API token box, Keep it on the hub for gateway updates, and Set up"><figcaption><b>Fig. 19-20</b> <b>Set up with Cloudflare</b>, the first card in <b>09 Outside the office</b></figcaption></figure>
+  <ol class="steps">
+    <li><b>Make the account.</b> Go to <code>https://dash.cloudflare.com/sign-up</code> (or <b>Cloudflare sign-up</b> on the card), sign up with the
+    <b>office email address</b>, not a personal one, and click the link in Cloudflare's email. The free plan is enough. Skip this if the office has an account.</li>
+    <li><b>Make the token.</b> In <b>Control room → 09 Outside the office</b>, the first card is <b>Set up with Cloudflare</b> (Fig. 19-20). Click
+    <b>Open the token form</b>: Cloudflare's token page opens with three permissions filled in (<i>Account · Workers Scripts · Edit</i>,
+    <i>Account · Cloudflare Pages · Edit</i>, <i>Account · Account Settings · Read</i>). Add one more yourself, for calls from outside:
+    <b>+ Add more → Account → Cloudflare Realtime</b> (it may be called <b>Calls</b>) <b>→ Edit</b>. Then click <b>Continue to summary → Create Token → Copy</b>.</li>
+    <li><b>Paste it once.</b> Paste the token into <b>Cloudflare API token</b>, tick <b>Keep it on the hub for gateway updates</b> (so later
+    updates are one click), and click <b>Set up</b>.</li>
+    <li><b>Watch it work.</b> The card ticks off each step: <i>Check the token</i>, <i>Choose the Cloudflare account</i> (if the token reaches
+    more than one, the card asks which is the office's; choose it and click <b>Continue</b>), <i>Workers address (workers.dev)</i>, <i>Upload the gateway</i>,
+    <i>Pin the gateway to this hub</i>, <i>Turn on the gateway's address</i>, <i>Meeting site project</i>, <i>Publish the meeting site</i>, <i>Connect this
+    hub and allow access from outside</i>, <i>Check the gateway, the pin and the meeting site</i> and <i>Relay for calls (Cloudflare TURN)</i>.</li>
+  </ol>
+  <p><b>It worked when</b> the card says <i>Set up</i> with a tick and shows the <b>Cloudflare account</b>, the <b>Gateway</b>, the <b>Meeting site</b>
+  and <b>Calls</b>: <i>Cloudflare TURN</i>, and the status line under <b>Access from outside the office</b> says <i>gateway pinned to this hub</i>
+  (Fig. 19-21). Meeting links then look like <code class="wrap">https://dexterity-meet.pages.dev/p12-design-review</code>.</p>
+  <figure><img src="figures/fig-cr-cloud-done.png" alt="Set up with Cloudflare done: Set up just now, the Cloudflare account Dexterity Design Services, the gateway dexconnect-gateway on workers.dev, the meeting site dexterity-meet.pages.dev, calls on Cloudflare TURN; below, the gateway address, Allow access from outside the office on, Connected, gateway pinned to this hub; and the Meeting site address filled in"><figcaption><b>Fig. 19-21</b> Set up: the gateway, the meeting site and the call relay, and access from outside switched on</figcaption></figure>
+  <ul>
+    <li><b>If a step stops</b>, the card says why in plain words, for example <i>The token is missing this permission:</i> and its name. Fix it on the
+    same token in Cloudflare (<b>My Profile ▸ API Tokens</b>, edit the token) and press <b>Retry</b>: the setup carries on from that step. A new
+    Cloudflare account's address can take a few minutes to answer; press <b>Retry</b> in five minutes.</li>
+    <li><b>The token</b> is used for the setup and then forgotten, unless you tick <b>Keep it on the hub for gateway updates</b>. It is never shown
+    again or sent to any device. <b>Forget the token</b> removes a kept one.</li>
+    <li><b>Later</b>: <b>Show the steps</b> shows what was done; <b>Run the setup again</b> repeats it, changing what is there in place (never a second
+    gateway, site or relay key). When a newer hub carries a newer gateway, the card offers <b>Update the gateway</b>.</li>
+    <li><b>Who may use it</b> is left as it was: <b>New devices may ask to join from outside</b> and <b>The Control room works from outside</b> are set
+    on the same page. Guest links work only while <b>Allow access from outside the office</b> is on, and only if guest links are allowed under
+    <b>Control room ▸ Policies ▸ Meetings</b>.</li>
+    <li><b>Name on meeting pages</b>, under <b>Meeting site · Dexterity Meet</b>: leave <i>Dexterity Design Services</i>, or change it and click <b>Save name</b>.</li>
+    <li><b>Check it</b>: open the meeting site's address in a browser; it should say <i>Join a meeting with Dexterity Design Services</i>. Copy your
     personal room's link from the Meet lens and open it on a phone using mobile data.</li>
-  </ol>
-  <figure class="narrow"><img src="figures/fig-cr-meetsite.png" alt="Control room, Outside the office: Meeting site address and Name on meeting pages"><figcaption><b>Fig. 19-16</b> <b>Meeting site · Dexterity Meet</b> in <b>09 Outside the office</b></figcaption></figure>
-  <p>The site's address is a setting, not part of the app: an office domain such as <code>meet.dexteritydesign.co.in</code> can be added
-  later in Cloudflare (<b>Workers &amp; Pages → dexterity-meet → Custom domains</b>) and entered here. New links use the new address at
-  once, and links already sent keep working. Guest links work only while <b>Allow access from outside the office</b> is on, and only if
-  guest links are allowed under <b>Control room ▸ Policies ▸ Meetings</b>.</p>
+  </ul>
+  <div class="note info"><b>An office domain for meeting links, any time later</b> (<code>meet.dexteritydesign.co.in</code>). In Cloudflare, open <b>Workers
+  &amp; Pages → dexterity-meet → Custom domains → Set up a custom domain</b>. If the domain's DNS is elsewhere (GoDaddy, BigRock…), add the one
+  <b>CNAME</b> record Cloudflare shows there. When the domain shows <b>Active</b>, enter it in <b>Control room → 09 Outside the office → Meeting
+  site address</b> and click <b>Save address</b>. New links use it at once; links already sent keep working.</div>
+  <p>For a hub built without the Cloudflare parts, IT can still deploy by hand with <code>scripts\release\Deploy-Gateway.cmd</code> on a PC with
+  Node.js 22 and a copy of the source, and paste the addresses it prints into this page (<code>docs/REMOTE-ACCESS.md</code>).</p>
 
-  <h3>19.4 Installing the office hub</h3>
-  <p>Put the hub on one office PC that stays on, plugged into the office network. Set it never to sleep, and ask whoever
-  manages the router to give it a fixed address (a DHCP reservation); the apps follow the hub if its address changes, but a
-  fixed one is best.</p>
+  <h3>19.5 Zoho Calendar for the office</h3>
+  <p>Zoho lets an app read a person's calendar only through an app (a <i>client</i>) registered by a Zoho account. The office registers one
+  client, once, for everyone; nobody registers anything per person, and the administrators never see anyone's events. It takes about five minutes.</p>
   <ol class="steps">
-    <li>Copy the hub folder from the release (the hub zip) to where it should live, for example <code>D:\Dexterity Connect Hub</code>.</li>
-    <li>Double-click <b>Install-Hub.cmd</b> and click <b>Yes</b> when Windows asks for permission. It installs the hub as a Windows service that starts with the PC and restarts itself, and opens only the ports it needs in Windows Firewall: TCP 47900 for the apps and UDP 47901 for finding the hub (plus 47910–47999 for meetings of more than 8 people).</li>
-    <li>On your own PC, install Dexterity Connect and click <b>Request access</b>. As the first person, you become the owner, approved at once. You can make others owners later and step down yourself (<b>03 People &amp; roles</b>).</li>
-    <li>Everyone else installs the app and requests access; approve them in <b>Control room → Approvals</b>.</li>
-    <li>Choose a backup folder straight away (section 19.5).</li>
+    <li>Sign in at <code>https://api-console.zoho.in</code> with the office's Zoho account. (The form in the app shows the console's address for the data centre chosen.)</li>
+    <li>Click <b>Add Client → Server-based Applications</b> and fill in: <b>Client Name</b> <code>Dexterity Connect</code>; <b>Homepage URL</b>
+    <code>https://www.dexteritydesign.co.in</code>; <b>Authorized Redirect URIs</b> <code>http://127.0.0.1:47917/zoho/callback</code>, exactly as written
+    (the app shows it with a <b>Copy</b> button).</li>
+    <li>Click <b>Create</b>. Zoho shows a <b>Client ID</b> and a <b>Client Secret</b>. If any colleague's Zoho account is in another region, turn on <b>Multi-DC</b> in the client's settings.</li>
+    <li>In the app, open <b>Control room → 11 Integrations → Zoho Calendar</b> (Fig. 19-22). Leave <b>Zoho data centre</b> on <b>India (zoho.in)</b>,
+    paste the <b>Client ID</b> and <b>Client secret</b>, and click <b>Save and invite everyone</b>.</li>
   </ol>
-  <p>The hub's data is in <code>hub-data</code> beside it, its logs in <code>logs</code>. A browser at <code>https://&lt;hub-pc&gt;:47900/health</code>
-  answers if the hub is running (the browser warns about the certificate; the app trusts it by its fingerprint instead).
-  <b>Uninstall-Hub.cmd</b> removes the service and keeps the data.</p>
+  <figure class="narrow"><img src="figures/fig-cr-zoho.png" alt="Control room, Integrations, Zoho Calendar, one step for the whole office: the five steps with the redirect address and Copy, Zoho data centre India, Client ID, Client secret, Zoho Calendar for everyone, Save and invite everyone, and 0 people connected"><figcaption><b>Fig. 19-22</b> <b>Zoho Calendar · one step for the whole office</b>, in <b>11 Integrations</b></figcaption></figure>
+  <p><b>It worked when</b> the setup check says <i>Zoho Calendar is ready for everyone</i>. Everyone receives one message inviting them to
+  connect, and each person connects their own calendar (section 9.1). The list under the form fills up as they do: each person with their Zoho
+  email, the calendar their meetings go to and the last sync, marked <i>Connected</i>, <i>Retrying</i>, <i>Reconnect needed</i> or <i>Paused</i>. It never shows event titles or times.</p>
+  <ul>
+    <li><b>Zoho Calendar for everyone</b> off pauses every connection without forgetting it.</li>
+    <li>The secret is kept on the hub, sealed, and never shown again: the box then says <i>Saved. Leave empty to keep it</i>. <b>Remove secret</b> stops syncing until a secret is saved again.</li>
+    <li>Saving a <b>different</b> Client ID asks everyone to reconnect.</li>
+    <li>If Zoho refuses the redirect address in step 2, tell IT: the app then needs a small change to send Zoho through the office gateway instead.</li>
+  </ul>
 
-  <h3>19.5 Backing up and restoring the hub</h3>
-  <figure><img src="figures/fig-cr-backups.png" alt="Control room, Backups and leavers: hub backup, where and when, keep"><figcaption><b>Fig. 19-17</b> <b>16 Backups &amp; leavers → Backups</b></figcaption></figure>
+  <h3>19.6 Installing the office hub</h3>
+  <p>The hub runs on one office PC that stays on, on mains power and the office network (a cable is best). For automatic backups, give it a
+  second internal disk, or have a network share (NAS) ready: a second part of the same disk is not enough. Ask whoever manages the office
+  router to give it a fixed address (a <i>DHCP reservation</i>); the apps follow the hub if its address changes, but a fixed one is best.</p>
   <ol class="steps">
-    <li><b>Backup folder</b>: a second disk (<code>E:\DexConnectBackup</code>) or a network share (<code>\\NAS\backups\dexconnect</code>), never the hub's own disk. Click <b>Save folder</b>; the hub checks it can write there and says why if not.</li>
+    <li>On that PC, download <code>DexterityConnectHub-Setup.exe</code> from
+    <code class="wrap">https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe</code> and run it.</li>
+    <li>Click <b>Yes</b> when Windows asks for permission. If Windows says <i>Windows protected your PC</i>, click <b>More info → Run anyway</b>.</li>
+    <li>Click through the pages; the defaults are right. <b>Set up the office hub</b> says what it will do. The programs go in
+    <code>C:\Program Files\Dexterity Connect Hub</code>. <b>Where the hub keeps its data</b> chooses the data folder
+    (<code class="wrap">C:\ProgramData\Dexterity Connect Hub\hub-data</code> unless you choose a drive with more room; 10 GB or more), which only Windows
+    administrators can open. Leave <b>Keep this PC awake while plugged in (recommended for the hub)</b> ticked.</li>
+    <li>Setup checks the PC (64-bit Windows 10 or 11, free space, and that no other program holds the hub's ports), installs the hub as a Windows
+    service that starts with the PC and restarts itself, opens its ports in Windows Firewall (TCP 47900 for the apps, UDP 47901 for finding the
+    hub, and TCP and UDP 47910–47999 for large meetings), keeps the PC from sleeping, starts the hub and waits until it answers.</li>
+  </ol>
+  <p><b>It worked when</b> the last page says <b>The hub is running</b>. If it fails, the message gives the reason; <b>Open the setup log</b>
+  shows <code class="wrap">C:\ProgramData\Dexterity Connect Hub\setup.log</code>. Running the setup again is always safe: it repairs or upgrades the hub
+  and never touches its data. A hub installed the old way, from the hub zip with <b>Install-Hub.cmd</b>, is found and upgraded where it is.</p>
+  <p>Then, on your own PC, install the app and click <b>Request access</b>: as the first person, you become the owner, approved at once.
+  Section 20 takes it from there. A browser at <code>https://&lt;hub-pc&gt;:47900/health</code> answers if the hub is running (the browser
+  warns about the certificate; the app trusts it by its fingerprint instead). Windows' <b>Installed apps</b> (Apps &amp; features) has
+  <b>Uninstall</b>, which keeps the hub's data unless you tick <b>Also delete the hub's data (this cannot be undone)</b>.</p>
+
+  <h3>19.7 The hub updates itself</h3>
+  <p>The hub setup is run once. After that the hub keeps itself up to date from the same release feed as the apps; nobody runs the setup
+  again.</p>
+  <ul>
+    <li><b>Finding it.</b> The hub looks for a newer version a minute after it starts and every 4 hours. It downloads it, checks it against the
+    feed (its size and SHA-512 fingerprint) and tells the owners and administrators once: <i>The hub updates itself to … at 03:00 … It is offline for about a minute.</i></li>
+    <li><b>Installing it.</b> At the quiet time, 03:00 on the hub PC's clock (after the 02:00 backup), the hub makes a fresh backup and installs the
+    new version. It is offline for about a minute and everyone reconnects by themselves. Never while a meeting, call or webinar is going on:
+    it waits for it to end, and if two hours pass, it tries the next night.</li>
+    <li><b>If it does not work.</b> If the new version does not start or answer, the setup puts the version before back and starts it. The hub then
+    says what happened, and does not try that version again by itself.</li>
+  </ul>
+  <figure><img src="figures/fig-cr-hubupdates.png" alt="Backups and leavers, Hub updates: Version 0.1.26111712 is ready to install, with Look now and Update now; Running 0.1.26111409, Channel Stable, Last looked just now, Next update Tonight at 3:00 AM; How the hub updates itself: Install new versions by themselves on, Quiet time 03:00 AM, Channel Stable; the setup log's place"><figcaption><b>Fig. 19-23</b> <b>16 Backups &amp; leavers → Hub updates</b>: the next version, ready for tonight</figcaption></figure>
+  <p><b>Control room → 16 Backups &amp; leavers → Hub updates</b> (Fig. 19-23, owners and administrators only):</p>
+  <dl class="kv">
+    <dt>The state</dt><dd><i>The hub is up to date</i>, <i>Version … is on its way</i> (downloading), <i>Version … is ready to install</i>,
+    <i>Installing …: back in about a minute</i>, or <i>The update to … did not work</i>, with what the setup said, where its log is, and <b>Try again</b>.</dd>
+    <dt>The cells</dt><dd><b>Running</b> (this hub's version), <b>Channel</b>, <b>Last looked</b> and <b>Next update</b> (for example <i>Tonight at 3:00 AM</i>, with the new version and its size).</dd>
+    <dt>Look now, Update now</dt><dd><b>Look now</b> looks at the feed at once. <b>Update now</b> asks <i>Update the hub to … now?</i> and updates as
+    soon as nothing is live on the hub. While a meeting or call is going on it says so and waits; <b>Update now anyway</b> cuts everyone in it off for about a minute.</dd>
+    <dt>How the hub updates itself</dt><dd><b>Install new versions by themselves</b> (off: the hub only tells you, and waits for <b>Update now</b>), the
+    <b>Quiet time</b> (keep it after the night's backup) and the <b>Channel</b>: <b>Stable</b>, what every office gets, or <b>Beta</b>, only for a test hub.</dd>
+    <dt>Updates</dt><dd>The history: each update with its date, the versions, how it was started, the backup before it, and <span class="tag">UPDATED</span> or <span class="tag amber">WENT BACK</span>.</dd>
+  </dl>
+  <p>The hub installs a setup only if its size and fingerprint match the release feed, never an older version, and never a beta on the stable
+  channel. The setup check has a line for it. To update by hand instead, run the new <code>DexterityConnectHub-Setup.exe</code> on the hub PC.</p>
+
+  <h3>19.8 Backing up and restoring the hub</h3>
+  <p><b>On its first start the hub chooses the backup folder itself</b>, when it is safe: a fixed disk of the hub PC other than the one with the
+  hub's data and not the Windows disk, with room to spare. It makes <code>&lt;drive&gt;:\DexConnectBackup</code> there, private to administrators,
+  sets 02:00 every night, keeps 14 daily, 8 weekly and 12 monthly copies, and makes and checks the first backup at once. <b>Backups</b> then
+  says <i>Chosen by the hub on its first start</i>, with the disk it chose and the first backup (Fig. 19-24).</p>
+  <p>If there is no second disk (one disk, another part of the same disk, or only USB drives), the hub chooses nothing, and both this page and the
+  setup check say <i>Backups need a second disk or a network share</i>, with what the hub found. Fit a second disk and restart the hub PC (it looks
+  again on every start), or enter a network share as below.</p>
+  <figure><img src="figures/fig-cr-backups.png" alt="Control room, Backups and leavers, Backups: Chosen by the hub on its first start, E:\DexConnectBackup on a second disk, the first backup checked; the hub backup sheet with the last good backup, its size, the next backup and the copies; where and when"><figcaption><b>Fig. 19-24</b> <b>16 Backups &amp; leavers → Backups</b>, with the folder the hub chose</figcaption></figure>
+  <p>To choose or change it yourself, under <b>Where and when</b>:</p>
+  <ol class="steps">
+    <li><b>Backup folder</b>: a second disk (<code>E:\DexConnectBackup</code>) or a network share (<code>\\NAS\backups\dexconnect</code>), never the hub's own disk. Click <b>Save folder</b>; the hub checks it can write there and says why if not. Once you save a folder, the hub never chooses one itself again.</li>
     <li><b>Every night at</b>: the hub PC's time, 02:00 unless you change it. If the hub was off then, it backs up as soon as it is on again.</li>
     <li><b>Keep</b>: one a day for 14 days, one a week for 8 weeks and one a month for 12 months, unless you change the numbers. Click <b>Save</b>.</li>
   </ol>
@@ -2175,17 +2385,17 @@
   once (before moving the hub, for example). After two days without a good backup, the sheet turns amber and every administrator
   is told once a day.</p>
   <div class="note stop"><b>The backup folder holds the hub's private key and all the office's messages and files.</b> Only administrators
-  should be able to read it. For a network share, the hub service's account (Local System, which acts as the hub PC's computer account) must be allowed to write there.</div>
+  should be able to read it. For a network share, the hub service's account (Local System, which acts as the hub PC's computer account, <code>DOMAIN\HUB-PC$</code>) must be allowed to write there.</div>
   <h4>Putting a backup back</h4>
   <ol class="steps">
     <li>On the hub PC, stop the service: <b>Services ▸ Dexterity Connect Hub ▸ Stop</b>. The restore refuses to run while the hub is running.</li>
-    <li>Open a Command Prompt as administrator in the hub's folder and run <code>DexterityConnectHub.exe --restore "E:\DexConnectBackup"</code> for the newest copy, or give one copy's folder under <code>snapshots</code>. You can also drag the backup folder onto <b>Restore-Hub.cmd</b>. The copy is checked first; the current data is moved aside to <code>hub-data-before-restore-…</code>, never deleted.</li>
+    <li>Open a Command Prompt as administrator in the hub's program folder (<code>C:\Program Files\Dexterity Connect Hub</code>) and run <code class="wrap">DexterityConnectHub.exe --restore "E:\DexConnectBackup"</code> for the newest copy, or give one copy's folder under <code>snapshots</code>. You can also drag the backup folder onto <b>Restore-Hub.cmd</b>. The copy is checked first; the current data is moved aside to <code>hub-data-before-restore-…</code>, never deleted.</li>
     <li>Start the service again.</li>
   </ol>
-  <p>On a new PC: run <b>Install-Hub.cmd</b>, then the three steps above. Apps trust the restored hub because its certificate is
+  <p>On a new PC: run <code>DexterityConnectHub-Setup.exe</code>, then the three steps above. Apps trust the restored hub because its certificate is
   restored. Anything after the backup (new messages, devices approved since) is not in it. The full procedure is in <code>docs/BACKUP.md</code>.</p>
 
-  <h3>19.6 When someone leaves</h3>
+  <h3>19.9 When someone leaves</h3>
   <p><b>Control room → Backups &amp; leavers → Someone leaving</b> offboards a colleague in one step: choose <b>Who is leaving</b>
   and <b>Who takes over</b>, decide what happens to <b>Their meetings from now on</b> (<b>Move to the colleague</b> or <b>Cancel them</b>), add a
   <b>Note for the colleague (optional)</b>, check the list of what will be handed over, and confirm.</p>
@@ -2196,21 +2406,157 @@
     <li>If they come back, <b>Give access again</b> restores their account.</li>
   </ul>
 
-  <h3>19.7 Releasing updates</h3>
+  <h3>19.10 Releasing updates</h3>
   <p>Releases are built on an office Windows PC with one script; the one-time setup (Node.js 22, Git, and optionally the Android
   tools and the GitHub CLI) is in <code>docs/RELEASING.md</code>.</p>
   <ol class="steps">
-    <li>On the build PC, with the <code>main</code> branch checked out, double-click <code>scripts\release\Build-Release.cmd</code>. It installs what it needs, typechecks, runs the tests, and builds the Windows installer, the hub package and the Android APK into <code>D:\DexterityConnect-Releases\&lt;version&gt;</code>, with <code>SHA256SUMS.txt</code> and the update feed. Nothing is published yet.</li>
-    <li>Install the new setup on one PC and try it.</li>
-    <li>Publish that exact build: <code>Build-Release.cmd -Publish -Version &lt;that version&gt; -SkipTests</code>. Installed apps update themselves within the hour (stable from <code>main</code>, beta from other branches; <code>-Channel</code> overrides).</li>
+    <li>On the build PC, with the <code>main</code> branch checked out, double-click <code>scripts\release\Build-Release.cmd</code>. It installs what it needs, typechecks, runs the tests, and builds the Windows installer, the hub setup (<code class="wrap">DexterityConnectHub-Setup-&lt;version&gt;.exe</code>, with the hub zip beside it) and the Android APK into <code class="wrap">D:\DexterityConnect-Releases\&lt;version&gt;</code>, with <code>SHA256SUMS.txt</code> and the update feed. Nothing is published yet.</li>
+    <li>Install the new setup on one PC and try it (and the hub setup on a spare PC).</li>
+    <li>Publish that exact build: <code class="wrap">Build-Release.cmd -Publish -Version &lt;that version&gt; -SkipTests</code>. Installed apps update themselves within the hour, and the office hub at its next quiet time (stable from <code>main</code>, beta from other branches; <code>-Channel</code> overrides).</li>
   </ol>
   <p>Other options: <code>-SkipAndroid</code>, <code>-Out E:\Builds</code>. Versions read <i>major.minor.yyMMddHH</i>, so each build is newer than the
-  last. PCs without internet update from the hub's copy. Mac installers are built on a Mac. The installers are not code-signed, hence SmartScreen (section 2.1).</p>
+  last. Publishing also uploads copies without the version in their names, so the <code class="wrap">…/releases/latest/download/DexterityConnectHub-Setup.exe</code>
+  and <code>…/DexterityConnect-Setup.exe</code> links always give the newest stable build. PCs without internet update from the hub's copy. Mac
+  installers are built on a Mac. The installers are not code-signed, hence SmartScreen (section 2.1).</p>
 </section>
 
 <!-- ===================================================== 20 -->
 <section class="sec">
-  <h2>20 Keyboard shortcuts</h2>
+  <h2>20 Setting up the office</h2>
+  <p class="lead">Everything that can happen on its own now does. This chapter lists only what needs a person: the hardware, the office's own
+  accounts, decisions, and the checks that need a second device. Each step says where, and how to tell it worked. The same steps are printed on
+  their own as <i>Dexterity Connect: what you still do by hand</i> (<code class="wrap">docs/Dexterity-Connect-Office-Setup.pdf</code>).</p>
+
+  <h3>20.1 Already done for you</h3>
+  <p>Each of these is set up automatically, once, and never overwrites a change you make later.</p>
+  <table class="t">
+    <tr><th style="width:38mm">What</th><th>What happens by itself</th></tr>
+    <tr><td>The server</td><td><code>DexterityConnectHub-Setup.exe</code> checks the PC, installs the background service (it starts with the PC and restarts itself if it stops), opens the firewall, stops the PC sleeping, and checks that the server answers. After that the server updates itself, at 03:00, after the backup, never during a meeting (section 19.7).</td></tr>
+    <tr><td>Backups</td><td>On its first start the server looks for a second disk. If it finds one, it makes a private backup folder, schedules 02:00 nightly backups (keeping 14 daily, 8 weekly and 12 monthly), runs the first backup and checks it. If there is no safe second disk, the Setup check says so (step 3).</td></tr>
+    <tr><td>Seating</td><td>The office floor plan with the 40 names from the drawing is there from the start. People take their seat automatically when they join and their name clearly matches; you only confirm the few that are unclear (section 10.4).</td></tr>
+    <tr><td>Holidays</td><td>2026's days off, from circular HRD/CIR/2026/011, are registered: holidays, week-offs and compensatory offs are days off; compensatory working days are working days (section 19.3).</td></tr>
+    <tr><td>Nib</td><td>Start of day 09:45, wrap-up 18:00, register 18:30, follow-up 19:00, Monday to Saturday, day sheets private. Nib reminds people three times before the register: 18:00, 18:11 and 18:22 (section 19.2).</td></tr>
+    <tr><td>Notice desks</td><td>Admin, HR, IT and Management.</td></tr>
+    <tr><td>Policies</td><td>The standard policies apply.</td></tr>
+    <tr><td>Audit log</td><td>Always on.</td></tr>
+    <tr><td>Remote access and Dexterity Meet</td><td>You paste one Cloudflare token (step 4). The server then deploys the gateway and the meeting site, pins the gateway to itself, creates the call relay, turns on access from outside, and checks it all.</td></tr>
+    <tr><td>Zoho Calendar</td><td>Ready for everyone once the office's Zoho app is registered (step 5). Each person then connects their own calendar.</td></tr>
+    <tr><td>The final checks</td><td>A live <b>Setup check</b> at the top of the Control room replaces the old checklist (section 19.1).</td></tr>
+  </table>
+
+  <h3>20.2 The steps, in order</h3>
+  <h4>Step 1. The server PC</h4>
+  <ol class="steps">
+    <li>Put the server PC where it stays: on mains power, on the office network (a cable is best).</li>
+    <li><b>For automatic backups</b>, fit a second internal disk, or have a network share (NAS) ready. A second part of the same disk is not enough: if that disk fails, the backup goes with it.</li>
+    <li>Ask whoever manages the office router to give this PC a fixed address (a <i>DHCP reservation</i>).</li>
+    <li>On the server PC, download <code class="wrap">https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnectHub-Setup.exe</code>
+    and run it. Click <b>Yes</b> when Windows asks for permission, and click through the pages; the defaults are right. If Windows says
+    <i>Windows protected your PC</i>, click <b>More info → Run anyway</b> (section 19.6).</li>
+  </ol>
+  <p><b>It worked when</b> the last page says <b>The hub is running</b> and shows the PC's address. If it fails, the message gives the reason and the log file's location.</p>
+  <h4>Step 2. Your PC: become the owner</h4>
+  <ol class="steps">
+    <li>Download <code class="wrap">https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/DexterityConnect-Setup.exe</code> and install it.</li>
+    <li>Type your name, pick the office hub (shown with <span class="tag">SECURE</span>), and click <b>Request access</b>.</li>
+    <li>You are the first, so you are the <b>owner</b>.</li>
+  </ol>
+  <p>Stay the owner until everything below is done and checked (step 9 is the hand-over).</p>
+  <h4>Step 3. Look at the Setup check</h4>
+  <p>Click your picture (top right) → <b>Control room</b>. The <b>Setup check</b> at the top lists what is passed and what is left, each with
+  the one thing to do (section 19.1). <b>Copy report</b> and <b>Download</b> give it as text; <b>Check again</b> refreshes it after you fix something.
+  What you will probably see there:</p>
+  <table class="t">
+    <tr><th style="width:64mm">Setup check says</th><th>What to do</th></tr>
+    <tr><td><b>Backups need a second disk or a network share</b></td><td>Fit a second disk and restart the server PC (it looks again on every start). Or enter a network share in <b>Control room → 16 Backups &amp; leavers → Backups → Backup folder</b>, and give the server PC's computer account (<code>DOMAIN\SERVER-PC$</code>) write access to it.</td></tr>
+    <tr><td><b>Working from outside is not set up</b></td><td>Step 4.</td></tr>
+    <tr><td><b>Zoho Calendar is not set up for the office</b></td><td>Step 5.</td></tr>
+    <tr><td><b>Nobody receives the evening register</b></td><td>A decision for later (step 7).</td></tr>
+    <tr><td><b>Names to confirm on the floor plan</b></td><td>Step 7.</td></tr>
+    <tr><td>Four rows marked <b>By hand</b></td><td>Step 8.</td></tr>
+  </table>
+  <h4>Step 4. Working from outside, and Dexterity Meet links (about 10 minutes)</h4>
+  <p>This is the office's Cloudflare account, so these steps are yours. Section 19.4 has the pictures.</p>
+  <ol class="steps">
+    <li><b>Make the account</b>: go to <code>https://dash.cloudflare.com/sign-up</code>, sign up with the <b>office email address</b> (not a personal one), and click the link in Cloudflare's email. The free plan is enough.</li>
+    <li><b>Make the token</b>: in the app, open <b>Control room → 09 Outside the office</b>. The first card is <b>Set up with Cloudflare</b>.
+    Click <b>Open the token form</b>; Cloudflare's token page opens with three permissions already filled in. Add one more yourself:
+    <b>+ Add more → Account → Cloudflare Realtime</b> (it may be called <b>Calls</b>) <b>→ Edit</b>. This one is for calls from outside.
+    Click <b>Continue to summary → Create Token → Copy</b>.</li>
+    <li><b>Paste it once</b>: paste the token into the card, tick <b>Keep it on the hub for gateway updates</b> (so later updates are one click), and click <b>Set up</b>.
+    The card ticks off each step. If one stops, it says why (for example a missing permission): fix that on the same token in Cloudflare, then click <b>Retry</b>.</li>
+  </ol>
+  <p><b>It worked when</b> the card shows the gateway, the meeting site and <b>Calls</b>: <i>Cloudflare TURN</i>, and the status says <i>gateway pinned to this hub</i>.
+  Your meeting links then look like <code class="wrap">https://dexterity-meet.pages.dev/p12-design-review</code>. An office domain for meeting links
+  (<code>meet.dexteritydesign.co.in</code>) can be added any time later (section 19.4).</p>
+  <h4>Step 5. Zoho Calendar for the office (one form, about 5 minutes)</h4>
+  <ol class="steps">
+    <li>Sign in at <code>https://api-console.zoho.in</code> with the office's Zoho account.</li>
+    <li>Click <b>Add Client → Server-based Applications</b>, and fill in <b>Client Name</b> <code>Dexterity Connect</code>, <b>Homepage URL</b>
+    <code>https://www.dexteritydesign.co.in</code> and <b>Authorized Redirect URIs</b> <code>http://127.0.0.1:47917/zoho/callback</code>, exactly as
+    written. The same address is shown with a <b>Copy</b> button in the app.</li>
+    <li>Click <b>Create</b>. Zoho shows a <b>Client ID</b> and <b>Client Secret</b>. If any colleague's Zoho account is in another region, turn on <b>Multi-DC</b> in the client's settings.</li>
+    <li>In the app, open <b>Control room → 11 Integrations → Zoho Calendar</b>: leave <b>India</b>, paste the <b>Client ID</b> and <b>Client Secret</b>, and click <b>Save and invite everyone</b>.</li>
+  </ol>
+  <p><b>It worked when</b> the Setup check shows <i>Zoho Calendar is ready for everyone</i>, and the people list in that form fills up as colleagues
+  connect. If Zoho refuses the redirect address in step 2, tell IT: the app then needs a small change to send Zoho through the office gateway instead.</p>
+  <h4>Step 6. Bring people in</h4>
+  <ol class="steps">
+    <li><b>Each person's PC</b>: they install the app from the second link in step 2, type their name and click <b>Request access</b>.</li>
+    <li>In <b>Control room → 01 Approvals</b> you see a code: ask them to read out the one on their screen, and click <b>Approve</b> if it matches. Their seat is given automatically if their name matches the drawing.</li>
+    <li><b>Phones and home laptops</b> (each person does this; no administrator needed): <b>Preferences → Your devices → Add my phone</b> (scan the QR code) or <b>Add my laptop</b> (a code to paste), section 2.4.</li>
+    <li><b>Zoho Calendar</b> (each person does this): they click <b>Connect Zoho Calendar</b> in their Calendar or in <b>Preferences → Calendar</b>, sign in to Zoho in the browser, and then see <i>Connected as … · last synced …</i> (section 9.1). They need nothing from you.</li>
+  </ol>
+  <h4>Step 7. Decisions, whenever you are ready</h4>
+  <p>None of these blocks anything; the office works without them.</p>
+  <table class="t">
+    <tr><th style="width:70mm">Decision</th><th>Where</th></tr>
+    <tr><td>Who receives Nib's evening register (directors, managers)</td><td><b>Control room → 14 Nib &amp; day sheets → 02 Management</b></td></tr>
+    <tr><td>Who hands out work, and the job codes</td><td><b>14 Nib &amp; day sheets → 01 Activity givers</b> (<b>Add the … department heads</b>) and <b>04 Jobs and privacy</b> (<b>Job codes</b>)</td></tr>
+    <tr><td>Who issues notices for each desk</td><td><b>15 Notice desks → Add an issuer…</b></td></tr>
+    <tr><td>Names the server could not match for certain</td><td><b>Directory → Org chart → Floor → Arrange → Waiting to be matched → Confirm</b> (section 10.4)</td></tr>
+    <tr><td>Departments, managers, rooms, more employee details (later, for company-wide use)</td><td><b>04 Organisation → Import people → Template</b> (a CSV from Excel)</td></tr>
+    <tr><td>Anything in the policies</td><td><b>08 Policies</b></td></tr>
+  </table>
+  <p><b>Every year</b>, when management issues the next holiday circular, drop the PDF into your conversation with Nib, check any rows Nib marks
+  in doubt, and click <b>Register</b> (section 19.3). The same file twice changes nothing, and a revised circular shows what changed.</p>
+  <h4>Step 8. The checks only a person can do</h4>
+  <p>These are listed as <b>By hand</b> in the Setup check, and are never marked passed by themselves.</p>
+  <ul class="checks">
+    <li>☐ Two PCs message each other, and a call between them works.</li>
+    <li>☐ A phone on <b>mobile data</b> (Wi-Fi off) sends a message.</li>
+    <li>☐ A meeting link opened on that phone reaches the meeting page, and a test guest joins from the lobby.</li>
+    <li>☐ A call from outside the office has sound and video both ways.</li>
+    <li>☐ <b>On the first real Cloudflare run</b>: every step in the card ticked, and the status says <i>gateway pinned to this hub</i>.</li>
+    <li>☐ <b>On the first real Zoho connection</b>: a test meeting appears in that person's Zoho Calendar at the right time, and moving it in Dexterity Connect moves it in Zoho.</li>
+    <li>☐ After the first working evening: the management received Nib's register.</li>
+  </ul>
+  <h4>Step 9. Hand over (only when everything above is done)</h4>
+  <ol class="steps">
+    <li>In <b>Control room → 03 People &amp; roles</b>: for the management, <b>Role → Owner</b> and confirm <b>Make owner</b>; for IT, <b>Role → Admin</b>, and add them at the top under <b>IT desk → Add someone to the IT desk…</b>.</li>
+    <li>Check that they can open the Control room.</li>
+    <li>On your own row: <b>Role → Admin</b>, and confirm <b>Step down</b>.</li>
+  </ol>
+  <p>Every setting, seat, backup and connection stays as it is. Then hand over the accounts that live outside the app: the Cloudflare login (office
+  email), the Zoho account that owns the client, the GitHub accounts, and the server PC's Windows login.</p>
+
+  <h3>20.3 If something goes wrong</h3>
+  <table class="t">
+    <tr><th style="width:64mm">What you see</th><th>What to do</th></tr>
+    <tr><td>Setup on the server says a port is in use</td><td>It names the program using it. Close or uninstall that program, then run setup again. Running it again is always safe.</td></tr>
+    <tr><td>The app keeps looking for the office hub</td><td>Check the PC is on the office network, not guest Wi-Fi. Click <b>Enter the hub address yourself</b> and type the server's address (step 1).</td></tr>
+    <tr><td>A PC on another floor or Wi-Fi cannot find the hub</td><td>Ask whoever manages the network to let it reach the server on TCP 47900, UDP 47901 and TCP/UDP 47910–47999.</td></tr>
+    <tr><td><b>Set up with Cloudflare</b> stops at a step</td><td>Read the reason on the card, fix it on the same token in Cloudflare, then <b>Retry</b>.</td></tr>
+    <tr><td>Someone's Zoho shows <b>Reconnect Zoho Calendar</b></td><td>They click it and sign in again; nothing is duplicated.</td></tr>
+    <tr><td>Nib marks a holiday row in doubt</td><td>Check it against the circular. Rows in doubt are never registered by themselves; add the day by hand once it is checked.</td></tr>
+  </table>
+  <p>Details for IT are in the app's documentation: <code>docs/RELEASING.md</code> (the hub setup), <code>docs/BACKUP.md</code>, <code>docs/SEATING.md</code>,
+  <code>docs/HOLIDAYS.md</code>, <code>docs/ZOHO-CALENDAR.md</code> and <code>docs/REMOTE-ACCESS.md</code>.</p>
+</section>
+
+<!-- ===================================================== 21 -->
+<section class="sec">
+  <h2>21 Keyboard shortcuts</h2>
   <p class="lead">Press <kbd>Ctrl</kbd> + <kbd>/</kbd> for the list in the app. The keys under <b>Your keys</b> can be changed on your PC:
   click the keys, press the new ones (the app warns if they are taken), or <b>Reset all</b>.</p>
   <div class="keys">
@@ -2272,9 +2618,9 @@
   <p class="small">On a Mac, use <kbd>Cmd</kbd> where the table says <kbd>Ctrl</kbd>.</p>
 </section>
 
-<!-- ===================================================== 21 -->
+<!-- ===================================================== 22 -->
 <section class="sec">
-  <h2>21 Troubleshooting and support</h2>
+  <h2>22 Troubleshooting and support</h2>
   <table class="t">
     <tr><th style="width:56mm">What you see</th><th>What to do</th></tr>
     <tr><td>The welcome screen keeps saying it is looking for the office hub</td><td>Check that the PC is on the office network (not a guest Wi-Fi). Click <b>Enter the hub address yourself</b> and type the address IT gives you. If the hub PC was moved, the app finds it again by itself.</td></tr>
@@ -2294,21 +2640,24 @@
     <tr><td>A notice keeps asking me to acknowledge it</td><td>Open it (Pulse, <b>Needs you</b>, or the <b>Notices</b> lens with <b>Needs my acknowledgement</b>), answer the check questions, tick the statement and click <b>Acknowledge</b> (section 11.4). If an answer does not match, read the notice and its PDF again. A revision may ask everyone again.</td></tr>
     <tr><td>I cannot find a notice</td><td>Search the board (<b>Search notices and their PDFs</b>), clear the filters, and look in the <b>Archive</b> for expired and withdrawn notices. A notice addressed to other departments is not shown to you.</td></tr>
     <tr><td>An action point is not mine, or its date is wrong</td><td>Click the pencil on its card to change the owner or the date, or tell the organiser. Ticking it done on your Desk or in the thread closes its reminder and your day sheet item too (section 9.7).</td></tr>
-    <tr><td>My seat on the floor plan is wrong</td><td>Ask the office manager: seats change only through their move plan (section 10.4). Your <b>Seat or location</b> follows the plan.</td></tr>
-    <tr><td>A client can't open the meeting link</td><td>Check that <b>Guests from outside can join from a browser</b> is on for the meeting and that the link includes the passcode after <code>#</code>; send the invitation again with <b>Copy invitation</b> or <b>Send by email</b>. <i>No meeting to show here yet</i> means the link is off, the meeting is over or cancelled, or the address is mistyped. Meetings of more than 8 people cannot take browser guests. If no meeting page opens at all, ask IT to check <b>Control room → Outside the office</b> (section 19.3).</td></tr>
+    <tr><td>My seat on the floor plan is wrong</td><td>Ask the office manager: seats change only through their move plan (section 10.4). Your <b>Seat or location</b> follows the plan. If your name is on the drawing but you were given no seat when you joined, the office manager confirms it under <b>Waiting to be matched</b>.</td></tr>
+    <tr><td>The Calendar card says <i>Your office's Zoho connection isn't set up yet.</i></td><td>IT has not registered the office's Zoho client yet (section 19.5). Until then, <b>Connect Zoho Calendar</b> is greyed out.</td></tr>
+    <tr><td>The Calendar card is amber: <b>Zoho Calendar needs reconnecting</b></td><td>Click <b>Reconnect Zoho Calendar</b> and sign in to Zoho again. What was missed is copied; nothing is copied twice (section 9.1).</td></tr>
+    <tr><td>A client can't open the meeting link</td><td>Check that <b>Guests from outside can join from a browser</b> is on for the meeting and that the link includes the passcode after <code>#</code>; send the invitation again with <b>Copy invitation</b> or <b>Send by email</b>. <i>No meeting to show here yet</i> means the link is off, the meeting is over or cancelled, or the address is mistyped. Meetings of more than 8 people cannot take browser guests. If no meeting page opens at all, ask IT to check <b>Control room → Outside the office</b> (section 19.4).</td></tr>
   </table>
-  <h3>21.1 Getting help</h3>
+  <h3>22.1 Getting help</h3>
   <ul>
     <li><b>In the app:</b> your tile → <b>Help me…</b> (section 14). Attach a picture of the screen if something looks wrong.</li>
     <li><b>From IT:</b> IT may ask you to <b>Send diagnostics</b> in a support session; you can read the file before it is sent.</li>
     <li><b>About this guide:</b> corrections and suggestions to the Office of the Managing Director. The current revision is kept with the app's documentation as <code>docs/Dexterity-Connect-User-Guide.pdf</code>.</li>
   </ul>
-  <h3>21.2 Revision history</h3>
+  <h3>22.2 Revision history</h3>
   <table class="t">
     <tr><th style="width:22mm">Revision</th><th style="width:30mm">Date</th><th>Change</th></tr>
     <tr><td>0</td><td>15-Nov-2026</td><td>First issue.</td></tr>
     <tr><td>1</td><td>15-Nov-2026</td><td>New chapters: Nib and day sheets, office bots, share paths, Dexterity Meet links</td></tr>
     <tr><td>2</td><td>16-Nov-2026</td><td>Meeting threads, action points and recaps; Notice board; bot network and scheduled jobs; the real office floor plan and seating, with office managers named in the Control room, hot desks booked up to two weeks ahead, and the way across between the Lines and Floor sheets; <b>Make it a plain question</b> in the bot maker; the urgent banner on its own row and the ACKNOWLEDGE tag beside the number on the In force shelf; recap times in your time format</td></tr>
+    <tr><td>3</td><td>17-Nov-2026</td><td>The office sets itself up: new chapter 20, <i>Setting up the office</i>; the setup check; the hub setup and the hub updating itself; backups chosen on the first start; <b>Set up with Cloudflare</b> for working from outside and meeting links; Zoho Calendar; office holidays from the circular through Nib; the drawing's names on the floor plan and <b>Waiting to be matched</b>; Nib's new times (register 18:30, asks at 18:00, 18:11 and 18:22)</td></tr>
   </table>
 </section>
 
