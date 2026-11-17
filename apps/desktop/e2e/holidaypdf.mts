@@ -40,7 +40,9 @@ try {
   await card.getByRole('button', { name: 'Register 46 days' }).waitFor({ timeout: 20000 });
   // the card is drawn once its details arrive
   await card.locator('.hol-source', { hasText: 'HRD/CIR/2026/011' }).waitFor({ timeout: 10000 });
-  const text = await card.innerText();
+  // the card can be drawn again as its details arrive: read it once it holds the whole read-back
+  let text = '';
+  for (let i = 0; i < 50; i++) { text = await card.innerText().catch(() => ''); if (/HRD\/CIR\/2026\/011/.test(text) && /compensatory work/i.test(text)) break; await sleep(200); }
   for (const s of ['HRD/CIR/2026/011', 'holidays-2026.pdf', 'compensatory work', 'compensatory off', 'holiday']) assert.ok(text.toLowerCase().includes(s.toLowerCase()), `the card shows ${s}`);
   assert.match(text, /26 Mar 2026|Mar 26, 2026/, 'the circular’s date');
   assert.equal(await card.locator('.hol-row.bad').count(), 0, 'no row in doubt in the real circular');
