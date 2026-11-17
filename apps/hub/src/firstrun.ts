@@ -256,7 +256,7 @@ const messages = {
   'removable-only': 'Backups need a second disk or a network share. The only other drives can be unplugged (USB or removable), so the hub did not choose one.',
   'no-space': 'Backups need a second disk or a network share with more free space. The second disk is too full.',
 } as const;
-const ACTION = 'Add a second internal disk to the hub PC or make a folder on a network share (NAS), then enter it in Control room ▸ 16 Backups & leavers ▸ Backup folder, for example E:\\DexConnectBackup or \\\\NAS\\backups\\dexconnect, and click Save folder.';
+const ACTION = 'Add a second internal disk to the hub PC or make a folder on a network share (NAS), then enter it in Control room ▸ Backups & leavers ▸ Backup folder, for example E:\\DexConnectBackup or \\\\NAS\\backups\\dexconnect, and click Save folder.';
 
 /**
  * Choose a backup folder when no administrator has (the setting was never saved): on Windows,
@@ -299,7 +299,7 @@ export async function autoBackup(h: FirstRunHost, o: BackupPickOptions = {}): Pr
     h.log('error', 'backup folder could not be made private', { folder, error: (err as Error).message });
     return record({ state: 'failed', at: now, folder: null, first: null,
       message: `The hub found a second disk (${choice.volume.letter}:) but could not make ${folder} private to administrators, so it did not use it (${(err as Error).message.slice(0, 160)}).`,
-      action: `Make ${folder} readable only by Administrators and SYSTEM (or choose another folder), then enter it in Control room ▸ 16 Backups & leavers ▸ Backup folder.` });
+      action: `Make ${folder} readable only by Administrators and SYSTEM (or choose another folder), then enter it in Control room ▸ Backups & leavers ▸ Backup folder.` });
   }
   if (h.alive?.() === false || getMeta(h.db, 'backup_config') !== null) return null;
   try {

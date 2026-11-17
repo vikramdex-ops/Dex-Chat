@@ -7,6 +7,7 @@ import type { BackupRun, BackupStatus, Departure, MeetingHandover, OffboardPrevi
 import { Avatar, Icon, Segmented, relativeTime, useToast } from '../ui.tsx';
 import { tr } from '../i18n/index.ts';
 import './continuity.css';
+import './setupcheck.css';
 import { formatDateTime, formatTime } from '../time.ts';
 
 /** Audit log wording for these actions (Control room ▸ Audit log). */
@@ -112,8 +113,25 @@ function BackupsAdmin({ live }: { live: boolean }) {
   const failed = !!last && !last.ok && !s.running;
   const state = s.running ? 'run' : s.warning || failed ? 'warn' : s.lastSuccess ? 'ok' : 'off';
   const dirtyKeep = keep.keepDaily !== s.config.keepDaily || keep.keepWeekly !== s.config.keepWeekly || keep.keepMonthly !== s.config.keepMonthly;
+  const auto = s.auto;
   return (
     <>
+      {auto && auto.state !== 'picked' && (
+        <section className="card bk-auto" aria-labelledby="bk-auto-title">
+          <div className="eyebrow">Backup folder</div>
+          <div className="bk-auto-title" id="bk-auto-title"><Icon name="warning" size={18} />{auto.state === 'needs-disk' ? 'Backups need a second disk or a network share' : 'The hub did not choose a backup folder'}</div>
+          <p>{auto.message}</p>
+          {auto.action && <div className="sc-fix"><Icon name="forward" size={13} /><span>{auto.action}</span></div>}
+        </section>
+      )}
+      {auto && auto.state === 'picked' && (
+        <section className="card bk-auto picked" aria-labelledby="bk-auto-title">
+          <div className="eyebrow">Backup folder</div>
+          <div className="bk-auto-title" id="bk-auto-title"><Icon name="check" size={18} />Chosen by the hub on its first start</div>
+          <p>{auto.message}</p>
+          {auto.first && <p className="mono">{auto.first.ok ? (auto.first.verified ? `First backup ${bytes(auto.first.bytes)}, checked` : `First backup ${bytes(auto.first.bytes)}`) : `The first backup did not work: ${auto.first.error ?? ''}`}</p>}
+        </section>
+      )}
       <section className={`card bk-sheet ${state}`} aria-label="Backup status">
         <div className="bk-head">
           <div>

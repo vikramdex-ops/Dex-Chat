@@ -1,0 +1,71 @@
+/* Control room ▸ Setup check: one sheet above the sections. Drafting-table grammar: a title block
+   of counts, a state rule down the left edge (teal when everything passes, amber when something
+   needs doing, the danger red only when a check failed), and a ruled schedule of checks with a
+   stamp each. */
+.sc-sheet { position: relative; overflow: hidden; padding-left: 22px; margin-bottom: 14px; }
+.sc-sheet::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--stroke-strong); }
+.sc-sheet.ok::before { background: var(--accent); }
+.sc-sheet.warn::before { background: var(--amber); }
+.sc-sheet.bad::before { background: var(--danger); }
+.sc-sheet .eyebrow { margin-bottom: 6px; }
+.sc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+.sc-headline { min-width: 0; }
+.sc-state { display: flex; align-items: center; gap: 8px; font: 600 19px/1.25 var(--font-display); letter-spacing: -.01em; }
+.sc-sheet.ok .sc-state svg { color: var(--accent); }
+.sc-sheet.warn .sc-state svg { color: var(--amber-ink); }
+.sc-sheet.bad .sc-state svg { color: var(--danger); }
+.sc-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.sc-block { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 14px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); overflow: hidden; }
+.sc-cell { display: grid; gap: 3px; align-content: start; padding: 8px 12px; min-width: 0; }
+.sc-cell + .sc-cell { border-left: 1px solid var(--stroke-strong); }
+.sc-cell .label { font-size: 10px; }
+.sc-cell .v { font: 600 17px/1.2 var(--font-display); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sc-cell .sub { color: var(--text-3); font-size: 11px; }
+.sc-cell.warn .v { color: var(--amber-ink); }
+.sc-cell.bad .v { color: var(--danger); }
+
+.sc-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; border-top: 1px solid var(--stroke-strong); }
+.sc-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; align-items: start; padding: 9px 2px; border-bottom: 1px solid var(--stroke); }
+.sc-stamp { justify-self: start; margin-top: 1px; padding: 1px 6px; border: 1px solid currentColor; border-radius: 3px; font: 600 10px/1.5 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; color: var(--text-3); }
+.sc-row.pass .sc-stamp { color: var(--accent-ink); }
+.sc-row.action .sc-stamp { color: var(--amber-ink); background: var(--amber-soft); }
+.sc-row.fail .sc-stamp { color: var(--danger); background: var(--danger-soft); }
+.sc-row.manual .sc-stamp { border-style: dashed; }
+.sc-body { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
+.sc-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-weight: 600; }
+.sc-area { font: 500 10.5px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.sc-detail { color: var(--text-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.sc-fix { display: flex; gap: 6px; align-items: flex-start; color: var(--text); font-size: 12.5px; overflow-wrap: anywhere; }
+.sc-fix svg { flex: none; margin-top: 2px; color: var(--accent); }
+.sc-row.action .sc-fix svg, .sc-row.fail .sc-fix svg { color: var(--amber-ink); }
+
+.sc-toggle { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 4px 2px; border: 0; background: none; color: var(--accent-ink); font: 600 12.5px/1.4 var(--font-body); cursor: pointer; border-radius: var(--radius-s); }
+.sc-toggle:hover { text-decoration: underline; }
+.sc-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sc-toggle svg { transition: transform var(--fast); transform: rotate(-90deg); }
+.sc-toggle[aria-expanded='true'] svg { transform: none; }
+
+/* Backups & leavers ▸ Backups: how the hub chose (or could not choose) the folder */
+.bk-auto { display: grid; gap: 6px; position: relative; overflow: hidden; padding-left: 22px; }
+.bk-auto::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--amber); }
+.bk-auto.picked::before { background: var(--accent); }
+.bk-auto .eyebrow { margin-bottom: 0; }
+.bk-auto-title { display: flex; align-items: center; gap: 8px; font: 600 17px/1.3 var(--font-display); }
+.bk-auto-title svg { flex: none; color: var(--amber-ink); }
+.bk-auto.picked .bk-auto-title svg { color: var(--accent); }
+.bk-auto p { margin: 0; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.bk-auto .sc-fix { margin-top: 2px; }
+
+@media (max-width: 760px) {
+  .sc-block { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sc-cell + .sc-cell { border-left: 0; }
+  .sc-cell:nth-child(even) { border-left: 1px solid var(--stroke-strong); }
+  .sc-cell:nth-child(n + 3) { border-top: 1px solid var(--stroke-strong); }
+  .sc-cell:last-child { grid-column: 1 / -1; border-left: 0; }
+  .sc-row { grid-template-columns: 1fr; gap: 4px; }
+  .sc-actions { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-toggle svg { transition: none; }
+}

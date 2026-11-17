@@ -192,7 +192,7 @@ export class Hub {
   readonly seating: Seating;
   /**
    * The setup check's checks (setupcheck.ts). Other parts of the hub add theirs with
-   * `hub.health.register(id, fn)`; they appear in Control room ▸ Setup check and its report.
+   * `hub.health.register(id, fn)`; they appear in the setup check at the top of the Control room, and in its report.
    */
   readonly health = new HealthChecks();
   /** The automatic backup folder of the first start, while it is being chosen (firstrun.ts). */

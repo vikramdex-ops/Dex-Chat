@@ -190,24 +190,24 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
     if (folder) {
       out.push(folderThere(folder)
         ? C('backup.folder', 'Backups', 'Backups have a destination', 'pass', auto?.state === 'picked' ? auto.message : `Backups go to ${folder}.`)
-        : C('backup.folder', 'Backups', 'The backup folder cannot be reached', 'fail', `${folder} is not there now.`, 'Check that the backup disk is plugged in or the network share is on, or choose another folder in Control room ▸ 16 Backups & leavers.'));
+        : C('backup.folder', 'Backups', 'The backup folder cannot be reached', 'fail', `${folder} is not there now.`, 'Check that the backup disk is plugged in or the network share is on, or choose another folder in Control room ▸ Backups & leavers.'));
       out.push(C('backup.schedule', 'Backups', 'Backups run every night', 'pass', `Every night at ${s.config.time}; keeps ${s.config.keepDaily} daily, ${s.config.keepWeekly} weekly and ${s.config.keepMonthly} monthly copies.${s.nextRunAt ? ` Next: ${when(s.nextRunAt)}.` : ''}`));
     } else {
       out.push(C('backup.folder', 'Backups', auto?.state === 'needs-disk' ? 'Backups need a second disk or a network share' : 'No backup folder yet', auto?.state === 'failed' ? 'fail' : 'action',
-        auto?.message ?? 'No backup folder has been chosen, so nothing is backed up.', auto?.action ?? 'Enter a folder on a second disk or a network share in Control room ▸ 16 Backups & leavers ▸ Backup folder.'));
+        auto?.message ?? 'No backup folder has been chosen, so nothing is backed up.', auto?.action ?? 'Enter a folder on a second disk or a network share in Control room ▸ Backups & leavers ▸ Backup folder.'));
       out.push(C('backup.schedule', 'Backups', 'No nightly backup yet', 'action', 'Backups run every night once a backup folder is chosen.', 'Choose the backup folder (above).'));
     }
     const ok = s.lastSuccess;
     if (s.running) out.push(C('backup.last', 'Backups', 'A backup is running', 'info', `${s.running.step} (started ${when(s.running.since)}).`));
-    else if (s.lastRun && !s.lastRun.ok) out.push(C('backup.last', 'Backups', 'The last backup did not work', 'fail', s.lastRun.error ?? 'The last backup stopped.', 'Fix what it says, then click Back up now in Control room ▸ 16 Backups & leavers.'));
+    else if (s.lastRun && !s.lastRun.ok) out.push(C('backup.last', 'Backups', 'The last backup did not work', 'fail', s.lastRun.error ?? 'The last backup stopped.', 'Fix what it says, then click Back up now in Control room ▸ Backups & leavers.'));
     else if (ok) {
       const age = Date.now() - ok.finishedAt;
       const verified = ok.check?.integrity === 'ok';
       const detail = `${when(ok.finishedAt)}, ${sizeText(ok.dbBytes + ok.filesBytes)}; ${verified ? `checked: database sound, ${ok.check!.hashed} of ${ok.check!.files} files compared with their fingerprints` : 'not checked'}.`;
       out.push(age > 2 * DAY || !verified
-        ? C('backup.last', 'Backups', 'No recent checked backup', 'fail', detail, 'Click Back up now in Control room ▸ 16 Backups & leavers and see what it says.')
+        ? C('backup.last', 'Backups', 'No recent checked backup', 'fail', detail, 'In Control room ▸ Backups & leavers, click Back up now and see what it says.')
         : C('backup.last', 'Backups', 'The last backup worked and was checked', 'pass', detail));
-    } else out.push(C('backup.last', 'Backups', 'No backup yet', 'action', folder ? 'No backup has run yet.' : 'Nothing has been backed up.', folder ? 'Click Back up now in Control room ▸ 16 Backups & leavers.' : 'Choose the backup folder (above); the first backup runs that night.'));
+    } else out.push(C('backup.last', 'Backups', 'No backup yet', 'action', folder ? 'No backup has run yet.' : 'Nothing has been backed up.', folder ? 'Click Back up now in Control room ▸ Backups & leavers.' : 'Choose the backup folder (above); the first backup runs that night.'));
     return out;
   });
 
@@ -224,20 +224,20 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
     const names = new Set(desks.map((x) => x.name.toLowerCase()));
     const missing = d.defaultDesks.filter((n) => !names.has(n.toLowerCase()));
     const withIssuers = desks.filter((x) => x.issuers.length).length;
-    if (missing.length) return C('notices.desks', 'Notice desks', 'A notice desk is missing', 'action', `There is no ${missing.join(', ')} desk.`, 'Add it in Control room ▸ 15 Notice desks.');
+    if (missing.length) return C('notices.desks', 'Notice desks', 'A notice desk is missing', 'action', `There is no ${missing.join(', ')} desk.`, 'Add it in Control room ▸ Notice desks.');
     return C('notices.desks', 'Notice desks', 'The notice desks are there', 'pass', `${desks.map((x) => x.name).join(', ')}; ${withIssuers ? `${withIssuers} with their own issuers` : 'administrators issue for all of them until issuers are chosen'}.`);
   });
 
   health.register('nib', () => {
     const c = d.nib();
     const out: SetupCheck[] = [];
-    if (!c.enabled) return C('nib.times', 'Nib', 'Nib is off', 'info', 'Day sheets and the evening register are switched off.', 'Turn Nib on in Control room ▸ 14 Nib & day sheets if the office wants day sheets.');
+    if (!c.enabled) return C('nib.times', 'Nib', 'Nib is off', 'info', 'Day sheets and the evening register are switched off.', 'If the office wants day sheets, turn Nib on in Control room ▸ Nib & day sheets.');
     const nextMorning = minutesOf(c.followUpAt) < minutesOf(c.digestAt);
     out.push(C('nib.times', 'Nib', 'Nib\'s times are set', 'pass', `Start of day ${c.startPromptAt}, wrap-up ${c.wrapAt}, register ${c.digestAt}, follow-up ${c.followUpAt}${nextMorning ? ' (the next working morning)' : ''}; ${dayRange(c.workdays)}.`));
     out.push(c.openSheets
-      ? C('nib.private', 'Nib', 'Day sheets are open to everyone', 'info', 'An administrator chose to let every member see every day sheet.', 'Leave it only if the management wants day sheets open (Control room ▸ 14 Nib & day sheets ▸ 04).')
+      ? C('nib.private', 'Nib', 'Day sheets are open to everyone', 'info', 'An administrator chose to let every member see every day sheet.', 'Leave it only if the management wants day sheets open (Control room ▸ Nib & day sheets ▸ 04).')
       : C('nib.private', 'Nib', 'Day sheets are private', 'pass', 'Each person, the people who gave them work, and the management see a day sheet; nobody else.'));
-    if (!c.managers.length) out.push(C('nib.register', 'Nib', 'Nobody receives the evening register', 'action', 'No one is chosen to receive the register yet.', 'Add the directors or managers under Control room ▸ 14 Nib & day sheets ▸ 02 Management.'));
+    if (!c.managers.length) out.push(C('nib.register', 'Nib', 'Nobody receives the evening register', 'action', 'No one is chosen to receive the register yet.', 'Add the directors or managers under Control room ▸ Nib & day sheets ▸ 02 Management.'));
     else {
       const last = (d.db.prepare("SELECT MAX(sent_at) AS t FROM nib_snapshots WHERE kind = 'register'").get() as { t: number | null } | undefined)?.t ?? null;
       out.push(last
@@ -255,10 +255,10 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
   health.register('remote', () => {
     const v = d.remote();
     const c = v.config;
-    if (!c.url) return C('remote.access', 'Outside the office', 'Working from outside is not set up', 'action', 'No gateway address is saved, so phones on mobile data and home PCs cannot reach the hub.', 'Set up the gateway, then enter its address in Control room ▸ 09 Outside the office.');
-    if (!c.enabled) return C('remote.access', 'Outside the office', 'Access from outside is switched off', 'action', `The gateway ${c.url} is saved but switched off.`, 'Switch on Allow access from outside the office in Control room ▸ 09 Outside the office.');
-    if (!v.status.connected) return C('remote.access', 'Outside the office', 'The hub is not connected to the gateway', 'fail', v.status.error ? `${c.url}: ${v.status.error}` : `${c.url} is not answering.`, 'Check that the hub PC has internet access and that the gateway address is right (Control room ▸ 09 Outside the office).');
-    return C('remote.access', 'Outside the office', 'Working from outside works', v.status.pinned ? 'pass' : 'action', `Connected to ${c.url}${v.status.connected && v.status.since ? ` since ${when(v.status.since)}` : ''}; ${v.status.pinned ? 'the gateway is pinned to this hub' : 'the gateway is not pinned to this hub'}.`, v.status.pinned ? null : 'Pin the gateway to this hub: deploy it again with this hub\'s fingerprint (Control room ▸ 09 Outside the office ▸ This hub).');
+    if (!c.url) return C('remote.access', 'Outside the office', 'Working from outside is not set up', 'action', 'No gateway address is saved, so phones on mobile data and home PCs cannot reach the hub.', 'Set up the gateway, then enter its address in Control room ▸ Outside the office.');
+    if (!c.enabled) return C('remote.access', 'Outside the office', 'Access from outside is switched off', 'action', `The gateway ${c.url} is saved but switched off.`, 'Switch on Allow access from outside the office in Control room ▸ Outside the office.');
+    if (!v.status.connected) return C('remote.access', 'Outside the office', 'The hub is not connected to the gateway', 'fail', v.status.error ? `${c.url}: ${v.status.error}` : `${c.url} is not answering.`, 'Check that the hub PC has internet access and that the gateway address is right (Control room ▸ Outside the office).');
+    return C('remote.access', 'Outside the office', 'Working from outside works', v.status.pinned ? 'pass' : 'action', `Connected to ${c.url}${v.status.connected && v.status.since ? ` since ${when(v.status.since)}` : ''}; ${v.status.pinned ? 'the gateway is pinned to this hub' : 'the gateway is not pinned to this hub'}.`, v.status.pinned ? null : 'Pin the gateway to this hub: deploy it again with this hub\'s fingerprint (Control room ▸ Outside the office ▸ This hub).');
   });
 
   health.register('calls', () => {
@@ -267,14 +267,14 @@ export function registerBuiltInChecks(health: HealthChecks, d: SetupDeps): void 
     if (i.mode === 'cloudflare') {
       return i.keyId && i.hasToken
         ? C('calls.relay', 'Calls', 'Calls across networks have a relay', 'pass', `Cloudflare TURN (key ${i.keyId.slice(0, 6)}…); each call gets short-lived credentials.`)
-        : C('calls.relay', 'Calls', 'The call relay is missing its key', 'fail', 'Cloudflare TURN is chosen but its key id or API token is missing.', 'Enter the TURN key id and API token in Control room ▸ 09 Outside the office ▸ Calls across networks.');
+        : C('calls.relay', 'Calls', 'The call relay is missing its key', 'fail', 'Cloudflare TURN is chosen but its key id or API token is missing.', 'Enter the TURN key id and API token in Control room ▸ Outside the office ▸ Calls across networks.');
     }
     if (i.mode === 'custom') {
       return i.servers
         ? C('calls.relay', 'Calls', 'Calls across networks have a relay', 'pass', `${i.servers === 1 ? '1 relay server' : `${i.servers} relay servers`} set by an administrator.`)
-        : C('calls.relay', 'Calls', 'No relay server is set', 'fail', 'Your own relay servers are chosen, but none is listed.', 'Add the relay server in Control room ▸ 09 Outside the office ▸ Calls across networks.');
+        : C('calls.relay', 'Calls', 'No relay server is set', 'fail', 'Your own relay servers are chosen, but none is listed.', 'Add the relay server in Control room ▸ Outside the office ▸ Calls across networks.');
     }
-    return C('calls.relay', 'Calls', 'No relay for calls from outside', outside ? 'action' : 'info', 'Calls inside the office need no relay. From some mobile networks, calls cannot connect without one.', 'Set Relay for calls to Cloudflare TURN in Control room ▸ 09 Outside the office ▸ Calls across networks.');
+    return C('calls.relay', 'Calls', 'No relay for calls from outside', outside ? 'action' : 'info', 'Calls inside the office need no relay. From some mobile networks, calls cannot connect without one.', 'Set Relay for calls to Cloudflare TURN in Control room ▸ Outside the office ▸ Calls across networks.');
   });
 
   // what only a person can check: listed, never passed

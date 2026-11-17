@@ -17,6 +17,7 @@ import { confirmAction } from '../confirm.tsx';
 import { auditLine } from './audit.ts';
 import { NibAdmin } from '../nib/NibAdmin.tsx';
 import { NoticeDesksAdmin } from '../notices/DesksAdmin.tsx';
+import { SetupCheck } from './SetupCheck.tsx';
 
 type Tab = 'approvals' | 'devices' | 'roles' | 'organisation' | 'guests' | 'compliance' | 'reports' | 'policies' | 'remote' | 'usage' | 'integrations' | 'automations' | 'bots' | 'nib' | 'notices' | 'continuity' | 'audit';
 
@@ -142,6 +143,7 @@ const AUDIT_TEXT: Record<string, string> = {
   'webinar.streamSet': 'set up a webinar\'s live stream',
   'webinar.streamStarted': 'started a webinar\'s live stream',
   'webinar.streamStopped': 'stopped a webinar\'s live stream',
+  'setup.defaults': 'set the office\'s first-start defaults',
 };
 /** A role as people read it ("Admin"), not its code ("admin"). */
 const roleWord = (r: string | undefined) => (r && r in ROLE_LABEL ? ROLE_LABEL[r as PublicUser['role']] : r ?? '');
@@ -194,6 +196,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
           <p className="muted">Approve who can join {session.hub.name} and keep track of every change.</p>
         </div>
       </div>
+      <SetupCheck live={live} />
       <div className="toolbar">
         <Segmented<Tab> label="Admin section" className="seg-register" value={tab} onChange={setTab} options={[
           { value: 'approvals', label: 'Approvals', icon: 'check', badge: pending.length },

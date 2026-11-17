@@ -93,6 +93,27 @@ for (const file of hubFiles) {
   visit(sf);
 }
 
+// the setup check's words (Control room, top) come from the hub: the area, title and what to do of
+// each check C('id', 'area', 'title', state, 'detail', 'fix'), and the fix the first start gives
+// (firstrun.ts ACTION), when they are written out whole
+for (const name of ['setupcheck.ts', 'firstrun.ts']) {
+  const file = path.join(hubRoot, name);
+  if (!fs.existsSync(file)) continue;
+  const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const lit = (a) => a && (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) ? a.text : null;
+  const visit = (n) => {
+    if (ts.isCallExpression(n) && n.expression.getText() === 'C') {
+      for (const i of [1, 2, 4, 5]) { const t = lit(n.arguments[i]); if (t) add(t, `hub/${name}`, false, true); }
+    } else if (ts.isConditionalExpression(n) && ts.isCallExpression(n.parent) && n.parent.expression.getText() === 'C') {
+      for (const a of [n.whenTrue, n.whenFalse]) { const t = lit(a); if (t) add(t, `hub/${name}`, false, true); }
+    } else if (ts.isVariableDeclaration(n) && n.name.getText() === 'ACTION') {
+      const t = lit(n.initializer); if (t) add(t, `hub/${name}`, false, true);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+}
+
 // the bot templates are put into the maker's language when used (bots/maker/localize.ts): their
 // questions, buttons, stages and stamps, {{placeholders}} and all
 const TEMPLATE_PROPS = new Set(['title', 'about', 'description', 'done', 'label', 'prompt', 'placeholder', 'yes', 'no', 'message', 'ask', 'stamp']);
