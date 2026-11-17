@@ -2013,7 +2013,7 @@
   <h2>19 For administrators</h2>
   <p class="lead">Administrators approve devices, keep the Directory, set the office's policies, and look after the hub. All of it is in the
   <b>Control room</b>: click your tile and choose <b>Control room</b> (or <b>Open Control room</b> in GO TO). A badge on it counts devices
-  waiting for approval. The first person to join a hub is its <b>Owner</b>; the owner and anyone with the <b>Admin</b> role see the Control room.</p>
+  waiting for approval. The first person to join a hub is its <b>Owner</b>; owners and anyone with the <b>Admin</b> role see the Control room. An office can have several owners and always keeps at least one.</p>
   <div class="note warn"><b>Every change in the Control room is recorded</b> in the audit log with who made it and when. By default
   the Control room works only on the office network (section 19.1, Outside the office).</div>
 
@@ -2029,7 +2029,13 @@
     <figure><img src="figures/fig-cr-roles.png" alt="Control room, People and roles, with the IT desk"><figcaption><b>Fig. 19-3</b> <b>03 People &amp; roles</b></figcaption></figure>
   </div>
   <dl class="kv">
-    <dt>03 People &amp; roles</dt><dd>Everyone with their Windows account and <b>Role</b>: <b>Owner</b>, <b>Admin</b>, <b>Member</b> or <b>Guest</b>. At the top, the <b>IT desk</b>: <b>Add someone to the IT desk…</b> gives them the Help desk queue and support sessions (section 14).</dd>
+    <dt>03 People &amp; roles</dt><dd>Everyone with their Windows account and <b>Role</b>: <b>Owner</b>, <b>Admin</b>, <b>Member</b> or <b>Guest</b>. At the top, the <b>IT desk</b>: <b>Add someone to the IT desk…</b> gives them the Help desk queue and support sessions (section 14).
+      <ul>
+        <li><b>Owners and administrators</b> configure everything in the Control room. Only an <b>owner</b> chooses the owners and the administrators, and offboards them.</li>
+        <li><b>More than one owner</b>: an owner picks <b>Owner</b> for a member or an administrator and confirms <b>Make owner</b>. A guest is made a member first.</li>
+        <li><b>Handing over</b>: once someone else is an owner, an owner can pick <b>Admin</b> on their own row and confirm <b>Step down</b>. They keep the Control room; only an owner can make them an owner again.</li>
+        <li>The office always keeps at least one owner: the last owner cannot step down or be offboarded. Every change is in the audit log.</li>
+      </ul></dd>
     <dt>04 Organisation</dt><dd>Departments (nested under each other, each with its head), designations, reporting lines, extensions, seats, joining dates, birthdays and custom fields: what the Directory and the office drawing show. Import it from a CSV saved from Excel or Dexterity Sheets, including people who have not joined yet. Further down, <b>Conference rooms and cabins</b> that people can book with a meeting, and <b>Office managers</b>, the members who arrange seats on the floor plan: type part of a name in <b>Add an office manager…</b> and pick the person; the <b>×</b> on a chip takes them off (section 10.4). Each change shows in the audit log as <i>changed the office managers</i>.</dd>
   </dl>
   <figure><img src="figures/fig-cr-organisation.png" alt="Control room, Organisation: departments with their heads"><figcaption><b>Fig. 19-4</b> <b>04 Organisation</b></figcaption></figure>
@@ -2149,7 +2155,7 @@
   <ol class="steps">
     <li>Copy the hub folder from the release (the hub zip) to where it should live, for example <code>D:\Dexterity Connect Hub</code>.</li>
     <li>Double-click <b>Install-Hub.cmd</b> and click <b>Yes</b> when Windows asks for permission. It installs the hub as a Windows service that starts with the PC and restarts itself, and opens only the ports it needs in Windows Firewall: TCP 47900 for the apps and UDP 47901 for finding the hub (plus 47910–47999 for meetings of more than 8 people).</li>
-    <li>On your own PC, install Dexterity Connect and click <b>Request access</b>. As the first person, you become the owner, approved at once.</li>
+    <li>On your own PC, install Dexterity Connect and click <b>Request access</b>. As the first person, you become the owner, approved at once. You can make others owners later and step down yourself (<b>03 People &amp; roles</b>).</li>
     <li>Everyone else installs the app and requests access; approve them in <b>Control room → Approvals</b>.</li>
     <li>Choose a backup folder straight away (section 19.5).</li>
   </ol>

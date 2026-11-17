@@ -79,7 +79,7 @@ test('offboarding signs someone out everywhere and hands their Spaces, automatio
 
   // checks first: only administrators, never the owner or yourself, and a colleague who can take over
   await assert.rejects(ravi.request('admin.offboard.preview', { userId: leaverId }), /administrators/);
-  await assert.rejects(priya.request('admin.offboard.run', { userId: me(owner), toUserId: me(ravi), meetings: 'reassign' }), /owner cannot be offboarded/);
+  await assert.rejects(priya.request('admin.offboard.run', { userId: me(owner), toUserId: me(ravi), meetings: 'reassign' }), /Only an owner can offboard an owner/);
   await assert.rejects(owner.request('admin.offboard.run', { userId: me(owner), toUserId: me(ravi), meetings: 'reassign' }), /yourself/);
   await assert.rejects(owner.request('admin.offboard.run', { userId: leaverId, toUserId: leaverId, meetings: 'reassign' }), /colleague who takes over/);
 
@@ -246,12 +246,12 @@ test('who may offboard whom: administrators, not the owner, another administrato
   await assert.rejects(priya.request('admin.offboard.run', { userId: me(ravi), toUserId: me(anita), meetings: 'reassign' }), /administrators/);
   await owner.request('admin.setRole', { userId: me(priya), role: 'admin' });
   await owner.request('admin.setRole', { userId: me(ravi), role: 'admin' });
-  await assert.rejects(priya.request('admin.offboard.preview', { userId: me(ravi) }), /Only the owner can offboard an administrator/);
+  await assert.rejects(priya.request('admin.offboard.preview', { userId: me(ravi) }), /Only an owner can offboard an administrator/);
   await owner.request('admin.setRole', { userId: me(anita), role: 'guest' });
   await assert.rejects(owner.request('admin.offboard.run', { userId: me(ravi), toUserId: me(anita), meetings: 'reassign' }), /guest cannot take over/);
   const dep = await owner.request('admin.offboard.run', { userId: me(ravi), toUserId: me(priya), meetings: 'reassign' });
   assert.equal(dep.summary.devicesSignedOut, 1);
   // a guest sees no one under "Left the office"; an administrator gives access back only to people who left
   assert.deepEqual(await anita.request('directory.left'), []);
-  await assert.rejects(priya.request('admin.offboard.reactivate', { userId: raviId }), /Only the owner/);
+  await assert.rejects(priya.request('admin.offboard.reactivate', { userId: raviId }), /Only an owner/);
 });

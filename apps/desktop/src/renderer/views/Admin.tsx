@@ -273,24 +273,38 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'roles' && (
         <div className="list">
           <div className="list-row roles list-head"><span /><span>Person</span><span>Windows account</span><span>Role</span></div>
-          {session.users.filter((u) => u.role !== 'bot').map((u: PublicUser) => {
-            const locked = u.role === 'owner' || u.id === session.me.id || (u.role === 'admin' && session.me.role !== 'owner');
-            return (
-              <div key={u.id} className="list-row roles">
-                <Avatar user={u} size="sm" />
-                <div style={{ fontWeight: 600 }}>{u.displayName}</div>
-                <div className="faint mono">{u.account}</div>
-                {locked ? <span className="chip">{ROLE_LABEL[u.role]}</span> : (
-                  <select className="input" value={u.role} disabled={!live || busy === u.id} aria-label={`Role for ${u.displayName}`}
-                    onChange={(e) => void act(u.id, () => window.dex.request('admin.setRole', { userId: u.id, role: e.target.value as 'admin' | 'member' | 'guest' }), `${u.displayName} is now ${ROLE_LABEL[e.target.value as PublicUser['role']].toLowerCase()}`)}>
-                    <option value="admin">Admin</option>
-                    <option value="member">Member</option>
-                    <option value="guest">Guest</option>
-                  </select>
-                )}
-              </div>
-            );
-          })}
+          {(() => {
+            const people = session.users.filter((u) => u.role !== 'bot');
+            const owners = people.filter((u) => u.role === 'owner').length;
+            const iAmOwner = session.me.role === 'owner';
+            const setRole = async (u: PublicUser, role: 'owner' | 'admin' | 'member' | 'guest') => {
+              const self = u.id === session.me.id;
+              if (role === 'owner' && !(await confirmAction({ title: `Make ${u.displayName} an owner?`, body: 'Owners can configure everything, choose the administrators and the other owners, and offboard anyone. The office always keeps at least one owner.', confirm: 'Make owner' }))) return;
+              if (self && !(await confirmAction({ title: 'Step down to administrator?', body: 'You keep the Control room, but only an owner can make you an owner again.', confirm: 'Step down' }))) return;
+              await act(u.id, () => window.dex.request('admin.setRole', { userId: u.id, role }), self ? 'You are now an administrator' : `${u.displayName} is now ${ROLE_LABEL[role].toLowerCase()}`);
+            };
+            return people.map((u: PublicUser) => {
+              const self = u.id === session.me.id;
+              // owners choose the owners and the administrators; an owner may step down while another owner remains
+              const editable = self ? iAmOwner && owners > 1 : (u.role === 'owner' || u.role === 'admin') ? iAmOwner : true;
+              return (
+                <div key={u.id} className="list-row roles">
+                  <Avatar user={u} size="sm" />
+                  <div style={{ fontWeight: 600 }}>{u.displayName}</div>
+                  <div className="faint mono">{u.account}</div>
+                  {!editable ? <span className="chip">{ROLE_LABEL[u.role]}</span> : (
+                    <select className="input" value={u.role} disabled={!live || busy === u.id} aria-label={`Role for ${u.displayName}`}
+                      onChange={(e) => void setRole(u, e.target.value as 'owner' | 'admin' | 'member' | 'guest')}>
+                      {iAmOwner && u.role !== 'guest' && <option value="owner">Owner</option>}
+                      <option value="admin">Admin</option>
+                      {!self && <option value="member">Member</option>}
+                      {!self && <option value="guest">Guest</option>}
+                    </select>
+                  )}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
 

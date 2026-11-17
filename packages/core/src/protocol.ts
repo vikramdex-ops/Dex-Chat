@@ -827,7 +827,7 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   /** Remove one of your own devices (it is signed out at once). */
   'me.devices.remove': { req: { deviceId: string }; res: { ok: true } };
   'admin.decide': { req: { deviceId: string; approve: boolean }; res: DeviceRecord };
-  'admin.setRole': { req: { userId: string; role: Exclude<Role, 'owner' | 'bot'> }; res: PublicUser };
+  'admin.setRole': { req: { userId: string; role: Exclude<Role, 'bot'> }; res: PublicUser };
   'admin.revoke': { req: { deviceId: string }; res: DeviceRecord };
   'admin.audit': { req: { limit?: number } | void; res: AuditEntry[] };
   'admin.updates': { req: { refresh?: boolean } | void; res: UpdateMirrorInfo };

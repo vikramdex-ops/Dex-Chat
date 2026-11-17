@@ -135,8 +135,9 @@ export class Offboarding {
     const u = typeof userId === 'string' ? this.h.store.userById(userId) : null;
     if (!u || u.role === 'bot') throw new OffboardError('Person not found.');
     if (u.id === me.id) throw new OffboardError('You cannot offboard yourself. Ask another administrator.');
-    if (u.role === 'owner') throw new OffboardError('The workspace owner cannot be offboarded.');
-    if (u.role === 'admin' && me.role !== 'owner') throw new OffboardError('Only the owner can offboard an administrator.');
+    if (u.role === 'owner' && me.role !== 'owner') throw new OffboardError('Only an owner can offboard an owner.');
+    if (u.role === 'owner' && this.h.store.activeUsers().filter((x) => x.role === 'owner').length < 2) throw new OffboardError('The office always keeps at least one owner.');
+    if (u.role === 'admin' && me.role !== 'owner') throw new OffboardError('Only an owner can offboard an administrator.');
     return u;
   }
 
@@ -305,7 +306,7 @@ export class Offboarding {
     if (!u) throw new OffboardError('Person not found.');
     const dep = this.current(u.id);
     if (!dep) throw new OffboardError(`${u.displayName} has not left the office.`);
-    if (u.role === 'admin' && me.role !== 'owner') throw new OffboardError('Only the owner can give an administrator access again.');
+    if ((u.role === 'admin' || u.role === 'owner') && me.role !== 'owner') throw new OffboardError('Only an owner can give an administrator or an owner access again.');
     let ids: string[] = [];
     try { ids = (JSON.parse(dep.devices) as unknown[]).filter((x): x is string => typeof x === 'string'); } catch { /* none */ }
     let restored = 0;

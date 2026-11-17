@@ -1369,14 +1369,27 @@ export class Hub {
         const me = this.requireAdmin(conn);
         const target = typeof d.userId === 'string' ? this.store.userById(d.userId) : null;
         if (!target) throw new OpError('Person not found.');
-        if (target.id === me.id) throw new OpError('You cannot change your own role.');
-        if (target.role === 'owner') throw new OpError('The workspace owner cannot be changed.');
         const role = d.role;
-        if (role !== 'admin' && role !== 'member' && role !== 'guest') throw new OpError('Unknown role.');
-        if (target.role === 'admin' && me.role !== 'owner') throw new OpError('Only the owner can change an administrator.');
+        if (role !== 'owner' && role !== 'admin' && role !== 'member' && role !== 'guest') throw new OpError('Unknown role.');
+        // several owners may share the office; there is always at least one
+        const owners = this.store.activeUsers().filter((u) => u.role === 'owner').length;
+        if (target.id === me.id) {
+          // an owner may step down to administrator while another owner remains
+          if (me.role !== 'owner' || role !== 'admin') throw new OpError('You cannot change your own role.');
+          if (owners < 2) throw new OpError('Make someone else an owner first: the office always keeps at least one owner.');
+        } else {
+          if ((role === 'owner' || target.role === 'owner') && me.role !== 'owner') throw new OpError('Only an owner can choose who the owners are.');
+          if (target.role === 'admin' && me.role !== 'owner') throw new OpError('Only an owner can change an administrator.');
+        }
+        if (role === 'owner' && target.role === 'guest') throw new OpError('A guest cannot be an owner. Make them a member first.');
+        if (role === target.role) return target;
         const user = this.store.updateUser(target.id, { role });
         this.store.audit(me.id, 'user.role', target.id, { from: target.role, to: role });
-        this.system.tell(target.id, role === 'admin' ? 'You are now an **administrator**: the Control room is in your tile menu.' : role === 'member' ? (target.role === 'guest' ? 'You are now a **member** of the office: you can see open Spaces and the whole Directory.' : 'You are no longer an administrator.') : 'Your account is now a **guest** account: you see only the Spaces you were invited to.', `role-${target.id}-${Date.now()}`);
+        const told = role === 'owner' ? 'You are now an **owner**: you can configure everything in the Control room and choose the administrators and the other owners.'
+          : role === 'admin' ? (target.role === 'owner' ? 'You are now an **administrator** instead of an owner: you can still configure the office in the Control room.' : 'You are now an **administrator**: the Control room is in your tile menu.')
+          : role === 'member' ? (target.role === 'guest' ? 'You are now a **member** of the office: you can see open Spaces and the whole Directory.' : target.role === 'owner' ? 'You are no longer an owner.' : 'You are no longer an administrator.')
+          : 'Your account is now a **guest** account: you see only the Spaces you were invited to.';
+        this.system.tell(target.id, told, `role-${target.id}-${Date.now()}`);
         this.emit('user.updated', user);
         return user;
       }

@@ -174,7 +174,46 @@ test('only administrators can manage devices and roles', async () => {
   await updated;
   assert.equal(anu.session!.me.role, 'admin');
   assert.ok((await anu.request('admin.devices')).length >= 2);
-  await assert.rejects(anu.request('admin.setRole', { userId: owner.session!.me.id, role: 'member' }), /owner cannot be changed/);
+  await assert.rejects(anu.request('admin.setRole', { userId: owner.session!.me.id, role: 'member' }), /Only an owner can choose who the owners are/);
+});
+
+test('several owners: an owner makes another, administrators cannot, and the office always keeps one', async () => {
+  const hub = await startHub();
+  cleanups.push(() => hub.stop());
+  const owner = client(hub, 'vikram');
+  await until(owner, isKind('ready'));
+  const join = async (name: string) => {
+    const id = createIdentity();
+    const c = client(hub, name, id);
+    await until(c, isKind('pending'));
+    await owner.request('admin.decide', { deviceId: id.deviceId, approve: true });
+    await until(c, isKind('ready'));
+    return c;
+  };
+  const md = await join('md');
+  const it = await join('it');
+  const ownerId = owner.session!.me.id, mdId = md.session!.me.id, itId = it.session!.me.id;
+  // alone, the owner cannot step down
+  await assert.rejects(owner.request('admin.setRole', { userId: ownerId, role: 'admin' }), /at least one owner/);
+  await owner.request('admin.setRole', { userId: itId, role: 'admin' });
+  // an administrator configures, but cannot make owners or touch them
+  await assert.rejects(it.request('admin.setRole', { userId: mdId, role: 'owner' }), /Only an owner can choose who the owners are/);
+  await assert.rejects(it.request('admin.setRole', { userId: ownerId, role: 'admin' }), /Only an owner can choose who the owners are/);
+  // the owner makes the director an owner too
+  assert.equal((await owner.request('admin.setRole', { userId: mdId, role: 'owner' })).role, 'owner');
+  await until(md, () => md.session!.me.role === 'owner');
+  // the new owner can make an administrator and the first owner can step down
+  assert.equal((await md.request('admin.setRole', { userId: itId, role: 'admin' })).role, 'admin');
+  assert.equal((await owner.request('admin.setRole', { userId: ownerId, role: 'admin' })).role, 'admin');
+  // now the director is the only owner: they cannot step down, cannot be offboarded, and the former owner cannot change them
+  await assert.rejects(md.request('admin.setRole', { userId: mdId, role: 'admin' }), /at least one owner/);
+  await assert.rejects(owner.request('admin.setRole', { userId: mdId, role: 'member' }), /Only an owner can choose who the owners are/);
+  await assert.rejects(owner.request('admin.offboard.preview', { userId: mdId }), /Only an owner can offboard an owner/);
+  // a guest is made a member before an owner
+  await md.request('admin.setRole', { userId: itId, role: 'guest' });
+  await assert.rejects(md.request('admin.setRole', { userId: itId, role: 'owner' }), /guest cannot be an owner/);
+  const trail = await md.request('admin.audit', {});
+  assert.ok(trail.some((a) => a.action === 'user.role' && a.target === mdId && (a.detail as { to?: string }).to === 'owner'), 'the hand-over is in the audit log');
 });
 
 test('profile updates reach everyone', async () => {

@@ -58,8 +58,15 @@ the release page lists `SHA256SUMS.txt`.
    person to join becomes the **owner**.
 2. Everyone else installs and opens the app. Approve each in **Control room → 01 Approvals**,
    checking that the 8-character device code matches what they read out.
-3. Make a second administrator in **03 People & roles**, so the office is never locked out if the
-   owner is away.
+3. In **03 People & roles**, choose who runs the office. The office can have several owners and
+   always keeps at least one.
+   - **Owner**: configures everything, and chooses the administrators and the other owners.
+     Pick **Owner** for a person and confirm **Make owner** (for example, two people from
+     management).
+   - **Admin**: configures everything except who the owners and administrators are (for example,
+     two people from IT). Also add IT to the **IT desk** at the top of the same page.
+   - **To hand over**: once someone else is an owner, pick **Admin** on your own row and confirm
+     **Step down**.
 
 ## 4. Backups (5 minutes, do this on day one)
 
