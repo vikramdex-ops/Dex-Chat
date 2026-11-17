@@ -7,6 +7,12 @@ name: build
 # main = stable channel (everyone), other branches = beta (opt-in).
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "stable: everyone's apps update and the landing page's links point at it; beta: only those who opted in. Empty: stable from main, beta from other branches"
+        type: choice
+        options: ["", stable, beta]
+        default: ""
 
 concurrency:
   group: build-${{ github.ref }}
@@ -48,7 +54,7 @@ jobs:
         run: |
           BASE=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
           echo "version=$BASE.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-          echo "channel=${{ github.ref_name == 'main' && 'stable' || 'beta' }}" >> "$GITHUB_OUTPUT"
+          echo "channel=${{ inputs.channel != '' && inputs.channel || (github.ref_name == 'main' && 'stable' || 'beta') }}" >> "$GITHUB_OUTPUT"
           if [ -n "$GH_TOKEN" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
@@ -63,7 +69,7 @@ jobs:
           if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then RANGE="$BEFORE..HEAD"; else RANGE="-1"; fi
           git log --no-merges --format='- %s' $RANGE | head -n 30 > notes.md
           gh release create "v$VERSION" --repo "$PUBLIC_REPO" --draft \
-            --title "Dexterity Connect $VERSION${{ github.ref_name != 'main' && ' (beta)' || '' }}" --notes-file notes.md
+            --title "Dexterity Connect $VERSION${{ steps.v.outputs.channel == 'beta' && ' (beta)' || '' }}" --notes-file notes.md
 
   desktop:
     name: desktop (${{ matrix.name }})
@@ -223,6 +229,24 @@ jobs:
             --base-url "https://github.com/$PUBLIC_REPO/releases/download/v$VERSION" \
             --notes-file notes.md --out "feed/$CHANNEL.json"
           gh release upload "v$VERSION" release-files/SHA256SUMS.txt --repo "$PUBLIC_REPO" --clobber
+      - name: Fixed-name copies for direct download links
+        # releases/latest/download/<name> always points at the newest stable build, so the landing
+        # page links to it directly without asking GitHub's API (which limits each office IP)
+        run: |
+          mkdir -p alias
+          for f in release-files/*; do
+            n=$(basename "$f")
+            case "$n" in
+              *Setup*.exe) a=DexterityConnect-Setup.exe ;;
+              *mac-arm64.dmg) a=DexterityConnect-mac-arm64.dmg ;;
+              *mac-x64.dmg) a=DexterityConnect-mac-x64.dmg ;;
+              *.apk) a=DexterityConnect.apk ;;
+              *Hub*.zip) a=DexterityConnectHub-win-x64.zip ;;
+              *) continue ;;
+            esac
+            cp "$f" "alias/$a"
+          done
+          gh release upload "v$VERSION" alias/* --repo "$PUBLIC_REPO" --clobber
       - name: Publish the release
         run: |
           {
@@ -247,6 +271,7 @@ jobs:
               echo "| \`$n\` | $d |"
             done
             echo
+            echo "The files without a version number are the same builds, for links that always get the newest."
             echo "Verify downloads with \`SHA256SUMS.txt\`."
           } > release-notes.md
           if [ "$CHANNEL" = "beta" ]; then FLAGS="--prerelease --latest=false"; else FLAGS="--latest"; fi
