@@ -20,6 +20,29 @@ async function getSegmenter(): Promise<ImageSegmenter> {
   try { return await segmenter; } catch (err) { segmenter = null; throw err; }
 }
 
+/** Cameras using the segmenter now. A minute after the last one stops, it is closed: it holds
+ * about 45 MB in the window's process, and loads again in a moment for the next call. */
+let users = 0;
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+const KEEP_MS = 60_000;
+function hold(): () => void {
+  users++;
+  if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    if (--users > 0) return;
+    closeTimer = setTimeout(() => {
+      closeTimer = null;
+      const s = segmenter;
+      if (users > 0 || !s) return;
+      segmenter = null;
+      void s.then((x) => x.close(), () => {});
+    }, KEEP_MS);
+  };
+}
+
 /** What goes behind the person: a blur of the room, or a picture. */
 export type BackdropSpec = { kind: 'blur'; strength?: number } | { kind: 'image'; image: HTMLCanvasElement | ImageBitmap };
 
@@ -39,6 +62,11 @@ function drawCover(ctx: CanvasRenderingContext2D, img: HTMLCanvasElement | Image
 
 /** A new video track: the camera with its background blurred or replaced. Stopping it leaves the camera running. */
 export async function backdropTrack(camera: MediaStreamTrack, initial: BackdropSpec): Promise<Blurred> {
+  const release = hold();
+  try { return await drawBackdrop(camera, initial, release); } catch (err) { release(); throw err; }
+}
+
+async function drawBackdrop(camera: MediaStreamTrack, initial: BackdropSpec, release: () => void): Promise<Blurred> {
   const seg = await getSegmenter();
   const s = camera.getSettings();
   const w = s.width ?? 1280;
@@ -110,7 +138,7 @@ export async function backdropTrack(camera: MediaStreamTrack, initial: BackdropS
   return {
     track,
     set(next) { spec = next; prepare(); },
-    stop() { live = false; track.stop(); video.srcObject = null; },
+    stop() { live = false; track.stop(); video.srcObject = null; release(); },
   };
 }
 

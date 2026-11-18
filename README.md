@@ -121,7 +121,10 @@ npm run desktop:build && PLAYWRIGHT=/path/to/playwright xvfb-run -a node apps/de
 `perf.mts` drives the built app through start-up, every lens, a busy conversation, 5,000 messages
 of scrolling back, typing, search and ten minutes of moving around, with background office
 traffic, and prints each measurement against its budget. `DEX_ROOT` points it at another checkout
-(an earlier commit in a worktree) for a before-and-after comparison.
+(an earlier commit in a worktree) for a before-and-after comparison. `memory.mts` beside it
+measures every process's memory and the processor time at rest, with a busy conversation open and
+hidden in the tray. Installer sizes, memory, and what was done to keep both down:
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ## Repository layout
 

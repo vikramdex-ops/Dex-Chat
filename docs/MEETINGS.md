@@ -62,7 +62,7 @@ the rest of the app.
 - **Rooms:** PC-to-PC for up to 8, the hub relay (mediasoup) for up to 50, TURN for people outside.
 - **Calendar:** online meetings tied to a conversation, invitations, RSVP and reminders.
 - **Recording:** composited on the recorder's PC, with everyone told.
-- **Blur:** MediaPipe segmenter, bundled.
+- **Blur:** MediaPipe segmenter, bundled; closed a minute after the last camera using it stops.
 - **Polls, forms, whiteboards and notes:** in conversations.
 - **The gateway** (Cloudflare Worker) and its encrypted channel to the hub.
 - **Lounges:** standing audio Rooms inside a Space ("Piping desk") that people drop into and out of,
