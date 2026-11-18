@@ -44,7 +44,9 @@
     "./notices": "./src/notices.ts",
     "./zoho": "./src/zoho.ts",
     "./cfsetup": "./src/cfsetup.ts",
-    "./holidays": "./src/holidays.ts"
+    "./holidays": "./src/holidays.ts",
+    "./webpush": "./src/webpush.ts",
+    "./noble": "./src/noble.ts"
   },
   "dependencies": {
     "ws": "^8.18.3",
