@@ -1,3 +1,6 @@
 /* Welcome: a way back to the offices this device already belongs to */
 .office-back { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 12px; border: 1px dashed var(--stroke); border-radius: 10px; }
 .office-back .label { width: 100%; }
+
+/* Reaching the hub: why a phone cannot, and what fixes it */
+.reach-help { max-width: 420px; padding: 12px 14px; border: 1px dashed var(--stroke); border-radius: 10px; text-align: left; font-size: 13px; line-height: 1.5; }

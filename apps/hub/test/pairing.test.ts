@@ -74,3 +74,16 @@ test('the system bot writes to you when a device is added or removed, or your ro
   assert.match(texts.join('\n'), /now an \*\*administrator/);
   assert.ok(!(await owner.request('admin.bots')).some((b) => b.bot.id === hub.system.id), 'not listed as an integration');
 });
+
+test("pairing codes list the PC's real office address before virtual adapters", async () => {
+  const { lanAddresses } = await import('../src/pairing.ts');
+  const a = (address: string) => [{ address, family: 'IPv4', internal: false, netmask: '255.255.255.0', mac: '00:00:00:00:00:00', cidr: null }] as never;
+  const ifaces = {
+    'vEthernet (WSL (Hyper-V firewall))': a('172.24.192.1'),
+    'VirtualBox Host-Only Network': a('192.168.56.1'),
+    Ethernet: a('10.1.0.71'),
+    'Loopback Pseudo-Interface 1': [{ address: '127.0.0.1', family: 'IPv4', internal: true }] as never,
+    'Wi-Fi': a('169.254.10.2'),
+  };
+  assert.deepEqual(lanAddresses(47900, ifaces), ['10.1.0.71:47900', '172.24.192.1:47900', '192.168.56.1:47900']);
+});

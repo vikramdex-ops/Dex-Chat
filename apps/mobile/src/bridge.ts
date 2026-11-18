@@ -638,7 +638,7 @@ class MobileApp {
           const p = parsePairCode(req.pairCode);
           if (!p) throw new Error('That pairing code is not complete. Copy all of it, starting with DXP1-.');
           const [host, port] = (p.lan[0] ?? ':0').split(':');
-          target = { host, port: Number(port), hubId: p.hubId, name: p.name, fp: p.fp, ...(p.url ? { remote: { url: p.url, hubId: p.hubId } } : {}) };
+          target = { host, port: Number(port), hubId: p.hubId, name: p.name, fp: p.fp, alts: p.lan.slice(1), ...(p.url ? { remote: { url: p.url, hubId: p.hubId } } : {}) };
           this.session.setPair(p.token);
         } else if (req.setupCode) {
           const r = parseSetupCode(req.setupCode);

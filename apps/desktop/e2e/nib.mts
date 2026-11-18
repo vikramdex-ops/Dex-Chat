@@ -279,6 +279,15 @@ try {
   await B.locator('.nib-person-panel').evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'center' }));
   await sleep(300);
   await pair(B, '11-register-person');
+  // Write on a person's row opens the conversation with them (it used to fail silently)
+  const who = (await B.locator('.nib-person-panel .nib-row-name').innerText()).trim();
+  await B.locator('.nib-person-panel').getByRole('button', { name: 'Write', exact: true }).click();
+  await B.locator(`[placeholder^="Write to ${who.split(' ')[0]}"], [data-placeholder^="Write to ${who.split(' ')[0]}"], [aria-placeholder^="Write to ${who.split(' ')[0]}"]`).first().waitFor({ timeout: 10000 });
+  assert.equal(await B.locator('.toast.bad, .toast.error').count(), 0, 'no error from Write');
+  await B.evaluate((c: string) => window.dispatchEvent(new CustomEvent('dex-deeplink', { detail: `dexconnect://conversation/${c}` })), bConv);
+  await B.locator('.nib-card.k-register').first().waitFor({ timeout: 10000 });
+  await B.locator('.nib-card.k-register .nib-cell.s-blocked').first().click();
+  await B.locator('.nib-person-panel').waitFor();
   await B.locator('.nib-card.k-register [role="tab"]', { hasText: 'Call-outs' }).click();
   await sleep(200);
   await snap(B, '12-register-callouts-light');

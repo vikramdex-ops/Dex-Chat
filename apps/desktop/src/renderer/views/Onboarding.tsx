@@ -248,6 +248,8 @@ function Welcome({ state }: { state: AppState }) {
 }
 
 function Connecting({ state }: { state: AppState }) {
+  const phone = state.platform === 'android';
+  const outside = !!state.hub?.gateway;
   return (
     <div className="center stack-v">
       <div className="waiting"><img src={logo} alt="" /></div>
@@ -256,8 +258,20 @@ function Connecting({ state }: { state: AppState }) {
         {state.hub?.name ?? state.hub?.host}
         {state.phase === 'offline' && state.retryInMs ? ` · trying again in ${Math.ceil(state.retryInMs / 1000)}s` : ''}
       </p>
-      {state.phase === 'offline' && <p className="faint" style={{ fontSize: 13 }}>Make sure this PC is on the office network. If the hub PC was moved, it will be found again automatically.</p>}
-      <div><button className="btn ghost" onClick={() => void window.dex.forgetHub()}>Choose a different hub</button></div>
+      {state.phase === 'offline' && !phone && <p className="faint" style={{ fontSize: 13 }}>Make sure this PC is on the office network. If the hub PC was moved, it will be found again automatically.</p>}
+      {state.phase === 'offline' && phone && !outside && (
+        <div className="reach-help">
+          <b>This phone only knows the office network's address</b>, and cannot reach it from here (for example, the Wi-Fi is a
+          separate network from the office PCs). Scan a new code to add the way in from outside: on your PC, open
+          <b> Preferences → Your devices → Add my phone</b>, then tap <b>Scan a new code</b> below. Nothing on this phone is lost.
+        </div>
+      )}
+      {state.phase === 'offline' && phone && outside && <p className="faint" style={{ fontSize: 13 }}>Trying the office network first, then the way in from outside.</p>}
+      <div>
+        {phone && !outside
+          ? <button className="btn primary" onClick={() => void window.dex.forgetHub()}>Scan a new code</button>
+          : <button className="btn ghost" onClick={() => void window.dex.forgetHub()}>Choose a different hub</button>}
+      </div>
     </div>
   );
 }

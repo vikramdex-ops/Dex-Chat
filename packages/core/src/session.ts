@@ -14,6 +14,8 @@ export interface HubTarget {
   fp?: string;
   /** The internet gateway for this hub, used when the office network cannot be reached. */
   remote?: { url: string; hubId: string };
+  /** The hub's other office addresses ("host:port"), tried in turn before the gateway. */
+  alts?: string[];
 }
 
 export type ClientState =
@@ -77,6 +79,8 @@ export class HubSession extends Emitter {
   /** Which way the current connection goes, and how often the office network failed in a row. */
   private via: 'lan' | 'remote' = 'lan';
   private lanFails = 0;
+  /** How many of target.alts were tried since the last connection or retry round. */
+  private altsTried = 0;
   private probeTimer: ReturnType<typeof setInterval> | null = null;
   private readonly pending = new Map<string, Pending>();
   private readonly opts: Required<Omit<SessionOptions, 'openRemote'>> & { openRemote?: OpenSocket };
@@ -107,6 +111,7 @@ export class HubSession extends Emitter {
     this.target = { ...target };
     this.attempts = 0;
     this.lanFails = 0;
+    this.altsTried = 0;
     this.open();
   }
 
@@ -190,6 +195,13 @@ export class HubSession extends Emitter {
       },
       onClose: (reason) => {
         if (!live()) return;
+        if (!remote && !opened && this.nextAlt(target)) {
+          // that office address did not answer: try the hub's next one
+          this.generation++;
+          this.sock = null;
+          this.open();
+          return;
+        }
         if (!remote && !opened && target.remote && this.opts.openRemote) {
           // the office network is not reachable: go through the gateway straight away
           this.lanFails++;
@@ -202,6 +214,19 @@ export class HubSession extends Emitter {
         this.onClosed(reason);
       },
     });
+  }
+
+  /** Move the target to its next office address, once per address per round. */
+  private nextAlt(target: HubTarget): boolean {
+    const alts = (target.alts ?? []).filter((a) => /^[\w.\-]{1,253}:\d{1,5}$/.test(a));
+    if (this.altsTried >= alts.length) return false;
+    this.altsTried++;
+    const next = alts.shift()!;
+    const i = next.lastIndexOf(':');
+    target.alts = [...alts, `${target.host}:${target.port}`];
+    target.host = next.slice(0, i);
+    target.port = Number(next.slice(i + 1));
+    return true;
   }
 
   /** While on the gateway, check now and then whether the office network is back, and move to it. */
@@ -238,6 +263,7 @@ export class HubSession extends Emitter {
     if (!target || this.state.kind === 'rejected' || this.state.kind === 'identity-mismatch') return;
     const delay = Math.min(this.opts.maxBackoffMs, 1000 * 2 ** Math.min(this.attempts, 4));
     this.attempts++;
+    this.altsTried = 0;
     this.setState({ kind: 'offline', target, retryInMs: delay, error: reason });
     this.retryTimer = setTimeout(() => { this.retryTimer = null; this.open(); }, delay);
   }
