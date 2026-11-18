@@ -1,11 +1,13 @@
 // "Give control" in meetings (docs/MEETINGS.md): the presenter (the device sharing its screen) may
-// let one other person in the Room use their mouse and keyboard. The hub keeps that grant per
+// let one other person in the Room use their mouse and keyboard: someone in the desktop app, or a
+// guest in a browser whom the presenter picked on purpose (the guest's input then comes through the
+// gateway, meet-guests.ts, and takes the same path from here). The hub keeps that grant per
 // Room, passes input on the relay (room.data) only from the person granted and only to the
 // presenter, and ends the grant when sharing stops, either person leaves or the meeting ends.
 // Every grant and its end are audited with how long it lasted. The presenter's own PC checks
 // every event again (apps/desktop/src/main/assist) before anything reaches its input, and the
 // events travel PC to PC over the data channel whenever there is one.
-import { CONTROL_ASKS_PER_MIN, controllerRefusal, isWebGuest, presenterRefusal } from '@dex/core';
+import { CONTROL_ASKS_PER_MIN, askerRefusal, controllerRefusal, isWebGuest, presenterRefusal } from '@dex/core';
 import type { ControlEndReason, PublicUser, RoomControl, RoomParticipant } from '@dex/core';
 import type { Room, RoomHost } from './rooms.ts';
 
@@ -16,6 +18,8 @@ export interface ControlCore {
   host: RoomHost;
   /** Whether this person is on a webinar stage's staff (organiser, co-host, panelist); null outside webinars. */
   stageStaff(r: Room, userId: string): boolean | null;
+  /** A browser guest's name, for the audit log. */
+  guestName?(userId: string): string | null;
 }
 
 interface Live extends RoomControl { grantedBy: string }
@@ -34,7 +38,7 @@ export class MeetControl {
   /** The grant in a Room, as the Room's view shows it. */
   view(roomId: string): RoomControl | null {
     const g = this.grants.get(roomId);
-    return g ? { presenterId: g.presenterId, presenterDevice: g.presenterDevice, controllerId: g.controllerId, controllerDevice: g.controllerDevice, since: g.since } : null;
+    return g ? { presenterId: g.presenterId, presenterDevice: g.presenterDevice, controllerId: g.controllerId, controllerDevice: g.controllerDevice, since: g.since, ...(g.guest ? { guest: true } : {}) } : null;
   }
 
   private presenter(r: Room, deviceId: string): RoomParticipant {
@@ -44,9 +48,17 @@ export class MeetControl {
     return p!;
   }
 
-  private controller(r: Room, deviceId: string): RoomParticipant {
+  /** Who may be given control: a guest in a browser only when the presenter picked them on purpose. */
+  private controller(r: Room, deviceId: string, guestPicked = false): RoomParticipant {
     const p = r.participants.find((x) => x.deviceId === deviceId);
-    const why = controllerRefusal(p, p ? this.core.stageStaff(r, p.userId) : null);
+    const why = controllerRefusal(p, p ? this.core.stageStaff(r, p.userId) : null, { guestPicked });
+    if (why) throw new ControlError(why);
+    return p!;
+  }
+
+  private asker(r: Room, deviceId: string): RoomParticipant {
+    const p = r.participants.find((x) => x.deviceId === deviceId);
+    const why = askerRefusal(p, p ? this.core.stageStaff(r, p.userId) : null);
     if (why) throw new ControlError(why);
     return p!;
   }
@@ -54,7 +66,7 @@ export class MeetControl {
   handle(op: string, me: PublicUser, deviceId: string, r: Room, d: Record<string, unknown>): unknown {
     switch (op) {
       case 'room.control.ask': {
-        const asker = this.controller(r, deviceId);
+        const asker = this.asker(r, deviceId);
         const presenter = r.participants.find((p) => p.screen && p.deviceId !== deviceId);
         if (!presenter) throw new ControlError('Nobody is sharing a screen.');
         const why = presenterRefusal(presenter);
@@ -80,15 +92,20 @@ export class MeetControl {
       case 'room.control.grant': {
         const presenter = this.presenter(r, deviceId);
         const to = typeof d.deviceId === 'string' ? d.deviceId : '';
-        const target = this.controller(r, to);
+        // a guest only when the presenter picked them on purpose (their app says so with guest: true)
+        const target = this.controller(r, to, d.guest === true);
         if (target.userId === presenter.userId) throw new ControlError('Give control to someone else in the Room.');
         const cur = this.grants.get(r.id);
         if (cur && cur.controllerDevice === to && cur.presenterDevice === deviceId) return this.view(r.id);
         if (cur) throw new ControlError('Someone else has control now. Take it back first: one person at a time.');
-        const g: Live = { presenterId: presenter.userId, presenterDevice: deviceId, controllerId: target.userId, controllerDevice: to, since: Date.now(), grantedBy: me.id };
+        const guest = isWebGuest(target.userId);
+        const g: Live = { presenterId: presenter.userId, presenterDevice: deviceId, controllerId: target.userId, controllerDevice: to, since: Date.now(), grantedBy: me.id, ...(guest ? { guest: true } : {}) };
         this.grants.set(r.id, g);
         this.asks.delete(`${r.id}:${to}`);
-        this.core.host.audit?.(me.id, 'meeting.control.granted', r.meeting?.id ?? r.id, { roomId: r.id, presenter: g.presenterId, controller: g.controllerId, controllerDevice: to, webinar: r.meeting?.kind === 'webinar' });
+        this.core.host.audit?.(me.id, 'meeting.control.granted', r.meeting?.id ?? r.id, {
+          roomId: r.id, presenter: g.presenterId, controller: g.controllerId, controllerDevice: to, webinar: r.meeting?.kind === 'webinar',
+          ...(guest ? { guest: true, controllerName: this.core.guestName?.(target.userId) ?? 'Guest' } : {}),
+        });
         return this.view(r.id);
       }
       case 'room.control.stop': {
@@ -144,8 +161,8 @@ export class MeetControl {
     this.inputHits.delete(`${r.id}:${g.controllerDevice}`);
     const to = Date.now();
     const durationMs = to - g.since;
-    this.core.host.audit?.(by, 'meeting.control.revoked', r.meeting?.id ?? r.id, { roomId: r.id, presenter: g.presenterId, controller: g.controllerId, from: g.since, to, durationMs, why });
-    const evt = { roomId: r.id, why, by, durationMs };
+    this.core.host.audit?.(by, 'meeting.control.revoked', r.meeting?.id ?? r.id, { roomId: r.id, presenter: g.presenterId, controller: g.controllerId, from: g.since, to, durationMs, why, ...(g.guest ? { guest: true } : {}) });
+    const evt = { roomId: r.id, why, by, durationMs, presenterId: g.presenterId, controllerId: g.controllerId };
     for (const dev of new Set([g.presenterDevice, g.controllerDevice])) this.core.host.deliverToDevice(dev, 'room.controlEnded', evt);
   }
 

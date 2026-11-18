@@ -39,7 +39,7 @@ the rest of the app.
 | | In-meeting chat, files, polls, whiteboard | ✅ **M1**: a panel with sheet tabs on its edge (People, Chat, Polls, Board, Files) on the meeting's conversation; ✅ **threads and recaps**: every meeting has a thread (one per series), the meeting chat with guests saved as said, a Register tab (agenda, action points, decisions), action points from a chat line, the `A` key or any message, and a recap after every meeting (see *Meeting threads, action points and recaps* below) | |
 | | Breakout rooms | ✅ **M2**: the host splits people into rooms (drag between columns, pick from a list, or deal out at random) with a timer; a note to every room; visit or move anyone; call everyone back after a 60-second countdown | |
 | | Annotation on a shared screen | ✅ **M2**: live pointers on a shared screen: everyone's labelled pointer, highlights that fade after 4 s unless kept, numbered markers with a note, ink that fades; the presenter clears all or turns pointers off, and sees them on their own screen in a click-through window. Also on pictures looked at together and on whiteboards | |
-| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time; ✅ **meetings and webinar stages**: the presenter gives control of a shared screen to one person at a time ("Give control" in their person menu, or "Ask for control" answered by the presenter), with the same consent, banner, stop keys, rate limit and blocked chords; the hub passes input only from the person granted, and audits it | |
+| | Remote control | ✅ IT support sessions (docs/HELP-DESK.md): the requester allows it separately and stops it any time; ✅ **meetings and webinar stages**: the presenter gives control of a shared screen to one person at a time ("Give control" in their person menu, or "Ask for control" answered by the presenter), with the same consent, banner, stop keys (Shift+Esc, Ctrl+Alt+Shift+S), rate limit and blocked chords; the hub passes input only from the person granted, and audits it; a guest in a browser only when the presenter picks them on purpose; a screen shared from a browser is view only | |
 | | Virtual backgrounds | ✅ Blur; ✅ **M1**: drafting sheet, blueprint and plain studio drawn in code, and your own picture (kept on the PC) | |
 | | Noise suppression | ✅ **M2**: RNNoise (BSD-3-Clause) as an audio worklet on the PC, on by default, switched in the Room's sound menu | |
 | | Consent before video | ✅ **M1**: Control room → Policies → Calls: join with the camera off, and ask before turning it on | |
@@ -205,6 +205,23 @@ presenter's own screen shows the pointers in a transparent, click-through, alway
 (on Linux only where the desktop composites windows). Tested in `packages/core/test/pointers.test.ts`,
 `apps/hub/test/lounges.test.ts` and end to end with two app instances.
 
+*Markers that land where they are placed (November 2026).* A numbered marker is a disc centred on
+the exact point, with datum ticks around it, and its note beside it (on the left near the right
+edge); while the note is written a dashed marker shows where it will land. (It used to be a
+balloon 20 px up and to the right of a 3 px dot, which read as the marker landing beside the
+click.) Positions are fractions of the shared picture, found inside the video's letterbox
+(`pictureBox`, the same mapping remote control uses), so a window of any size or shape, a scaled
+down video and a phone all agree. The presenter's pointer window places marks from the shared
+display's and the window's real bounds (`overlayBox`; the main process sends both as the window
+moves, `main/assist/overlay.ts`), because Windows may create a window on a second monitor at the
+main monitor's scaling or move it; it follows its display when monitors are plugged in, moved or
+rescaled, and so does remote control's injection rectangle. The presenter's own Clear all and
+Pointers off now reach their pointer window too. Round-trip tests in `pointers.test.ts` check the
+viewer's marker, the presenter's screen and the injected pixel agree within 1 px for 100 to 200 %
+scaling, monitors left of or above the main one, portrait screens and odd window sizes; the
+e2e `meetui.mts` places markers on a shared screen and reads their positions on the viewer's
+video and in the presenter's pointer window (also with that window moved off the display).
+
 **M3: webinars.** Registration, roles, Q&A, handouts, practice sessions, live streaming, follow-up
 and remote control.
 
@@ -337,7 +354,7 @@ pieces rather than copied.
   screen can be given (not one window).
 - **While control is on.** The presenter has the amber banner across the app with a big **Stop
   control**, the share bar above everything (amber, with **Stop control** and **Stop sharing**)
-  and an amber frame around the shared screen, and **Ctrl+Alt+Shift+S** stops it from anywhere,
+  and an amber frame around the shared screen, and **Shift+Esc** or **Ctrl+Alt+Shift+S** stops it from anywhere,
   even while the other person types. The controller sees an amber edge round the picture and
   *"You are controlling Priya Raman's screen"* with **Release**; everyone else sees who is
   controlling. One person at a time: giving it to someone else means taking it back first.
@@ -350,10 +367,33 @@ pieces rather than copied.
 - **It ends on its own** when the presenter stops sharing (or switches to one window), when either
   person leaves the Room (or is moved to a breakout), or when the meeting ends; the presenter's PC
   stops first and releases anything held down, and both are told why.
-- **Not offered** to browser guests, phones (no input to give), or attendees invited onto a
-  webinar's stage (only its organiser, co-hosts and panelists can be given control); a Mac
-  presenter's screen is view only (the person menu says so, and viewers see *VIEW ONLY · MAC*),
-  as is a Linux desktop without X11 and xdotool.
+- **Not offered** to phones (no input to give) or attendees invited onto a webinar's stage (only
+  its organiser, co-hosts and panelists can be given control); a Mac presenter's screen is view
+  only (the person menu says so, and viewers see *VIEW ONLY · MAC*), as is a Linux desktop without
+  X11 and xdotool.
+- **Guests in a browser** (through the gateway) can be given control of a screen shared from the
+  office app, but only when the presenter picks that guest on purpose: *Give control to this
+  guest…* (marked GUEST) in the guest's person menu, or **Accept…** on the guest's own ask, whose
+  sheet says *"A guest from outside the office, joining from a browser. Accept only if you know
+  who this is."*; the consent sheet says so too, the banner marks the controller GUEST, and the
+  app sends `guest: true` with the grant (the hub refuses a guest without it). On the meeting page
+  the guest sees **Ask for control** over a screen that can be controlled (with a mouse and
+  keyboard only, not on a phone), who controls it now, and, while they have it, an amber surface
+  over the picture (*"You are controlling Priya Raman's screen"*, **Release**). Their pointer,
+  buttons, wheel and keys travel as `{ t: 'input', e }` frames through the gateway (at most 15 a
+  second, well inside its guest limit); the hub decodes and cleans them (`decodeInputBatch`) and
+  then they take the same path as an app's input, so the presenter's PC checks them again. The
+  guest hears a refusal and why control ended. The grant and its end are audited with `guest:
+  true` and the guest's name.
+- **A screen shared from a browser is view only**, said plainly: a web page cannot let anyone use
+  the computer it runs on. The guest's own shared screen carries *VIEW ONLY: a screen shared from
+  a browser is view only…*, people in the app see *VIEW ONLY · BROWSER* on it, and nobody is
+  offered Give control or Ask for control for it (from a browser to a browser or to the app).
+- **Administrator windows and UAC prompts** stay out of reach: the input helper runs with the
+  presenter's own rights, so Windows keeps its input off elevated windows and the secure desktop
+  (docs/HELP-DESK.md); the presenter answers those prompts.
+- **Shift+Esc** takes control back at once, from anywhere, as well as Ctrl+Alt+Shift+S (support
+  sessions too). Both are blocked chords, so the person in control can never send them.
 - **The hub** keeps one grant per Room (`apps/hub/src/meet-control.ts`, `room.control.*`): only the
   sharing device grants, only to someone allowed; on the relay it passes input events only from
   the person granted and only to the presenter (anyone else's are dropped); it ends the grant when
@@ -363,12 +403,36 @@ pieces rather than copied.
   (`Control.tsx`, `control-store.ts`).
 
 Tested in `apps/hub/test/meet-control.test.ts` (granting, who may send, asking and refusing, ending
-on its own, who is not offered it, the webinar stage, the audit) and `apps/desktop/test/assist.test.ts`
+on its own, who is not offered it, the webinar stage, the audit), `apps/hub/test/meet-control-guest.test.ts`
+(a guest asks, is refused, is granted only when picked, their cleaned input reaches only the presenter,
+release, leaving, the browser's view-only screen, the audit) and `apps/desktop/test/assist.test.ts`
 (input only from the allowed device), and end to end on Linux under Xvfb with xdotool: two apps in
 a meeting, one shares and gives control from the other's person menu, and the other's pointer
 moves the real X pointer and clicks a button in the presenter's window; Stop on the banner ends it
 and input afterwards (from the controller's view, through the hub, or straight to the main
-process) is ignored; asking, accepting and the stop keys; and stopping the share ends it.
+process) is ignored; asking, accepting and the stop keys; and stopping the share ends it. The
+e2e `meetui.mts` adds a guest in headless Chromium through the real gateway Worker: the guest
+asks, the presenter accepts (GUEST on the request and the consent), the guest's click presses a
+button in the presenter's window through xdotool, Shift+Esc ends it and later input goes nowhere;
+then app to app; and a screen the guest shares from the browser is view only on both sides. The
+Windows input helper itself is not run on Linux (its own CI job compiles and drives it); there the
+same events go to xdotool.
+
+### The meeting page's toolbar and chat boxes (November 2026)
+
+- **Raise hand** on the browser meeting page kept the tile tag's 20 px style when pressed (the
+  tag and the pressed tool shared the class `hand`): the tag is now `.tags .hand` and the pressed
+  tool `.tool.raised`. Every tool keeps one width whatever its state (Mic on / Mic off, Raise hand
+  / Hand up), and on a phone each shows one short word (Mic, Cam, Share, Hand, React, Chat) with
+  the whole label as its accessible name; the webinar page had the same clash and is fixed alike.
+- **Meeting chat boxes grow** with the text (the browser page and the app's *Everyone here* and
+  meeting conversation tabs): one line, then up to six ruled lines with square corners and an
+  accent edge, then they scroll. Enter sends, Shift+Enter starts a new line, and Enter while an
+  input method is composing a word (Hindi, Tamil) is left to it (`packages/core/src/compose.ts`:
+  `growHeight`, `enterAction`, `autoGrow`; the app's hook is `renderer/autogrow.ts`
+  `useAutoGrow`, ready for any other composer). The meeting page keeps one writing box per
+  meeting, so a half-written line and its focus survive lines arriving (it was rebuilt each time).
+  Tested in `packages/core/test/compose.test.ts` and `meetui.mts`.
 
 Each phase ships with end-to-end tests that drive several app instances through the feature. The
 performance targets above are measured in CI-like runs on the e2e harness.

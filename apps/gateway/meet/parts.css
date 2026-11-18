@@ -24,9 +24,13 @@
 .tool:hover:not(:disabled) { color: var(--text); border-color: var(--text-3); }
 .tool.on, .tool.on:hover:not(:disabled) { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
 .tool.off { color: var(--text-2); }
-.tool.hand { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-soft); }
 .tool.wide { flex-direction: row; height: 42px; gap: 8px; font-size: 13px; justify-content: flex-start; padding: 0 14px; }
 .tool[aria-pressed="true"] { color: var(--accent-ink); border-color: var(--accent); }
+/* a raised hand: amber, the same size and layout as every other tool */
+.tool.raised, .tool.raised[aria-pressed="true"], .tool.raised:hover:not(:disabled) { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-soft); }
+/* a pressed tool keeps its label on one line inside the button, however narrow */
+.tool > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool > svg { flex: none; }
 
 .problem { margin: 6px 0 0; padding: 10px 12px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: var(--amber-ink); font-size: 14px; }
 /* the small "working" mark: a dot travelling along a short line */
