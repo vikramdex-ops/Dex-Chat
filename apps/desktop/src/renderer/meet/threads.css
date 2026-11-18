@@ -76,9 +76,36 @@
 /* in a narrow column (the Register, the recap): ref, status and edit on the first line, owner and due below */
 .ap-strip.compact > .ap-box, .ap-strip.compact > .ap-ref, .ap-strip.compact > .tag, .ap-strip.compact > .ap-title { order: 0; }
 .ap-strip > .ap-title { flex: 1 1 200px; min-width: 0; font-weight: 600; font-size: 13px; overflow-wrap: anywhere; border-right: 0; }
+/* the point's words and its state open it (its words, owner, date, state and history) */
+.ap-strip > button.ap-title { justify-content: flex-start; gap: 8px; border: 0; border-right: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; font-weight: 600; font-size: 13px; }
+.ap-strip > button.ap-title:hover > span:first-child, .ap-strip > button.ap-title:focus-visible > span:first-child { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.ap-strip > button.ap-status { border: 0; border-right: 1px solid var(--stroke); background: none; cursor: pointer; }
+.ap-strip > button.ap-status:hover, .ap-strip > button.ap-status:focus-visible { background: var(--subtle-2); color: var(--text); }
+.ap-strip:not(.compact) > button.ap-title { flex-basis: 100%; order: -1; border-bottom: 1px solid var(--stroke); font-weight: 500; }
+.ap-box[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.ap-revised { font-size: 9.5px; flex: none; }
+/* an action point opened */
+.ap-sheet textarea.input { resize: none; overflow-wrap: anywhere; }
+.ap-sheet .ap-note { display: flex; gap: 6px; align-items: center; margin: 0; }
+.ap-sheet .ap-state button { display: inline-flex; align-items: center; gap: 5px; }
+.ap-sheet .dialog-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ap-sheet .dialog-actions .spacer { flex: 1; }
+.ap-history { border-top: 1px solid var(--stroke); padding-top: 8px; }
+.ap-history h3 { margin: 0 0 6px; font: 600 10px/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); }
+.ap-history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; max-height: 180px; overflow: auto; font-size: 12.5px; }
+.ap-history li { display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--stroke); overflow-wrap: anywhere; }
+.ap-history li:last-child { border-bottom: 0; }
+@media (max-width: 520px) { .ap-history li { grid-template-columns: 1fr; gap: 0; } }
 .ap-strip.compact > .ap-status { order: 1; margin-left: auto; border-left: 1px solid var(--stroke); }
 .ap-strip.compact > .ap-edit { order: 2; margin-left: 0; }
 .ap-strip.compact::before { content: ''; order: 3; flex-basis: 100%; height: 0; }
 .ap-strip.compact > .ap-cell { order: 4; flex: 1 1 40%; border-top: 1px solid var(--stroke); }
 .ap-strip.compact > .ap-cell + .ap-cell { border-right: 0; }
 .ap-strip.compact > .tag { margin: auto 0; border-right: 1px solid var(--stroke-strong); }
+.ap-sheet .dialog-actions > :first-child { flex: none; font-size: inherit; }
+.ap-sheet { gap: 14px; }
+.ap-sheet .field { gap: 5px; }
+.ap-sheet .ap-state { justify-self: start; width: max-content; }
+.ap-sheet .ap-history ol { max-height: 220px; }
+/* the recap's top row (tick, number, words, state, pencil) stays on one line on a phone: the words wrap instead */
+.ap-strip.compact > .ap-title { flex: 1 1 0; }

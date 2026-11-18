@@ -43,7 +43,7 @@ import { requestOpen } from './chat/deeplinks.ts';
 import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
-import { setSelfUser, startCalls } from './rooms/engine.ts';
+import { setMinimized, setSelfUser, startCalls } from './rooms/engine.ts';
 import { startMeetLive } from './meet/live.ts';
 import { RecapHost } from './meet/threadcards.tsx';
 import { joinAny, openWebinar, startWebinars } from './meet/webinar/store.ts';
@@ -421,8 +421,11 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
   };
   /** Open a conversation and scroll to (or open the side-track of) a message. */
   const jump = (convId: string, messageId?: string, parentId?: string | null) => {
-    const c = conversations.get(convId);
-    if (!c) return;
+    const c = chatState().conversations.get(convId) ?? conversations.get(convId);
+    // say so rather than do nothing (a thread left, removed, or not on this device yet)
+    if (!c) { window.dispatchEvent(new CustomEvent('dex-toast', { detail: 'That conversation is not on this device. You may have left it, or it is still arriving.' })); return; }
+    // a Room on screen folds into the title bar, so the thread it opens is seen
+    setMinimized(true);
     openConversation(c.id, c.kind);
     if (messageId) setTimeout(() => window.dispatchEvent(new CustomEvent('dex-jump', { detail: { convId, messageId, parentId: parentId ?? null } })), 120);
   };

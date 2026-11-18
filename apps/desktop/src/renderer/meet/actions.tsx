@@ -3,10 +3,14 @@
 // on its message (AP-07 · owner · due · a tick box), and the dialog that promotes any message.
 // The hub keeps the register (meet-threads.ts); the rules are shared (@dex/core meet-threads).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { actionTrigger, apRef, isOverdue, isWebGuest, parseAction } from '@dex/core';
-import type { ActionPoint, ActionSource, Conversation, Message, PublicUser, RoomInfo } from '@dex/core';
+import { actionTrigger, apRef, isOverdue, isWebGuest, mayChangeAction, parseAction } from '@dex/core';
+import type { ActionChange, ActionPoint, ActionSource, Conversation, Message, PublicUser, RoomInfo } from '@dex/core';
 import type { NibPerson } from '@dex/core/nib';
-import { Dialog, Icon, Popover, useToast } from '../ui.tsx';
+import { Dialog, Icon, useToast } from '../ui.tsx';
+import { confirmAction } from '../confirm.tsx';
+import { useChat } from '../chat/store.ts';
+import { formatTime } from '../time.ts';
+import { useAutoGrow } from '../autogrow.ts';
 import './threads.css';
 
 // ------------------------------------------------------------------ dates
@@ -84,7 +88,7 @@ export const ownerText = (a: Pick<ActionDraft, 'ownerId' | 'ownerName'>, users: 
 // ------------------------------------------------------------------ the owner and the date, as ruled cells
 const OTHER = '__other';
 
-export function OwnerSelect({ value, pool, meId, onChange, id }: { value: Pick<ActionDraft, 'ownerId' | 'ownerName'>; pool: NibPerson[]; meId: string; onChange: (v: Pick<ActionDraft, 'ownerId' | 'ownerName'>) => void; id?: string }) {
+export function OwnerSelect({ value, pool, meId, onChange, id, disabled }: { value: Pick<ActionDraft, 'ownerId' | 'ownerName'>; pool: NibPerson[]; meId: string; onChange: (v: Pick<ActionDraft, 'ownerId' | 'ownerName'>) => void; id?: string; disabled?: boolean }) {
   const [typing, setTyping] = useState(!value.ownerId && !!value.ownerName && !pool.some((p) => p.name === value.ownerName));
   const colleagues = pool.filter((p) => !isWebGuest(p.id));
   const guests = pool.filter((p) => isWebGuest(p.id));
@@ -92,14 +96,14 @@ export function OwnerSelect({ value, pool, meId, onChange, id }: { value: Pick<A
   if (typing) {
     return (
       <span className="ap-other">
-        <input id={id} className="input sm" value={value.ownerName ?? ''} maxLength={60} placeholder="Their name" aria-label="Owner's name (someone from outside)" autoFocus
+        <input id={id} className="input sm" value={value.ownerName ?? ''} maxLength={60} disabled={disabled} placeholder="Their name" aria-label="Owner's name (someone from outside)" autoFocus
           onChange={(e) => onChange({ ownerId: null, ownerName: e.target.value })} />
-        <button type="button" className="icon-btn" aria-label="Choose from the list" title="Choose from the list" onClick={() => { setTyping(false); onChange({ ownerId: null, ownerName: null }); }}><Icon name="x" size={13} /></button>
+        <button type="button" className="icon-btn" aria-label="Choose from the list" title="Choose from the list" disabled={disabled} onClick={() => { setTyping(false); onChange({ ownerId: null, ownerName: null }); }}><Icon name="x" size={13} /></button>
       </span>
     );
   }
   return (
-    <select id={id} className="input sm ap-select" value={sel} aria-label="Owner"
+    <select id={id} className="input sm ap-select" value={sel} aria-label="Owner" disabled={disabled}
       onChange={(e) => {
         const v = e.target.value;
         if (v === OTHER) { setTyping(true); onChange({ ownerId: null, ownerName: '' }); return; }
@@ -114,8 +118,8 @@ export function OwnerSelect({ value, pool, meId, onChange, id }: { value: Pick<A
   );
 }
 
-export function DueInput({ value, onChange, id }: { value: string | null; onChange: (v: string | null) => void; id?: string }) {
-  return <input id={id} type="date" className="input sm ap-date" value={value ?? ''} aria-label="Due date" onChange={(e) => onChange(e.target.value || null)} />;
+export function DueInput({ value, onChange, id, disabled }: { value: string | null; onChange: (v: string | null) => void; id?: string; disabled?: boolean }) {
+  return <input id={id} type="date" className="input sm ap-date" value={value ?? ''} aria-label="Due date" disabled={disabled} onChange={(e) => onChange(e.target.value || null)} />;
 }
 
 // ------------------------------------------------------------------ the preview above a composer
@@ -136,49 +140,168 @@ export function ActionPreview({ draft, pool, meId, next, onPick, busy }: { draft
 export const actionWords = (text: string): string | null => actionTrigger(text);
 
 // ------------------------------------------------------------------ the register entry on a message
+const MAY_NOT = 'Only its owner, whoever logged it and the organiser can change it.';
+
+/** May I change this point? (The hub decides; this greys out what it would refuse.) */
+export function useMayChange(ap: Pick<ActionPoint, 'ownerId' | 'createdBy' | 'organiserId'>, users: Map<string, PublicUser>, meId: string): boolean {
+  return mayChangeAction(ap, { id: meId, role: users.get(meId)?.role ?? 'member' });
+}
+
 export function ApStrip({ ap, users, meId, compact, title }: { ap: ActionPoint; users: Map<string, PublicUser>; meId: string; compact?: boolean; /** The point itself, drawn in the strip's top row (the recap). */ title?: React.ReactNode }) {
   const toast = useToast();
-  const [edit, setEdit] = useState(false);
-  const btn = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const may = useMayChange(ap, users, meId);
   const done = ap.status === 'done';
   const late = isOverdue(ap, todayYmd());
-  const tick = () => void window.dex.request('ap.update', { id: ap.id, status: done ? 'open' : 'done' })
-    .then((a) => toast(a.status === 'done' ? `${apRef(a.n)} done` : `${apRef(a.n)} open again`)).catch((e: Error) => toast(e.message, true));
+  const tick = () => {
+    if (!may) { toast(MAY_NOT, true); return; }
+    void window.dex.request('ap.update', { id: ap.id, status: done ? 'open' : 'done' })
+      .then((a) => toast(a.status === 'done' ? `${apRef(a.n)} done` : `${apRef(a.n)} open again`)).catch((e: Error) => toast(e.message, true));
+  };
   const owner = ownerText(ap, users, meId);
+  const ref = apRef(ap.n);
+  // in the thread the message is the task; words revised since show here (the recap always shows them)
+  const shownTitle = title !== undefined ? title : ap.revisedAt && ap.text ? <span translate="no">{ap.text}</span> : undefined;
   return (
-    <div className={`ap-strip${done ? ' done' : ''}${late ? ' late' : ''}${compact ? ' compact' : ''}`} role="group" aria-label={`Action point ${apRef(ap.n)}`}>
-      <button className="ap-box" role="checkbox" aria-checked={done} aria-label={done ? `${apRef(ap.n)} is done: open it again` : `Mark ${apRef(ap.n)} done`} title={done ? 'Done: open it again' : 'Mark it done'} onClick={tick}>
+    <div className={`ap-strip${done ? ' done' : ''}${late ? ' late' : ''}${compact ? ' compact' : ''}`} role="group" aria-label={`Action point ${ref}`}>
+      <button className="ap-box" role="checkbox" aria-checked={done} aria-disabled={!may || undefined}
+        aria-label={done ? `${ref} is done: open it again` : `Mark ${ref} done`} title={!may ? MAY_NOT : done ? 'Done: open it again' : 'Mark it done'} onClick={tick}>
         {done && <Icon name="check" size={13} />}
       </button>
-      <span className="ap-ref mono">{apRef(ap.n)}</span>
-      {title !== undefined && <span className="ap-title">{title}</span>}
+      <span className="ap-ref mono">{ref}</span>
+      {shownTitle !== undefined && <button type="button" className="ap-title" onClick={() => setOpen(true)} title="Open it: the words, owner, date and its history">{shownTitle}{ap.revisedAt ? <span className="tag mono ap-revised">REVISED</span> : null}</button>}
       {ap.carried && <span className="tag mono">BROUGHT FORWARD</span>}
       <span className="ap-cell"><span className="cap mono">OWNER</span><span className="ap-val" translate={ap.ownerId || ap.ownerName ? 'no' : undefined}>{owner}</span></span>
       <span className="ap-cell"><span className="cap mono">DUE</span><span className="ap-val">{ap.due ? dueLabel(ap.due) : '—'}</span></span>
-      <span className={`ap-status mono${late ? ' late' : ''}`}>{done ? 'DONE' : late ? 'OVERDUE' : 'OPEN'}</span>
-      <button ref={btn} className="icon-btn ap-edit" aria-label={`Change ${apRef(ap.n)}`} title="Change the owner or date" aria-haspopup="dialog" aria-expanded={edit} onClick={() => setEdit(!edit)}><Icon name="edit" size={13} /></button>
-      {edit && <Popover anchor={btn.current} onClose={() => setEdit(false)} className="menu ap-pop" align="end"><ApEdit ap={ap} users={users} meId={meId} onDone={() => setEdit(false)} /></Popover>}
+      <button type="button" className={`ap-status mono${late ? ' late' : ''}`} onClick={() => setOpen(true)} aria-label={done ? `${ref} is done. Open it` : late ? `${ref} is overdue. Open it` : `${ref} is open. Open it`} title="Open it: the words, owner, date and its history">{done ? 'DONE' : late ? 'OVERDUE' : 'OPEN'}</button>
+      <button type="button" className="icon-btn ap-edit" aria-label={may ? `Change ${ref}` : `Open ${ref}`} title={may ? 'Change the words, owner or date' : 'Open it and see its history'} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><Icon name="edit" size={13} /></button>
+      {open && <ApSheet ap={ap} users={users} meId={meId} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
-function ApEdit({ ap, users, meId, onDone }: { ap: ActionPoint; users: Map<string, PublicUser>; meId: string; onDone: () => void }) {
+/** Who can own it, as a colleague changing it later sees them: the thread's people; for the organiser, anyone in the office (the hub adds them to the thread). */
+function editPool(ap: ActionPoint, conv: Conversation | undefined, users: Map<string, PublicUser>, meId: string): NibPerson[] {
+  const pool = ownerPool(conv, users);
+  const has = (id: string) => pool.some((p) => p.id === id);
+  const add = (u: PublicUser | undefined) => { if (u && u.role !== 'bot' && u.role !== 'guest' && !has(u.id)) pool.push({ id: u.id, name: u.displayName }); };
+  if (ap.ownerId) add(users.get(ap.ownerId));
+  // no thread here (an outsider's recap) or the organiser: the office
+  if (!conv || ap.organiserId === meId) for (const u of users.values()) add(u);
+  return pool;
+}
+
+const sameOwner = (a: Pick<ActionDraft, 'ownerId' | 'ownerName'>, b: Pick<ActionDraft, 'ownerId' | 'ownerName'>) => (a.ownerId ?? null) === (b.ownerId ?? null) && (a.ownerName || null) === (b.ownerName || null);
+
+/**
+ * An action point opened: its words, owner, due date and state, changed by whoever may (the rest
+ * read it), and its history underneath: who logged it and every change since. Saved to the hub,
+ * which tells the thread; the recap and the register follow.
+ */
+export function ApSheet({ ap, users, meId, onClose }: { ap: ActionPoint; users: Map<string, PublicUser>; meId: string; onClose: () => void }) {
   const toast = useToast();
+  const may = useMayChange(ap, users, meId);
+  const conv = useChat((s) => s.conversations.get(ap.convId));
+  const pool = useMemo(() => editPool(ap, conv, users, meId), [ap, conv, users, meId]);
+  const [text, setText] = useState(ap.text);
   const [owner, setOwner] = useState<Pick<ActionDraft, 'ownerId' | 'ownerName'>>({ ownerId: ap.ownerId, ownerName: ap.ownerName });
   const [due, setDue] = useState(ap.due);
-  const pool = useMemo(() => [...users.values()].filter((u) => u.role !== 'bot' && u.role !== 'guest').map((u) => ({ id: u.id, name: u.displayName })), [users]);
-  const save = (extra: Record<string, unknown> = {}) => void window.dex.request('ap.update', { id: ap.id, ownerId: owner.ownerId, ownerName: owner.ownerName, due, ...extra })
-    .then(() => onDone()).catch((e: Error) => toast(e.message, true));
+  const [status, setStatus] = useState<'open' | 'done'>(ap.status === 'done' ? 'done' : 'open');
+  const [busy, setBusy] = useState(false);
+  const words = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(words, text, 6);
+  const ref = apRef(ap.n);
+  const changes: Record<string, unknown> = {};
+  if (!ap.sealed && text.trim() && text.trim() !== ap.text) changes.text = text.trim();
+  if (!sameOwner(owner, ap)) { changes.ownerId = owner.ownerId; changes.ownerName = owner.ownerName || null; }
+  if ((due ?? null) !== (ap.due ?? null)) changes.due = due;
+  if (status !== (ap.status === 'done' ? 'done' : 'open')) changes.status = status;
+  const dirty = Object.keys(changes).length > 0;
+  const send = async (patch: Record<string, unknown>, said: string) => {
+    setBusy(true);
+    try {
+      await window.dex.request('ap.update', { id: ap.id, ...patch });
+      toast(said);
+      onClose();
+    } catch (e) { toast((e as Error).message, true); setBusy(false); }
+  };
+  const drop = async () => {
+    if (!await confirmAction({ title: `Drop ${ref}?`, body: 'It leaves the register, the recap and its owner\'s Desk. Its message stays in the thread, and its history is kept.', confirm: 'Drop it', danger: true })) return;
+    await send({ status: 'dropped' }, `${ref} dropped`);
+  };
   return (
-    <div className="ap-edit-form">
-      <div className="menu-label label">{apRef(ap.n)}</div>
-      <label className="field"><span className="label">Owner</span><OwnerSelect value={owner} pool={pool} meId={meId} onChange={setOwner} /></label>
-      <label className="field"><span className="label">Due</span><DueInput value={due} onChange={setDue} /></label>
-      <div className="row-actions">
-        <button className="btn ghost sm danger" onClick={() => save({ status: 'dropped' })}>Drop it</button>
-        <button className="btn primary sm" onClick={() => save()}>Save</button>
+    <Dialog title={`${ref} · Action point`} onClose={onClose} narrow>
+      <div className="stack-v ap-dialog ap-sheet">
+        {!may && <p className="ap-note faint small"><Icon name="lock" size={12} />{MAY_NOT}</p>}
+        <label className="field"><span className="label">What needs doing</span>
+          {ap.sealed
+            ? <span className="faint small"><Icon name="lock" size={12} /> End-to-end encrypted: change its words by editing its message in the thread.</span>
+            : <textarea ref={words} className="input" rows={2} maxLength={300} value={text} disabled={!may || busy} onChange={(e) => setText(e.target.value)} />}
+        </label>
+        <div className="ap-dialog-row">
+          <label className="field"><span className="label">Owner</span><OwnerSelect value={owner} pool={pool} meId={meId} onChange={setOwner} disabled={!may || busy} /></label>
+          <label className="field"><span className="label">Due</span><DueInput value={due} onChange={setDue} disabled={!may || busy} /></label>
+        </div>
+        <div className="field"><span className="label">State</span>
+          <div className="seg ap-state" role="group" aria-label="State">
+            <button type="button" aria-pressed={status === 'open'} disabled={!may || busy} onClick={() => setStatus('open')}>Still to do</button>
+            <button type="button" aria-pressed={status === 'done'} disabled={!may || busy} onClick={() => setStatus('done')}><Icon name="check" size={13} />Done</button>
+          </div>
+        </div>
+        <ApHistory ap={ap} users={users} meId={meId} />
+        <div className="dialog-actions">
+          {may && <button className="btn ghost danger" disabled={busy} onClick={() => void drop()}>Drop it</button>}
+          <span className="spacer" />
+          <button className="btn ghost" onClick={onClose}>{may ? 'Cancel' : 'Close'}</button>
+          {may && <button className="btn primary" disabled={!dirty || busy || (!ap.sealed && !text.trim())} onClick={() => void send(changes, `${ref} saved`)}>Save changes</button>}
+        </div>
       </div>
-    </div>
+    </Dialog>
+  );
+}
+
+const hmDay = (t: number) => `${new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' })} ${formatTime(t)}`;
+
+/** One change as a sentence: "Priya gave it to Ravi Kumar". */
+function changeLines(c: ActionChange, who: string, nameOf: (id: string) => string): string[] {
+  if (c.kind === 'logged') return [`${who} logged it`];
+  const out: string[] = [];
+  for (const f of c.fields) {
+    if (f.field === 'text') out.push(`${who} changed the words to “${f.to}”`);
+    else if (f.field === 'owner') out.push(!f.to ? `${who} took the owner off` : f.to.startsWith('~') ? `${who} gave it to ${f.to.slice(1)}, a guest` : `${who} gave it to ${nameOf(f.to)}`);
+    else if (f.field === 'due') out.push(f.to ? `${who} set the date to ${dueLabel(f.to)}` : `${who} took the date off`);
+    else if (f.to === 'done') out.push(c.kind === 'ticked' ? `${who} marked it done on the day sheet` : `${who} marked it done`);
+    else if (f.to === 'dropped') out.push(`${who} dropped it`);
+    else out.push(c.kind === 'ticked' ? `${who} opened it again on the day sheet` : `${who} opened it again`);
+  }
+  return out;
+}
+
+/** Its history (the audit trail): newest last, read from the hub when opened and when it changes. */
+function ApHistory({ ap, users, meId }: { ap: ActionPoint; users: Map<string, PublicUser>; meId: string }) {
+  const [changes, setChanges] = useState<ActionChange[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void window.dex.request('ap.history', { id: ap.id }).then((h) => { if (live) { setChanges(h.changes); setProblem(null); } }).catch((e: Error) => { if (live) setProblem(e.message); });
+    return () => { live = false; };
+  }, [ap.id, ap.updatedAt]);
+  // by name, yours too: a sentence reads the same in every language ("You" would sit untranslated in it)
+  const person = (id: string) => users.get(id)?.displayName ?? 'Someone';
+  return (
+    <section className="ap-history" aria-label={`History of ${apRef(ap.n)}`}>
+      <h3 className="label">History</h3>
+      {problem && <p className="faint small">{problem}</p>}
+      {!changes && !problem && <span className="spinner" />}
+      {changes && !changes.length && <p className="faint small">Nothing recorded yet.</p>}
+      {changes && changes.length > 0 && (
+        <ol>
+          {changes.flatMap((c, i) => changeLines(c, person(c.by), person).map((t, j) => (
+            <li key={`${i}-${j}`}><span className="mono faint">{hmDay(c.at)}</span><span>{t}</span></li>
+          )))}
+        </ol>
+      )}
+    </section>
   );
 }
 
