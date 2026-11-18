@@ -9,6 +9,7 @@ import type { KnockView, PublicUser } from '@dex/core';
 import { Avatar, Icon, useToast } from '../ui.tsx';
 import { clock, joinMeeting, useCall } from '../rooms/engine.ts';
 import { answerKnock, waitedText } from './knocks.ts';
+import { tr } from '../i18n/index.ts';
 import './knocks.css';
 
 type FrameProps = { caption: string; title: string; no?: string; children: React.ReactNode; className?: string };
@@ -33,7 +34,8 @@ export function KnockCard({ knock: k, fallback, meId, users, onChange, frame: Fr
   const mine = k.by === meId;
   const by = k.by && !mine ? users.get(k.by)?.displayName ?? 'A host' : null;
   const at = clock(k.decidedAt ?? k.at);
-  const where = k.kind === 'personal' ? 'Your personal room' : k.title;
+  // the card's title is drawn as written (a meeting's name); a personal room is the app's own words
+  const where = k.kind === 'personal' ? tr('Your personal room') : k.title;
   const answer = (allow: boolean) => {
     setBusy(true);
     void answerKnock(k.id, allow)
@@ -43,7 +45,7 @@ export function KnockCard({ knock: k, fallback, meId, users, onChange, frame: Fr
   };
   const join = () => void joinMeeting(k.meetingId, false).catch((e: Error) => toast(e.message, true));
   return (
-    <Frame caption="LOBBY" title={where} no={formatMeetingId(k.meetingId)} className={`k-knock ${k.state}`}>
+    <Frame caption="LOBBY" title={where} no={formatMeetingId(k.meetingId)} className={`k-knock ks-${k.state}`}>
       <div className="knock-card-who">
         <Avatar user={{ id: k.userId || k.id, displayName: k.name }} size="sm" />
         <span className="knock-who">

@@ -8,7 +8,8 @@ import { formatMeetingId } from '@dex/core';
 import type { KnockView, RoomInfo } from '@dex/core';
 import { Avatar, Icon, Popover, useToast } from '../ui.tsx';
 import { joinMeeting, useCall } from '../rooms/engine.ts';
-import { answerAll, answerKnock, knockName, laterKnock, openKnocks, useKnocks, waitedText } from './knocks.ts';
+import { answerAll, answerKnock, laterKnock, openKnocks, useKnocks, waitedText } from './knocks.ts';
+import { tr } from '../i18n/index.ts';
 import './knocks.css';
 
 /** Re-draw every 30 seconds (waiting times). */
@@ -18,7 +19,9 @@ function useTick(ms = 30_000): number {
   return n;
 }
 
-const where = (k: Pick<KnockView, 'kind' | 'title'>) => (k.kind === 'personal' ? 'Your personal room' : k.title);
+/** The meeting's name: a personal room in the app's words, any other meeting by its own title (kept as written). */
+const Where = ({ k }: { k: Pick<KnockView, 'kind' | 'title'> }) => (k.kind === 'personal' ? <span>{tr('Your personal room')}</span> : <span translate="no">{k.title}</span>);
+const where = (k: Pick<KnockView, 'kind' | 'title'>) => (k.kind === 'personal' ? tr('Your personal room') : k.title);
 
 function Who({ k }: { k: KnockView }) {
   return (
@@ -49,12 +52,12 @@ export function LobbyBell() {
   const label = n ? (n === 1 ? '1 waiting to join' : `${n} waiting to join`) : r === 1 ? 'Your meeting is running without you' : `${r} of your meetings are running without you`;
   return (
     <>
-      <button ref={btn} className={`lobby-bell${n ? ' waiting' : ' quiet'}`} aria-haspopup="dialog" aria-expanded={open} aria-label={label} title={label} onClick={() => openKnocks(!open)}>
+      <button ref={btn} className={`lobby-bell${n ? ' is-waiting' : ' is-quiet'}`} aria-haspopup="dialog" aria-expanded={open} aria-label={label} title={label} onClick={() => openKnocks(!open)}>
         <Icon name={n ? 'bell' : 'video'} size={15} />
         <span className="lobby-bell-text mono">{n ? (n === 1 ? '1 WAITING' : `${n} WAITING`) : 'IN YOUR ROOM'}</span>
       </button>
       <span className="knock-sr" role="status" aria-live="polite">{said}</span>
-      {open && btn.current && <Popover anchor={btn.current} onClose={() => openKnocks(false)} className="menu lobby-pop" align="end"><LobbyList /></Popover>}
+      {open && btn.current && <Popover anchor={btn.current} onClose={() => openKnocks(false)} className="lobby-pop" align="end"><LobbyList /></Popover>}
     </>
   );
 }
@@ -67,12 +70,15 @@ function LobbyList() {
   const groups = new Map<string, KnockView[]>();
   for (const k of board.knocks) (groups.get(k.meetingId) ?? groups.set(k.meetingId, []).get(k.meetingId)!).push(k);
   const join = (meetingId: string) => { openKnocks(false); void joinMeeting(meetingId, false).catch((e: Error) => toast(e.message, true)); };
+  // the keyboard moves into the list when it opens (not onto Admit: an Enter there would let someone in)
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { box.current?.focus({ preventScroll: true }); }, []);
   return (
-    <div className="lobby-list" role="dialog" aria-label="Who is waiting">
+    <div ref={box} tabIndex={-1} className="lobby-list" role="dialog" aria-label="Who is waiting">
       {[...groups].map(([meetingId, list]) => (
         <section key={meetingId} className="lobby-group" aria-label={`Waiting for ${where(list[0])}`}>
           <div className="tb-head">
-            <span className="label">Lobby · <span translate="no">{where(list[0])}</span></span>
+            <span className="label">Lobby · <Where k={list[0]} /></span>
             <span className="mono">{formatMeetingId(meetingId)}</span>
           </div>
           {!list[0].hostIn && <p className="lobby-note faint">{list[0].live ? 'No host is in the room. Admit lets them in; they wait there for you.' : 'The room is not open. Admit opens it for them; they wait there for you.'}</p>}
@@ -102,7 +108,7 @@ function LobbyList() {
             {board.rooms.map((r) => (
               <li key={r.meetingId} className="lobby-row">
                 <span className="lobby-row-main">
-                  <b translate="no">{r.kind === 'personal' ? 'Your personal room' : r.title}</b>
+                  <b><Where k={r} /></b>
                   <small className="faint"><span translate="no">{r.people.map((p) => p.name).join(', ')}</span>{r.people.some((p) => p.guest) ? ' · guests included' : ''}</small>
                 </span>
                 <span className="lobby-row-acts"><button className="btn sm primary" onClick={() => join(r.meetingId)}><Icon name="video" size={14} />Join</button></span>
@@ -122,12 +128,14 @@ function LobbyList() {
 export function KnockCards() {
   const knocks = useKnocks((s) => s.board.knocks);
   const later = useKnocks((s) => s.later);
+  // the indicator's list is open: it shows the same people
+  const listOpen = useKnocks((s) => s.open);
   const room = useCall((s) => s.room);
   const minimized = useCall((s) => s.minimized);
   const answer = useAnswer();
   useTick();
   const shown = knocks.filter((k) => !later.has(k.id) && !(room?.meetingId === k.meetingId && !minimized)).slice(-2);
-  if (!shown.length) return null;
+  if (!shown.length || listOpen) return null;
   return (
     <div className="reminder-cards knock-cards" role="region" aria-label="Waiting to join">
       {shown.map((k) => (
@@ -137,7 +145,7 @@ export function KnockCards() {
             <div className="desk-main">
               <span className="label">Waiting in the lobby · {waitedText(k.at)}</span>
               <div className="desk-text"><Who k={k} /></div>
-              <span className="faint knock-where"><span translate="no">{where(k)}</span>{k.hostIn ? '' : k.live ? ' · no host in the room yet' : ' · the room is not open yet'}</span>
+              <span className="faint knock-where"><Where k={k} />{k.hostIn ? '' : k.live ? ' · no host in the room yet' : ' · the room is not open yet'}</span>
             </div>
             <button className="icon-btn" aria-label="Later: keep it in the indicator" title="Later: keep it in the indicator" onClick={() => laterKnock(k.id)}><Icon name="x" size={15} /></button>
           </div>

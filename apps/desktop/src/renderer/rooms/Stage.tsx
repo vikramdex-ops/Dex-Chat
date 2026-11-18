@@ -233,8 +233,13 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   }, [minimized, picker, adding, pop, consent]);
   // the host sees people knocking whatever tab is open: the lobby strip across the sheet (meet/LobbyBell.tsx)
   const waiting = room.lobby ?? [];
-  // the meeting chat: unread lines from others, and its conversation's unread messages, counted on the Chat tab
-  const chatUnread = useLive((s) => s.unread) + (useChat((s) => s.conversations.get(room.convId)?.unread) ?? 0);
+  // unread on the Chat tab: the chat it shows. With guests or people from outside (or once anyone used it)
+  // that is the meeting chat, whose lines are also saved in the meeting's thread, so they are counted once
+  const liveUnread = useLive((s) => s.unread);
+  const roomLines = useLive((s) => s.chat.get(room.parentId ?? room.id)?.length ?? 0);
+  const chatConv = useChat((s) => s.conversations.get(room.convId));
+  const roomChatShown = !chatConv || !!room.visitors?.length || roomLines > 0 || room.participants.some((p) => !chatConv.members.includes(p.userId));
+  const chatUnread = roomChatShown ? liveUnread : chatConv?.unread ?? 0;
   useEffect(() => {
     // folded away, the chat is not being read; open again on the Chat tab, it is
     if (minimized) setChatOpen(false);
@@ -487,8 +492,11 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
                 <Glyph name="fold" size={16} />
               </button>
               {canFloat && <button className="tb-link square" title="Float the video in a small window on top of everything" aria-label="Float" onClick={() => void float()}><Glyph name="float" size={16} /></button>}
-              <EndForEveryone room={room} meId={meId} className="room-end-all" />
-              <button className="room-leave" onClick={leave} title={isHost && others.length ? 'Leave the Room: it carries on for everyone else' : 'Leave the Room'}>Leave Room<Glyph name="door" size={16} /></button>
+              {/* leaving and ending, together at the end of the title block (they wrap onto their own line when narrow) */}
+              <span className="tb-exit">
+                <EndForEveryone room={room} meId={meId} className="room-end-all" />
+                <button className="room-leave" onClick={leave} title={isHost && others.length ? 'Leave the Room: it carries on for everyone else' : 'Leave the Room'}>Leave Room<Glyph name="door" size={16} /></button>
+              </span>
             </div>
           </div>
         </aside>
