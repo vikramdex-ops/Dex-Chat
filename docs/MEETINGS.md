@@ -666,6 +666,22 @@ Then:
 - **Done.** The owner (or the organiser, or whoever logged it) ticks it on the card, the
   register, the recap or their Desk; their Desk reminder and Nib item close with it, and ticking
   the Nib item done ticks the action point.
+- **Changed later, from anywhere.** The pencil on a card (in the thread, the register or the
+  recap), its words, or its state (`OPEN`, `DONE`, `OVERDUE`) opens the point as a dialog: its words
+  (not for an end-to-end encrypted point, whose words are its message), its owner (the thread's
+  people; the organiser may pick anyone in the office, who is then added to the thread; or a guest
+  by name), its due date, open or done, and *Drop it*. Saved to the hub (`ap.update`), which tells
+  everyone in the thread (`ap.updated`): the card, the register, the recap and its card's counts
+  follow. Revised words win over the card's message (shown under it with a `REVISED` tag in the
+  thread) until the message is edited again. A save that changes nothing changes nothing.
+- **Who may change it**: its owner, whoever logged it, the meeting's organiser, and the office's
+  owners and administrators (`mayChangeAction` in `@dex/core`, enforced by the hub; each point
+  names its organiser so the app greys out what someone may not change and says why). Everyone
+  else in the thread reads it.
+- **Its history**: the dialog lists who logged it and every change since (words, owner, date,
+  done or open, dropped; a tick on a Nib day sheet too), by name and time, from the hub
+  (`ap.history`, the `ap_history` table; purged with its message). Changes also go to the office
+  audit log (`meeting.actionChanged`, `meeting.actionStatus`).
 - **Overdue** points are reminded once a working day, within working hours (Nib's workdays,
   between the day's start prompt and the wrap-up), one grouped message per person listing all
   theirs, never one ping each, and not while they are on leave.
@@ -689,6 +705,11 @@ searchable, paged for long meetings; deleted messages are not shown).
 
 **Reach it from** the card in the thread, the Calendar (an event opened after it happened shows
 its recap), the Meet lens (Recent meetings: Recap) and search (the chat and files are messages).
+Everything the recap opens is drawn above it: an action point's dialog, a confirmation, the
+recording player and the toasts that answer a click. *In the thread* (on each action point, file
+and chat line) and *Open the thread* close the recap and open the thread at that message, folding a
+Room on screen into the title bar; a thread no longer on the device says so. Esc closes what is on
+top first (a menu or dialog), then the recap.
 **Copy recap** puts plain text on the clipboard; **Send by email** builds an `.eml` draft
 (`packages/core/src/eml.ts`) with the parts the organiser ticks (for guests, for example, only the
 action points and files) and the addresses typed.

@@ -338,8 +338,11 @@ using it (speaker choice, `AudioContext`, screen sharing).
 
 - **Calendar → New meeting**, held as a call:
   1. Switch on **Guests from outside can join from a browser**.
-  2. Give it a name (checked as you type), choose **Show the title on the invitation page** and
-     the lobby rule.
+  2. Give it a name (checked as you type), or take the one suggested from the title
+     (**Use …/fst-project-handover**: it fills the field and is checked like a typed name; a name
+     already taken says so and is not kept, and what you typed stays), choose **Show the title on
+     the invitation page** and the lobby rule. Clearing the name puts the page back at the
+     meeting ID. A clipboard that refuses a copy says so.
   3. Save. The dialog stays open on the invitation: the clean link with its passcode,
      **Copy invitation** (text), **Download invitation (.ics)** and **Send by email**.
 - **Send by email** opens the invitation as a draft in the PC's mail program (Outlook, Windows Mail,

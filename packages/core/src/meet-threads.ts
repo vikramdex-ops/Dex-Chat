@@ -70,6 +70,30 @@ export interface ActionPoint {
   source: ActionSource;
   /** Logged in an earlier occurrence and still open when this one began. */
   carried?: boolean;
+  /** Who runs the meeting it came from (they may change it, with its owner and whoever logged it). */
+  organiserId?: string | null;
+  /** When its words were last revised after it was logged (null: as logged, or as its message says). */
+  revisedAt?: number | null;
+}
+
+/** One change in an action point's history (its audit trail), newest last. */
+export interface ActionChange {
+  at: number;
+  by: string;
+  /** 'logged' when it was made, 'changed' for an edit, 'ticked' from a day sheet. */
+  kind: 'logged' | 'changed' | 'ticked';
+  /** What changed, from what to what ('' for none; owners as user ids, or a guest's name with a leading '~'). */
+  fields: Array<{ field: 'text' | 'owner' | 'due' | 'status'; from: string; to: string }>;
+}
+
+/**
+ * Who may change an action point (its words, owner, due date, done or open, or drop it): its owner,
+ * whoever logged it, the meeting's organiser, and the office's owners and administrators. Guests
+ * and bots never. The hub enforces it; the app greys out what you may not do.
+ */
+export function mayChangeAction(ap: Pick<ActionPoint, 'ownerId' | 'createdBy' | 'organiserId'>, me: { id: string; role: string }): boolean {
+  if (me.role === 'guest' || me.role === 'bot') return false;
+  return ap.createdBy === me.id || ap.ownerId === me.id || (!!ap.organiserId && ap.organiserId === me.id) || me.role === 'owner' || me.role === 'admin';
 }
 
 export const apRef = (n: number): string => `AP-${String(Math.max(1, Math.floor(n))).padStart(2, '0')}`;
@@ -352,6 +376,8 @@ declare module './protocol.ts' {
     'ap.update': { req: { id: string; text?: string; ownerId?: string | null; ownerName?: string | null; due?: string | null; status?: ActionStatus }; res: ActionPoint };
     /** A thread's register (with what is brought forward), or my own open points across threads. */
     'ap.list': { req: { convId?: string; occurrenceId?: string; mine?: boolean }; res: { actions: ActionPoint[]; next: number } };
+    /** An action point's history: who logged it and every change since (for anyone who may read it). */
+    'ap.history': { req: { id: string }; res: { action: ActionPoint; changes: ActionChange[] } };
     'agenda.get': { req: { convId: string }; res: { occurrenceId: string | null; items: AgendaItem[] } };
     'agenda.set': { req: { convId: string; items: Array<{ id?: string; text: string; minutes: number | null }> }; res: { occurrenceId: string | null; items: AgendaItem[] } };
     'agenda.tick': { req: { convId: string; id: string; done: boolean }; res: { occurrenceId: string | null; items: AgendaItem[] } };

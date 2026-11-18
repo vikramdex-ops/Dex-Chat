@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { RECAP_PARTS_ALL, RECAP_PARTS_GUESTS, occurrenceNo, recapEmail, recapText } from '@dex/core';
-import type { MeetRecap, Message, PublicUser, RecapLine, RecapParts, RecordingInfo } from '@dex/core';
+import type { ActionPoint, MeetRecap, Message, PublicUser, RecapLine, RecapParts, RecordingInfo } from '@dex/core';
 import { Avatar, Icon, useToast } from '../ui.tsx';
 import { ApStrip } from './actions.tsx';
 import { minutesText } from './threadcards.tsx';
@@ -36,20 +36,30 @@ export default function RecapSheet({ occurrenceId, users, meId, onClose, jump }:
   const box = useRef<HTMLElement>(null);
   const load = () => void window.dex.request('meet.recap', { occurrenceId }).then(setR).catch((e: Error) => setProblem(e.message));
   useEffect(load, [occurrenceId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // action points ticked elsewhere change here too
+  // action points changed anywhere (here, in the thread, on a day sheet, by someone else) change here too,
+  // and one logged for this occurrence since the recap opened joins it
   useEffect(() => window.dex.onHubEvent((name, data) => {
-    if (name === 'ap.updated') setR((x) => (x && x.actions.some((a) => a.id === (data as { id: string }).id) ? { ...x, actions: x.actions.map((a) => (a.id === (data as { id: string }).id ? { ...(data as typeof a), carried: a.carried } : a)).filter((a) => a.status !== 'dropped') } : x));
+    if (name !== 'ap.updated') return;
+    const ap = data as ActionPoint;
+    setR((x) => {
+      if (!x) return x;
+      const had = x.actions.some((a) => a.id === ap.id);
+      if (!had && ap.occurrenceId !== x.occurrence.id) return x;
+      const actions = had ? x.actions.map((a) => (a.id === ap.id ? { ...ap, carried: a.carried } : a)) : [...x.actions, ap];
+      return { ...x, actions: actions.filter((a) => a.status !== 'dropped') };
+    });
   }), []);
   useEffect(() => {
     box.current?.focus();
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !playing && !document.querySelector('.scrim')) onClose(); };
+    // Esc closes what is on top first: a menu, a dialog or the player opened from the recap, then the recap
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && !playing && !document.querySelector('.scrim, .popover, .rec-viewer')) onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose, playing]);
   const nameOf = (id: string) => (id === meId ? 'You' : users.get(id)?.displayName ?? r?.attendance.find((p) => p.userId === id)?.name ?? 'Someone');
 
   const o = r?.occurrence;
-  const copy = () => { if (r) void navigator.clipboard.writeText(recapText(r, RECAP_PARTS_ALL, (id) => users.get(id)?.displayName ?? 'Someone')).then(() => toast('Recap copied')); };
+  const copy = () => { if (r) void navigator.clipboard.writeText(recapText(r, RECAP_PARTS_ALL, (id) => users.get(id)?.displayName ?? 'Someone')).then(() => toast('Recap copied')).catch((e: Error) => toast(`The recap could not be copied: ${e.message}`, true)); };
   const done = r ? r.actions.filter((a) => a.status === 'done').length : 0;
 
   return createPortal(
@@ -224,13 +234,14 @@ function RecapChat({ r, users, meId, jump }: { r: MeetRecap; users: Map<string, 
   const [next, setNext] = useState(r.chat.next);
   const [q, setQ] = useState('');
   const [sealedLines, setSealed] = useState<RecapLine[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const o = r.occurrence;
   // a search asks the hub again (the whole chat, not just the page shown)
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => {
       if (!q.trim()) { setLines(r.chat.lines); setNext(r.chat.next); return; }
-      void window.dex.request('meet.recapChat', { occurrenceId: o.id, after: '', q }).then((p) => { setLines(p.lines); setNext(p.next); }).catch(() => {});
+      void window.dex.request('meet.recapChat', { occurrenceId: o.id, after: '', q }).then((p) => { setLines(p.lines); setNext(p.next); setProblem(null); }).catch((e: Error) => setProblem(e.message));
     }, 250);
     return () => clearTimeout(t);
   }, [q, open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -247,19 +258,20 @@ function RecapChat({ r, users, meId, jump }: { r: MeetRecap; users: Map<string, 
         before = page.messages[0].id;
       }
       setSealed(got.map((m) => ({ messageId: m.id, authorId: m.authorId, name: users.get(m.authorId)?.displayName ?? 'Someone', guest: false, text: m.e2e === 'locked' ? '' : m.body, at: m.createdAt, everyone: false, breakout: null, files: m.files.map((f) => f.name) })));
-    })().catch(() => setSealed([]));
+    })().catch((e: Error) => { setSealed([]); setProblem(`The encrypted messages could not be read here: ${e.message}`); });
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const all = useMemo(() => {
     const base = sealedLines ? [...lines.filter((l) => l.everyone), ...sealedLines] : lines;
     const shown = q.trim() && sealedLines ? base.filter((l) => `${l.name} ${l.text}`.toLowerCase().includes(q.trim().toLowerCase())) : base;
     return [...new Map(shown.map((l) => [l.messageId, l])).values()].sort((a, b) => a.at - b.at);
   }, [lines, sealedLines, q]);
-  const more = () => { if (next) void window.dex.request('meet.recapChat', { occurrenceId: o.id, after: next, q }).then((p) => { setLines((l) => [...l, ...p.lines]); setNext(p.next); }); };
+  const more = () => { if (next) void window.dex.request('meet.recapChat', { occurrenceId: o.id, after: next, q }).then((p) => { setLines((l) => [...l, ...p.lines]); setNext(p.next); setProblem(null); }).catch((e: Error) => setProblem(e.message)); };
   return (
     <details className="recap-chat" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary>{open ? 'Hide the chat' : `Show the chat (${r.chat.total})`}</summary>
       <input className="input sm" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the chat" aria-label="Search the meeting's chat" />
       {r.chat.sealed && <p className="faint small"><Icon name="lock" size={12} /> End-to-end encrypted: this PC reads the messages itself. The meeting chat with guests was never encrypted.</p>}
+      {problem && <p className="recap-problem small" role="alert"><Icon name="warning" size={13} />{problem}</p>}
       <ol className="recap-lines" aria-live="polite">
         {all.map((l) => (
           <li key={l.messageId}>

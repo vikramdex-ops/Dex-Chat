@@ -7,7 +7,7 @@ import { formatMeetingId, meetingLink, slugFrom } from '@dex/core';
 import { LOBBY_RULES } from '../meet/lobby.ts';
 import { Avatar, Dialog, Icon, Segmented, ToggleRow, presenceFor, useToast } from '../ui.tsx';
 import { confirmAction } from '../confirm.tsx';
-import { EventInvite, PageLink, SlugField } from '../meet/GuestLink.tsx';
+import { EventInvite, PageLink, SlugField, copyText } from '../meet/GuestLink.tsx';
 import { useChat } from '../chat/store.ts';
 import { convTitle } from '../chat/Switchboard.tsx';
 import { renderBody } from '../chat/format.tsx';
@@ -349,7 +349,7 @@ function MeetingLine({ eventId }: { eventId: string }) {
     <div>
       <Icon name="video" size={16} />
       <span className="ev-meeting">
-        <span>Call in Dexterity Connect{m && <> · <span className="mono">ID {formatMeetingId(m.id)}</span> <button className="link" onClick={() => void navigator.clipboard.writeText(meetingLink(m.id)).then(() => toast('App link copied'))}>Copy app link</button></>}</span>
+        <span>Call in Dexterity Connect{m && <> · <span className="mono">ID {formatMeetingId(m.id)}</span> <button className="link" onClick={() => copyText(meetingLink(m.id), 'App link copied', toast)}>Copy app link</button></>}</span>
         {m?.page && <PageLink url={m.page} />}
       </span>
     </div>
