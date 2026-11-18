@@ -34,8 +34,9 @@ export function VoiceRecorder({ convId, parentId, onActive }: { convId: string; 
   const start = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-      const recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
+      // Safari on an iPhone records AAC in MP4 (not WebM): the note keeps the type it was recorded in
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported(t));
+      const recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 32000 });
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       let ctx: AudioContext | null = null;
@@ -87,9 +88,11 @@ export function VoiceRecorder({ convId, parentId, onActive }: { convId: string; 
     const ms = Date.now() - m.started;
     if (m.cancel) return;
     if (ms < 700) { toast('Hold on a little longer to record a voice note'); return; }
-    const blob = new Blob(m.chunks, { type: 'audio/webm' });
+    const type = (m.recorder.mimeType || 'audio/webm').split(';')[0];
+    const ext = type === 'audio/mp4' ? 'm4a' : 'webm';
+    const blob = new Blob(m.chunks, { type });
     try {
-      const info = await window.dex.uploadFile!(`voice-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `Voice note ${tag(ms)}.webm`, mime: 'audio/webm', convId });
+      const info = await window.dex.uploadFile!(`voice-${Date.now().toString(36)}`, { data: await blob.arrayBuffer(), name: `Voice note ${tag(ms)}.${ext}`, mime: type, convId });
       await sendMessage(convId, '', parentId, [info]);
     } catch (e) { toast((e as Error).message, true); }
   };

@@ -1,0 +1,35 @@
+/* Dexterity Connect for iPhone: the Add to Home Screen guide (a sheet of numbered ruled cells with
+   small drawings in the drafting style) and the one-time notifications question. */
+.wa-caption { display: inline-block; margin-bottom: 10px; padding: 2px 7px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); font-size: 11px; letter-spacing: .06em; color: var(--text-2); }
+.wa-guide h1 { text-wrap: balance; }
+.wa-steps { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--stroke-strong); }
+.wa-steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--stroke); }
+.wa-steps li:last-child { border-bottom-color: var(--stroke-strong); }
+.wa-n { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--accent); border-radius: var(--radius-s); color: var(--accent-ink); font-size: 13px; font-weight: 600; }
+.wa-txt { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.wa-txt b { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; }
+.wa-txt b svg { color: var(--accent); }
+.wa-txt .faint { font-size: 13px; }
+.wa-txt .btn { margin-top: 6px; }
+.wa-drawing { width: 64px; height: 80px; flex: none; }
+.wa-line { fill: none; stroke: var(--text-2); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.wa-faint { fill: none; stroke: var(--stroke-strong); stroke-width: 3; stroke-linecap: round; }
+.wa-fill { fill: var(--subtle); stroke: var(--stroke-strong); }
+.wa-sheet { fill: var(--layer-solid); stroke: var(--stroke-strong); }
+.wa-accent { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* amber: the one thing to tap now */
+.wa-ring { fill: none; stroke: var(--amber); stroke-width: 2; }
+.wa-skip { display: grid; gap: 2px; font-size: 13px; }
+.wa-skip .faint { font-size: 12px; }
+
+.wa-prompt {
+  position: fixed; z-index: 60; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px)); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: start;
+  padding: 14px 16px; background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--amber); border-radius: var(--radius-m); box-shadow: var(--shadow-2);
+  animation: rise 260ms var(--ease);
+}
+.wa-prompt > svg { color: var(--amber-ink); margin-top: 2px; }
+.wa-prompt .row-actions { grid-column: 1 / -1; justify-content: flex-end; }
+@media (prefers-reduced-motion: reduce) { .wa-prompt { animation: none; } }
+@media (max-width: 420px) { .wa-steps li { grid-template-columns: 30px minmax(0, 1fr); } .wa-drawing { grid-column: 2; width: 72px; height: 90px; } }
+.wa-guide .mark { display: block; }

@@ -16,6 +16,7 @@ import type { Availability } from '@dex/core';
 import type { IconName } from './ui.tsx';
 import { RequiredUpdate, UpdatePill, WhatsNew } from './UpdateUi.tsx';
 import { BatteryPrompt } from './views/NotifyCheck.tsx';
+import { WebPushPrompt } from './views/WebApp.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { Onboarding } from './views/Onboarding.tsx';
 import { Home } from './views/Home.tsx';
@@ -138,7 +139,7 @@ function useTheme(state: AppState | null): void {
     const root = document.documentElement;
     root.dataset.density = state.settings.density ?? 'comfortable';
     // desktop zooms the window from the main process; the phone's WebView zooms here
-    if (state.platform === 'android') root.style.zoom = String((state.settings.textSize ?? 100) / 100);
+    if (state.platform === 'android' || state.platform === 'ios-web') root.style.zoom = String((state.settings.textSize ?? 100) / 100);
     setAlertPrefs(state.settings, state.platform);
     setTimeFormat(state.settings.timeFormat);
   }, [state?.settings, state?.platform]);
@@ -709,6 +710,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <main className={`stage${isTalk(lens) ? ' flush' : ''}`}>
         {state.update.justUpdated && <div className="view" style={{ paddingBottom: 0 }}><WhatsNew state={state} /></div>}
         <BatteryPrompt state={state} />
+        {state.platform === 'ios-web' && window.dex.web?.standalone && <WebPushPrompt state={state} />}
         {lens === 'pulse' && <Home state={state} session={session} pendingCount={pendingCount} go={go} open={openConversation} onPerson={(id) => { setLens('directory'); setFocusUser(id); }} />}
         {isTalk(lens) && <ChatView chip={chip} setChip={setChip} state={state} session={session} />}
         {lens === 'desk' && <Desk session={session} jump={jump} />}

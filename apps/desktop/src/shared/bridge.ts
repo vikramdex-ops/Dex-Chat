@@ -61,10 +61,46 @@ export interface AppState {
   error: string | null;
   settings: Settings;
   update: UpdateState;
-  platform: NodeJS.Platform;
+  /** 'ios-web': the iPhone web app (apps/web), served by the office's meeting site and added to the Home Screen. */
+  platform: AppPlatform;
   version: string;
   /** Direct messages between PCs while the hub is off */
   p2p?: P2PState;
+}
+
+export type AppPlatform = NodeJS.Platform | 'ios-web';
+/** A phone: Android, or the iPhone web app. Both use the phone layouts and pair with a code. */
+export const isPhonePlatform = (p: string | null | undefined): boolean => p === 'android' || p === 'ios-web';
+
+/** The iPhone web app: whether it was added to the Home Screen, and its Web Push notifications. */
+export type WebPushState =
+  /** this browser has no Web Push (iOS before 16.4, or a browser without it) */
+  | 'unsupported'
+  /** Safari only allows notifications for a web app added to the Home Screen */
+  | 'not-installed'
+  /** not asked yet, or switched off in the app */
+  | 'off'
+  /** the person said no: only the iPhone's Settings can change it now */
+  | 'denied'
+  | 'on';
+
+export interface WebAppBridge {
+  /** iPhone, iPad or another browser (the install guide's wording). */
+  device: 'iphone' | 'ipad' | 'other';
+  /** Opened from the Home Screen (display-mode standalone). */
+  standalone: boolean;
+  /** "Continue in Safari" was chosen in the install guide (this tab only). */
+  continueInBrowser(): void;
+  continued(): boolean;
+  pushState(): Promise<WebPushState>;
+  /** Ask for permission (from a tap), subscribe and give the hub the subscription. */
+  enablePush(): Promise<WebPushState>;
+  disablePush(): Promise<void>;
+  testPush(): Promise<{ ok: boolean; error: string | null }>;
+  /** The pairing code the page was opened with (to copy before adding it to the Home Screen). */
+  pendingCode(): string | null;
+  /** Reads the clipboard after a tap (iOS shows its own Paste button). */
+  pasteCode(): Promise<string>;
 }
 
 export interface Settings {
@@ -280,6 +316,8 @@ export interface DexBridge {
     requestBatteryExemption(): Promise<void>;
     askNotifications(): Promise<void>;
   };
+  /** The iPhone web app (apps/web): Home Screen and Web Push. */
+  web?: WebAppBridge;
   /** Screen sharing (desktop): list screens/windows and choose one before getDisplayMedia(). */
   listScreens?(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
   chooseScreen?(id: string): Promise<void>;

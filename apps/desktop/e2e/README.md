@@ -38,7 +38,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
   - files: `files`, `pdf`, `media`, `ocr`, `dmsearch`
   - bots: `bots-*`, `botmaker`, `flows`, `templates`, `botnet` (bots talking to bots: a handoff with its relay card, a query in a flow, an event, a refusal, a loop stopped; scheduled jobs in plain words, a dry run, runs with the hub's clock moved, missed runs, the job sheet and the network sheet)
   - org chart: `org`, `orgscape`
-  - devices: `pair`, `phone`, `phone-sec`
+  - devices: `pair`, `phone`, `phone-sec`, `iphone` (the iPhone web app against a real hub and the gateway, in Chromium with iPhone emulation: the Add to Home Screen guide, joining with a pasted code, messages, a photo and a file, Web Push to a local push service, a tapped notification, offline; needs `npm run build -w @dex/web`; screenshots in `IPHONE_OUT`)
   - Control room: `admin2`, `m2-admin`, `owners` (several owners, handing over, what an administrator may not change), `policy`, `dlp`, `hubupdate` (the hub updating itself, against a stand-in feed and launcher: a new version found and checked, Update now waiting for a live call, the setup started when it ends, an update that went back with its log and Try again, the setup check line, the switch; screenshots in `HUBUPDATE_OUT`)
   - seating: `seating` (the real floor plan: dragging people onto seats, a swap, a team moved with a preview, a plan for Monday applied by the hub's clock, the moved person's notice and walk, revisions compared, a bench added in the layout editor, a CSV import, 150 seats measured; screenshots in `SEATING_OUT`)
   - notice board: `notices` (desks, scheduled issue, acknowledgement and its register, Rev B, PDF search, urgent banner, expiry; screenshots in `NOTICES_OUT`)

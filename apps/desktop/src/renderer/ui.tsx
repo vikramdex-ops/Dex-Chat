@@ -49,6 +49,9 @@ const PATHS = {
   history: 'M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3h3M12 8v4.5l3 2',
   globe: 'M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17zM3.5 12h17M12 3.5c2.3 2.3 3.5 5.2 3.5 8.5s-1.2 6.2-3.5 8.5c-2.3-2.3-3.5-5.2-3.5-8.5S9.7 5.8 12 3.5z',
   mobile: 'M8 3.5h8a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19V5A1.5 1.5 0 0 1 8 3.5zM11 17.5h2',
+  // a box with an arrow leaving it (Share, on an iPhone), and a box with a plus (Add to Home Screen)
+  'share-out': 'M12 14.5V3.5M8.5 7 12 3.5 15.5 7M8 10H6.5A1.5 1.5 0 0 0 5 11.5v7A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5H16',
+  'add-box': 'M6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11A2.5 2.5 0 0 1 6.5 4zM12 8.5v7M8.5 12h7',
   /** Leave or end: a door with the way out (not a hung-up handset). */
   'phone-off': 'M3.5 20.5h10M5.5 20.5V3.5h7v17M10 12h.01M13.5 12h7.5M18 9l3 3-3 3',
   video: 'M3.5 6.5h12v11h-12zM15.5 10.5l5-3v9l-5-3',

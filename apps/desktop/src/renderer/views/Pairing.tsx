@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import jsQRModule from 'jsqr';
 import type { Ops } from '@dex/core';
+import { parsePairCode } from '@dex/core/remote';
 import type { AppState } from '../../shared/bridge.ts';
 import { Dialog, Icon, confirmAction, relativeTime, useToast } from '../ui.tsx';
 import { Qr } from './Remote.tsx';
@@ -15,7 +16,7 @@ type MyDevice = Ops['me.devices']['res'][number];
 type Decode = (data: Uint8ClampedArray, w: number, h: number, o?: { inversionAttempts?: 'dontInvert' | 'attemptBoth' }) => { data: string } | null;
 const jsQR: Decode = ((jsQRModule as unknown as { default?: Decode }).default ?? jsQRModule) as unknown as Decode;
 
-const kindOf = (d: MyDevice): 'phone' | 'laptop' => (/phone|pixel|samsung|galaxy|xiaomi|redmi|oneplus|oppo|vivo|realme|motorola|nokia|android/i.test(d.hostname) ? 'phone' : 'laptop');
+const kindOf = (d: MyDevice): 'phone' | 'laptop' => (/phone|ipad|pixel|samsung|galaxy|xiaomi|redmi|oneplus|oppo|vivo|realme|motorola|nokia|android/i.test(d.hostname) ? 'phone' : 'laptop');
 
 /** Preferences ▸ Your devices. */
 export function YourDevices({ state }: { state: AppState }) {
@@ -86,6 +87,7 @@ function AddDevice({ kind, onClose }: { kind: 'phone' | 'laptop'; onClose: () =>
               <li>Point your phone's camera at this square and tap the link that appears.</li>
               <li>On the page that opens, tap <b>Download for Android</b> and install the app. (Already installed? Tap <b>Open the app</b>.)</li>
               <li>Open Dexterity Connect. It finds this code by itself and signs you in. If it asks, tap <b>Scan the code on your PC</b> and point it here.</li>
+              <li>On an iPhone, the page opens Dexterity Connect for iPhone in Safari instead. Follow it to add the app to your Home Screen, then paste the code there.{!parsePairCode(made.code)?.url && <> <span className="danger-text">Your office has not turned on access from outside yet, which an iPhone needs.</span></>}</li>
             </ol>
           </div>
           <div className="dialog-actions">
