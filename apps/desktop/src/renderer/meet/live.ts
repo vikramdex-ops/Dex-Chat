@@ -50,7 +50,7 @@ function notifyLine(line: RoomChatLine): void {
   const title = room.breakoutName ?? room.title ?? '';
   const text = line.text || (line.file ? tr(`Shared a file: ${line.file.name}`) : '');
   // the title is the app's words and the meeting's name; the line is theirs, kept as written
-  alertUser('personal', title ? `${tr('Meeting chat')} · ${title}` : tr('Meeting chat'), `${line.name}${line.guest ? ` (${tr('guest')})` : ''}: ${text}`.slice(0, 200), 'dexconnect://meetchat');
+  alertUser('personal', title ? `${tr('Meeting chat')} · ${title}` : tr('Meeting chat'), `${line.guest ? tr(`${line.name} (guest)`) : line.name}: ${text}`.slice(0, 200), 'dexconnect://meetchat');
 }
 
 let selfId: () => string = () => '';
