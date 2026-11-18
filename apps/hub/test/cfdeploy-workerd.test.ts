@@ -18,6 +18,7 @@ import { promisify } from 'node:util';
 import { CloudflareMock } from './cfmock.ts';
 import type { MockProject, MockScript } from './cfmock.ts';
 import { office } from './office.ts';
+import { siteFileBase64 } from '../src/cfdeploy.ts';
 import type { CloudBundle } from '../src/cfdeploy.ts';
 import type { CfSetupView } from '@dex/core';
 
@@ -140,7 +141,7 @@ test('the deployed gateway and site run in workerd: the hub signs in pinned, the
   const asset = bundle.site.files.find((f) => f.path.endsWith('.css'))!;
   const a = await fetch(`${site}${asset.path}`);
   assert.equal(a.status, 200);
-  assert.equal(Buffer.from(await a.arrayBuffer()).toString('base64'), asset.b64);
+  assert.equal(Buffer.from(await a.arrayBuffer()).toString('base64'), siteFileBase64(asset));
   const page = await fetch(`${site}/482-913-207`);
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-security-policy') ?? '', /connect-src/);

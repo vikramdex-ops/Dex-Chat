@@ -30,6 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import zlib from 'node:zlib';
 import { CF_STEPS } from '@dex/core/cfsetup';
 import type { CfPermission, CfProblem, CfSetupView, CfStep, CfStepState } from '@dex/core/cfsetup';
 
@@ -55,7 +56,8 @@ export interface CloudBundle {
     services: Array<{ name: string; type: 'service'; service: string; environment?: string }>;
     configHash: string;
     outputDir: string;
-    files: Array<{ path: string; hash: string; contentType: string; b64: string }>;
+    /** Each file as base64 (b64), or brotli-compressed then base64 (br, with its plain size). */
+    files: Array<{ path: string; hash: string; contentType: string; b64?: string; br?: string; size?: number }>;
     headers: string | null;
     worker: { name: string; text: string };
   };
@@ -109,6 +111,15 @@ function readCloudBundle(): CloudBundle | null {
     if (b) return b;
   }
   return null;
+}
+
+/** A meeting-site file as Cloudflare takes it: the plain content in base64. */
+export function siteFileBase64(f: CloudBundle['site']['files'][number]): string {
+  if (f.b64 !== undefined) return f.b64;
+  if (f.br === undefined) throw new Error(`${f.path} has no content in the cloud bundle`);
+  const plain = zlib.brotliDecompressSync(Buffer.from(f.br, 'base64'), f.size !== undefined ? { maxOutputLength: f.size + 1024 } : {});
+  if (f.size !== undefined && plain.length !== f.size) throw new Error(`${f.path} unpacked to the wrong size`);
+  return plain.toString('base64');
 }
 
 // ------------------------------------------------------------------ where Cloudflare is
@@ -585,9 +596,10 @@ export class CfSetup {
     for (const f of site.files) {
       if (!missing.has(f.hash) || sent.has(f.hash)) continue;
       sent.add(f.hash);
-      if (size + f.b64.length > 8 << 20) await flush();
-      batch.push({ key: f.hash, value: f.b64, metadata: { contentType: f.contentType }, base64: true });
-      size += f.b64.length;
+      const b64 = siteFileBase64(f);
+      if (size + b64.length > 8 << 20) await flush();
+      batch.push({ key: f.hash, value: b64, metadata: { contentType: f.contentType }, base64: true });
+      size += b64.length;
     }
     await flush();
     await this.call('POST', '/pages/assets/upsert-hashes', { json: { hashes }, jwt }).catch(() => { /* only makes the next upload quicker */ });

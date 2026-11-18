@@ -35,3 +35,15 @@ test('the parsed cloud bundle is let go after a while; its versions stay', async
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('meeting-site files carried compressed are unpacked to the plain file for Cloudflare', async () => {
+  const zlib = await import('node:zlib');
+  const { siteFileBase64 } = await import('../src/cfdeploy.ts');
+  const plain = Buffer.from('body { color: teal; }\n'.repeat(200));
+  const br = zlib.brotliCompressSync(plain).toString('base64');
+  const base = { path: '/assets/app.css', hash: 'c'.repeat(32), contentType: 'text/css' };
+  assert.equal(siteFileBase64({ ...base, br, size: plain.length }), plain.toString('base64'));
+  assert.equal(siteFileBase64({ ...base, b64: plain.toString('base64') }), plain.toString('base64'));
+  assert.throws(() => siteFileBase64({ ...base, br, size: plain.length - 1 }));
+  assert.throws(() => siteFileBase64(base));
+});
