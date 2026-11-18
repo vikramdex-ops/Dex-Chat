@@ -438,3 +438,31 @@ test('the meeting site: once the hub names it, pages live only there; the gatewa
   assert.equal((await get('/482-913-207', '192.0.2.50')).status, 200);
   hub.close();
 });
+
+test('the iPhone app: /app/ on the gateway leads to the meeting site (the code stays in the #fragment); before the site exists, a page says what to do', async (t) => {
+  if (skip) { t.skip(skip); return; }
+  const port = base.split(':')[1];
+  const site = `http://localhost:${port}`;
+  const hub = await fakeHub('a1b2c3d4e5f60718', homeHubDir, '192.0.2.70');
+  hub.send({ t: 'site', url: null });
+  await new Promise((r) => setTimeout(r, 400));
+  const none = await get('/app/', '192.0.2.71');
+  assert.equal(none.status, 503);
+  assert.match(none.headers.get('content-security-policy')!, /default-src 'none'/);
+  assert.match(await none.text(), /Set up with Cloudflare/);
+  hub.send({ t: 'site', url: site });
+  await new Promise((r) => setTimeout(r, 400));
+  const to = await get('/app/', '192.0.2.71');
+  assert.equal(to.status, 302, 'not permanent: the site\'s address can change');
+  assert.equal(to.headers.get('location'), `${site}/app/`);
+  assert.equal((await get('/app', '192.0.2.71')).headers.get('location'), `${site}/app/`);
+  assert.equal((await get('/app/sw.js', '192.0.2.71')).headers.get('location'), `${site}/app/sw.js`);
+  assert.equal((await get('/app/', '192.0.2.71', { method: 'POST' })).status, 405);
+  // on the site's own address the Pages front door serves the app; what reaches the gateway there is not a file it has
+  assert.equal((await fetch(`${site}/app/nothing.js`, { redirect: 'manual' })).status, 404);
+  // "app" is never a meeting's name
+  assert.notEqual((await get('/app', '192.0.2.71')).headers.get('location'), `${site}/app`);
+  hub.send({ t: 'site', url: null });
+  await new Promise((r) => setTimeout(r, 300));
+  hub.close();
+});

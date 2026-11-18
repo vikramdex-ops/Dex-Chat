@@ -8,7 +8,8 @@
 // - Only the hub that proves it holds the pinned certificate key can take the hub side.
 // - Device sockets are binary-only, at most 1 MiB a frame, rate limited per address, and capped.
 // - Nothing but /hub/<id>, /c/<id>, /join, the meeting site (below), /m/<meeting> (old links),
-//   /w/<webinar>, /cal/<token>.ics and /health answers; every reply carries strict headers.
+//   /w/<webinar>, /cal/<token>.ics, /app/ (to the iPhone app on the meeting site) and /health
+//   answers; every reply carries strict headers.
 //
 // Guests (meetings, M2): the meeting's page (below) loads the meeting itself (meet/room.ts) on
 // Join. Its WebSocket, /api/m/<meeting ID>/ws (old pages: /m/<ID>/ws), goes to the office hub's
@@ -153,6 +154,15 @@ export default {
     const onSite = !site || url.origin === site;
     const toSite = (p: string) => Response.redirect(`${site ?? url.origin}${p}`, 301);
 
+    // Dexterity Connect for iPhone: the web app lives on the meeting site (its files are too many and
+    // too large for a Worker); pairing links lead here with the code in the #fragment, which the
+    // browser keeps across the redirect and never sends.
+    if (path === '/app' || path.startsWith('/app/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return text('Method not allowed\n', 405, { allow: 'GET, HEAD' });
+      if (site && !onSite) return Response.redirect(`${site}${path === '/app' ? '/app/' : path}`, 302);
+      if (site) return text('Not found\n', 404);
+      return appNotReady();
+    }
     if (path === '/') return onSite && site ? landingPage('', url) : text('Dexterity Connect gateway\n');
     // old links: /m/<ID>#passcode to the meeting's clean page (browsers keep the #fragment across a redirect)
     const meet = path.match(MEETING_RE);
@@ -578,6 +588,22 @@ export class Relay extends DurableObject<Env> {
       for (const g of this.ctx.getWebSockets('guest')) g.close(4404, 'The office disconnected');
     }
   }
+}
+
+/** /app/ before the office's meeting site exists: what to do, in words (the iPhone app is served from the site). */
+function appNotReady(): Response {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark"><meta name="robots" content="noindex"><title>Dexterity Connect for iPhone</title><style>
+body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#eef3f3;color:#15191b;display:grid;place-items:center;min-height:100vh}
+@media(prefers-color-scheme:dark){body{background:#0e1b1d;color:#e8f2f3}.card{background:#172729!important;border-color:#2b4447!important}}
+.card{max-width:420px;margin:16px;padding:24px;background:#fff;border:1px solid #c9d6d7}h1{font-size:20px;margin:0 0 8px}
+</style></head><body><div class="card"><h1>Not ready yet</h1>
+<p>Dexterity Connect for iPhone is served from your office's meeting site, which has not been set up.</p>
+<p>Ask your administrator to open the Control room, then Outside the office, and choose <b>Set up with Cloudflare</b> (or <b>Update the gateway</b>). Then scan the code on your PC again.</p></div></body></html>`;
+  return new Response(html, {
+    status: 503,
+    headers: { 'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS, 'retry-after': '3600', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" },
+  });
 }
 
 /** /join#DXC1-…: a QR code on a colleague's screen leads here; it opens the app with the code. */
