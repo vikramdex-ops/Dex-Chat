@@ -4,8 +4,6 @@
 // chords that are never passed on (Ctrl+Alt+Del, Win+L…), and a mapping from the shared picture
 // to the requester's screen. Pure logic, shared by the app's UI and its main process.
 
-import { pictureBox } from './pointers.ts';
-
 export type MouseButton = 'left' | 'right' | 'middle';
 
 /**
@@ -25,6 +23,8 @@ export const INPUT_RATE = 120;
 export const INPUT_BATCH = 32;
 /** The requester stops control from their own keyboard with this chord (shown in the session bar). */
 export const STOP_HOTKEY = 'Ctrl+Alt+Shift+S';
+/** The quick way to take control back, an Esc for the person whose screen it is (never passed on from the controller). */
+export const STOP_QUICK = 'Shift+Esc';
 
 export interface KeyInfo {
   /** Windows virtual-key code. */
@@ -82,6 +82,7 @@ export const BLOCKED_CHORDS: ReadonlyArray<{ mods: Mod[]; keys: string[]; why: s
   { mods: ['ctrl', 'alt'], keys: ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'], why: 'Ctrl+Alt+F-key' },
   { mods: ['alt'], keys: ['PrintScreen'], why: 'Alt+SysRq' },
   { mods: ['ctrl', 'alt', 'shift'], keys: ['KeyS'], why: STOP_HOTKEY },
+  { mods: ['shift'], keys: ['Escape'], why: STOP_QUICK },
 ];
 
 /** The blocked chord a key-down would complete, given the modifiers already held (or null). */
@@ -226,8 +227,18 @@ export function toVirtualDesk(px: number, py: number, vs: Rect): { x: number; y:
   return { x: Math.max(0, Math.min(65535, nx)), y: Math.max(0, Math.min(65535, ny)) };
 }
 
-/** Where a picture of srcW x srcH is drawn inside an element with object-fit: contain (the same mapping live pointers use). */
-export function containBox(el: Rect, srcW: number, srcH: number): Rect { return pictureBox(el, srcW, srcH); }
+/**
+ * Where a picture of srcW x srcH is drawn inside an element with object-fit: contain (the shared
+ * screen's <video>): the letterbox bars are not the picture. Live pointers use the same mapping
+ * (pointers.ts pictureBox), so a marker and a click land on the same pixel.
+ */
+export function containBox(el: Rect, srcW: number, srcH: number): Rect {
+  if (!(srcW > 0) || !(srcH > 0) || !(el.width > 0) || !(el.height > 0)) return { ...el };
+  const scale = Math.min(el.width / srcW, el.height / srcH);
+  const width = srcW * scale;
+  const height = srcH * scale;
+  return { x: el.x + (el.width - width) / 2, y: el.y + (el.height - height) / 2, width, height };
+}
 
 /** A point on the technician's screen over the shared video, as 0..1 in the picture (null in the letterbox). */
 export function fromPicture(clientX: number, clientY: number, el: Rect, srcW: number, srcH: number): { x: number; y: number } | null {

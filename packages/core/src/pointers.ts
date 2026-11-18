@@ -6,6 +6,8 @@
 // Messages go over the Room's data channel, or through the hub for files and whiteboards, at most
 // 30 times a second. Pure logic, shared by the UI on every platform.
 
+import { containBox } from './assist.ts';
+
 export const POINTER_HZ = 30;
 /** A highlight or ink stroke fades this long after it is drawn (unless pinned). */
 export const HIGHLIGHT_MS = 4000;
@@ -263,17 +265,11 @@ export function fromSurface(x: number, y: number, box: Box, rot = 0): { x: numbe
 
 /**
  * Where a shared picture of srcW x srcH is drawn inside an element with object-fit: contain (the
- * shared screen's <video>): the letterbox bars are not the picture. The same mapping turns the
- * controller's pointer into input positions (assist.ts fromPicture), so a marker and a click land
- * on the same pixel.
+ * shared screen's <video>): the letterbox bars are not the picture. Remote control reads the
+ * controller's pointer the same way (assist.ts fromPicture), so a marker and a click land on the
+ * same pixel.
  */
-export function pictureBox(el: Box, srcW: number, srcH: number): Box {
-  if (!(srcW > 0) || !(srcH > 0) || !(el.width > 0) || !(el.height > 0)) return { ...el };
-  const scale = Math.min(el.width / srcW, el.height / srcH);
-  const width = srcW * scale;
-  const height = srcH * scale;
-  return { x: el.x + (el.width - width) / 2, y: el.y + (el.height - height) / 2, width, height };
-}
+export const pictureBox: (el: Box, srcW: number, srcH: number) => Box = containBox;
 
 /**
  * Where the shared display is inside the presenter's own pointer window, in that window's CSS

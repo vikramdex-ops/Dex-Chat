@@ -4,7 +4,7 @@
 // picture that turns the controller's pointer and keys into input events.
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { InputBatcher, KEYS, STOP_HOTKEY, domButton, fromPicture, wheelNotches } from '@dex/core/assist';
+import { InputBatcher, KEYS, STOP_HOTKEY, STOP_QUICK, domButton, fromPicture, wheelNotches } from '@dex/core/assist';
 import type { InputEvent, MouseButton } from '@dex/core/assist';
 import { Dialog, Icon, useToast } from '../ui.tsx';
 import './help.css';
@@ -21,14 +21,14 @@ export function ControlConsentSheet({ who, lead, ends, available, reason, whole,
   const [busy, setBusy] = useState(false);
   const allow = async () => {
     setBusy(true);
-    try { await onAllow(); toast(`${who} can use your mouse and keyboard. Stop it any time with ${STOP_HOTKEY}.`); onClose(); } catch (e) { toast((e as Error).message, true); setBusy(false); }
+    try { await onAllow(); toast(`${who} can use your mouse and keyboard. Stop it any time with ${STOP_QUICK}.`); onClose(); } catch (e) { toast((e as Error).message, true); setBusy(false); }
   };
   return (
     <Dialog title={`Let ${who} use your mouse and keyboard?`} onClose={onClose} narrow>
       <div className="cs-sheet">
         <p className="cs-lead">{lead}</p>
         <ul className="cs-points">
-          <li><b>Stop at any moment:</b> the big <b>Stop control</b> button on the bar at the top of your screen, or press <kbd className="mono">{STOP_HOTKEY}</kbd>, even while they are typing.</li>
+          <li><b>Stop at any moment:</b> the big <b>Stop control</b> button on the bar at the top of your screen, or press <kbd className="mono">{STOP_QUICK}</kbd> or <kbd className="mono">{STOP_HOTKEY}</kbd>, even while they are typing.</li>
           <li>System keys such as Ctrl+Alt+Del and Win+L are never passed on.</li>
           <li>{ends}</li>
         </ul>
@@ -44,13 +44,13 @@ export function ControlConsentSheet({ who, lead, ends, available, reason, whole,
 }
 
 /** Across the top of the controlled PC's app while someone uses its mouse and keyboard. */
-export function ControlBanner({ who, onStop }: { who: string; onStop: () => void }) {
+export function ControlBanner({ who, guest, onStop }: { who: string; guest?: boolean; onStop: () => void }) {
   return (
     <div className="sup-banner" role="alert">
       <span className="sup-banner-pip" aria-hidden="true" />
-      <span><b>{who}</b> is using your mouse and keyboard</span>
+      <span><b translate="no">{who}</b>{guest && <span className="role-tag">GUEST</span>} is using your mouse and keyboard</span>
       <button className="sup-stop" onClick={onStop}>Stop control</button>
-      <span className="mono sup-banner-keys">{STOP_HOTKEY}</span>
+      <span className="mono sup-banner-keys">{STOP_QUICK} · {STOP_HOTKEY}</span>
     </div>
   );
 }

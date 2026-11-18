@@ -41,6 +41,22 @@ body.in-room #app { display: block; padding: 0; }
 .share { position: relative; margin: 0; min-height: 0; border: 1px solid var(--stroke-strong); border-radius: var(--radius); background: #0b1416; overflow: hidden; display: grid; }
 .share video { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
 
+/* control of a shared screen: ask for it, who has it, or (for the guest who has it) the surface
+   that sends the pointer and keys; amber, as everything live */
+.share-ctl { position: absolute; inset: 0; pointer-events: none; }
+.share-ctl > * { pointer-events: auto; }
+.ctl-ask { position: absolute; right: 10px; top: 8px; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--amber); border-radius: 4px; background: var(--layer); color: var(--amber-ink); font-weight: 700; font-size: 13px; }
+.ctl-ask:hover:not(:disabled) { background: var(--amber-soft); }
+.ctl-ask:disabled { opacity: .75; cursor: default; }
+.ctl-flag { position: absolute; right: 10px; top: 8px; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; background: var(--amber); color: #3b2500; }
+.ctl-surface { position: absolute; inset: 0; outline: 3px solid var(--amber); outline-offset: -3px; cursor: default; touch-action: none; }
+.ctl-surface:focus-visible { outline-width: 4px; }
+.ctl-tag { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 20px); padding: 4px 4px 4px 12px; background: var(--amber); color: #3b2500; font-size: 13px; white-space: nowrap; }
+.ctl-tag > span { overflow: hidden; text-overflow: ellipsis; }
+.ctl-tag .btn { min-height: 26px; padding: 0 10px; background: #fff8ec; border-color: #3b2500; color: #3b2500; }
+.share-note { position: absolute; left: 10px; bottom: 10px; right: 10px; max-width: 520px; margin: 0; display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; font-size: 12.5px; background: var(--layer); color: var(--text-2); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--text-3); }
+.share-note .mono { font-size: 10.5px; letter-spacing: .1em; color: var(--text); white-space: nowrap; }
+
 /* the title block of the meeting: its name and time, and the guest's controls */
 .room-block { grid-area: block; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 10px 14px; border: 1px solid var(--text-3); background: var(--layer); }
 .rb-name { display: grid; gap: 2px; min-width: 0; max-width: 240px; }
