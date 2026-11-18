@@ -34,7 +34,7 @@ other messengers. Every decision below is checked against one rule:
 - Cascadia/JetBrains Mono (annotation): device codes, line numbers, tags, versions.
 - Numbers in lists use tabular figures.
 
-**Shape.** 8 px radius for controls, 12 px for cards, 30 % squircle for avatars, 22 px pill for the Dock. Hairline 1 px strokes, never heavy borders.
+**Shape.** 8 px radius for controls, 12 px for cards, 30 % squircle for avatars, 22 px pill for the Dock (12 px once it holds several lines). Hairline 1 px strokes, never heavy borders.
 
 **Grid.** A 4 px base unit. Content columns align to an 8 px drafting grid, which is visible only in empty states.
 
@@ -55,7 +55,8 @@ other messengers. Every decision below is checked against one rule:
 | **Tile** | 28 / 36 / 56 px. Colour derived from the person's id within a palette tuned to the brand, so a person's tile colour is stable across PCs. |
 | **Beacon** | Ring 2 px outside the tile. Never a dot. |
 | **Spine** | 1 px rule at x = 52 px. A time tick appears every 10 minutes of activity; day changes become a title-block label across the spine. |
-| **Dock** | Floating, 12 px from the edges. Icons on the left inside the Dock: attach, record, insert (poll/form/note/tool). Send is an arrow that turns teal when there is text. Enter sends; Shift+Enter adds a line. |
+| **Dock** | Floating, 12 px from the edges. Icons on the left inside the Dock: attach, record, insert (poll/form/note/tool). Send is an arrow that turns teal when there is text. Enter sends; Shift+Enter adds a line (Enter while an input method is composing a Hindi or Tamil word is the input method's). It grows line by line with the text, up to about 260 px (two fifths of a short window), then scrolls; with more than one line the pill opens into a 12 px box, its tools and Send staying on the last line. In a narrow Pane or on a phone the text then takes the whole width and the tools sit on a ruled row under it. The shape follows the text, not the width, so it never flips back and forth. Every composer grows the same way (`renderer/autogrow.ts`, `@dex/core/compose`). |
+| **Message tools** | The tool column on the spine (side-track, stamp, keep, remind, more) shows for one message at a time: the one under the pointer, kept while the pointer travels to it (300 ms, and as long as it keeps closing in along the corridor from where it left; `chat/toolRail.ts`), so a neighbour it crosses never takes it. The gutter between a message and its column belongs to the message while it shows them. Focus inside a message shows them; on touch a tap shows them and a second tap puts them away (a long press still lifts the message to reference it). |
 | **Cards** | Rich embeds (a file, a Sheets range, a Sleuth tag hit, a Datum component) all share one card frame: icon tile, title, mono meta line, primary action. |
 | **Control sheet** | Slides from the right, 560 px, with a sticky header. Escape closes. |
 
