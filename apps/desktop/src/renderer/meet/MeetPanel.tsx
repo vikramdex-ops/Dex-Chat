@@ -22,6 +22,7 @@ import { ActionDialog, ActionPreview, actionWords, logAction, ownerPool, ownerTe
 import Register from './Register.tsx';
 import { apRef } from '@dex/core';
 import { useToast } from '../ui.tsx';
+import { enterAction, useAutoGrow } from '../autogrow.ts';
 
 type Tab = 'chat' | 'register' | 'polls' | 'board' | 'files';
 
@@ -73,6 +74,8 @@ function ChatSwitch({ room, conv, convId, users, meId, lines }: { room: RoomInfo
 function RoomChatTab({ room, meId, lines, users, convId }: { room: RoomInfo; meId: string; lines: RoomChatLine[]; users: Map<string, PublicUser>; convId: string }) {
   const toast = useToast();
   const [text, setText] = useState('');
+  const box = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(box, text);
   const [problem, setProblem] = useState<string | null>(null);
   const [promote, setPromote] = useState<Message | null>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -130,8 +133,8 @@ function RoomChatTab({ room, meId, lines, users, convId }: { room: RoomInfo; meI
       {problem && <p className="field-error" style={{ margin: '0 12px' }}>{problem}</p>}
       {words !== null && conv && <ActionPreview draft={draft} pool={pool} meId={meId} onPick={pick} />}
       <form className="meet-compose" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <textarea className="input" rows={1} value={text} maxLength={2000} placeholder="Write to everyone here, guests too" aria-label="Message to everyone in the Room"
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+        <textarea ref={box} className="input" rows={1} value={text} maxLength={2000} placeholder="Write to everyone here, guests too" aria-label="Message to everyone in the Room" enterKeyHint="send"
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (enterAction(e.nativeEvent) === 'send') { e.preventDefault(); send(); } }} />
         <button className="icon-btn" disabled={!text.trim()} aria-label="Send to everyone here" title="Send (Enter)"><Icon name="send" size={16} /></button>
       </form>
       {promote && <ActionDialog m={promote} conv={conv} users={users} meId={meId} room={room} onClose={() => setPromote(null)} />}
@@ -144,6 +147,8 @@ function ChatTab({ convId, users, meId, room }: { convId: string; users: Map<str
   const messages = useChat((s) => s.timelines.get(convId)?.messages);
   const conv = useChat((s) => s.conversations.get(convId));
   const [text, setText] = useState('');
+  const box = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(box, text);
   const [promote, setPromote] = useState<Message | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const pool = useMemo(() => ownerPool(conv, users, room), [conv, users, room]);
@@ -177,8 +182,8 @@ function ChatTab({ convId, users, meId, room }: { convId: string; users: Map<str
       </div>
       {words !== null && <ActionPreview draft={draft} pool={pool} meId={meId} onPick={pick} />}
       <form className="meet-compose" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <textarea className="input" rows={1} value={text} placeholder="Write to everyone in the meeting" aria-label="Message to the meeting"
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+        <textarea ref={box} className="input" rows={1} value={text} placeholder="Write to everyone in the meeting" aria-label="Message to the meeting" enterKeyHint="send"
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (enterAction(e.nativeEvent) === 'send') { e.preventDefault(); send(); } }} />
         <button className="icon-btn" disabled={!text.trim()} aria-label="Send" title="Send (Enter)"><Icon name="send" size={16} /></button>
       </form>
       {promote && <ActionDialog m={promote} conv={conv} users={users} meId={meId} room={room} onClose={() => setPromote(null)} />}

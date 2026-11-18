@@ -72,8 +72,17 @@ body.in-room #app { display: block; padding: 0; }
 .sending { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--stroke-strong); font-size: 12px; }
 .sending span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--stroke-strong); }
-.compose .input { resize: none; padding: 8px 10px; min-height: 38px; }
+.sending[hidden] { display: none; }
+/* the writing box grows with the text (up to six lines, then it scrolls); past one line it is a
+   ruled writing panel with square-ish corners rather than a field */
+.compose { display: flex; align-items: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--stroke-strong); }
+.compose .input { flex: 1; min-width: 0; resize: none; padding: 8px 10px; min-height: 38px; font-size: 14px; line-height: 20px; overflow-y: hidden; }
+.compose .input.grown {
+  border-radius: 3px; border-left: 2px solid var(--accent); padding-left: 9px;
+  background-image: linear-gradient(transparent calc(var(--grow-lh, 20px) - 1px), var(--stroke) 0);
+  background-size: 100% var(--grow-lh, 20px); background-origin: content-box; background-clip: content-box; background-attachment: local;
+}
+.compose .btn, .compose .icon-btn { flex: none; height: 38px; }
 
 .react-menu { position: fixed; z-index: 10; display: grid; gap: 6px; padding: 10px; background: var(--layer); border: 1px solid var(--stroke-strong); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 .react-row { display: flex; gap: 4px; }

@@ -7,6 +7,7 @@
 import { MEETING_REACTIONS } from '@dex/core/protocol';
 import { GUEST_FILE_CHUNK, GUEST_FILE_MAX } from '@dex/core/meet';
 import type { GuestDown, GuestRoomView, GuestSeat, RoomChatLine } from '@dex/core/meet';
+import { autoGrow, enterAction } from '@dex/core/compose';
 import { capName, elapsed, h, icon, initials, tintFor, toast } from './shared.ts';
 
 type Step = 'connecting' | 'lobby' | 'room' | 'ended';
@@ -226,6 +227,8 @@ function finish(kind: EndKind, reason: string): void {
   state.ws = null;
   state.room = null;
   roomEls = null;
+  composeEls?.grow.stop();
+  composeEls = null;
   if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
   on?.ended({ kind, reason, joinedAt: state.joinedAt, at: Date.now() });
 }
@@ -450,23 +453,45 @@ function renderChat(): void {
       l.file ? h('div', { class: 'line-file' }, icon('clip', 14), h('span', {}, l.file.name), h('span', { class: 'mono faint' }, sizeText(l.file.size))) : null));
     prev = l;
   }
-  const input = h('textarea', { class: 'input', rows: '1', maxlength: '2000', placeholder: 'Message everyone', 'aria-label': 'Message to the meeting' }) as HTMLTextAreaElement;
-  const submit = () => { const t = input.value.trim(); if (!t) return; send({ t: 'chat', text: t }); input.value = ''; };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
-  const picker = h('input', { type: 'file', class: 'visually-hidden', 'aria-hidden': 'true', tabindex: '-1' }) as HTMLInputElement;
-  picker.addEventListener('change', () => { const f = picker.files?.[0]; picker.value = ''; if (f) void sendFile(f); });
   const s = state.sending;
-  roomEls.chat.replaceChildren(...[
-    h('div', { class: 'chat-head' }, h('span', { class: 'tb-label' }, 'Meeting chat'), h('button', { class: 'icon-btn', 'aria-label': 'Close the chat', onclick: () => { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } }, icon('x', 14))),
-    list,
-    s ? h('div', { class: 'sending', role: 'status' }, icon('clip', 14), h('span', {}, `Sending ${s.name}`), h('span', { class: 'mono' }, `${Math.round((s.sent / Math.max(1, s.size)) * 100)}%`)) : null,
-    h('form', { class: 'compose', onsubmit: (e: Event) => { e.preventDefault(); submit(); } },
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Attach a file', title: 'Attach a file (the office keeps it with the meeting)', disabled: s ? '' : null, onclick: () => picker.click() }, icon('clip', 16)),
-      picker, input, h('button', { class: 'btn primary sm', type: 'submit' }, 'Send')),
-  ].filter((x) => !!x) as HTMLElement[]);
+  const c = composer();
+  const sending = s ? h('div', { class: 'sending', role: 'status' }, icon('clip', 14), h('span', {}, `Sending ${s.name}`), h('span', { class: 'mono' }, `${Math.round((s.sent / Math.max(1, s.size)) * 100)}%`)) : h('div', { class: 'sending', hidden: true });
+  const oldList = roomEls.chat.querySelector(':scope > .chat-list');
+  if (oldList && c.form.parentElement === roomEls.chat) {
+    // the writing box stays where it is (with its text and focus): only the lines change
+    oldList.replaceWith(list);
+    roomEls.chat.querySelector(':scope > .sending')?.replaceWith(sending);
+  } else {
+    roomEls.chat.replaceChildren(
+      h('div', { class: 'chat-head' }, h('span', { class: 'tb-label' }, 'Meeting chat'), h('button', { class: 'icon-btn', 'aria-label': 'Close the chat', onclick: () => { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } }, icon('x', 14))),
+      list, sending, c.form);
+    c.grow.fit();
+  }
+  c.attach.disabled = !!s;
   list.scrollTop = list.scrollHeight;
 }
 
+
+/**
+ * The chat's writing box, made once per meeting page: it keeps a half-written message (and its
+ * focus) while lines arrive. It grows with the text up to six lines, then scrolls; Enter sends,
+ * Shift+Enter starts a new line, and Enter while an input method is composing is left to it.
+ */
+let composeEls: { form: HTMLFormElement; input: HTMLTextAreaElement; attach: HTMLButtonElement; grow: { fit(): void; stop(): void } } | null = null;
+function composer(): NonNullable<typeof composeEls> {
+  if (composeEls) return composeEls;
+  const input = h('textarea', { class: 'input', rows: '1', maxlength: '2000', placeholder: 'Message everyone', 'aria-label': 'Message to the meeting', enterkeyhint: 'send' }) as HTMLTextAreaElement;
+  const grow = autoGrow(input);
+  const submit = () => { const t = input.value.trim(); if (!t) return; send({ t: 'chat', text: t }); input.value = ''; grow.fit(); };
+  input.addEventListener('keydown', (e) => { if (enterAction(e) === 'send') { e.preventDefault(); submit(); } });
+  const picker = h('input', { type: 'file', class: 'visually-hidden', 'aria-hidden': 'true', tabindex: '-1' }) as HTMLInputElement;
+  picker.addEventListener('change', () => { const f = picker.files?.[0]; picker.value = ''; if (f) void sendFile(f); });
+  const attach = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Attach a file', title: 'Attach a file (the office keeps it with the meeting)', onclick: () => picker.click() }, icon('clip', 16)) as HTMLButtonElement;
+  const form = h('form', { class: 'compose', onsubmit: (e: Event) => { e.preventDefault(); submit(); } },
+    attach, picker, input, h('button', { class: 'btn primary sm', type: 'submit' }, 'Send')) as HTMLFormElement;
+  composeEls = { form, input, attach, grow };
+  return composeEls;
+}
 
 const sizeText = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 

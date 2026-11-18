@@ -35,6 +35,7 @@
     "./meet-csv": "./src/meet-csv.ts",
     "./assist": "./src/assist.ts",
     "./pointers": "./src/pointers.ts",
+    "./compose": "./src/compose.ts",
     "./helpdesk": "./src/helpdesk.ts",
     "./webinar": "./src/webinar.ts",
     "./meet-control": "./src/meet-control.ts",
