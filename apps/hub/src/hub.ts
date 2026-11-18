@@ -1852,7 +1852,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(meet\.(thread|recap|recapChat|recapFor)$|ap\.(create|update|list)$|agenda\.(get|set|tick)$)/.test(op)) {
+        if (typeof op === 'string' && /^(meet\.(thread|recap|recapChat|recapFor)$|ap\.(create|update|list|history)$|agenda\.(get|set|tick)$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             switch (op) {
@@ -1863,6 +1863,7 @@ export class Hub {
               case 'ap.create': return this.meetThreads.createAction(me, d);
               case 'ap.update': return this.meetThreads.updateAction(me, d);
               case 'ap.list': return this.meetThreads.listActions(me, d);
+              case 'ap.history': return this.meetThreads.historyAction(me, d);
               default: return this.meetThreads.agenda(me, op, d);
             }
           } catch (err) {

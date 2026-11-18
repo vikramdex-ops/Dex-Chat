@@ -283,6 +283,57 @@ test('action points: logged three ways, numbered for the thread, the owner hears
   assert.ok(!(await priya.request('ap.list', { convId: m.convId! })).actions.some((a) => a.id === a2.id));
 });
 
+test('action points are revised from the recap: words, owner, date, done; only those who may; every change kept in its history; a later edit to its message still wins', async () => {
+  const { priya, ravi, owner, join } = await office();
+  // a third colleague in the thread who did not log it, own it or organise the meeting
+  const k = await join('kowshik');
+  await owner.request('admin.decide', { deviceId: k.identity.deviceId, approve: true });
+  await until(k.c, (s) => s.kind === 'ready');
+  const kowshik = k.c;
+  const m = await priya.request('meet.create', { title: 'Isometrics review', invite: [me(ravi), me(kowshik)] }) as MeetingInfo;
+  const room = (await priya.request('meet.join', { id: m.id }) as { room: RoomInfo }).room;
+  await ravi.request('meet.join', { id: m.id });
+  const line = await send(priya, m.convId!, 'Finish 3 drawings');
+  const a = await priya.request('ap.create', { messageId: line.id, source: 'chat' });
+  await priya.request('room.end', { roomId: room.id });
+  assert.equal(a.organiserId, me(priya), 'the view says who organised it (the app greys out what you may not change)');
+  // someone who may not: refused, and nothing is kept
+  await assert.rejects(kowshik.request('ap.update', { id: a.id, text: 'Finish 4 drawings' }), /Only its owner, whoever logged it and the organiser/);
+  // the organiser revises the words, gives it to Ravi with a date: everyone in the thread hears
+  const due = ymd(Date.now() + 2 * DAY);
+  const heard = nextEvent<ActionPoint>(kowshik, 'ap.updated', (x) => x.id === a.id);
+  const b = await priya.request('ap.update', { id: a.id, text: 'Finish 3 drawings and send them to the client', ownerId: me(ravi), due });
+  assert.equal(b.text, 'Finish 3 drawings and send them to the client');
+  assert.ok(b.revisedAt, 'marked as revised');
+  assert.equal((await heard).text, b.text);
+  // the owner may now change it too: done, then open again
+  await ravi.request('ap.update', { id: a.id, status: 'done' });
+  await ravi.request('ap.update', { id: a.id, status: 'open' });
+  // saving what is already there changes nothing and keeps no line
+  await ravi.request('ap.update', { id: a.id, text: b.text, due });
+  // the recap shows the revised words
+  const recap = await kowshik.request('meet.recap', { occurrenceId: a.occurrenceId! }) as MeetRecap;
+  assert.equal(recap.actions.find((x) => x.id === a.id)!.text, b.text);
+  // its history: logged, revised (words, owner, date), done, open again, by whom
+  const h = await kowshik.request('ap.history', { id: a.id });
+  assert.deepEqual(h.changes.map((c) => [c.kind, c.by, c.fields.map((f) => f.field).join('+')]), [
+    ['logged', me(priya), 'text'],
+    ['changed', me(priya), 'text+owner+due'],
+    ['changed', me(ravi), 'status'],
+    ['changed', me(ravi), 'status'],
+  ]);
+  assert.deepEqual(h.changes[1].fields.find((f) => f.field === 'owner'), { field: 'owner', from: '', to: me(ravi) });
+  assert.deepEqual(h.changes[1].fields.find((f) => f.field === 'text'), { field: 'text', from: 'Finish 3 drawings', to: b.text });
+  // an edit to its message afterwards is an edit to the point again
+  await priya.request('msg.edit', { messageId: line.id, body: 'Finish 5 drawings' });
+  assert.equal((await priya.request('ap.list', { convId: m.convId! })).actions.find((x) => x.id === a.id)!.text, 'Finish 5 drawings');
+  // someone outside the thread cannot read its history
+  const outsider = await join('anil');
+  await owner.request('admin.decide', { deviceId: outsider.identity.deviceId, approve: true });
+  await until(outsider.c, (s) => s.kind === 'ready');
+  await assert.rejects(outsider.c.request('ap.history', { id: a.id }), /not found/);
+});
+
 test('a recurring meeting has one thread: an occurrence per date, open action points brought forward, each its own recap', async () => {
   const { hub, priya, ravi } = await office();
   // weekly, the first one now
