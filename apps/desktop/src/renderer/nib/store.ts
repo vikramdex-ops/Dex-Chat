@@ -48,6 +48,9 @@ export function nibBotId(users: PublicUser[] = directory()): string | null {
 }
 export const isNibConv = (members: string[], users?: PublicUser[]): boolean => { const id = nibBotId(users); return !!id && members.length === 2 && members.includes(id); };
 
+/** The person Nib is working for (set by startNib). */
+export const nibSelfId = (): string => meId;
+
 export async function startNib(me: string, users: () => PublicUser[]): Promise<void> {
   meId = me;
   directory = users;

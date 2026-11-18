@@ -18,7 +18,7 @@ export function UpdatePill({ state }: { state: AppState }) {
   if (u.phase === 'ready' || u.phase === 'installing') {
     return (
       <button className="btn primary update-btn" onClick={() => void window.dex.installUpdate()} disabled={u.phase === 'installing'}>
-        <Icon name="refresh" size={15} />{u.phase === 'installing' ? 'Restarting…' : 'Restart to update'}
+        <Icon name="refresh" size={15} />{state.platform === 'ios-web' ? (u.phase === 'installing' ? 'Reloading…' : 'Reload to update') : u.phase === 'installing' ? 'Restarting…' : 'Restart to update'}
       </button>
     );
   }
@@ -76,11 +76,13 @@ export function UpdateSettings({ state }: { state: AppState }) {
       ? `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from the office hub).`
       : `Version ${u.available?.version} is available (${formatBytes(u.available?.size ?? 0)}, from the internet).`; break;
     case 'downloading': line = `Downloading ${u.available?.version}… ${pct(u.progress)}% of ${formatBytes(u.progress?.total ?? 0)}`; break;
-    case 'ready': line = `Version ${u.available?.version} is ready. It installs when you restart or quit.`; break;
+    case 'ready': line = state.platform === 'ios-web' ? 'Your office updated Dexterity Connect. Reload to use the new version.' : `Version ${u.available?.version} is ready. It installs when you restart or quit.`; break;
     case 'installing': line = 'Installing…'; break;
     case 'error': line = u.error ?? 'Something went wrong.'; break;
     default: line = u.lastCheck ? `Last checked ${new Date(u.lastCheck).toLocaleString()}.` : 'Checks automatically when the app opens and every few hours.';
   }
+  // the iPhone app updates with the office's gateway: nothing to download, a reload to use it
+  if (state.platform === 'ios-web' && (u.phase === 'up-to-date' || u.phase === 'idle')) line = 'Updates come from your office with its gateway. The app looks for one whenever it opens.';
   return (
     <>
       <div className="setting">
@@ -91,7 +93,7 @@ export function UpdateSettings({ state }: { state: AppState }) {
           {u.phase === 'downloading' && <div className="bar" style={{ marginTop: 8 }}><span style={{ width: `${pct(u.progress)}%` }} /></div>}
         </div>
         {u.phase === 'ready'
-          ? <button className="btn primary" onClick={() => void window.dex.installUpdate()}>Restart to update</button>
+          ? <button className="btn primary" onClick={() => void window.dex.installUpdate()}>{state.platform === 'ios-web' ? 'Reload to update' : 'Restart to update'}</button>
           : u.phase === 'available'
             ? <button className="btn primary" onClick={() => void window.dex.downloadUpdate()}>Download</button>
             : <button className="btn" disabled={disabled || busy} onClick={() => void window.dex.checkForUpdates()}>

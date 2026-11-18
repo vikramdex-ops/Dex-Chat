@@ -51,7 +51,7 @@ export function pagesHash(content, name) {
   return Buffer.from(blake3(new TextEncoder().encode(Buffer.from(content).toString('base64') + ext))).toString('hex').slice(0, 32);
 }
 
-const TYPES = { js: 'application/javascript', mjs: 'application/javascript', css: 'text/css', html: 'text/html', svg: 'image/svg+xml', woff2: 'font/woff2', woff: 'font/woff', png: 'image/png', ico: 'image/x-icon', json: 'application/json', txt: 'text/plain' };
+const TYPES = { js: 'application/javascript', mjs: 'application/javascript', css: 'text/css', html: 'text/html', svg: 'image/svg+xml', woff2: 'font/woff2', woff: 'font/woff', png: 'image/png', ico: 'image/x-icon', json: 'application/json', txt: 'text/plain', webmanifest: 'application/manifest+json', wasm: 'application/wasm' };
 const sha256 = (...parts) => { const h = crypto.createHash('sha256'); for (const p of parts) h.update(p); return h.digest('hex'); };
 
 function walk(dir, base = dir, out = []) {

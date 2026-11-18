@@ -654,6 +654,11 @@ select.input { padding-right: 6px; }
 /* -------------------------------------------------------------- phones and narrow windows */
 :root[data-platform='android'] { --titlebar: 52px; }
 :root[data-platform='android'] body { padding-top: env(safe-area-inset-top); }
+/* the iPhone web app (from the Home Screen it runs edge to edge: the notch, the rounded corners in landscape, the home bar) */
+:root[data-platform='ios-web'] { --titlebar: 52px; -webkit-text-size-adjust: 100%; }
+:root[data-platform='ios-web'] body { padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+/* Safari zooms into a field whose text is smaller than 16px */
+:root[data-platform='ios-web'] :is(input, textarea, select) { font-size: max(16px, 1em); }
 @media (max-width: 860px) {
   .titlebar .brand span { display: none; }
 }

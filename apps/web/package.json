@@ -1,0 +1,13 @@
+{
+  "name": "@dex/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dexterity Connect for iPhone: the web app the office's meeting site serves at /app/, added to the Home Screen from Safari",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@dex/core": "*"
+  }
+}

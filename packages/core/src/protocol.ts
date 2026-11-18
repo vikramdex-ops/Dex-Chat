@@ -607,6 +607,17 @@ export interface Reminder {
   convId: string | null;
 }
 
+/** What the hub applies before it pushes a notification to the iPhone web app (the same choices as Preferences ▸ Notifications). */
+export interface PushPrefs {
+  notifyFor: 'all' | 'mentions' | 'none';
+  showPreviews: boolean;
+  /** Quiet hours, HH:MM in the device's time zone (`zone`, an IANA name such as Asia/Kolkata). */
+  quietFrom: string | null;
+  quietTo: string | null;
+  zone: string;
+  silent: boolean;
+}
+
 /** A message a phone was not told about while its connection was down (see notify.missed). */
 export interface MissedNotice {
   id: string;
@@ -863,6 +874,16 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'notify.missed': { req: { after?: string | null; limit?: number }; res: { items: MissedNotice[]; cursor: string | null; more?: boolean } };
   /** A token for this device's background service to wait for new messages on its own (GET /notify/wait). */
   'notify.token': { req: void; res: { token: string } };
+  /** The iPhone web app's notifications (Web Push): the office's public VAPID key for the browser's subscription. */
+  'push.key': { req: void; res: { publicKey: string } };
+  /** This device's push subscription and the notification preferences the hub applies before it pushes. */
+  'push.subscribe': { req: { endpoint: string; keys: { p256dh: string; auth: string }; prefs: PushPrefs }; res: { ok: true } };
+  'push.unsubscribe': { req: void; res: { ok: true } };
+  /** The app is on screen (true) or in the background (false): in the background, pushes stand in for the connection. */
+  'push.active': { req: { active: boolean }; res: { ok: true } };
+  /** Send this device a test notification now. */
+  'push.test': { req: void; res: { ok: boolean; error: string | null } };
+  'push.status': { req: void; res: { subscribed: boolean; lastOk: number | null; lastError: string | null } };
   'admin.guests.invites': { req: void; res: GuestInvite[] };
   'admin.guests.invite': { req: { spaceIds: string[]; accessDays: number; validDays: number; uses: number; note?: string }; res: GuestInvite & { code: string } };
   'admin.guests.revokeInvite': { req: { id: string }; res: { ok: true } };

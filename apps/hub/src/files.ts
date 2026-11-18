@@ -57,7 +57,7 @@ function cleanMime(mime: string | undefined, name: string): string {
     '.pdf': 'application/pdf', '.txt': 'text/plain', '.csv': 'text/csv', '.zip': 'application/zip',
     '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.dwg': 'image/vnd.dwg', '.dxf': 'image/vnd.dxf', '.mp4': 'video/mp4', '.webm': 'audio/webm',
+    '.dwg': 'image/vnd.dwg', '.dxf': 'image/vnd.dxf', '.mp4': 'video/mp4', '.webm': 'audio/webm', '.m4a': 'audio/mp4',
   };
   return map[ext] ?? 'application/octet-stream';
 }

@@ -12,6 +12,8 @@ import { OfflineBanner } from '../App.tsx';
 import { Avatar, Icon, Popover, Segmented, Toggle, confirmAction, deviceCode, useToast } from '../ui.tsx';
 import { UpdateSettings } from '../UpdateUi.tsx';
 import { NotificationsCheck } from './NotifyCheck.tsx';
+import { WebPushSettings } from './WebApp.tsx';
+import { isPhonePlatform } from '../../shared/bridge.ts';
 import { setMsgLayout, useMsgLayout } from '../chat/prefs.ts';
 import type { MsgLayout } from '../chat/prefs.ts';
 import { LANGUAGES, language, setLanguage } from '../i18n/index.ts';
@@ -226,8 +228,9 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           </div>}
         </section>}
         {check && <NotificationsCheck state={state} onClose={() => setCheck(false)} />}
+        {state.platform === 'ios-web' && <WebPushSettings state={state} />}
 
-        {state.platform !== 'android' && <section>
+        {!isPhonePlatform(state.platform) && <section>
           <h3>Start-up and windows</h3>
           <div className="setting">
             <Icon name="power" className="lead" />
@@ -252,7 +255,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <Icon name="server" className="lead" />
             <div className="txt">
               <div>{session.hub.name} <span className="faint">· version {session.hub.version}</span></div>
-              <div className="faint mono selectable">{state.hub?.host}:{state.hub?.port}</div>
+              <div className="faint mono selectable">{state.hub?.host ? `${state.hub.host}:${state.hub.port}` : `via ${state.hub?.gateway?.replace(/^https?:\/\//, '') ?? 'the gateway'}`}</div>
             </div>
             <span className={`chip ${live ? 'ok' : 'warn'}`}>{live ? 'Connected' : 'Reconnecting'}</span>
           </div>
@@ -265,7 +268,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
           </div>
           <div className="setting">
             <Icon name="laptop" className="lead" />
-            <div className="txt"><div>{state.platform === 'android' ? 'This phone' : 'This PC'}</div><div className="faint">{state.platform === 'android' ? '' : `${state.account.domain}\\${state.account.username} · `}{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
+            <div className="txt"><div>{isPhonePlatform(state.platform) ? 'This phone' : 'This PC'}</div><div className="faint">{isPhonePlatform(state.platform) ? '' : `${state.account.domain}\\${state.account.username} · `}{state.account.hostname} · device code <span className="mono">{deviceCode(state.deviceId)}</span></div></div>
             <button className="btn" onClick={() => void confirmAction({ title: 'Disconnect from this hub? You can join it or another hub again from the welcome screen.', confirm: 'Disconnect', danger: true }).then((ok) => { if (ok) void window.dex.forgetHub(); })}>Disconnect</button>
           </div>
         </section>
@@ -273,6 +276,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
         <section>
           <h3>Updates</h3>
           <UpdateSettings state={state} />
+          {state.platform !== 'ios-web' && <>
           <div className="setting">
             <Icon name="list" className="lead" />
             <div className="txt"><div>Update channel</div><div className="faint">Beta gets new features first, from builds still being tested.</div></div>
@@ -286,6 +290,7 @@ export function SettingsView({ state, session }: { state: AppState; session: Ses
             <div className="txt"><div>Download updates automatically</div><div className="faint">In the background; nothing installs until you restart or quit.</div></div>
             <Toggle label="Download updates automatically" checked={state.settings.autoDownloadUpdates} onChange={(v) => set({ autoDownloadUpdates: v })} />
           </div>
+          </>}
         </section>
 
         <section>

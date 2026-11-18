@@ -18,7 +18,7 @@ export function StatusStamp({ t }: { t: HelpTicket }) {
   return <span className={`hd-stamp ${live ? 'live' : t.status}`}>{live ? 'IN SESSION' : STATUS[t.status]}</span>;
 }
 
-export const platformLabel = (p: string | null) => (p === 'win32' ? 'Windows' : p === 'darwin' ? 'macOS' : p === 'linux' ? 'Linux' : p === 'android' ? 'Android' : p ?? '—');
+export const platformLabel = (p: string | null) => (p === 'win32' ? 'Windows' : p === 'darwin' ? 'macOS' : p === 'linux' ? 'Linux' : p === 'android' ? 'Android' : p === 'ios-web' ? 'iPhone (web app)' : p ?? '—');
 
 export function durationText(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));

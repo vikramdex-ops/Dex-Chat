@@ -7,14 +7,21 @@ import type { CellStatus, LeadCardView, LeadRow, Message, NibCard, NibItemLite, 
 import { Avatar, Icon, useToast } from '../ui.tsx';
 import { NibTile } from './NibMark.tsx';
 import { DimBar, ItemQty, ProjectTag } from './parts.tsx';
-import { cardFor, forgetCard, openTray, setCard, useCardVersion, useNib } from './store.ts';
+import { cardFor, forgetCard, nibSelfId, openTray, setCard, useCardVersion, useNib } from './store.ts';
 import { LEAVE_WORD, STATUS_WORD, dayLabel, firstName, qtyWords } from './words.ts';
 import { formatTime } from '../time.ts';
 import { act } from './Tray.tsx';
 import { HolidayCircularCard, HolidaysDoneCard } from './holidays.tsx';
 
 const go = (url: string) => window.dispatchEvent(new CustomEvent('dex-deeplink', { detail: url }));
-const writeTo = (id: string) => void window.dex.request('conv.create', { kind: 'direct', members: [id] }).then((c) => go(`dexconnect://conversation/${c.id}`)).catch(() => {});
+// Write on a person's row: your own row opens your day sheet (there is no conversation with
+// yourself); anyone else's opens your conversation with them, and a failure says why.
+const writeTo = (id: string) => {
+  if (id === nibSelfId()) { openTray({ v: 'wrap' }); return; }
+  void window.dex.request('conv.create', { kind: 'direct', members: [id] })
+    .then((c) => go(`dexconnect://conversation/${c.id}`))
+    .catch((err: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: err?.message || 'That conversation could not be opened.' })));
+};
 const dwg = (kind: string, date: string) => `NIB-${kind}-${date.replace(/-/g, '').slice(2)}`;
 
 export default function NibMessageCard({ m, meId, users }: { m: Message; meId: string; users: Map<string, PublicUser> }) {

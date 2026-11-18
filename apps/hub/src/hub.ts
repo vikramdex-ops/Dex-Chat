@@ -70,6 +70,7 @@ import { ZohoError, ZohoSync } from './zoho.ts';
 import type { ZohoTestOptions } from './zoho.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
+import { WebPush, makeVapidKeys } from './webpush.ts';
 import { Nib, NibError } from './nib.ts';
 import { Holidays, HolidaysError } from './holidays.ts';
 import { NoticeBoard, NoticeError } from './notices.ts';
@@ -113,6 +114,8 @@ export interface HubOptions {
   zoho?: ZohoTestOptions;
   /** "Set up with Cloudflare": where Cloudflare is and what to deploy (tests use a stand-in; src/cfdeploy.ts). */
   cloudflare?: { endpoints?: CfEndpoints; bundle?: () => CloudBundle | null; fetch?: typeof fetch; waits?: CfSetupOptions['waits'] };
+  /** The iPhone web app's notifications (webpush.ts): tests send to a local push service. */
+  webPush?: { allowLocal?: boolean; fetch?: typeof fetch };
 }
 
 /** Test-only Zoho addresses from the environment (the e2e scripts' mock server); never set in an office. */
@@ -137,6 +140,8 @@ interface Conn {
   ready: boolean;
   fileToken: string | null;
   idle: boolean;
+  /** The iPhone web app is in the background (push.active false): pushes stand in for this connection. */
+  background?: boolean;
 }
 
 const isAdminRole = (r: Role) => r === 'owner' || r === 'admin';
@@ -179,6 +184,8 @@ export class Hub {
   readonly files: FileStore;
   /** What a phone missed while disconnected, and its background service's long poll. */
   readonly missed: MissedNotices;
+  /** Notifications for the iPhone web app (Web Push). */
+  readonly webPush: WebPush;
   readonly rooms: Rooms;
   readonly meetings: Meetings;
   readonly meetGuests: MeetGuests;
@@ -286,6 +293,15 @@ export class Hub {
     this.pairing = new Pairing(this.store);
     this.system = new SystemBot(this.store, this.messaging);
     this.missed = new MissedNotices(this.store.db, () => this.store.activeUsers(), (id) => this.files.forMessage(id).map((f) => f.name));
+    this.webPush = new WebPush({
+      db: this.store.db, missed: this.missed,
+      keys: () => JSON.parse(this.store.meta('vapid_keys', () => JSON.stringify(makeVapidKeys()))),
+      subject: () => this.remoteConfig().siteUrl || 'https://dexterity-admin.github.io/dexterity-connect/',
+      onScreen: (deviceId) => [...this.conns].some((c) => c.ready && c.deviceId === deviceId && !c.background),
+      dnd: (uid) => this.store.userById(uid)?.availability === 'dnd',
+      allowLocal: opts.webPush?.allowLocal, fetch: opts.webPush?.fetch,
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     this.messaging.editWindowMs = () => this.policies.editWindowMs();
     this.messaging.dlpRules = () => this.policies.get().dlp ?? [];
     this.messaging.requireE2E = () => this.policies.get().requireE2E === true;
@@ -510,7 +526,7 @@ export class Hub {
         if (name === 'user.left') { try { this.seating.personLeft((data as { userId: string }).userId); } catch (err) { this.log('warn', 'seat not freed', { error: (err as Error).message }); } }
         this.emit(name, data, adminsOnly ? (c) => this.isAdminConn(c) : undefined);
       },
-      forgetNotify: (deviceId) => this.missed.revoke(deviceId),
+      forgetNotify: (deviceId) => { this.missed.revoke(deviceId); this.webPush.unsubscribe(deviceId); },
       active: (uid) => this.canSignIn(uid),
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
@@ -902,6 +918,7 @@ export class Hub {
     this.gateway.stop();
     this.webinars.stop();
     this.missed.close();
+    this.webPush.close();
     await this.relay.stop();
     for (const c of this.conns) c.ws.terminate();
     // let automations that are running finish before the database closes
@@ -1142,7 +1159,7 @@ export class Hub {
   private deliver(userIds: string[], name: string, data: (userId: string) => unknown): void {
     const wanted = new Set(userIds);
     // phones waiting in the background hear about new messages too
-    if (name === 'msg.new') this.missed.wake(wanted);
+    if (name === 'msg.new') { this.missed.wake(wanted); this.webPush.onMessage(wanted); }
     const cache = new Map<string, unknown>();
     for (const c of this.conns) {
       if (!c.ready || !c.userId || !wanted.has(c.userId)) continue;
@@ -1500,6 +1517,8 @@ export class Hub {
         if (!device || device.userId !== conn.userId) throw new OpError('Device not found.');
         if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
         const updated = this.store.setDeviceStatus(device.id, 'revoked', conn.userId!);
+        this.missed.revoke(device.id);
+        this.webPush.unsubscribe(device.id);
         this.store.audit(conn.userId!, 'device.removedByOwner', device.id, { hostname: device.hostname });
         for (const c of [...this.conns]) {
           if (c.deviceId === device.id) { this.send(c, { t: 'rejected', reason: 'This device was removed from your account.' }); c.ws.close(); }
@@ -1551,6 +1570,7 @@ export class Hub {
         if (device.id === conn.deviceId) throw new OpError('You cannot remove the device you are using.');
         const updated = this.store.setDeviceStatus(device.id, 'revoked', me.id);
         this.missed.revoke(device.id);
+        this.webPush.unsubscribe(device.id);
         this.store.audit(me.id, 'device.revoked', device.id, { account: device.account });
         if (device.status === 'approved') this.system.tell(device.userId, `An administrator removed **${device.hostname}** from your account. It is signed out and can't be used to sign in again.`, `revoked-${device.id}`);
         for (const c of [...this.conns]) {
@@ -1631,6 +1651,32 @@ export class Hub {
 
       case 'notify.token':
         return { token: this.missed.token(conn.deviceId!, conn.userId!) } satisfies Ops['notify.token']['res'];
+
+      case 'push.key':
+        return { publicKey: this.webPush.publicKey() } satisfies Ops['push.key']['res'];
+
+      case 'push.subscribe': {
+        try { this.webPush.subscribe(conn.deviceId!, conn.userId!, { endpoint: d.endpoint, keys: d.keys as { p256dh?: unknown; auth?: unknown } | undefined }, d.prefs); }
+        catch (err) { throw new OpError((err as Error).message); }
+        return { ok: true } satisfies Ops['push.subscribe']['res'];
+      }
+
+      case 'push.unsubscribe':
+        this.webPush.unsubscribe(conn.deviceId!);
+        return { ok: true } satisfies Ops['push.unsubscribe']['res'];
+
+      case 'push.active': {
+        conn.background = d.active === false;
+        // either way, what arrived until now was on screen: pushes start after it
+        this.webPush.seen(conn.deviceId!);
+        return { ok: true } satisfies Ops['push.active']['res'];
+      }
+
+      case 'push.test':
+        return await this.webPush.test(conn.deviceId!) satisfies Ops['push.test']['res'];
+
+      case 'push.status':
+        return this.webPush.status(conn.deviceId!) satisfies Ops['push.status']['res'];
 
       case 'e2e.addKeys': {
         const me = this.store.userById(conn.userId!)!;

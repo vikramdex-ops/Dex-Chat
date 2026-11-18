@@ -155,6 +155,13 @@ Their seat is given automatically if their name matches the drawing.
 **Phones and home laptops (each person does this; no administrator needed):** **Preferences → Your devices →
 Add my phone** (scan the QR code) or **Add my laptop** (a code to paste).
 
+**iPhones and iPads:** the same **Add my phone** QR code. It opens Dexterity Connect for iPhone in Safari, a
+web app the office serves from its own meeting site (nothing from the App Store, no Apple account). They copy
+the code, tap **Share → Add to Home Screen**, open it from the Home Screen and tap **Paste the code**.
+What you need to have done: step 4 (access from outside, and the meeting site with **Set up with Cloudflare**),
+because an iPhone always reaches the office through the gateway, even on the office Wi-Fi. Notifications need
+iOS 16.4 or later; calls ring only while the app is open. Details: [`IPHONE.md`](IPHONE.md).
+
 **Zoho Calendar (each person does this):** they click **Connect Zoho Calendar**:
 
 - where it appears: in their Calendar or in **Preferences → Calendar**;
@@ -220,6 +227,7 @@ Then hand over the accounts that live outside the app:
 | --- | --- |
 | Setup on the server says a port is in use | It names the program using it. Close or uninstall that program, then run setup again. Running it again is always safe. |
 | The app keeps looking for the office hub | Check the PC is on the office network, not guest Wi-Fi. Click **Enter the hub address yourself** and type the server's address (step 1). |
+| A phone keeps saying **Reaching the office hub…** | The phone joined before step 4, so it only knows the office network's address, and the office Wi-Fi is a separate network from the PCs' cable. On your PC: **Preferences → Your devices → Add my phone**. On the phone, tap **Scan a new code** (or **Choose a different hub**) and scan it. Nothing on the phone is lost, and from then on it uses the office network when it can and the way in from outside when it cannot. |
 | A PC on another floor or Wi-Fi cannot find the hub | Ask whoever manages the network to let it reach the server on TCP 47900, UDP 47901 and TCP/UDP 47910–47999. |
 | **Set up with Cloudflare** stops at a step | Read the reason on the card, fix it on the same token in Cloudflare, then **Retry**. |
 | Someone's Zoho shows **Reconnect Zoho Calendar** | They click it and sign in again; nothing is duplicated. |

@@ -154,6 +154,20 @@ In **Control room → Policies → Data protection** an administrator can:
 - allow outside access only from listed networks (for example the office's other branches). Devices
   on other networks are refused, and signed out at once when the list changes.
 
+## The iPhone web app and its notifications
+
+- The meeting site (Cloudflare Pages) also serves **Dexterity Connect for iPhone** at `/app/`, from the
+  same bundle the hub deploys; **Update the gateway** updates it. `/app/` on the gateway's own address
+  redirects there. Its page allows scripts only from the site and connections to the site and to secure
+  WebSockets (the gateway); see `apps/meet-site/src/app-headers.ts`.
+- It uses the same encrypted device channel (`/c/<hub id>`) as Android outside the office; the gateway
+  learns nothing new.
+- **Notifications (Web Push)** are sent by the **hub**, not the gateway: the hub encrypts each one to the
+  iPhone's subscription (RFC 8291) and signs it with the office's VAPID key (RFC 8292), kept in the hub's
+  database. The push service (Apple's, for an iPhone) sees ciphertext, the time and the size; with **Show
+  message text in notifications** off the content is only "New message". The hub needs outbound https to
+  the push service (`web.push.apple.com` for iPhones). Nothing is registered with Apple.
+
 ## Pairing codes (personal devices)
 
 - A pairing code (`DXP1-…`) carries the hub's id and certificate fingerprint, its office addresses,
@@ -266,6 +280,11 @@ For a hub built without the Cloudflare parts, or when the command line is prefer
     and paste it into the app on the laptop.
   - Devices that have been on the office network once already know the gateway and simply work
     outside.
+  - **iPhones and iPads** scan the same **Add my phone** QR code: the download page sends them to
+    `<gateway>/app/` with the code in the `#fragment`, the gateway redirects to the meeting site's
+    `/app/`, and they add Dexterity Connect for iPhone to the Home Screen
+    ([IPHONE.md](IPHONE.md)). An iPhone always connects through the gateway, so a code made while
+    access from outside is off cannot work on one, and says so.
 
 ### What was checked, and what the first real run must confirm
 

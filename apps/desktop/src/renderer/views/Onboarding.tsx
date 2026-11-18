@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { parsePairCode, parseSetupCode } from '@dex/core/remote';
 import { QrScanner } from './Pairing.tsx';
 import './onboarding.css';
-import type { AppState } from '../../shared/bridge.ts';
+import { isPhonePlatform, type AppState } from '../../shared/bridge.ts';
+import { InstallGuide, PasteCode } from './WebApp.tsx';
 import logo from '../app-icon.svg';
 import { Icon, deviceCode } from '../ui.tsx';
 
@@ -14,7 +15,7 @@ export function Onboarding({ state }: { state: AppState }) {
       <header className="titlebar"><div className="brand"><img src={logo} alt="" />Dexterity Connect</div></header>
       <div className="onboard-stage">
         <div className="onboard-card" key={state.phase}>
-          {state.phase === 'welcome' && <Welcome state={state} />}
+          {state.phase === 'welcome' && (needsGuide(state) ? <InstallGuide state={state} /> : <Welcome state={state} />)}
           {(state.phase === 'connecting' || state.phase === 'offline') && <Connecting state={state} />}
           {state.phase === 'pending' && <Pending state={state} />}
           {state.phase === 'rejected' && <Problem title="Access not granted" text={state.error ?? 'An administrator declined this device.'} />}
@@ -23,6 +24,12 @@ export function Onboarding({ state }: { state: AppState }) {
       </div>
     </div>
   );
+}
+
+/** The iPhone web app opened in Safari (not from the Home Screen): the guide comes first. */
+function needsGuide(state: AppState): boolean {
+  const web = window.dex.web;
+  return state.platform === 'ios-web' && !!web && !web.standalone && !web.continued();
 }
 
 /** Joining another office: a way back to the ones this device already belongs to. */
@@ -39,13 +46,16 @@ function BackToOffices({ state }: { state: AppState }) {
 }
 
 function Welcome({ state }: { state: AppState }) {
-  const isPhone = state.platform === 'android';
+  const isPhone = isPhonePlatform(state.platform);
+  // the iPhone web app only ever reaches the office through its gateway: no office hub to pick
+  const isWeb = state.platform === 'ios-web';
   // phones and personal laptops pair with a code from the person's own PC; office PCs join the hub
   const [mode, setMode] = useState<'pair' | 'office'>(isPhone ? 'pair' : 'office');
   const [code, setCode] = useState('');
-  const [found, setFound] = useState<'clipboard' | 'link' | 'scan' | null>(null);
+  const [found, setFound] = useState<'clipboard' | 'link' | 'scan' | 'paste' | null>(null);
   const [scanning, setScanning] = useState(false);
   const pair = parsePairCode(code);
+  const noWay = isWeb && !!pair && !pair.url;
   const legacy = pair ? null : parseSetupCode(code);
   const [name, setName] = useState(state.account.displayName);
   const [selected, setSelected] = useState<string | null>(null);
@@ -67,12 +77,13 @@ function Welcome({ state }: { state: AppState }) {
       setBusy(false);
     }
   };
-  const take = (text: string, how: 'clipboard' | 'link' | 'scan') => {
+  const take = (text: string, how: 'clipboard' | 'link' | 'scan' | 'paste') => {
     const m = text.match(/DX[PC]1-[A-Za-z0-9_-]+/);
     if (!m) return false;
     setMode('pair'); setCode(m[0]); setFound(how); setError(null);
     // a code from the camera or a link is what the person meant to use: go straight on
-    if (how !== 'clipboard' && parsePairCode(m[0])) void join({ pairCode: m[0], displayName: '' });
+    const p = parsePairCode(m[0]);
+    if (how !== 'clipboard' && p && !(isWeb && !p.url)) void join({ pairCode: m[0], displayName: '' });
     return true;
   };
   // a pairing code from the download page (copied) or from a link that opened the app
@@ -102,12 +113,13 @@ function Welcome({ state }: { state: AppState }) {
 
   if (mode === 'pair') {
     return (
-      <form className="stack-v" onSubmit={(e) => { e.preventDefault(); if (pair) void join({ pairCode: code, displayName: '' }); else if (legacy && name.trim()) void join({ setupCode: code, displayName: name }); }}>
+      <form className="stack-v" onSubmit={(e) => { e.preventDefault(); if (pair && !noWay) void join({ pairCode: code, displayName: '' }); else if (legacy && name.trim()) void join({ setupCode: code, displayName: name }); }}>
         <div>
           <img className="mark" src={logo} alt="" />
           <h1>Pair this {deviceWord}</h1>
           <p className="lede">Use Dexterity Connect here as yourself, at home or on mobile data. Your PC at the office makes the code: <b>Preferences → Your devices → Add my {deviceWord}</b>.</p>
         </div>
+        {isWeb && <PasteCode onCode={(t) => { if (!take(t, 'paste')) setError('That is not a Dexterity Connect pairing code. Copy all of it, starting with DXP1-.'); }} />}
         {isPhone && (
           <button type="button" className="pair-scan" onClick={() => setScanning(true)} disabled={busy}>
             <span className="ico"><Icon name="mobile" size={26} /></span>
@@ -115,11 +127,12 @@ function Welcome({ state }: { state: AppState }) {
           </button>
         )}
         <div className="field">
-          <label htmlFor="pair-code">{isPhone ? 'Or paste the code' : 'Paste the code you sent yourself'}</label>
+          <label htmlFor="pair-code">{isWeb ? 'Or put the code here' : isPhone ? 'Or paste the code' : 'Paste the code you sent yourself'}</label>
           <textarea id="pair-code" className="input mono pair-code" rows={3} placeholder="DXP1-…" value={code} autoCapitalize="none" autoCorrect="off" spellCheck={false}
             onChange={(e) => { setCode(e.target.value.trim()); setFound(null); }} />
           <span className="faint" style={{ fontSize: 12 }}>
-            {pair ? <>{found === 'clipboard' ? 'Found on your clipboard. ' : ''}Adds this {deviceWord} to your account on <b>{pair.name ?? 'your office hub'}</b>. No approval needed.</>
+            {noWay ? <span className="danger-text">Your office has not set up access from outside yet, and an iPhone can only join that way. Ask your administrator to turn it on (Control room ▸ Outside the office), then make a new code on your PC.</span>
+              : pair ? <>{found === 'clipboard' ? 'Found on your clipboard. ' : ''}Adds this {deviceWord} to your account on <b>{pair.name ?? 'your office hub'}</b>. No approval needed.</>
               : legacy ? <>An older setup code: an administrator approves this {deviceWord} before it can be used.</>
               : code ? 'That is not a complete code. Copy all of it, starting with DXP1-.' : 'The code works once and lasts 24 hours.'}
           </span>
@@ -132,14 +145,18 @@ function Welcome({ state }: { state: AppState }) {
         )}
         {error && <div className="error-box">{error}</div>}
         <BackToOffices state={state} />
-        <button className="btn primary lg" type="submit" disabled={busy || !(pair || (legacy && name.trim()))} title={busy || pair ? undefined : legacy ? 'Enter your name first' : 'Paste the whole code first'}>
+        <button className="btn primary lg" type="submit" disabled={busy || noWay || !(pair || (legacy && name.trim()))} title={busy || pair ? undefined : legacy ? 'Enter your name first' : 'Paste the whole code first'}>
           {busy ? <span className="spinner" /> : null}{legacy ? 'Request access' : `Pair this ${deviceWord}`}
         </button>
         {!isPhone && <div className="faint" style={{ fontSize: 13 }}><button type="button" className="link" onClick={() => setScanning(true)}>Scan the QR code with this laptop's camera</button></div>}
-        <div className="faint" style={{ fontSize: 13 }}>
-          {isPhone ? 'On the office Wi-Fi without a code? ' : 'An office PC? '}
-          <button type="button" className="link" onClick={() => { setMode('office'); setError(null); }}>Join the office hub instead</button>
-        </div>
+        {isWeb ? (
+          <p className="faint" style={{ fontSize: 13, margin: 0 }}>An iPhone reaches the office through its way in from outside, on any network, the office Wi-Fi too. Everything stays encrypted between this iPhone and the office hub.</p>
+        ) : (
+          <div className="faint" style={{ fontSize: 13 }}>
+            {isPhone ? 'On the office Wi-Fi without a code? ' : 'An office PC? '}
+            <button type="button" className="link" onClick={() => { setMode('office'); setError(null); }}>Join the office hub instead</button>
+          </div>
+        )}
         {scanning && <QrScanner onCode={(t) => { setScanning(false); if (!take(t, 'scan')) setError('That QR code is not a Dexterity Connect pairing code.'); }} onClose={() => setScanning(false)} />}
       </form>
     );
@@ -248,6 +265,9 @@ function Welcome({ state }: { state: AppState }) {
 }
 
 function Connecting({ state }: { state: AppState }) {
+  const phone = state.platform === 'android';
+  const web = state.platform === 'ios-web';
+  const outside = !!state.hub?.gateway;
   return (
     <div className="center stack-v">
       <div className="waiting"><img src={logo} alt="" /></div>
@@ -256,8 +276,21 @@ function Connecting({ state }: { state: AppState }) {
         {state.hub?.name ?? state.hub?.host}
         {state.phase === 'offline' && state.retryInMs ? ` · trying again in ${Math.ceil(state.retryInMs / 1000)}s` : ''}
       </p>
-      {state.phase === 'offline' && <p className="faint" style={{ fontSize: 13 }}>Make sure this PC is on the office network. If the hub PC was moved, it will be found again automatically.</p>}
-      <div><button className="btn ghost" onClick={() => void window.dex.forgetHub()}>Choose a different hub</button></div>
+      {state.phase === 'offline' && web && <p className="faint" style={{ fontSize: 13 }}>{typeof navigator !== 'undefined' && !navigator.onLine ? 'This iPhone is offline. Dexterity Connect connects again by itself when it is back online.' : 'This iPhone reaches the office over the internet, through the office\'s gateway. If the office hub or its internet connection is down, it connects again by itself when they are back.'}</p>}
+      {state.phase === 'offline' && !phone && !web && <p className="faint" style={{ fontSize: 13 }}>Make sure this PC is on the office network. If the hub PC was moved, it will be found again automatically.</p>}
+      {state.phase === 'offline' && phone && !outside && (
+        <div className="reach-help">
+          <b>This phone only knows the office network's address</b>, and cannot reach it from here (for example, the Wi-Fi is a
+          separate network from the office PCs). Scan a new code to add the way in from outside: on your PC, open
+          <b> Preferences → Your devices → Add my phone</b>, then tap <b>Scan a new code</b> below. Nothing on this phone is lost.
+        </div>
+      )}
+      {state.phase === 'offline' && phone && outside && <p className="faint" style={{ fontSize: 13 }}>Trying the office network first, then the way in from outside.</p>}
+      <div>
+        {(phone && !outside) || web
+          ? <button className={`btn ${web ? 'ghost' : 'primary'}`} onClick={() => void window.dex.forgetHub()}>{web ? 'Use a new code' : 'Scan a new code'}</button>
+          : <button className="btn ghost" onClick={() => void window.dex.forgetHub()}>Choose a different hub</button>}
+      </div>
     </div>
   );
 }

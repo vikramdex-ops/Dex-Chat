@@ -59,15 +59,20 @@ export class Pairing {
   }
 }
 
-/** This PC's addresses on the office network, for pairing codes ("host:port"). */
-export function lanAddresses(port: number): string[] {
-  const all: string[] = [];
-  for (const list of Object.values(os.networkInterfaces())) {
+/** Adapters a phone can never reach: virtual machines, WSL, Docker, VPNs and tunnels. */
+const VIRTUAL = /vethernet|hyper-v|wsl|docker|virtualbox|vbox|vmware|vmnet|loopback|npcap|tap-|tun|wireguard|zerotier|tailscale|hamachi|radmin|openvpn|fortinet|forticlient|cisco|anyconnect|globalprotect|pangp|bluetooth/i;
+
+/** This PC's addresses on the office network, for pairing codes ("host:port"), the ones a phone is most
+ * likely to reach first: real adapters before virtual ones, private addresses before public ones. */
+export function lanAddresses(port: number, ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string[] {
+  const all: Array<{ ip: string; rank: number }> = [];
+  for (const [name, list] of Object.entries(ifaces)) {
     for (const a of list ?? []) {
       // link-local addresses are useless to a phone
-      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) all.push(a.address);
+      if (a.family !== 'IPv4' || a.internal || a.address.startsWith('169.254.')) continue;
+      const priv = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a.address);
+      all.push({ ip: a.address, rank: (VIRTUAL.test(name) ? 2 : 0) + (priv ? 0 : 1) });
     }
   }
-  const priv = (ip: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
-  return [...all.filter(priv), ...all.filter((ip) => !priv(ip))].slice(0, 4).map((ip) => `${ip}:${port}`);
+  return all.sort((x, y) => x.rank - y.rank).slice(0, 4).map((a) => `${a.ip}:${port}`);
 }
