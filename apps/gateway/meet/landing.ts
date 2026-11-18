@@ -58,7 +58,7 @@ const S = {
   micOn: true,
   camOn: true,
   devices: { cam: '', mic: '', out: '' },
-  lobby: { host: '', since: 0 },
+  lobby: { host: '', since: 0, hostIn: true },
   end: null as EndInfo | null,
   reconnecting: 0,
   problem: '',
@@ -672,7 +672,12 @@ async function join(): Promise<void> {
   try { api = await loadRoom(); } catch (e) { S.problem = (e as Error).message; render(); return; }
   const events: RoomEvents = {
     connecting: (again) => { if (S.view !== 'room') renderConnecting(again); },
-    lobby: (info) => { REV.awaiting = true; REV.approvedAt = null; S.lobby = { host: info.host, since: S.lobby.since || Date.now() }; S.view = 'lobby'; S.reconnecting = 0; renderLobby(); say(`You are in the lobby. ${info.host} sees that you are waiting.`); },
+    lobby: (info) => {
+      // announced when the lobby opens and when the host's whereabouts change (not on every repeat)
+      const news = S.view !== 'lobby' || S.lobby.hostIn !== info.hostIn;
+      REV.awaiting = true; REV.approvedAt = null; S.lobby = { host: info.host, since: S.lobby.since || Date.now(), hostIn: info.hostIn }; S.view = 'lobby'; S.reconnecting = 0; renderLobby();
+      if (news) say(info.hostIn ? `You are in the lobby. ${info.host} sees that you are waiting.` : `You are in the lobby. ${info.host} is not in the meeting yet and has been told you are waiting.`);
+    },
     admitted: () => {
       // the revision block is stamped: approved for entry; the meeting opens once the stamp is drawn
       REV.awaiting = false; REV.approvedAt = Date.now();
@@ -719,10 +724,13 @@ function renderLobby(): void {
   frame({
     org: f?.org ?? 'Dexterity Design Services',
     kicker: `Lobby · ${f ? refSegment(f.id) : ''}`,
-    title: SPEAKER ? 'Going on stage…' : 'The host will let you in',
-    state: h('div', { class: 'state wait' }, h('span', { class: 'pip', 'aria-hidden': 'true' }), h('span', { class: 'label' }, 'In the lobby · waiting'), waited),
+    title: SPEAKER ? 'Going on stage…' : S.lobby.hostIn ? 'The host will let you in' : 'The host has been told',
+    state: h('div', { class: 'state wait' }, h('span', { class: 'pip', 'aria-hidden': 'true' }), h('span', { class: 'label' }, S.lobby.hostIn ? 'In the lobby · waiting' : 'In the lobby · host told'), waited),
     body: [
-      h('p', { class: 'lead' }, `${S.lobby.host || 'The host'} sees that you are waiting. Your place is held while this page is open: you need not do anything.`),
+      // honest about where the host is: in the meeting and seeing the lobby, or told and coming
+      h('p', { class: 'lead' }, S.lobby.hostIn
+        ? `${S.lobby.host || 'The host'} sees that you are waiting. Your place is held while this page is open: you need not do anything.`
+        : `${S.lobby.host || 'The host'} is not in the meeting yet. They have been told you are waiting, and will let you in when they open it. Your place is held while this page is open: you need not do anything.`),
       h('div', { class: 'lobby-grid' },
         preview(true),
         h('div', { class: 'lobby-side' },

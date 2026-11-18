@@ -17,7 +17,8 @@ type Signal = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandi
 export type EndKind = 'left' | 'ended' | 'refused' | 'removed' | 'cancelled' | 'passcode' | 'limit' | 'lost' | 'closed';
 export interface RoomEvents {
   connecting(again: boolean): void;
-  lobby(info: { host: string; title: string }): void;
+  /** `hostIn`: a host is in the meeting now; false: they have been told and let you in from wherever they are. */
+  lobby(info: { host: string; title: string; hostIn: boolean }): void;
   admitted(): void;
   /** Before the guest is in: something to fix (a missing name). */
   problem(message: string): void;
@@ -139,7 +140,7 @@ function onFrame(f: GuestDown): void {
     case 'lobby':
       state.step = 'lobby';
       state.attempts = 0;
-      on?.lobby({ host: f.host, title: f.title });
+      on?.lobby({ host: f.host, title: f.title, hostIn: f.hostIn !== false });
       break;
     case 'admitted':
       state.self = f.self; state.room = f.room; state.iceServers = f.iceServers as RTCIceServer[]; state.chat = f.chat; state.step = 'room';
@@ -421,6 +422,8 @@ function renderBanners(): void {
   }
   if (r.breakout && !r.returningAt) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, r.breakout.toUpperCase()), h('span', {}, 'You are in a breakout room. The meeting chat is still shared.')));
   if (r.note) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, `NOTE · ${clock(r.note.at)}`), h('span', {}, r.note.text)));
+  // let in before the host came: they have been told and join from wherever they are
+  if (r.hostAway) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, 'HOST · ON THE WAY'), h('span', {}, `${r.hostAway} let you in and has been told you are here. They join you shortly.`)));
   if (state.askUnmute && !state.micOn) {
     out.push(h('div', { class: 'banner amber', role: 'alertdialog' }, h('span', {}, `${state.askUnmute} asks you to turn your mic on`),
       h('button', { class: 'btn sm primary', onclick: () => { state.micOn = true; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderBanners(); } }, 'Turn mic on'),
