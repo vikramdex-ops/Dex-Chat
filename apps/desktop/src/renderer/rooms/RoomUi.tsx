@@ -7,6 +7,8 @@ import type { PublicUser } from '@dex/core';
 import { Avatar, Icon, useToast } from '../ui.tsx';
 import { answer, clearNotice, clock, decline, setMinimized, toggleMute, useCall } from './engine.ts';
 import { Glyph, useDuration } from './parts.tsx';
+import { askEndForEveryone, mayEnd } from '../meet/EndAll.tsx';
+import { useLive } from '../meet/live.ts';
 import './rooms.css';
 
 const Stage = lazy(() => import('./Stage.tsx'));
@@ -37,12 +39,15 @@ export function RoomStage(props: {
  * The Room while it is folded away: an amber "ROOM · 12:04" chip for the title bar with a mic
  * switch. Clicking it unfolds the Room. Nothing shows when there is no Room or it is open.
  */
-export function RoomChip() {
+export function RoomChip({ meId }: { meId?: string }) {
   const room = useCall((s) => s.room);
   const minimized = useCall((s) => s.minimized);
   const muted = useCall((s) => s.muted);
+  const unread = useLive((s) => s.unread);
+  const toast = useToast();
   const duration = useDuration(room?.startedAt);
   if (!room || !minimized || room.purpose) return null;
+  const canEnd = !!meId && mayEnd(room, meId);
   const n = room.participants.length;
   const recording = room.participants.some((p) => p.recording);
   const waiting = room.lobby?.length ?? 0;
@@ -53,10 +58,17 @@ export function RoomChip() {
         <span className="room-chip-text">ROOM · {duration}</span>
         {waiting > 0 && <span className="room-chip-wait" title={`${waiting} waiting in the lobby`}>{waiting} WAITING</span>}
         {recording && <span className="rec-dot" title="This Room is being recorded" />}
+        {unread > 0 && <span className="room-chip-chat" title={unread === 1 ? '1 unread line in the meeting chat' : `${unread} unread lines in the meeting chat`}><Icon name="chat" size={12} />{unread > 99 ? '99+' : unread}</span>}
       </button>
       <button className="room-chip-mic" onClick={toggleMute} aria-pressed={!muted} aria-label={muted ? 'Turn your mic on' : 'Turn your mic off'} title={muted ? 'Mic off · turn it on' : 'Mic on · turn it off'}>
         <Icon name={muted ? 'mic-off' : 'mic'} size={15} />
       </button>
+      {/* the host can end it from any lens, as from the Room's own title block (asked first) */}
+      {canEnd && (
+        <button className="room-chip-end" onClick={() => askEndForEveryone(room, toast)} aria-label="End for everyone" title="End the meeting for everyone (you are asked first)">
+          <span className="mono">END</span>
+        </button>
+      )}
     </div>
   );
 }

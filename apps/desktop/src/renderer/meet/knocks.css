@@ -1,0 +1,111 @@
+/* Who is waiting (meet/LobbyBell.tsx): the title bar's indicator, its list, the corner cards and the
+   lobby strip in a Room. Amber is for people waiting (live, attention); the quieter mark is teal. */
+.knock-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.lobby-bell {
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; flex: none;
+  border-radius: var(--radius-s); font: inherit; cursor: pointer; animation: drop var(--med) var(--ease);
+}
+.lobby-bell.waiting { border: 1px solid var(--amber); background: var(--amber); color: #2b1a00; }
+.lobby-bell.waiting:hover { background: #f9bd63; }
+.lobby-bell.quiet { border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.lobby-bell:focus-visible { outline: none; box-shadow: var(--focus); }
+.lobby-bell-text { font: 700 11px/1 var(--font-mono); letter-spacing: .08em; white-space: nowrap; }
+.lobby-bell.waiting svg { animation: knock-ring 1.2s var(--ease) 2; transform-origin: 50% 10%; }
+@keyframes knock-ring { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(14deg); } 40% { transform: rotate(-12deg); } 60% { transform: rotate(8deg); } }
+
+.lobby-pop { width: min(420px, calc(100vw - 16px)); max-height: min(70vh, 560px); overflow: auto; padding: 6px 0; }
+.lobby-list { display: grid; gap: 4px; }
+.lobby-group { padding: 6px 12px 10px; }
+.lobby-group + .lobby-group { border-top: 1px solid var(--stroke); }
+.lobby-group .tb-head { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 6px; border-bottom: 1px solid var(--stroke-strong); }
+.lobby-group ul { list-style: none; margin: 0; padding: 0; }
+.lobby-note { margin: 6px 0 2px; font-size: 12.5px; }
+.lobby-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--stroke); }
+.lobby-row:last-child { border-bottom: 0; }
+.lobby-row-main { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.lobby-row-main b, .lobby-row-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-row-main small { font-size: 11px; letter-spacing: .04em; }
+.lobby-row-acts { display: flex; gap: 6px; flex: none; }
+.lobby-all { display: flex; justify-content: flex-end; padding-top: 6px; }
+
+.knock-who { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.knock-who b { overflow-wrap: anywhere; }
+.knock-tag {
+  font: 700 9.5px/1.4 var(--font-mono); letter-spacing: .08em; padding: 1px 5px; border-radius: 2px;
+  border: 1px solid currentColor; color: var(--amber-ink); white-space: nowrap;
+}
+
+.knock-cards { top: auto; bottom: 20px; z-index: 40; }
+.knock-card { border-top-color: var(--amber); }
+.knock-where { font-size: 12.5px; }
+
+/* the lobby across the top of a Room you host */
+.lobby-strip {
+  position: absolute; z-index: 4; top: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 10px 8px 12px;
+  background: var(--amber); color: #2b1a00; border-radius: var(--radius-s); box-shadow: 0 10px 28px rgba(19, 43, 46, .22);
+}
+.lobby-strip-cap { display: inline-flex; align-items: center; gap: 6px; font: 700 11px/1 var(--font-mono); letter-spacing: .08em; }
+.lobby-strip ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.lobby-strip li { display: inline-flex; align-items: center; gap: 6px; }
+.lobby-strip .knock-tag { color: #2b1a00; }
+.lobby-strip .rb-btn { height: 28px; padding: 0 10px; }
+
+@media (max-width: 720px) {
+  .lobby-bell { height: 40px; padding: 0 9px; }
+  .lobby-bell.quiet .lobby-bell-text { display: none; }
+  .lobby-row { flex-wrap: wrap; }
+  .lobby-row-acts { width: 100%; justify-content: flex-end; }
+  .lobby-row-acts .btn { min-height: 40px; }
+  .knock-cards { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .lobby-strip { left: 12px; right: 12px; transform: none; max-width: none; }
+  .lobby-strip .rb-btn { height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lobby-bell, .lobby-bell.waiting svg { animation: none; }
+}
+
+/* Nib's card (meet/KnockCard.tsx) */
+.knock-card-who { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.knock-since { font-size: 11px; letter-spacing: .06em; color: var(--amber-ink); }
+.k-knock.waiting .nib-card-tb { box-shadow: inset 3px 0 0 var(--amber); }
+.k-knock .nib-line svg { vertical-align: -2px; margin-right: 6px; color: var(--ok); }
+
+/* End for everyone, beside Leave Room in the Room's title block (meet/EndAll.tsx) */
+.room-end-all {
+  margin-left: auto; white-space: nowrap; display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
+  border: 1.5px solid var(--danger); border-radius: var(--radius-s); background: none; color: var(--danger);
+  font-weight: 700; font-size: 13px; transition: background var(--fast);
+}
+.room-end-all:hover { background: var(--danger-soft); }
+.room-end-all:focus-visible { outline: none; box-shadow: var(--focus); }
+.room-end-all + .room-leave { margin-left: 8px; }
+
+/* the folded Room's chip: unread meeting chat, and End for a host */
+.room-chip-chat { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; font: 700 10px/1 var(--font-mono); color: var(--accent-text); background: var(--accent); border-radius: 2px; }
+.room-chip .room-chip-end { padding: 0 9px; border-left: 1px solid var(--amber) !important; color: var(--danger); }
+.room-chip .room-chip-end:hover { background: var(--danger-soft); }
+.room-chip-end .mono { font: 700 10.5px/1 var(--font-mono); letter-spacing: .08em; }
+
+/* the Chat tab's unread count: teal (amber is for the lobby and hands) */
+.room-tab-badge.chat { color: var(--accent-text); background: var(--accent); }
+
+/* a meeting chat line while the Chat tab is closed (meet/ChatPeek.tsx) */
+.room-chat-peek {
+  position: absolute; z-index: 4; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: min(520px, calc(100% - 24px));
+  display: grid; gap: 3px; text-align: left; padding: 8px 12px; cursor: pointer;
+  background: var(--layer-solid); color: var(--text); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-s); box-shadow: 0 10px 28px rgba(19, 43, 46, .18); font: inherit; animation: rise 240ms var(--ease);
+}
+.room-chat-peek:focus-visible { outline: none; box-shadow: var(--focus); }
+.room-chat-peek-who { font: 700 10.5px/1.2 var(--font-mono); letter-spacing: .08em; color: var(--accent-ink); }
+.room-chat-peek-text { font-size: 13px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .room-end-all { height: 40px; }
+  .room-chat-peek { left: 12px; right: 12px; transform: none; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-chat-peek { animation: none; }
+}

@@ -45,6 +45,8 @@ import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
 import { setSelfUser, startCalls } from './rooms/engine.ts';
 import { startMeetLive } from './meet/live.ts';
+import { openKnocks, startKnocks } from './meet/knocks.ts';
+import { KnockCards, LobbyBell } from './meet/LobbyBell.tsx';
 import { RecapHost } from './meet/threadcards.tsx';
 import { joinAny, openWebinar, startWebinars } from './meet/webinar/store.ts';
 import { WebinarSeat } from './meet/webinar/Seat.tsx';
@@ -402,7 +404,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     void startCalendar(session.me.id, () => usersRef.current);
     setSelfUser(session.me.id);
     startCalls(session.deviceId, (t, b) => window.dex.notify(tr(t), tr(b)), (id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
-    startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone');
+    startMeetLive((id) => usersRef.current.find((u) => u.id === id)?.displayName ?? 'Someone', () => session.me.id);
+    // who waits in the lobbies of meetings you host, wherever you are in the app
+    if (session.me.role !== 'bot') startKnocks();
     startWebinars();
     startBotMarks();
     if (session.me.role !== 'guest' && session.me.role !== 'bot') startNotices();
@@ -575,6 +579,10 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       else if (target === 'pulse') { setLens('pulse'); setSheet(null); }
       else if (target === 'floor') { setLens('directory'); setSheet(null); if (m[2]) requestFloor(m[2]); }
       else if (target === 'notices') { setLens('notices'); setSheet(null); if (m[2]) openNotice(m[2]); }
+      // a notification about someone waiting: the indicator's list opens (Admit and Decline are there)
+      else if (target === 'lobby') { setSheet(null); openKnocks(true); }
+      // a meeting chat notification: back to the Room, its Chat tab open
+      else if (target === 'meetchat') { setSheet(null); window.dispatchEvent(new CustomEvent('dex-meet-chat')); }
       else if (target === 'meet') {
         setLens('meet'); setSheet(null);
         const id = parseMeetingId(m[2] ?? '');
@@ -637,7 +645,8 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         <div className="brand"><img src={logo} alt="" /><span>Dexterity Connect</span></div>
         <div className="titlebar-mid">
           <LensBar lens={lens} setLens={(l) => { setLens(l); setSheet(null); }} onGoTo={() => setPalette(true)} />
-          <RoomChip />
+          <RoomChip meId={session.me.id} />
+          <LobbyBell />
           <button className="goto goto-phone" onClick={() => setPalette(true)} aria-label="Go to a person, conversation or command"><span className="goto-label">Go to</span><span className="goto-caret" aria-hidden="true">▸</span></button>
         </div>
         <div className="titlebar-right">
@@ -774,6 +783,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}
       <ReminderCards users={users} meId={session.me.id} jump={jump} />
       <MeetingCards users={users} meId={session.me.id} />
+      <KnockCards />
       {share && <ShareDialog req={share} session={session} onDone={(convId) => { setShare(null); if (convId) { const c = conversations.get(convId); if (c) openConversation(c.id, c.kind); } }} />}
       <RequiredUpdate state={state} />
     </div>

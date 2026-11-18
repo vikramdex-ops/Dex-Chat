@@ -12,6 +12,7 @@ import { LEAVE_WORD, STATUS_WORD, dayLabel, firstName, qtyWords } from './words.
 import { formatTime } from '../time.ts';
 import { act } from './Tray.tsx';
 import { HolidayCircularCard, HolidaysDoneCard } from './holidays.tsx';
+import { KnockCard } from '../meet/KnockCard.tsx';
 
 const go = (url: string) => window.dispatchEvent(new CustomEvent('dex-deeplink', { detail: url }));
 // Write on a person's row: your own row opens your day sheet (there is no conversation with
@@ -30,6 +31,7 @@ export default function NibMessageCard({ m, meId, users }: { m: Message; meId: s
   const { card, error, loading } = cardFor(ref.kind, ref.ref, m.id);
   if (loading) return <div className="nib-card loading" aria-busy="true"><span className="spinner" /></div>;
   if (error || !card) return <div className="nib-card gone"><span className="faint">{m.body}</span></div>;
+  if (card.kind === 'knock') return <KnockCard knock={card.knock} fallback={m.body} meId={meId} users={users} onChange={(knock) => setCard('knock', ref.ref, { kind: 'knock', knock })} frame={Frame} />;
   switch (card.kind) {
     case 'lead': return <LeadCard v={card.lead} users={users} />;
     case 'register': return <RegisterCard r={card.register} sentAt={card.sentAt} users={users} />;
