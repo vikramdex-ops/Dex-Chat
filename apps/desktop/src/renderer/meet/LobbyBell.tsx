@@ -161,24 +161,13 @@ export function KnockCards() {
 
 /**
  * The lobby across the top of a Room you host: everyone waiting, with Admit, Decline and Admit
- * all, whichever panel tab is open. Announced to screen readers as people arrive.
+ * all, whichever panel tab is open. Newcomers are announced by the Room's toast (rooms/Stage.tsx).
  */
 export function LobbyStrip({ room, nameOf, isGuest, run }: { room: RoomInfo; nameOf: (userId: string) => string; isGuest: (userId: string) => boolean; run: (p: Promise<unknown>) => void }) {
   const waiting = room.lobby ?? [];
-  const [said, setSaid] = useState('');
-  const seen = useRef<Set<string> | null>(null);
-  useEffect(() => {
-    const before = seen.current;
-    seen.current = new Set(waiting.map((l) => l.deviceId));
-    if (!before) { if (waiting.length) setSaid(waiting.length === 1 ? `${nameOf(waiting[0].userId)} is waiting in the lobby` : `${waiting.length} people are waiting in the lobby`); return; }
-    const fresh = waiting.filter((l) => !before.has(l.deviceId));
-    if (fresh.length === 1) setSaid(`${nameOf(fresh[0].userId)} is waiting in the lobby`);
-    else if (fresh.length > 1) setSaid(`${fresh.length} people are waiting in the lobby`);
-  }, [waiting, nameOf]);
   const admit = (deviceIds: string[] | 'all', allow: boolean) => run(window.dex.request('room.admit', { roomId: room.id, ...(deviceIds === 'all' ? { all: true } : { deviceIds }), allow }));
   return (
     <>
-      <span className="knock-sr" role="status" aria-live="assertive">{said}</span>
       {waiting.length > 0 && (
         <section className="lobby-strip" aria-label={waiting.length === 1 ? 'Lobby: 1 waiting' : `Lobby: ${waiting.length} waiting`}>
           <span className="lobby-strip-cap mono"><Icon name="bell" size={13} />LOBBY · {waiting.length}</span>

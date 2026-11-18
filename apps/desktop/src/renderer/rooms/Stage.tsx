@@ -231,8 +231,19 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [minimized, picker, adding, pop, consent]);
-  // the host sees people knocking whatever tab is open: the lobby strip across the sheet (meet/LobbyBell.tsx)
+  // the host sees people knocking whatever tab is open: the lobby strip across the sheet (meet/LobbyBell.tsx),
+  // and hears about newcomers in a toast (announced to screen readers)
   const waiting = room.lobby ?? [];
+  const knocked = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    // people already waiting when the sheet opened are on the strip; tell the host about newcomers
+    const seen = knocked.current;
+    knocked.current = new Set(waiting.map((l) => l.deviceId));
+    if (!seen) return;
+    const fresh = waiting.filter((l) => !seen.has(l.deviceId));
+    if (fresh.length === 1) toast(`${users.get(fresh[0].userId)?.displayName ?? 'Someone'} is waiting in the lobby`);
+    else if (fresh.length > 1) toast(`${fresh.length} people are waiting in the lobby`);
+  }, [waiting, users, toast]);
   // unread on the Chat tab: the chat it shows. With guests or people from outside (or once anyone used it)
   // that is the meeting chat, whose lines are also saved in the meeting's thread, so they are counted once
   const liveUnread = useLive((s) => s.unread);
