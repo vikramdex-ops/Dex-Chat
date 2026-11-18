@@ -389,6 +389,9 @@ pieces rather than copied.
   the computer it runs on. The guest's own shared screen carries *VIEW ONLY: a screen shared from
   a browser is view only…*, people in the app see *VIEW ONLY · BROWSER* on it, and nobody is
   offered Give control or Ask for control for it (from a browser to a browser or to the app).
+- **Administrator windows and UAC prompts** stay out of reach: the input helper runs with the
+  presenter's own rights, so Windows keeps its input off elevated windows and the secure desktop
+  (docs/HELP-DESK.md); the presenter answers those prompts.
 - **Shift+Esc** takes control back at once, from anywhere, as well as Ctrl+Alt+Shift+S (support
   sessions too). Both are blocked chords, so the person in control can never send them.
 - **The hub** keeps one grant per Room (`apps/hub/src/meet-control.ts`, `room.control.*`): only the
