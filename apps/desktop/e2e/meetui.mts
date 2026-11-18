@@ -328,7 +328,7 @@ try {
     if (ok) {
       await g.locator('.share .share-note', { hasText: 'view only' }).waitFor({ timeout: 5000 });
       await gBoth(g, 'meetui-13-guest-shares-view-only');
-      await b.page.locator('.room-share .ctl-flag', { hasText: 'BROWSER' }).waitFor({ timeout: 20000 });
+      await b.page.locator('.room-share .ctl-flag', { hasText: 'ब्राउज़र' }).waitFor({ timeout: 20000 }); // VIEW ONLY · BROWSER, in Hindi
       assert.equal(await b.page.locator('.room-share .ctl-ask').count(), 0, 'nobody can ask for a browser\'s screen');
       await both(b.page, 'meetui-14-viewer-browser-view-only-hi');
       await g.getByRole('button', { name: 'Stop sharing' }).click();
