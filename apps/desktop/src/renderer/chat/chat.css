@@ -232,7 +232,7 @@ body.resizing { user-select: none; cursor: col-resize; }
 
 /* ------------------------------------------------------------------ a message */
 .msg { position: relative; padding: 3px 10px; margin: 0 -10px; border-radius: 6px; transition: background var(--fast); }
-.msg:hover { background: var(--subtle); }
+.msg:hover:not(:has(> .spine-tools)), .msg.tools-on { background: var(--subtle); }
 .msg.pending { opacity: .62; }
 .msg.failed { opacity: 1; }
 .msg.mentioned { background: var(--amber-soft); box-shadow: inset 3px 0 0 var(--amber); }
@@ -280,7 +280,13 @@ body.resizing { user-select: none; cursor: col-resize; }
   position: absolute; left: calc(var(--spine-x) - 66px - 15px); top: -3px; z-index: 5; display: none; flex-direction: column; gap: 1px;
   width: 30px; padding: 2px 0; border: 1px solid var(--stroke-strong); border-radius: 5px; background: var(--layer-solid); box-shadow: var(--shadow-1);
 }
-.msg:hover > .spine-tools, .spine-tools:focus-within, .spine-tools.open { display: flex; }
+/* shown for one message at a time (chat/toolRail.ts: the one under the pointer, kept while the pointer
+   travels to its column), for the message the keyboard is in, and while one of its menus is open */
+.msg.tools-on > .spine-tools, .msg:has(> :not(.spine-tools) :focus-visible) > .spine-tools, .spine-tools:focus-within, .spine-tools.open { display: flex; }
+/* the ground between the message and its column on the spine belongs to the message while it shows them
+   (under the sender's tile, which stays clickable) */
+.msg.tools-on::before { content: ''; position: absolute; top: 0; bottom: 0; right: 100%; width: 30px; z-index: 0; }
+.layout-cards .msg.tools-on::before, .track-reply .msg.tools-on::before { content: none; }
 .spine-tools > button { width: 28px; height: 26px; margin: 0 auto; display: grid; place-items: center; border: 0; border-radius: 3px; background: none; color: var(--text-2); }
 .spine-tools > button:hover { background: var(--subtle-2); color: var(--text); }
 .spine-tools > button.on { color: var(--accent-ink); background: var(--accent-soft); }
@@ -349,7 +355,20 @@ body.resizing { user-select: none; cursor: col-resize; }
   border: 1px solid var(--stroke-strong); box-shadow: 0 6px 22px rgba(19, 43, 46, .10); transition: border-color var(--fast), box-shadow var(--fast);
 }
 .dock:focus-within { border-color: var(--accent); box-shadow: 0 6px 26px rgba(28, 118, 128, .18); }
-.dock textarea { flex: 1; min-width: 0; max-height: 260px; padding: 8px 4px; border: 0; outline: none; resize: none; background: none; font: 14px/1.45 var(--font-body); user-select: text; }
+.dock textarea { flex: 1; min-width: 0; max-height: 260px; padding: 8px 4px; border: 0; outline: none; resize: none; background: none; font: 14px/1.45 var(--font-body); user-select: text; overflow-wrap: anywhere; scrollbar-width: thin; }
+/* several lines: the pill opens into a drawing-sheet box (squarer corners), its tools and Send kept on the last line */
+.dock { transition: border-color var(--fast), box-shadow var(--fast), border-radius var(--med) var(--ease); }
+.dock.multi { border-radius: 12px; }
+.dock.multi > textarea { padding-top: 7px; }
+/* a narrow Pane or a phone: the text takes the whole width above, the tools and Send sit on a row under it */
+.dock-wrap { container: dock / inline-size; }
+@container dock (max-width: 560px) {
+  .dock.multi { flex-wrap: wrap; row-gap: 0; padding-left: 6px; }
+  .dock.multi > textarea { order: -1; flex: 1 1 100%; padding: 6px 8px 4px; }
+  .dock.multi > .dock-tools { border-right: 0; padding-top: 2px; border-top: 1px solid var(--stroke); margin-right: 0; flex: 1; align-self: auto; }
+  .dock.multi > .send-split { margin-top: 3px; }
+}
+@media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 .dock textarea:focus-visible { box-shadow: none; }
 .dock-tools { position: relative; display: flex; align-items: center; gap: 0; padding-right: 4px; margin-right: 2px; border-right: 1px solid var(--stroke); align-self: stretch; }
 .dock-tools .icon-btn { width: 32px; height: 32px; border-radius: 16px; align-self: flex-end; margin-bottom: 1px; }
@@ -451,7 +470,7 @@ body.resizing { user-select: none; cursor: col-resize; }
 .emoji-grid button:hover, .emoji-grid button:focus-visible { background: var(--layer-solid); border-color: var(--accent); }
 .msg.tools-up > .spine-tools { top: auto; bottom: -3px; }
 /* a run paints only inside itself (content-visibility); while its tools are out it paints over its neighbours */
-.run:hover, .run:focus-within, .run:has(.spine-tools.open) { content-visibility: visible; }
+.run:hover, .run:focus-within, .run:has(.msg.tools-on), .run:has(.spine-tools.open) { content-visibility: visible; }
 .dock textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* names take their tile's colour; on dark sheets that colour is lifted so it reads */
 :root[data-theme='dark'] .run-name[style] { filter: brightness(1.75) saturate(.85); }
@@ -583,7 +602,7 @@ body.resizing { user-select: none; cursor: col-resize; }
   max-width: min(640px, 100%); margin: 0; padding: 6px 10px 6px 11px; border: 1px solid var(--stroke-strong); border-radius: 4px;
   background: var(--layer-solid); box-shadow: 0 1px 0 rgba(19, 43, 46, .05);
 }
-.layout-cards .msg:hover { background: var(--layer-solid); border-color: color-mix(in srgb, var(--accent) 45%, var(--stroke-strong)); }
+.layout-cards .msg:is(:hover, .tools-on) { background: var(--layer-solid); border-color: color-mix(in srgb, var(--accent) 45%, var(--stroke-strong)); }
 .layout-cards .run.mine .msg { background: color-mix(in srgb, var(--accent) 7%, var(--layer-solid)); border-color: color-mix(in srgb, var(--accent) 32%, var(--stroke-strong)); }
 .layout-cards .msg.mentioned { background: var(--amber-soft); box-shadow: inset 3px 0 0 var(--amber); }
 .layout-cards .msg.tracked { background: var(--accent-soft); border-color: var(--accent); border-radius: 4px; }

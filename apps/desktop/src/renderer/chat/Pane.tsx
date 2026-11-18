@@ -10,6 +10,8 @@ import { AttachmentTray, FilesPanel, Lightbox, MessageFiles, filesSupported, sta
 import type { Attachment } from './files.tsx';
 import { Avatar, Icon, Popover, colorFor, confirmAction, relativeTime, useToast, presenceFor } from '../ui.tsx';
 import type { IconName, Presence } from '../ui.tsx';
+import { useAutoGrow } from '../autogrow.ts';
+import { fitTools, startToolRail } from './toolRail.ts';
 import { SPACE_REF_RE, isEmojiOnly, openSpaces, renderBody, spaceName } from './format.tsx';
 import {
   addConversation, chatState, discardFailed, loadLatest, loadOlder, markRead, notifyTyping, retrySend, sendMessage,
@@ -177,6 +179,8 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   const narrow = useNarrow();
   const layout = useMsgLayout();
   useEffect(() => { setSelected(null); }, [convId]);
+  // which message shows its tool column: the one under the pointer, kept while the pointer travels to it
+  useEffect(() => startToolRail(), []);
   useEffect(() => {
     if (!selected) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setSelected(null); } };
@@ -950,11 +954,7 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
 
 // ------------------------------------------------------------------ one message
 /** The tool column hangs down from a message; near the bottom of the timeline it hangs up instead. */
-function toolsFit(e: React.SyntheticEvent<HTMLDivElement>): void {
-  const el = e.currentTarget;
-  const box = el.closest('.timeline')?.getBoundingClientRect();
-  if (box) el.classList.toggle('tools-up', el.getBoundingClientRect().top + 150 > box.bottom);
-}
+const toolsFit = (e: React.SyntheticEvent<HTMLDivElement>): void => fitTools(e.currentTarget);
 
 interface ItemProps { ctx: Ctx; m: AnyMessage; onTrack?: (id: string) => void; activeTrack?: string | null; inTrack?: boolean }
 
@@ -1063,7 +1063,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
   return (
     <div data-mid={m.id} tabIndex={-1} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
       onPointerDown={refPayload && !ctx.selected && !editing ? (e) => startHoldDrag(e, refPayload, ctx.users) : undefined}
-      onMouseEnter={inTrack ? undefined : toolsFit} onFocus={inTrack ? undefined : toolsFit}
+      onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
       {ctx.cards && !inTrack && <span className="card-time mono" aria-hidden="true">{clock(m.createdAt)}</span>}
       {seen && <span className={`notch ${seen.state}`} role={seen.tag ? 'img' : undefined} aria-label={seen.tag || undefined} />}
@@ -1256,7 +1256,8 @@ function EditBox({ m, ctx, onDone }: { m: AnyMessage; ctx: Ctx; onDone: () => vo
   // Space references in the message keep pointing at their Spaces while it is edited
   const refs = useMemo(() => [...m.body.matchAll(SPACE_REF_RE)].map((x) => ({ id: x[1], name: spaceName(x[1]) ?? '' })).filter((x) => x.name), [m.body]);
   const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); autoGrow(el); } }, []);
+  useAutoGrow(ref, text);
+  useEffect(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, []);
   const save = async () => {
     const body = toWire(text, ctx.users, ctx.conv, refs);
     if (!body.trim()) return;
@@ -1265,7 +1266,7 @@ function EditBox({ m, ctx, onDone }: { m: AnyMessage; ctx: Ctx; onDone: () => vo
   };
   return (
     <div className="edit-box">
-      <textarea ref={ref} className="input" value={text} onChange={(e) => { setText(e.target.value); autoGrow(e.target); }}
+      <textarea ref={ref} className="input" value={text} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void save(); } if (e.key === 'Escape') { e.preventDefault(); onDone(); } }} />
       <div className="edit-hint faint">Enter to save · Esc to cancel</div>
     </div>
@@ -1285,19 +1286,8 @@ function WritingLine({ k, users }: { k: string; users: Map<string, PublicUser> }
 }
 
 // ------------------------------------------------------------------ the Dock (composer)
-const grownFor = new WeakMap<HTMLTextAreaElement, { len: number; width: number }>();
-const autoGrow = (el: HTMLTextAreaElement) => {
-  // empty: one row (a long placeholder in a narrow Pane must not make it grow)
-  if (!el.value) { el.style.height = ''; grownFor.delete(el); return; }
-  // more text that still fits: nothing to measure. Letting the box collapse to measure it lays out
-  // the whole Pane twice a key, which a long timeline makes slow.
-  const was = grownFor.get(el);
-  const width = el.clientWidth;
-  grownFor.set(el, { len: el.value.length, width });
-  if (was && was.width === width && el.value.length >= was.len && el.scrollHeight <= el.clientHeight) return;
-  el.style.height = 'auto';
-  el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
-};
+/** Lines the Dock grows to before it scrolls: about 260 px, or two fifths of the window on a short screen (a phone keeps its timeline in view). */
+const dockLines = () => Math.max(4, Math.min(12, Math.floor((window.innerHeight * 0.4) / 20)));
 
 /** Stored bodies use <@id> and <#space>; while typing people see @Name and #Space name. */
 function toEditable(body: string, users: Map<string, PublicUser>): string {
@@ -1403,7 +1393,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       const d = (e as CustomEvent).detail as { key: string; text: string };
       if (d.key !== key) return;
       setText((t) => { const v = t && !/\s$/.test(t) ? `${t} ${d.text}` : `${t}${d.text}`; setDraft(key, v); return v; });
-      requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); autoGrow(el); } });
+      requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
     };
     window.addEventListener('dex-insert', onInsert);
     return () => window.removeEventListener('dex-insert', onInsert);
@@ -1453,22 +1443,24 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
     const tags = hashTags.filter((t) => t.tag.startsWith(q)).slice(0, 6).map((t) => ({ kind: 'tag' as const, id: `t-${t.tag}`, tag: t.tag, count: t.count }));
     return [...tags, ...spaces];
   }, [hash, hashTags, openList]);
-  useEffect(() => { if (ref.current) autoGrow(ref.current); }, [text]);
+  // grows line by line (then scrolls; the shared helper marks a grown box .grown), and changes shape
+  // once it holds more than one line. The shape follows the text, not the width: once several lines
+  // it stays so until the text is cleared or clearly shorter, so a Dock that widens as it changes
+  // shape on a phone never flips back and forth.
+  useAutoGrow(ref, text, dockLines());
+  const [multi, setMulti] = useState(false);
+  const multiAt = useRef(0);
+  useLayoutEffect(() => {
+    const grown = !!ref.current?.classList.contains('grown') || text.includes('\n');
+    if (!multi && grown) { multiAt.current = text.length; setMulti(true); }
+    else if (multi && (!text || (!grown && text.length < multiAt.current * 0.85))) setMulti(false);
+  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Where the caret goes once a chosen suggestion is in the text (before the next key press lands). */
   const caretTo = useRef<number | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (el && caretTo.current !== null) { el.focus(); el.setSelectionRange(caretTo.current, caretTo.current); caretTo.current = null; }
   }, [text]);
-  // Panes change width as others open and close beside them: wrap the text again
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    let w = el.clientWidth;
-    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; autoGrow(el); } });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const candidates = useMemo(() => {
     if (!mention) return [];
@@ -1699,7 +1691,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       <AttachmentTray items={attachments} onRemove={(k) => setAttachments((l) => l.filter((a) => a.key !== k))} />
       <RefChips items={refs} users={ctx.users} onRemove={(i) => setRefs((l) => l.filter((_, j) => j !== i))} />
       {dockDrop.valid && <span className={`ref-drop-label dock-label${dockDrop.over ? ' on' : ''}`}>{dockDrop.over ? 'Drop to reference here' : 'Drop on the Dock to add it to your message'}</span>}
-      <div className={`dock${text.trim() || (ready.length && !uploading) || refs.length ? ' has-text' : ''}${recording ? ' recording' : ''}${dockDrop.valid ? ' ref-valid' : ''}${dockDrop.over ? ' ref-over' : ''}`}>
+      <div className={`dock${multi ? ' multi' : ''}${text.trim() || (ready.length && !uploading) || refs.length ? ' has-text' : ''}${recording ? ' recording' : ''}${dockDrop.valid ? ' ref-valid' : ''}${dockDrop.over ? ' ref-over' : ''}`}>
         <div className="dock-tools">
           {canAttach && (
             <>
@@ -1773,7 +1765,7 @@ function Dock({ convId, parentId, ctx, live, placeholder, direct = false }: { co
       {dockDialog === 'form' && <FormBuilder conv={ctx.conv} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'decision' && <DecisionBuilder conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
       {restyling && <RestyleSheet mode="draft" text={text} style={restyling} users={ctx.users} onClose={() => { setRestyling(null); ref.current?.focus(); }}
-        onUse={(v) => { setText(v); setDraft(key, v); requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(v.length, v.length); autoGrow(el); } }); }} />}
+        onUse={(v) => { setText(v); setDraft(key, v); requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(v.length, v.length); } }); }} />}
       {dockDialog === 'poll' && <PollDialog conv={ctx.conv} parentId={parentId} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'remind' && <RemindDialog users={ctx.users} meId={ctx.meId} onClose={() => setDockDialog(null)} />}
       {dockDialog === 'help' && (
