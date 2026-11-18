@@ -181,8 +181,10 @@ How the draft is made, all on your PC:
    in the order written.
 2. Each part is ranked against the kinds of triggers, conditions and steps by keyword cues and by a
    small sentence model, **all-MiniLM-L6-v2** (quantized, 23 MB), which runs in a background worker
-   on the ONNX runtime’s WebAssembly build. The model ships with the app and loads the first time
-   you use the box; nothing is sent anywhere.
+   on the ONNX runtime’s WebAssembly build. The model ships with the desktop app and loads the first
+   time you use the box; nothing is sent anywhere. Three minutes after its last use it is unloaded
+   (it holds about 140 MB) and loads again in under a second. The Android and iPhone apps draft
+   with the keyword cues alone.
 3. The details are found and resolved against your office: Spaces (“the design channel” → Design),
    people (“Ravi”, “@priya”, “me”) and groups (“the document review group”), file types, reactions
    (“a thumbs up”, ✅, `:approved:`), quoted words and `/patterns/`, times (“office hours”,
