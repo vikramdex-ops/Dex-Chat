@@ -20,10 +20,13 @@ async function seeded(people = 30, conversations = 40, messages = 4000) {
 }
 
 test('the Switchboard list is the same as each conversation looked up on its own', async () => {
-  const { hub, priya, viewer } = await seeded();
+  const { hub, priya, owner, viewer } = await seeded();
   // some unread, mentions, a muted and a pinned conversation, a moderator, read receipts off
   const list = await priya.request('conv.list');
   assert.equal(list.length, 40);
+  // the seeded history may leave no unread mention of this person (its message ids vary by run): make one
+  const direct = await owner.request('conv.create', { kind: 'direct', members: [viewer.id] });
+  await send(owner, direct.id, `<@${viewer.id}> the revised GA is in`);
   await priya.request('conv.mute', { convId: list[3].id, muted: true });
   await priya.request('conv.organise', { convId: list[4].id, pinned: true, section: 'Clients' });
   hub.store.db.prepare('UPDATE users SET receipts = 0 WHERE id = (SELECT id FROM users WHERE id != ? LIMIT 1)').run(viewer.id);

@@ -33,6 +33,10 @@ import { RoomPointers } from '../pointers/surfaces.tsx';
 import { ControlLayer, ControlMenuItems, ShareControl } from '../meet/Control.tsx';
 import { WEBINAR_TAB_LIST, isWebinarTab } from '../meet/webinar/tabs.ts';
 import type { WebinarTab } from '../meet/webinar/tabs.ts';
+import { LobbyStrip } from '../meet/LobbyBell.tsx';
+import { ChatPeek } from '../meet/ChatPeek.tsx';
+import { EndForEveryone } from '../meet/EndAll.tsx';
+import { setChatOpen, useLive } from '../meet/live.ts';
 import '../meet/meet.css';
 
 const MeetPanel = lazy(() => import('../meet/MeetPanel.tsx'));
@@ -227,11 +231,12 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [minimized, picker, adding, pop, consent]);
-  // the host hears about people knocking, even with another tab open
+  // the host sees people knocking whatever tab is open: the lobby strip across the sheet (meet/LobbyBell.tsx),
+  // and hears about newcomers in a toast (announced to screen readers)
   const waiting = room.lobby ?? [];
   const knocked = useRef<Set<string> | null>(null);
   useEffect(() => {
-    // people already waiting when the sheet opened are in the People tab; tell the host about newcomers
+    // people already waiting when the sheet opened are on the strip; tell the host about newcomers
     const seen = knocked.current;
     knocked.current = new Set(waiting.map((l) => l.deviceId));
     if (!seen) return;
@@ -239,6 +244,23 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
     if (fresh.length === 1) toast(`${users.get(fresh[0].userId)?.displayName ?? 'Someone'} is waiting in the lobby`);
     else if (fresh.length > 1) toast(`${fresh.length} people are waiting in the lobby`);
   }, [waiting, users, toast]);
+  // unread on the Chat tab: the chat it shows. With guests or people from outside (or once anyone used it)
+  // that is the meeting chat, whose lines are also saved in the meeting's thread, so they are counted once
+  const liveUnread = useLive((s) => s.unread);
+  const roomLines = useLive((s) => s.chat.get(room.parentId ?? room.id)?.length ?? 0);
+  const chatConv = useChat((s) => s.conversations.get(room.convId));
+  const roomChatShown = !chatConv || !!room.visitors?.length || roomLines > 0 || room.participants.some((p) => !chatConv.members.includes(p.userId));
+  const chatUnread = roomChatShown ? liveUnread : chatConv?.unread ?? 0;
+  useEffect(() => {
+    // folded away, the chat is not being read; open again on the Chat tab, it is
+    if (minimized) setChatOpen(false);
+  }, [minimized]);
+  // a meeting chat notification was clicked: back to the Room, on its Chat tab
+  useEffect(() => {
+    const on = () => { setMinimized(false); setTab('chat'); };
+    window.addEventListener('dex-meet-chat', on);
+    return () => window.removeEventListener('dex-meet-chat', on);
+  }, []);
   const activeSpeaker = useActiveSpeaker();
 
   const isHost = room.hostId === meId || (room.coHosts ?? []).includes(meId);
@@ -355,6 +377,8 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
         )}
         <section ref={fieldRef} className={`room-field layout-${layout}${shareStream && layout === 'presentation' ? ' sharing' : ''}`} aria-label="People in the Room">
           <BreakoutBanner room={room} />
+          {isHost && <LobbyStrip room={room} nameOf={nameOf} isGuest={isWebGuest} run={run} />}
+          {tab !== 'chat' && <ChatPeek onOpen={() => setTab('chat')} />}
           {room.occurrenceId && <MeetingAids room={room} meId={meId} meDevice={meDevice} users={users} onTab={(t) => setTab(t)} />}
           {room.meetingKind === 'webinar' && <Suspense fallback={null}><WebinarBar room={room} meId={meId} meDevice={meDevice} users={users} /></Suspense>}
           {unmuteAsk && muted && (
@@ -399,6 +423,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
                   <span>{t.label}{t.id === 'people' ? ` · ${room.participants.length}` : ''}</span>
                   {t.id === 'people' && isHost && waiting.length > 0 && <i className="room-tab-badge" aria-label={`${waiting.length} waiting`}>{waiting.length}</i>}
                   {t.id === 'people' && hands.length > 0 && !(isHost && waiting.length) && <i className="room-tab-badge hand" aria-label={`${hands.length} hands raised`}>{hands.length}</i>}
+                  {t.id === 'chat' && tab !== 'chat' && chatUnread > 0 && <i className="room-tab-badge chat" aria-label={chatUnread === 1 ? '1 unread message' : `${chatUnread} unread messages`}>{chatUnread > 99 ? '99+' : chatUnread}</i>}
                 </button>
               ))}
             </nav>
@@ -478,7 +503,11 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
                 <Glyph name="fold" size={16} />
               </button>
               {canFloat && <button className="tb-link square" title="Float the video in a small window on top of everything" aria-label="Float" onClick={() => void float()}><Glyph name="float" size={16} /></button>}
-              <button className="room-leave" onClick={leave} title={isHost && others.length ? 'Leave the Room: it carries on for everyone else' : 'Leave the Room'}>Leave Room<Glyph name="door" size={16} /></button>
+              {/* leaving and ending, together at the end of the title block (they wrap onto their own line when narrow) */}
+              <span className="tb-exit">
+                <EndForEveryone room={room} meId={meId} className="room-end-all" />
+                <button className="room-leave" onClick={leave} title={isHost && others.length ? 'Leave the Room: it carries on for everyone else' : 'Leave the Room'}>Leave Room<Glyph name="door" size={16} /></button>
+              </span>
             </div>
           </div>
         </aside>
@@ -703,9 +732,6 @@ function PeoplePanel({ room, seats, zones, users, meId, muted, camera, isHost, i
               )}
             </details>
           )}
-          <button className="room-end" title="Everyone leaves and the meeting closes"
-            onClick={() => void confirmAction({ title: 'End the meeting for everyone?', body: 'Everyone leaves the Room and the meeting closes. To go without ending it, use Leave Room instead.', confirm: 'End for everyone', cancel: 'Keep it going', danger: true })
-              .then((ok) => { if (ok) run(host('room.end', {})); })}>End for everyone</button>
         </section>
       )}
       {!isHost && room.hostId && room.hostId !== meId && (

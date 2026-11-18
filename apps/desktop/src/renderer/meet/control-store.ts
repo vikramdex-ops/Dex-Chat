@@ -7,7 +7,7 @@
 // leaving and the meeting ending all end it.
 import { useSyncExternalStore } from 'react';
 import { tr } from '../i18n/index.ts';
-import { controlEndText } from '@dex/core';
+import { controlEndText, isWebGuest } from '@dex/core';
 import type { ControlEndReason, RoomControl, RoomInfo } from '@dex/core';
 import { callState, onRoomData, selfDevice, sendRoomDataTo, sharedSource, tell, toggleScreen, watchCall, setMinimized } from '../rooms/engine.ts';
 
@@ -128,7 +128,8 @@ export async function giveControl(deviceId: string, userId: string): Promise<voi
   if (!res.control) throw new Error(res.error ?? 'Remote control could not start on this PC.');
   set({ local: { roomId: r.id, controllerDevice: deviceId, controllerId: userId, seen: false }, consent: null });
   try {
-    const c: RoomControl = await window.dex.request('room.control.grant', { roomId: r.id, deviceId });
+    // a guest in a browser: this presenter picked them on purpose (their menu item, or Accept on their ask)
+    const c: RoomControl = await window.dex.request('room.control.grant', { roomId: r.id, deviceId, ...(isWebGuest(userId) ? { guest: true } : {}) });
     if (c.controllerDevice !== deviceId) throw new Error('Someone else has control now.');
   } catch (e) { await stopLocal(true); throw e; }
 }

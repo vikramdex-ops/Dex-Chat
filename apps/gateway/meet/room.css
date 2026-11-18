@@ -29,8 +29,10 @@ body.in-room #app { display: block; padding: 0; }
 .tile .face { background: var(--tint); }
 .tile.hand-up .face-box { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft); }
 .tags { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
-.flag, .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
-.hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
+/* the tile's tags (a raised hand's place in line, HOST, GUEST): scoped to .tags, so the Raise hand
+   tool in the toolbar (.tool.raised) never takes their 20 px height */
+.flag, .tags .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
+.tags .hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
 .chat .flag { background: var(--subtle-2); color: var(--text-2); border-color: var(--stroke-strong); }
 .reacts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .reacts span { position: absolute; bottom: 8px; animation: rise 2.4s ease-out forwards; }
@@ -38,6 +40,22 @@ body.in-room #app { display: block; padding: 0; }
 @keyframes rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-120px); opacity: 0; } }
 .share { position: relative; margin: 0; min-height: 0; border: 1px solid var(--stroke-strong); border-radius: var(--radius); background: #0b1416; overflow: hidden; display: grid; }
 .share video { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+
+/* control of a shared screen: ask for it, who has it, or (for the guest who has it) the surface
+   that sends the pointer and keys; amber, as everything live */
+.share-ctl { position: absolute; inset: 0; pointer-events: none; }
+.share-ctl > * { pointer-events: auto; }
+.ctl-ask { position: absolute; right: 10px; top: 8px; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--amber); border-radius: 4px; background: var(--layer); color: var(--amber-ink); font-weight: 700; font-size: 13px; }
+.ctl-ask:hover:not(:disabled) { background: var(--amber-soft); }
+.ctl-ask:disabled { opacity: .75; cursor: default; }
+.ctl-flag { position: absolute; right: 10px; top: 8px; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; background: var(--amber); color: #3b2500; }
+.ctl-surface { position: absolute; inset: 0; outline: 3px solid var(--amber); outline-offset: -3px; cursor: default; touch-action: none; }
+.ctl-surface:focus-visible { outline-width: 4px; }
+.ctl-tag { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 20px); padding: 4px 4px 4px 12px; background: var(--amber); color: #3b2500; font-size: 13px; white-space: nowrap; }
+.ctl-tag > span { overflow: hidden; text-overflow: ellipsis; }
+.ctl-tag .btn { min-height: 26px; padding: 0 10px; background: #fff8ec; border-color: #3b2500; color: #3b2500; }
+.share-note { position: absolute; left: 10px; bottom: 10px; right: 10px; max-width: 520px; margin: 0; display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; font-size: 12.5px; background: var(--layer); color: var(--text-2); border: 1px solid var(--stroke-strong); border-left: 3px solid var(--text-3); }
+.share-note .mono { font-size: 10.5px; letter-spacing: .1em; color: var(--text); white-space: nowrap; }
 
 /* the title block of the meeting: its name and time, and the guest's controls */
 .room-block { grid-area: block; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 10px 14px; border: 1px solid var(--text-3); background: var(--layer); }
@@ -47,6 +65,9 @@ body.in-room #app { display: block; padding: 0; }
 .rb-facts > div { display: grid; gap: 2px; }
 .mono.big { font-size: 18px; font-weight: 600; }
 .controls { justify-content: flex-end; flex-wrap: nowrap; }
+/* every tool as wide as the widest label, so a toggle (Raise hand / Hand up, Mic on / off) never changes size when pressed */
+.controls .tool { min-width: 88px; }
+.tool .short { display: none; }
 /* with the chat open the title block is narrower: the clock alone tells the time */
 @media (max-width: 1360px) { .chat-open .rb-facts > div + div { display: none; } }
 /* Leave, as in the app's Rooms: an amber outline (red is kept for errors) */
@@ -70,8 +91,17 @@ body.in-room #app { display: block; padding: 0; }
 .sending { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--stroke-strong); font-size: 12px; }
 .sending span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--stroke-strong); }
-.compose .input { resize: none; padding: 8px 10px; min-height: 38px; }
+.sending[hidden] { display: none; }
+/* the writing box grows with the text (up to six lines, then it scrolls); past one line it is a
+   ruled writing panel with square-ish corners rather than a field */
+.compose { display: flex; align-items: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--stroke-strong); }
+.compose .input { flex: 1; min-width: 0; resize: none; padding: 8px 10px; min-height: 38px; font-size: 14px; line-height: 20px; overflow-y: hidden; }
+.compose .input.grown {
+  border-radius: 3px; border-left: 2px solid var(--accent); padding-left: 9px;
+  background-image: linear-gradient(transparent calc(var(--grow-lh, 20px) - 1px), var(--stroke) 0);
+  background-size: 100% var(--grow-lh, 20px); background-origin: content-box; background-clip: content-box; background-attachment: local;
+}
+.compose .btn, .compose .icon-btn { flex: none; height: 38px; }
 
 .react-menu { position: fixed; z-index: 10; display: grid; gap: 6px; padding: 10px; background: var(--layer); border: 1px solid var(--stroke-strong); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 .react-row { display: flex; gap: 4px; }
@@ -91,8 +121,13 @@ body.in-room #app { display: block; padding: 0; }
   .rb-facts { border-right: 0; padding-right: 0; }
   .controls { grid-column: 1 / -1; justify-content: space-between; gap: 4px; }
   .controls .tool { min-width: 0; flex: 1 1 0; height: 50px; padding: 4px 2px; font-size: 10.5px; }
-  .leave { height: 50px; padding: 0 10px; flex: 1 1 0; justify-content: center; }
+  .controls .tool .long { display: none; }
+  .controls .tool .short { display: block; }
+  .leave { height: 50px; padding: 0 8px; gap: 4px; flex: 0 0 auto; justify-content: center; font-size: 14px; }
   .grid.strip { grid-auto-columns: 120px; }
+  /* the control tag goes under the picture's caption, at the bottom, on a narrow screen */
+  .ctl-tag { top: auto; bottom: 8px; font-size: 12px; }
+  .ctl-ask, .ctl-flag { top: 38px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .reacts span { animation: none; }

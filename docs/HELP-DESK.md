@@ -91,8 +91,9 @@ a whole screen to be shared. While it is on:
 
 - an amber banner across the top of the app says *"Ravi Kumar is using your mouse and keyboard"*
   with a big **Stop control** button, and the share bar turns amber with its own **Stop control**;
-- **Ctrl+Alt+Shift+S** stops control at once from anywhere, even while the technician is typing
-  (a global shortcut of the requester's PC; the same keys from the technician are never passed on);
+- **Shift+Esc** or **Ctrl+Alt+Shift+S** stops control at once from anywhere, even while the
+  technician is typing (global shortcuts of the requester's PC; the same keys from the technician
+  are never passed on);
 - stopping the screen share, leaving or ending the session, the app reloading or losing the hub
   also stops control. Keys and buttons the technician was holding are released.
 
@@ -114,6 +115,11 @@ How it works:
   above the main one); it moves the pointer with `SendInput` (absolute, virtual desk) and
   `SetCursorPos`, and presses buttons, turns the wheel and types with `SendInput`. It reads one
   JSON command per line on stdin. No native Node modules and no third-party programs.
+- **Administrator windows and UAC prompts:** the helper runs with the person's own rights, never
+  elevated, so Windows itself keeps its input out of an elevated (administrator) window and off
+  the secure desktop of a UAC prompt or Ctrl+Alt+Del: the person in control sees such a prompt
+  but cannot answer it; the person whose PC it is answers it. The app makes no attempt to get
+  around this, in support sessions or in meetings.
 - **Linux (X11):** `xdotool`, kept running and fed one command per line. Without it, or on Wayland,
   control is not offered and the requester is told why.
 - **macOS:** view only. Control would need Accessibility permission, which the app does not ask

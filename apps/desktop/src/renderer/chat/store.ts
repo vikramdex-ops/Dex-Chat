@@ -329,6 +329,8 @@ export function attentionCount(): number {
 
 function notifyIncoming(m: Message): void {
   if (m.authorId === state.meId || m.system) return;
+  // Nib's card about someone in a lobby: the knock's own notification has told you already (meet/knocks.ts)
+  if (m.nib?.kind === 'knock') return;
   const c = state.conversations.get(m.convId);
   const mentioned = m.mentions.includes(state.meId) || m.mentions.includes('all');
   if (c?.muted && !mentioned) return;

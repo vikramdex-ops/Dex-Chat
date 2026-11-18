@@ -7,10 +7,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { isSealed } from '@dex/core/e2e';
 import {
-  ACTION_TEXT_MAX, AGENDA_MAX, RESUME_MS, SLOT_EARLY_MS, SLOT_LATE_MS, actionTrigger, apRef, inWorkingHours, isWebGuest, occurrenceNo, ulid,
+  ACTION_TEXT_MAX, AGENDA_MAX, RESUME_MS, SLOT_EARLY_MS, SLOT_LATE_MS, actionTrigger, apRef, inWorkingHours, isWebGuest, mayChangeAction, occurrenceNo, ulid,
 } from '@dex/core';
 import type {
-  ActionPoint, ActionSource, ActionStatus, AgendaItem, Conversation, MeetCard, MeetLine, MeetOccurrence, MeetRecap, Message, MeetingKind,
+  ActionChange, ActionPoint, ActionSource, ActionStatus, AgendaItem, Conversation, MeetCard, MeetLine, MeetOccurrence, MeetRecap, Message, MeetingKind,
   PublicUser, RecapDecision, RecapFile, RecapLine, RecapNote, RecapPerson, RecapPoll, RecordingInfo, RoomChatLine, RoomInfo,
 } from '@dex/core';
 import { expand } from './calendar.ts';
@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS meet_agenda (
   done_at INTEGER, created_by TEXT NOT NULL, created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_meet_agenda ON meet_agenda(conv_id, occ_id, n);
+CREATE TABLE IF NOT EXISTS ap_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ap_id TEXT NOT NULL, at INTEGER NOT NULL, by_id TEXT NOT NULL, kind TEXT NOT NULL, fields TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ap_history ON ap_history(ap_id, id);
 `;
 
 interface OccRow {
@@ -67,7 +71,12 @@ interface ApRow {
   id: string; conv_id: string; occ_id: string | null; n: number; message_id: string; text: string; sealed: number; owner_id: string | null; owner_name: string | null;
   due: string | null; status: ActionStatus; created_by: string; created_at: number; updated_at: number; done_at: number | null; done_by: string | null;
   source: ActionSource; nib_item: string | null; reminder_id: string | null; reminded_on: string | null;
+  /** When its words were last revised with ap.update (they win over its message's words until the message is edited again). */
+  text_at: number | null;
 }
+/** An action point's history entry as kept. */
+interface ApChangeRow { at: number; by_id: string; kind: ActionChange['kind']; fields: string }
+const HISTORY_MAX = 200;
 interface EventRow { id: string; title: string; organizer_id: string; conv_id: string | null; online: number; cancelled: number; start_at: number; end_at: number; recurrence: 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly'; until_at: number | null; all_day: number }
 
 /** What the module needs from the rest of the hub. */
@@ -120,6 +129,7 @@ export class MeetThreads {
     this.d = d;
     this.db = d.db;
     this.db.exec(SCHEMA);
+    try { this.db.exec('ALTER TABLE action_points ADD COLUMN text_at INTEGER'); } catch { /* already there */ }
     const m = d.messaging;
     // what a message in a thread carries: its card, its action point, or that it was said in the meeting chat
     m.viewExtras.push((r) => this.extras(r));
@@ -485,6 +495,8 @@ export class MeetThreads {
       if (ap.reminder_id) this.d.desk.reminderGone(ap.reminder_id);
       if (ap.nib_item) this.d.nib.gone(ap.nib_item);
       this.db.prepare('DELETE FROM action_points WHERE id = ?').run(ap.id);
+      // its history held its words: purged with it
+      this.db.prepare('DELETE FROM ap_history WHERE ap_id = ?').run(ap.id);
     }
     this.db.prepare('DELETE FROM meet_lines WHERE message_id = ?').run(messageId);
     this.db.prepare('DELETE FROM meet_cards WHERE message_id = ?').run(messageId);
@@ -511,13 +523,15 @@ export class MeetThreads {
     // the card's message is the task: an edit to it is an edit to the action point
     const sealed = !!a.sealed || (!!m && isSealed(m.body));
     const body = m && !sealed ? (actionTrigger(m.body) ?? m.body) : '';
-    // the words given when it was logged, unless its message was edited since (an edit to the card is an edit to the point)
-    const edited = !!m?.edited_at && m.edited_at > a.created_at;
+    // the words given when it was logged (or revised since), unless its message was edited after that
+    // (an edit to the card is an edit to the point)
+    const edited = !!m?.edited_at && m.edited_at > (a.text_at ?? a.created_at);
     const text = sealed ? '' : (edited ? body.trim() || a.text : a.text).slice(0, ACTION_TEXT_MAX);
     return {
       id: a.id, convId: a.conv_id, occurrenceId: a.occ_id, n: a.n, text, sealed, ownerId: a.owner_id, ownerName: a.owner_name, due: a.due,
       status: m?.deleted ? 'dropped' : a.status, createdBy: a.created_by, createdAt: a.created_at, updatedAt: a.updated_at, doneAt: a.done_at, doneBy: a.done_by,
       messageId: a.message_id, source: a.source, ...(carried ? { carried: true } : {}),
+      organiserId: this.organiserOf(a.conv_id, a.occ_id), revisedAt: a.text_at && !edited ? a.text_at : null,
     };
   }
 
@@ -533,7 +547,23 @@ export class MeetThreads {
   }
 
   private mayChange(a: ApRow, me: PublicUser): boolean {
-    return a.created_by === me.id || a.owner_id === me.id || this.organiserOf(a.conv_id, a.occ_id) === me.id || me.role === 'owner' || me.role === 'admin';
+    return mayChangeAction({ ownerId: a.owner_id, createdBy: a.created_by, organiserId: this.organiserOf(a.conv_id, a.occ_id) }, me);
+  }
+
+  /** Keep a line of an action point's history (its audit trail in the recap and the thread). */
+  private remember(apId: string, by: string, kind: ActionChange['kind'], fields: ActionChange['fields']): void {
+    this.db.prepare('INSERT INTO ap_history (ap_id, at, by_id, kind, fields) VALUES (?, ?, ?, ?, ?)').run(apId, this.now(), by, kind, JSON.stringify(fields));
+  }
+
+  /** An action point's history, for anyone who may read its register. */
+  historyAction(me: PublicUser, d: Record<string, unknown>): { action: ActionPoint; changes: ActionChange[] } {
+    const a = this.apRow(d.id);
+    if (!a || !(this.d.messaging.isMember(a.conv_id, me.id) || (a.occ_id && this.attendedOcc(a.occ_id, me.id)))) throw new ThreadError('Action point not found.');
+    const rows = this.db.prepare('SELECT at, by_id, kind, fields FROM ap_history WHERE ap_id = ? ORDER BY id DESC LIMIT ?').all(a.id, HISTORY_MAX) as unknown as ApChangeRow[];
+    const changes = rows.reverse().map((r) => ({ at: r.at, by: r.by_id, kind: r.kind, fields: (() => { try { return JSON.parse(r.fields) as ActionChange['fields']; } catch { return []; } })() }));
+    // an encrypted point's words never reach the history (the hub cannot read them)
+    if (a.sealed) for (const c of changes) c.fields = c.fields.filter((f) => f.field !== 'text');
+    return { action: this.apView(a), changes };
   }
 
   /** The occurrence an action point logged now belongs to: the one running, else the one that just ended (within two hours). */
@@ -599,6 +629,11 @@ export class MeetThreads {
     const a = this.apRow(id)!;
     this.assign(a, me);
     this.d.audit(me.id, 'meeting.actionLogged', msg.convId, { ref: apRef(n), owner: owner.ownerId ?? owner.ownerName, due });
+    this.remember(id, me.id, 'logged', [
+      ...(text ? [{ field: 'text' as const, from: '', to: text }] : []),
+      ...(owner.ownerId || owner.ownerName ? [{ field: 'owner' as const, from: '', to: owner.ownerId ?? `~${owner.ownerName}` }] : []),
+      ...(due ? [{ field: 'due' as const, from: '', to: due }] : []),
+    ]);
     this.changed(a.id);
     return this.apView(this.apRow(id)!);
   }
@@ -637,13 +672,24 @@ export class MeetThreads {
     const status: ActionStatus = d.status === undefined ? a.status : (['open', 'done', 'dropped'] as const).includes(d.status as ActionStatus) ? d.status as ActionStatus : a.status;
     const owner = this.ownerIn(d, a.conv_id, me, a);
     const due = this.dueIn(d.due, a.due);
-    const text = d.text !== undefined && !a.sealed ? line(d.text, ACTION_TEXT_MAX) || a.text : a.text;
+    // the words as everyone sees them now (the card's message may have been edited since it was logged)
+    const shown = this.apView(a, msg).text;
+    const asked = d.text !== undefined && !a.sealed ? line(d.text, ACTION_TEXT_MAX) : '';
+    const textChanged = !!asked && asked !== shown;
+    const text = textChanged ? asked : a.text;
     const now = this.now();
     const ownerChanged = owner.ownerId !== a.owner_id || owner.ownerName !== a.owner_name;
+    const fields: ActionChange['fields'] = [];
+    if (textChanged) fields.push({ field: 'text', from: shown, to: text });
+    if (ownerChanged) fields.push({ field: 'owner', from: a.owner_id ?? (a.owner_name ? `~${a.owner_name}` : ''), to: owner.ownerId ?? (owner.ownerName ? `~${owner.ownerName}` : '') });
+    if (due !== a.due) fields.push({ field: 'due', from: a.due ?? '', to: due ?? '' });
+    if (status !== a.status) fields.push({ field: 'status', from: a.status, to: status });
+    // nothing changed: nothing to save, tell or remember
+    if (!fields.length) return this.apView(a, msg);
     if (ownerChanged) this.unassign(a);
-    this.db.prepare(`UPDATE action_points SET text = ?, owner_id = ?, owner_name = ?, due = ?, status = ?, updated_at = ?, done_at = ?, done_by = ?,
+    this.db.prepare(`UPDATE action_points SET text = ?, text_at = ?, owner_id = ?, owner_name = ?, due = ?, status = ?, updated_at = ?, done_at = ?, done_by = ?,
       reminded_on = CASE WHEN ? != COALESCE(due, '') THEN NULL ELSE reminded_on END WHERE id = ?`)
-      .run(text, owner.ownerId, owner.ownerName, due, status, now, status === 'done' ? (a.done_at ?? now) : null, status === 'done' ? (a.done_by ?? me.id) : null, due ?? '', a.id);
+      .run(text, textChanged ? now : a.text_at, owner.ownerId, owner.ownerName, due, status, now, status === 'done' ? (a.done_at ?? now) : null, status === 'done' ? (a.done_by ?? me.id) : null, due ?? '', a.id);
     const next = this.apRow(a.id)!;
     if (ownerChanged) this.assign(next, me);
     else {
@@ -655,6 +701,8 @@ export class MeetThreads {
       if (next.nib_item && status !== a.status) { if (status === 'dropped') this.d.nib.gone(next.nib_item); else this.d.nib.status(next.nib_item, status === 'done' ? 'done' : 'going'); }
     }
     if (status !== a.status) this.d.audit(me.id, 'meeting.actionStatus', a.conv_id, { ref: apRef(a.n), status });
+    if (fields.some((f) => f.field !== 'status')) this.d.audit(me.id, 'meeting.actionChanged', a.conv_id, { ref: apRef(a.n), fields: fields.filter((f) => f.field !== 'status').map((f) => f.field) });
+    this.remember(a.id, me.id, 'changed', a.sealed ? fields.filter((f) => f.field !== 'text') : fields);
     this.changed(a.id);
     return this.apView(this.apRow(a.id)!);
   }
@@ -669,6 +717,7 @@ export class MeetThreads {
     const now = this.now();
     this.db.prepare('UPDATE action_points SET status = ?, updated_at = ?, done_at = ?, done_by = ? WHERE id = ?').run(want, now, want === 'done' ? now : null, want === 'done' ? by : null, a.id);
     if (a.reminder_id) this.d.desk.reminderDone(a.reminder_id, want === 'done');
+    this.remember(a.id, by, 'ticked', [{ field: 'status', from: a.status, to: want }]);
     this.changed(a.id);
   }
 

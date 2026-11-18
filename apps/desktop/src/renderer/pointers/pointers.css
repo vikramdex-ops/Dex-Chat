@@ -14,17 +14,22 @@
 .pt-hl.kept { stroke-dasharray: 7 4; }
 .pt-ink { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 
-.pt-pin line { stroke-width: 1.5; }
-.pt-pin rect { stroke: rgba(255, 255, 255, .85); stroke-width: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .3)); }
+/* a numbered marker: a disc centred on the exact point, with datum ticks around it */
+.pt-pin-ticks { stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(255, 255, 255, .95)); }
+.pt-pin-disc { stroke: #fff; stroke-width: 2; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
 .pt-pin-n { font: 700 11px/1 var(--font-mono); fill: #fff; text-anchor: middle; }
+.pt-pin-n.small { font-size: 8.5px; }
+.pt-pin.draft { opacity: .7; }
+.pt-pin.draft .pt-pin-disc { stroke-dasharray: 3 2; }
 .pt-pin-note {
   font: 600 12px/1 var(--font-body); fill: #15191b; paint-order: stroke; stroke: rgba(255, 255, 255, .92); stroke-width: 4px; stroke-linejoin: round;
 }
 
 .pt-note {
-  position: absolute; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 6px; transform: translate(10px, -50%);
+  position: absolute; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 6px; transform: translate(22px, -50%);
   background: var(--layer-solid); border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); pointer-events: auto;
 }
+.pt-note.flip { transform: translate(calc(-100% - 22px), -50%); }
 .pt-note .mono { font-size: 10px; letter-spacing: .1em; color: var(--text-3); padding: 0 4px; }
 .pt-note .input { width: 200px; height: 30px; }
 

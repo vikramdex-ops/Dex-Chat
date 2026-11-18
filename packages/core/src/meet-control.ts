@@ -13,6 +13,8 @@ export interface RoomControl {
   controllerId: string;
   controllerDevice: string;
   since: number;
+  /** The controller is a guest in a browser (through the office's gateway). */
+  guest?: boolean;
 }
 
 /** Why a presenter's screen cannot be controlled: a Mac (view only), one window shared (not a whole screen), or this PC cannot inject input. */
@@ -27,23 +29,36 @@ export function presenterOf(room: Pick<RoomInfo, 'participants'>): RoomParticipa
 }
 
 /**
- * Why this person may not control another's screen in this Room (null: they may). Only people in
- * the office app on a PC: not browser guests, not phones, and on a webinar's stage only the
- * organiser, co-hosts and panelists (never an attendee invited to speak).
+ * Why this person may not be given control of another's screen in this Room (null: they may).
+ * People in the office app on a PC; a guest in a browser only when the presenter picked that guest
+ * on purpose (`guestPicked`: their own Give control, or Accept on that guest's ask, then the
+ * consent sheet); never a phone; and on a webinar's stage only the organiser, co-hosts and
+ * panelists (never someone invited from the audience to speak).
  */
-export function controllerRefusal(p: RoomParticipant | undefined, onStageStaff: boolean | null): string | null {
+export function controllerRefusal(p: RoomParticipant | undefined, onStageStaff: boolean | null, opts: { guestPicked?: boolean } = {}): string | null {
   if (!p) return 'They have left the Room.';
-  if (isWebGuest(p.userId)) return 'Guests in a browser cannot be given control.';
-  if (!p.desktop) return 'Control is given to someone in the desktop app (not a phone or a browser).';
   if (onStageStaff === false) return 'On a webinar\'s stage, only the organiser and panelists can be given control.';
+  if (isWebGuest(p.userId)) return opts.guestPicked ? null : 'A guest in a browser is given control only when the person sharing picks them.';
+  if (!p.desktop) return 'Control is given to someone in the desktop app (not a phone or a browser).';
   return null;
 }
+
+/** Why this person may not ask for control (null: they may): guests in a browser may ask; phones and webinar audiences may not. */
+export function askerRefusal(p: RoomParticipant | undefined, onStageStaff: boolean | null): string | null {
+  if (!p) return 'They have left the Room.';
+  if (onStageStaff === false) return 'On a webinar\'s stage, only the organiser and panelists can be given control.';
+  if (isWebGuest(p.userId)) return null;
+  return controllerRefusal(p, onStageStaff);
+}
+
+/** Why someone sharing from a browser cannot give control (shown on the guest page and to people watching). */
+export const BROWSER_VIEW_ONLY = 'A screen shared from a browser is view only: a web page cannot let anyone else use your mouse and keyboard.';
 
 /** Why a presenter's screen cannot be given to anyone (null: it can). */
 export function presenterRefusal(p: RoomParticipant | undefined): string | null {
   if (!p) return 'They have left the Room.';
   if (!p.screen) return 'Share your screen first.';
-  if (isWebGuest(p.userId)) return 'A screen shared from a browser cannot be controlled.';
+  if (isWebGuest(p.userId)) return BROWSER_VIEW_ONLY;
   if (p.controlOff === 'mac') return 'On a Mac the shared screen is view only: remote control needs Accessibility permission, which the app does not ask for.';
   if (p.controlOff === 'window') return 'Only a whole screen can be controlled: share a whole screen, not one window.';
   if (!p.controllable) return 'This screen cannot be controlled remotely.';
@@ -67,8 +82,8 @@ declare module './protocol.ts' {
     /** The viewer asks the presenter for control; the presenter answers. */
     'room.control.ask': { req: { roomId: string }; res: { ok: true } };
     'room.control.refuse': { req: { roomId: string; deviceId: string }; res: { ok: true } };
-    /** The presenter (the sharing device) gives control to one device in the Room, after their own consent. */
-    'room.control.grant': { req: { roomId: string; deviceId: string }; res: RoomControl };
+    /** The presenter (the sharing device) gives control to one device in the Room, after their own consent; `guest`: the presenter picked a browser guest on purpose. */
+    'room.control.grant': { req: { roomId: string; deviceId: string; guest?: boolean }; res: RoomControl };
     /** The presenter takes it back, or the controller releases it. */
     'room.control.stop': { req: { roomId: string }; res: { ok: true } };
   }
@@ -78,7 +93,7 @@ declare module './protocol.ts' {
     /** To the asking device: the presenter said no. */
     'room.controlRefused': { roomId: string; by: string };
     /** To the presenter and the controller: control ended, and why. */
-    'room.controlEnded': { roomId: string; why: ControlEndReason; by: string | null; durationMs: number };
+    'room.controlEnded': { roomId: string; why: ControlEndReason; by: string | null; durationMs: number; presenterId?: string; controllerId?: string };
   }
 }
 

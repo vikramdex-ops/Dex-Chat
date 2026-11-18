@@ -54,6 +54,13 @@ when it needs you (amber only means "you"). It is not a robot, a face or a speec
   there as to anyone. Nib reads only its own conversation with you; Direct messages between people
   are end-to-end encrypted and the hub never sees them.
 
+**Someone waiting in a lobby** ([`MEETINGS.md`](MEETINGS.md), *Who is waiting*): when someone
+knocks at a meeting you host (your personal room included, even when you are not in it), Nib posts
+a card with the meeting, the name (a browser guest's marked *GUEST · NAME NOT VERIFIED*), how long
+they have waited, and **Admit** and **Decline** that work from the card; it changes in place when
+anyone answers, the person comes in, gives up, or the meeting ends. These cards come whether or not
+day sheets are on, and the app's own notification for the knock replaces Nib's message alert.
+
 The notice board ([`ANNOUNCEMENTS.md`](ANNOUNCEMENTS.md)) speaks through Nib too, as plain lines
 in the same conversation (`Nib.note`, once per key): one grouped reminder a day at most about
 notices waiting for your acknowledgement, the issuing desk's afternoon digest, and a line when the

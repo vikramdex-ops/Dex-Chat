@@ -34,7 +34,12 @@ const BASE = new URL('./', sw.registration.scope).pathname;
 const CACHE = `dexconnect-app-${__APP_VERSION__}`;
 
 sw.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(__PRECACHE__.map((p) => `${BASE}${p}`))));
+  // each file on its own: one that fails to load (a gateway mid-update) must not cost the app its offline copy and
+  // its notifications; only the page itself is required, and anything missed is cached when it is first used
+  e.waitUntil(caches.open(CACHE).then(async (c) => {
+    await c.add(BASE);
+    await Promise.allSettled(__PRECACHE__.filter((p) => p !== '').map((p) => c.add(`${BASE}${p}`)));
+  }));
   // the first install takes over at once; an update waits for the person's Reload (message below)
 });
 

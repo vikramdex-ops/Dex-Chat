@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen } from 'electron';
 import type { Display } from 'electron';
-import { STOP_HOTKEY } from '@dex/core/assist';
+import { STOP_HOTKEY, STOP_QUICK } from '@dex/core/assist';
 import type { Rect } from '@dex/core/assist';
 import type { AssistCaps, AssistContext, ShareBarState, UpdateChannel } from '../../shared/bridge.ts';
 import { appLog } from '../applog.ts';
@@ -31,6 +31,8 @@ export interface AssistDeps {
 }
 
 const HOTKEY = 'CommandOrControl+Alt+Shift+S';
+/** Shift+Esc: the quick take-back while someone has control (the controller can never send it: a blocked chord). */
+const QUICK = 'Shift+Escape';
 
 let linuxCaps: { ok: boolean; reason: string | null } | null = null;
 function caps(): AssistCaps {
@@ -93,11 +95,16 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   const tellMain = (what: 'control' | 'screen' | 'session', context: AssistContext | null) => deps.win()?.webContents.send('assist:stop', what, context);
   const fromMain = (e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => { const w = deps.win(); return !!w && e.sender.id === w.webContents.id; };
 
+  let quick = false;
   const setHotkey = (on: boolean) => {
+    const stop = (why: string) => () => { const ctx = share?.state.context ?? null; stopControl(why); tellMain('control', ctx); };
     if (on && !hotkey) {
-      try { hotkey = globalShortcut.register(HOTKEY, () => { const ctx = share?.state.context ?? null; stopControl('the stop keys'); tellMain('control', ctx); }); } catch { hotkey = false; }
+      try { hotkey = globalShortcut.register(HOTKEY, stop('the stop keys')); } catch { hotkey = false; }
       if (!hotkey) log('warn', 'the stop keys are taken by another program; the share bar still stops control');
     } else if (!on && hotkey) { globalShortcut.unregister(HOTKEY); hotkey = false; }
+    if (on && !quick) {
+      try { quick = globalShortcut.register(QUICK, stop('Shift+Esc')); } catch { quick = false; }
+    } else if (!on && quick) { globalShortcut.unregister(QUICK); quick = false; }
   };
 
   const stopControl = (why: string) => {
@@ -130,7 +137,7 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
     if (!wantScreen) { stopAll(context === 'meeting' ? 'the presenter stopped sharing' : 'the requester stopped sharing'); return { screen: false, control: false, error: null }; }
     const sourceId = typeof raw?.sourceId === 'string' ? raw.sourceId : null;
     const display = scope === 'screen' ? await displayOf(sourceId) : null;
-    const state: ShareBarState = { peer, scope, control: false, hotkey: STOP_HOTKEY, context };
+    const state: ShareBarState = { peer, scope, control: false, hotkey: `${STOP_HOTKEY} · ${STOP_QUICK}`, context };
     if (!share || share.display?.id !== display?.id || share.state.scope !== scope || share.state.context !== context) {
       if (share?.shown) overlays.hideShare();
       share = { display, state, shown: false };
@@ -210,8 +217,24 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   });
   ipcMain.on('assist:pointer', (e, msg: unknown) => { if (fromMain(e)) overlays.pointer(msg); });
 
+  // a monitor plugged in or out, moved, or its scaling changed: the pointer window follows its display
+  // and remote control maps onto the display's new pixels (or stops, when it is gone)
+  const displays = () => {
+    const all = screen.getAllDisplays();
+    overlays.displaysChanged(all);
+    if (share?.display) {
+      const now = all.find((x) => x.id === share!.display!.id) ?? null;
+      if (now) share.display = now;
+      control?.setDisplay(now ? injectorRect(now) : null);
+      if (!now) { setHotkey(false); tellMain('control', share.state.context); }
+    }
+  };
+  screen.on('display-metrics-changed', displays);
+  screen.on('display-added', displays);
+  screen.on('display-removed', displays);
+
   app.on('before-quit', () => { stopAll('the app closed'); overlays.closeAll(); });
-  app.on('will-quit', () => { if (hotkey) globalShortcut.unregister(HOTKEY); });
+  app.on('will-quit', () => { if (hotkey) globalShortcut.unregister(HOTKEY); if (quick) globalShortcut.unregister(QUICK); });
   appLog.info('main', 'help desk ready', { control: caps().control, os: `${os.type()} ${os.release()}`, data: path.basename(app.getPath('userData')) });
   return { stopAll, overlays };
 }

@@ -309,8 +309,9 @@ Light and dark follow the system or the page's switch. The page works at 390 px 
 | Before the room opens | The whole title block and a live countdown. "The room opens at 09:50", with the plan being plotted, quietly, over and over. Calendar file, Google Calendar, Outlook.com. The device check; name; Join, greyed out until the room opens, which it does by itself |
 | Open, or in progress | "The room is open", or an amber "In progress since 10:02". Name and Join; "Open in Dexterity Connect" for staff |
 | Device check | Camera preview with its zone caption; the mic level as a ruled scale; Mic and Camera on or off; Test speakers (two notes, through the speakers chosen where the browser allows); Choose devices (camera, microphone, speakers) |
-| Lobby | "The host will let you in", with an amber timer for how long they have waited, "your place is held while this page is open", a small preview, Mic, and Leave the lobby. The plan shows them at the door |
-| In the meeting | The meeting itself (tiles in zones, shared screen, chat, hand, reactions), loaded on Join. The chat says that the office keeps it with the meeting; Attach sends a file to it (up to 25 MB, and the office's blocked types and upload limit apply, checked by the hub before it is stored). Guests cannot come back to the chat after leaving; the organiser may email them the recap ([MEETINGS.md](MEETINGS.md), *Meeting threads, action points and recaps*) |
+| Lobby | "The host will let you in" when a host is in the meeting; otherwise "The host has been told" (the host is not in yet, has been notified, and lets them in from wherever they are; [MEETINGS.md](MEETINGS.md), *Who is waiting*). An amber timer for how long they have waited, "your place is held while this page is open", a small preview, Mic, and Leave the lobby. It changes by itself when a host comes in. The plan shows them at the door |
+| Let in before the host | A host can let a guest in from Nib's card or the app's indicator before opening the room: the guest opens it and sees "HOST · ON THE WAY: Priya Raman let you in and has been told you are here" until a host joins |
+| In the meeting | The meeting itself (tiles in zones, shared screen, chat, hand, reactions), loaded on Join. The chat says that the office keeps it with the meeting; Attach sends a file to it (up to 25 MB, and the office's blocked types and upload limit apply, checked by the hub before it is stored). Guests cannot come back to the chat after leaving; the organiser may email them the recap ([MEETINGS.md](MEETINGS.md), *Meeting threads, action points and recaps*). The chat box grows with the text (six lines, then it scrolls; Enter sends, Shift+Enter is a new line). Over a screen shared from the office app, **Ask for control** (with a mouse and keyboard); the presenter decides, and the guest then works on it with **Release** to give it back. A screen the guest shares is view only, and the page says so ([MEETINGS.md](MEETINGS.md), *Give control*) |
 | Reconnecting | "Reconnecting…" over the meeting; up to six tries. The host may need to let them in again |
 | Refused, removed, passcode, too many tries | Plain words for each, and what to do |
 | Closing page | "Thanks for joining", time in the meeting, when they left, the host's note ("Afterwards"), the next time of a repeating meeting with Add the next one, and Join again while the meeting runs |
@@ -337,8 +338,11 @@ using it (speaker choice, `AudioContext`, screen sharing).
 
 - **Calendar → New meeting**, held as a call:
   1. Switch on **Guests from outside can join from a browser**.
-  2. Give it a name (checked as you type), choose **Show the title on the invitation page** and
-     the lobby rule.
+  2. Give it a name (checked as you type), or take the one suggested from the title
+     (**Use …/fst-project-handover**: it fills the field and is checked like a typed name; a name
+     already taken says so and is not kept, and what you typed stays), choose **Show the title on
+     the invitation page** and the lobby rule. Clearing the name puts the page back at the
+     meeting ID. A clipboard that refuses a copy says so.
   3. Save. The dialog stays open on the invitation: the clean link with its passcode,
      **Copy invitation** (text), **Download invitation (.ics)** and **Send by email**.
 - **Send by email** opens the invitation as a draft in the PC's mail program (Outlook, Windows Mail,

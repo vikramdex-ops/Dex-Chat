@@ -30,6 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import zlib from 'node:zlib';
 import { CF_STEPS } from '@dex/core/cfsetup';
 import type { CfPermission, CfProblem, CfSetupView, CfStep, CfStepState } from '@dex/core/cfsetup';
 
@@ -55,39 +56,70 @@ export interface CloudBundle {
     services: Array<{ name: string; type: 'service'; service: string; environment?: string }>;
     configHash: string;
     outputDir: string;
-    files: Array<{ path: string; hash: string; contentType: string; b64: string }>;
+    /** Each file as base64 (b64), or brotli-compressed then base64 (br, with its plain size). */
+    files: Array<{ path: string; hash: string; contentType: string; b64?: string; br?: string; size?: number }>;
     headers: string | null;
     worker: { name: string; text: string };
   };
 }
 
-let cached: { bundle: CloudBundle | null } | null = null;
+/**
+ * The parsed bundle holds the meeting site's files as text (about 17 MB, more as JavaScript strings),
+ * so it is kept only while something is using it (a setup or an update run), then let go. What the
+ * Control room shows all day needs only the versions (cloudBundleVersions).
+ */
+const KEEP_BUNDLE_MS = 2 * 60_000;
+let cached: { bundle: CloudBundle | null; timer: ReturnType<typeof setTimeout> | null } | null = null;
+let versions: { known: true; v: { gateway: string; site: string } | null } | null = null;
+
 /**
  * The Cloudflare parts this hub carries: inside the single executable (a SEA asset), or
  * cloud-bundle.json beside hub.cjs, or apps/hub/dist when run from the source, or DEX_CLOUD_BUNDLE.
  */
 export function loadCloudBundle(): CloudBundle | null {
-  if (cached) return cached.bundle;
+  cached ??= { bundle: readCloudBundle(), timer: null };
+  if (cached.timer) clearTimeout(cached.timer);
+  cached.timer = setTimeout(() => { cached = null; }, KEEP_BUNDLE_MS);
+  cached.timer.unref?.();
+  return cached.bundle;
+}
+
+/** The versions of the gateway and the site this hub carries (null: built without them), kept. */
+export function cloudBundleVersions(): { gateway: string; site: string } | null {
+  if (!versions) {
+    const b = loadCloudBundle();
+    versions = { known: true, v: b ? { gateway: b.gateway.hash, site: b.site.hash } : null };
+  }
+  return versions.v;
+}
+
+function readCloudBundle(): CloudBundle | null {
   const parse = (text: string): CloudBundle | null => {
     try { const b = JSON.parse(text) as CloudBundle; return b.format === 1 && b.gateway && b.site ? b : null; } catch { return null; }
   };
-  let bundle: CloudBundle | null = null;
   try {
     const req = createRequire(path.join(process.cwd(), 'x.js'));
     const sea = req('node:sea') as { isSea(): boolean; getAsset(k: string, enc: string): string };
-    if (sea.isSea()) bundle = parse(sea.getAsset('cloud-bundle.json', 'utf8'));
+    if (sea.isSea()) { const b = parse(sea.getAsset('cloud-bundle.json', 'utf8')); if (b) return b; }
   } catch { /* not a single executable, or no asset */ }
-  if (!bundle) {
-    const main = process.argv[1] ? path.dirname(path.resolve(process.argv[1])) : process.cwd();
-    const candidates = [process.env.DEX_CLOUD_BUNDLE, path.join(main, 'cloud-bundle.json'), path.join(main, '../dist/cloud-bundle.json'), path.join(path.dirname(process.execPath), 'cloud-bundle.json')];
-    for (const c of candidates) {
-      if (!c) continue;
-      try { bundle = parse(fs.readFileSync(c, 'utf8')); } catch { /* not there */ }
-      if (bundle) break;
-    }
+  const main = process.argv[1] ? path.dirname(path.resolve(process.argv[1])) : process.cwd();
+  const candidates = [process.env.DEX_CLOUD_BUNDLE, path.join(main, 'cloud-bundle.json'), path.join(main, '../dist/cloud-bundle.json'), path.join(path.dirname(process.execPath), 'cloud-bundle.json')];
+  for (const c of candidates) {
+    if (!c) continue;
+    let b: CloudBundle | null = null;
+    try { b = parse(fs.readFileSync(c, 'utf8')); } catch { /* not there */ }
+    if (b) return b;
   }
-  cached = { bundle };
-  return bundle;
+  return null;
+}
+
+/** A meeting-site file as Cloudflare takes it: the plain content in base64. */
+export function siteFileBase64(f: CloudBundle['site']['files'][number]): string {
+  if (f.b64 !== undefined) return f.b64;
+  if (f.br === undefined) throw new Error(`${f.path} has no content in the cloud bundle`);
+  const plain = zlib.brotliDecompressSync(Buffer.from(f.br, 'base64'), f.size !== undefined ? { maxOutputLength: f.size + 1024 } : {});
+  if (f.size !== undefined && plain.length !== f.size) throw new Error(`${f.path} unpacked to the wrong size`);
+  return plain.toString('base64');
 }
 
 // ------------------------------------------------------------------ where Cloudflare is
@@ -239,10 +271,16 @@ export class CfSetup {
   }
 
   private bundle(): CloudBundle | null { return (this.o.bundle ?? loadCloudBundle)(); }
+  /** The carried versions only: what the Control room shows, without holding the whole bundle. */
+  private versions(): { gateway: string; site: string } | null {
+    if (!this.o.bundle) return cloudBundleVersions();
+    const b = this.o.bundle();
+    return b ? { gateway: b.gateway.hash, site: b.site.hash } : null;
+  }
 
   view(): CfSetupView {
     const s = this.state;
-    const b = this.bundle();
+    const b = this.versions();
     return {
       phase: s.phase,
       steps: CF_STEPS.map((id) => ({ id, state: s.steps[id]?.state ?? 'todo', at: s.steps[id]?.at ?? null })),
@@ -256,7 +294,7 @@ export class CfSetup {
       tokenKept: !!this.o.meta.get(META_TOKEN),
       tokenHeld: !!this.token || !!this.o.meta.get(META_TOKEN),
       bundled: !!b,
-      updateAvailable: !!b && !!s.gatewayHash && (b.gateway.hash !== s.gatewayHash || (!!s.siteHash && b.site.hash !== s.siteHash)),
+      updateAvailable: !!b && !!s.gatewayHash && (b.gateway !== s.gatewayHash || (!!s.siteHash && b.site !== s.siteHash)),
       deployedAt: s.deployedAt,
       startedAt: s.startedAt,
     };
@@ -558,9 +596,10 @@ export class CfSetup {
     for (const f of site.files) {
       if (!missing.has(f.hash) || sent.has(f.hash)) continue;
       sent.add(f.hash);
-      if (size + f.b64.length > 8 << 20) await flush();
-      batch.push({ key: f.hash, value: f.b64, metadata: { contentType: f.contentType }, base64: true });
-      size += f.b64.length;
+      const b64 = siteFileBase64(f);
+      if (size + b64.length > 8 << 20) await flush();
+      batch.push({ key: f.hash, value: b64, metadata: { contentType: f.contentType }, base64: true });
+      size += b64.length;
     }
     await flush();
     await this.call('POST', '/pages/assets/upsert-hashes', { json: { hashes }, jwt }).catch(() => { /* only makes the next upload quicker */ });

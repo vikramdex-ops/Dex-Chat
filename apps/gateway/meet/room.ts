@@ -7,6 +7,10 @@
 import { MEETING_REACTIONS } from '@dex/core/protocol';
 import { GUEST_FILE_CHUNK, GUEST_FILE_MAX } from '@dex/core/meet';
 import type { GuestDown, GuestRoomView, GuestSeat, RoomChatLine } from '@dex/core/meet';
+import { autoGrow, enterAction } from '@dex/core/compose';
+import { InputBatcher, KEYS, domButton, fromPicture, wheelNotches } from '@dex/core/assist';
+import type { InputEvent, MouseButton } from '@dex/core/assist';
+import { BROWSER_VIEW_ONLY } from '@dex/core/meet-control';
 import { capName, elapsed, h, icon, initials, tintFor, toast } from './shared.ts';
 
 type Step = 'connecting' | 'lobby' | 'room' | 'ended';
@@ -17,7 +21,8 @@ type Signal = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandi
 export type EndKind = 'left' | 'ended' | 'refused' | 'removed' | 'cancelled' | 'passcode' | 'limit' | 'lost' | 'closed';
 export interface RoomEvents {
   connecting(again: boolean): void;
-  lobby(info: { host: string; title: string }): void;
+  /** `hostIn`: a host is in the meeting now; false: they have been told and let you in from wherever they are. */
+  lobby(info: { host: string; title: string; hostIn: boolean }): void;
   admitted(): void;
   /** Before the guest is in: something to fix (a missing name). */
   problem(message: string): void;
@@ -69,6 +74,8 @@ const state = {
   attempts: 0,
   /** A file going to the meeting chat: its name and how much has gone. */
   sending: null as { id: string; name: string; sent: number; size: number } | null,
+  /** Asked the person sharing for control, waiting for their answer. */
+  asked: false,
 };
 
 const zone = (i: number, cols: number) => `${String.fromCharCode(65 + (i % cols))}${Math.floor(i / cols) + 1}`;
@@ -139,7 +146,7 @@ function onFrame(f: GuestDown): void {
     case 'lobby':
       state.step = 'lobby';
       state.attempts = 0;
-      on?.lobby({ host: f.host, title: f.title });
+      on?.lobby({ host: f.host, title: f.title, hostIn: f.hostIn !== false });
       break;
     case 'admitted':
       state.self = f.self; state.room = f.room; state.iceServers = f.iceServers as RTCIceServer[]; state.chat = f.chat; state.step = 'room';
@@ -168,6 +175,12 @@ function onFrame(f: GuestDown): void {
       renderChat(); renderControls();
       break;
     case 'reaction': floatReaction(f.deviceId, f.emoji); break;
+    case 'control':
+      // the presenter said no, or control ended (they took it back, sharing stopped, we gave it back)
+      state.asked = false;
+      state.notice = f.text;
+      renderField(); renderBanners();
+      break;
     case 'muted':
       state.micOn = false; applyMic(); announce();
       state.notice = `${f.by} muted you`; renderControls(); renderBanners();
@@ -226,6 +239,9 @@ function finish(kind: EndKind, reason: string): void {
   state.ws = null;
   state.room = null;
   roomEls = null;
+  composeEls?.grow.stop();
+  composeEls = null;
+  dropShare();
   if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
   on?.ended({ kind, reason, joinedAt: state.joinedAt, at: Date.now() });
 }
@@ -274,18 +290,125 @@ function renderField(): void {
   for (const [dev, el] of tileEls) if (!keep.has(dev)) { el.remove(); tileEls.delete(dev); }
   const grid = h('div', { class: `grid${shareFrom ? ' strip' : ''}`, style: `--cols:${cols}` });
   seats.forEach((s, i) => grid.append(tile(s, zone(i, cols))));
-  const parts: HTMLElement[] = [];
-  if (shareFrom) {
-    const stream = shareFrom === state.self.deviceId ? state.screen : screenStream(shareFrom);
-    const v = h('video', { autoplay: true, playsinline: true, muted: true }) as HTMLVideoElement;
-    v.muted = true;
-    v.srcObject = stream;
-    void v.play().catch(() => {});
-    const who = shareFrom === state.self.deviceId ? 'YOUR SCREEN · SHARED' : `${capName(seats.find((s) => s.deviceId === shareFrom)?.name ?? '')} · SCREEN`;
-    parts.push(h('figure', { class: 'share' }, v, h('figcaption', { class: 'cap' }, h('b', {}, 'SHEET'), h('span', {}, who))));
-  }
+  const fig = shareFrom ? shareFigure(shareFrom, seats) : null;
+  if (!fig) dropShare();
   roomEls.field.classList.toggle('sharing', !!shareFrom);
-  roomEls.field.replaceChildren(...parts, grid);
+  // the shared screen stays in place (its picture, and a control surface with its focus): only the tiles change
+  const field = roomEls.field;
+  if (fig && field.firstElementChild === fig) { for (const c of [...field.children].slice(1)) c.remove(); field.append(grid); }
+  else field.replaceChildren(...(fig ? [fig] : []), grid);
+}
+
+// ------------------------------------------------------------------ the shared screen, and control of it
+let shareEl: { from: string; stream: MediaStream | null; fig: HTMLElement; video: HTMLVideoElement; who: HTMLElement; ctl: HTMLElement } | null = null;
+
+/** The shared screen's figure, kept while the same screen is shown; its control layer follows the Room. */
+function shareFigure(from: string, seats: GuestSeat[]): HTMLElement {
+  const mine = from === state.self!.deviceId;
+  const stream = mine ? state.screen : screenStream(from);
+  if (!shareEl || shareEl.from !== from || shareEl.stream !== stream) {
+    dropShare();
+    const video = h('video', { autoplay: true, playsinline: true, muted: true }) as HTMLVideoElement;
+    video.muted = true;
+    video.srcObject = stream;
+    void video.play().catch(() => {});
+    const who = h('span', {});
+    const ctl = h('div', { class: 'share-ctl' });
+    const fig = h('figure', { class: 'share' }, video, ctl, h('figcaption', { class: 'cap' }, h('b', {}, 'SHEET'), who));
+    shareEl = { from, stream, fig, video, who, ctl };
+  }
+  const seat = seats.find((s) => s.deviceId === from);
+  shareEl.who.textContent = mine ? 'YOUR SCREEN · SHARED' : `${capName(seat?.name ?? '')} · SCREEN`;
+  renderShareControl(seat ?? null, mine);
+  return shareEl.fig;
+}
+
+function dropShare(): void {
+  surface?.stop();
+  surface = null;
+  shareEl = null;
+}
+
+/**
+ * Over the shared screen: "Ask for control" when the person sharing (in the office app) allows it,
+ * who controls it now, or, for the guest who has it, the control surface. A screen this guest
+ * shares from the browser says plainly that nobody can control it.
+ */
+function renderShareControl(seat: GuestSeat | null, mine: boolean): void {
+  if (!shareEl || !state.room || !state.self) return;
+  const c = state.room.control ?? null;
+  const ctl = shareEl.ctl;
+  const name = seat?.name ?? '';
+  if (mine) {
+    surface?.stop(); surface = null;
+    if (!ctl.querySelector('.share-note')) ctl.replaceChildren(h('p', { class: 'share-note', role: 'note' }, h('b', { class: 'mono' }, 'VIEW ONLY'), h('span', {}, BROWSER_VIEW_ONLY)));
+    return;
+  }
+  if (c && seat && c.controllerDevice === state.self.deviceId && c.presenterDevice === seat.deviceId) {
+    state.asked = false;
+    if (!surface || surface.presenter !== seat.deviceId) {
+      surface?.stop();
+      surface = controlSurface(seat.deviceId, name);
+      ctl.replaceChildren(surface.el);
+      surface.el.focus();
+    }
+    return;
+  }
+  surface?.stop(); surface = null;
+  if (c) { ctl.replaceChildren(h('span', { class: 'ctl-flag mono', role: 'status' }, `${capName(c.controllerName)} IS CONTROLLING`)); return; }
+  // asking needs a mouse and keyboard: not offered on a phone or tablet
+  if (!seat?.controllable || !matchMedia('(pointer: fine)').matches) { ctl.replaceChildren(); return; }
+  const first = name.split(' ')[0];
+  ctl.replaceChildren(h('button', {
+    type: 'button', class: 'ctl-ask', disabled: state.asked, title: `Ask ${name} to let you use their mouse and keyboard`,
+    onclick: () => { state.asked = true; send({ t: 'control', a: 'ask' }); toast(`Asked ${first} for control`); renderField(); },
+  }, icon('screen', 14), state.asked ? 'Asked for control…' : 'Ask for control'));
+}
+
+/** This guest's hands on the presenter's PC: pointer and keys over the picture, sent in small batches. */
+let surface: { el: HTMLElement; presenter: string; stop(): void } | null = null;
+function controlSurface(presenter: string, name: string): NonNullable<typeof surface> {
+  const batch = new InputBatcher();
+  const held = { keys: new Set<string>(), buttons: new Set<MouseButton>() };
+  const at = (e: { clientX: number; clientY: number }) => {
+    const v = shareEl?.video;
+    if (!v) return null;
+    const r = v.getBoundingClientRect();
+    return fromPicture(e.clientX, e.clientY, { x: r.left, y: r.top, width: r.width, height: r.height }, v.videoWidth, v.videoHeight);
+  };
+  const push = (ev: InputEvent) => batch.push(ev);
+  const letGo = () => {
+    for (const code of held.keys) push({ t: 'key', code, down: false });
+    for (const b of held.buttons) push({ t: 'button', b, down: false, x: -1, y: -1 });
+    held.keys.clear(); held.buttons.clear();
+  };
+  // fifteen messages a second at most: the gateway's guest connection has room for that and the signalling
+  const flush = () => { const m = batch.take(); if (m) send({ t: 'input', e: m.e }); };
+  const timer = setInterval(flush, 66);
+  const release = h('button', { type: 'button', class: 'btn sm', onpointerdown: (e: Event) => e.stopPropagation(), onclick: (e: Event) => { e.stopPropagation(); send({ t: 'control', a: 'stop' }); } }, 'Release');
+  const el = h('div', { class: 'ctl-surface', tabindex: '0', 'aria-label': `Controlling ${name}'s screen. Your pointer and keys go to their PC.` },
+    h('span', { class: 'ctl-tag' }, h('span', {}, 'You are controlling ', h('b', {}, name), '\'s screen'), release));
+  el.addEventListener('pointermove', (e) => { const p = at(e); if (p) push({ t: 'move', ...p }); });
+  el.addEventListener('pointerdown', (e) => {
+    el.focus();
+    const b = domButton(e.button); const p = at(e);
+    if (!b || !p) return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    held.buttons.add(b);
+    push({ t: 'button', b, down: true, ...p });
+  });
+  el.addEventListener('pointerup', (e) => {
+    const b = domButton(e.button);
+    if (!b || !held.buttons.delete(b)) return;
+    push({ t: 'button', b, down: false, ...(at(e) ?? { x: -1, y: -1 }) });
+  });
+  el.addEventListener('wheel', (e) => { const p = at(e); if (!p) return; e.preventDefault(); const dy = wheelNotches(e.deltaY, e.deltaMode); const dx = wheelNotches(e.deltaX, e.deltaMode); if (dx || dy) push({ t: 'wheel', dx, dy, ...p }); }, { passive: false });
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+  el.addEventListener('keydown', (e) => { if (!(e.code in KEYS)) return; e.preventDefault(); e.stopPropagation(); held.keys.add(e.code); push({ t: 'key', code: e.code, down: true }); });
+  el.addEventListener('keyup', (e) => { if (!(e.code in KEYS)) return; e.preventDefault(); e.stopPropagation(); if (!held.keys.delete(e.code)) return; push({ t: 'key', code: e.code, down: false }); });
+  el.addEventListener('blur', letGo);
+  return { el, presenter, stop: () => { letGo(); flush(); clearInterval(timer); el.remove(); } };
 }
 
 function screenStream(deviceId: string): MediaStream | null {
@@ -336,16 +459,19 @@ function renderControls(): void {
   if (!roomEls) return;
   const hasMic = !!state.local?.getAudioTracks().length;
   const hasCam = !!state.local?.getVideoTracks().length;
-  const tool = (on: boolean | null, label: string, ico: string, f: () => void, extra: Record<string, unknown> = {}) =>
-    h('button', { type: 'button', class: `tool${on === true ? ' on' : on === false ? ' off' : ''}`, 'aria-pressed': on === null ? undefined : String(on), onclick: f, ...extra }, icon(ico), h('span', {}, label));
+  // on a phone the label is one short word (Camera, Share, Hand): pressed or not shows in the button's look,
+  // and its accessible name stays the whole label
+  const tool = (on: boolean | null, label: string, ico: string, f: () => void, extra: Record<string, unknown> = {}, short = label) =>
+    h('button', { type: 'button', class: `tool${on === true ? ' on' : on === false ? ' off' : ''}`, 'aria-pressed': on === null ? undefined : String(on), 'aria-label': label, title: label, onclick: f, ...extra },
+      icon(ico), h('span', { class: 'long' }, label), h('span', { class: 'short', 'aria-hidden': 'true' }, short));
   const canShare = typeof navigator.mediaDevices?.getDisplayMedia === 'function';
   roomEls.controls.replaceChildren(...[
-    tool(state.micOn && hasMic, state.micOn && hasMic ? 'Mic on' : 'Mic off', state.micOn && hasMic ? 'mic' : 'mic-off', () => { state.micOn = !state.micOn; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderField(); renderBanners(); }, { disabled: !hasMic }),
-    tool(state.camOn && hasCam, state.camOn && hasCam ? 'Camera on' : 'Camera off', state.camOn && hasCam ? 'cam' : 'cam-off', () => void toggleCamera()),
-    canShare ? tool(!!state.screen, state.screen ? 'Stop sharing' : 'Share screen', 'screen', () => void toggleScreen()) : null,
-    tool(state.hand, state.hand ? 'Hand up' : 'Raise hand', 'hand', () => { state.hand = !state.hand; send({ t: 'hand', up: state.hand }); renderControls(); }, { class: `tool${state.hand ? ' hand' : ''}` }),
+    tool(state.micOn && hasMic, state.micOn && hasMic ? 'Mic on' : 'Mic off', state.micOn && hasMic ? 'mic' : 'mic-off', () => { state.micOn = !state.micOn; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderField(); renderBanners(); }, { disabled: !hasMic }, 'Mic'),
+    tool(state.camOn && hasCam, state.camOn && hasCam ? 'Camera on' : 'Camera off', state.camOn && hasCam ? 'cam' : 'cam-off', () => void toggleCamera(), {}, 'Cam'),
+    canShare ? tool(!!state.screen, state.screen ? 'Stop sharing' : 'Share screen', 'screen', () => void toggleScreen(), {}, state.screen ? 'Stop' : 'Share') : null,
+    tool(state.hand, state.hand ? 'Hand up' : 'Raise hand', 'hand', () => { state.hand = !state.hand; send({ t: 'hand', up: state.hand }); renderControls(); }, { class: `tool${state.hand ? ' raised' : ''}` }, 'Hand'),
     tool(null, 'React', 'react', (e?: unknown) => openReact((e as MouseEvent | undefined)?.currentTarget as HTMLElement | undefined), { 'aria-haspopup': 'menu' }),
-    tool(state.chatOpen, state.unread ? `Chat · ${state.unread}` : 'Chat', 'chat', () => { state.chatOpen = !state.chatOpen; state.unread = 0; app.querySelector('.room')?.classList.toggle('chat-open', state.chatOpen); renderControls(); renderChat(); }),
+    tool(state.chatOpen, state.unread ? `Chat · ${state.unread}` : 'Chat', 'chat', () => { state.chatOpen = !state.chatOpen; state.unread = 0; app.querySelector('.room')?.classList.toggle('chat-open', state.chatOpen); renderControls(); renderChat(); }, {}, state.unread ? `Chat ${state.unread}` : 'Chat'),
     h('button', { type: 'button', class: 'leave', onclick: () => leaveMeeting() }, 'Leave', icon('door', 16)),
   ].filter((x): x is HTMLButtonElement => !!x));
 }
@@ -421,6 +547,8 @@ function renderBanners(): void {
   }
   if (r.breakout && !r.returningAt) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, r.breakout.toUpperCase()), h('span', {}, 'You are in a breakout room. The meeting chat is still shared.')));
   if (r.note) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, `NOTE · ${clock(r.note.at)}`), h('span', {}, r.note.text)));
+  // let in before the host came: they have been told and join from wherever they are
+  if (r.hostAway) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, 'HOST · ON THE WAY'), h('span', {}, `${r.hostAway} let you in and has been told you are here. They join you shortly.`)));
   if (state.askUnmute && !state.micOn) {
     out.push(h('div', { class: 'banner amber', role: 'alertdialog' }, h('span', {}, `${state.askUnmute} asks you to turn your mic on`),
       h('button', { class: 'btn sm primary', onclick: () => { state.micOn = true; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderBanners(); } }, 'Turn mic on'),
@@ -450,23 +578,45 @@ function renderChat(): void {
       l.file ? h('div', { class: 'line-file' }, icon('clip', 14), h('span', {}, l.file.name), h('span', { class: 'mono faint' }, sizeText(l.file.size))) : null));
     prev = l;
   }
-  const input = h('textarea', { class: 'input', rows: '1', maxlength: '2000', placeholder: 'Message everyone', 'aria-label': 'Message to the meeting' }) as HTMLTextAreaElement;
-  const submit = () => { const t = input.value.trim(); if (!t) return; send({ t: 'chat', text: t }); input.value = ''; };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
-  const picker = h('input', { type: 'file', class: 'visually-hidden', 'aria-hidden': 'true', tabindex: '-1' }) as HTMLInputElement;
-  picker.addEventListener('change', () => { const f = picker.files?.[0]; picker.value = ''; if (f) void sendFile(f); });
   const s = state.sending;
-  roomEls.chat.replaceChildren(...[
-    h('div', { class: 'chat-head' }, h('span', { class: 'tb-label' }, 'Meeting chat'), h('button', { class: 'icon-btn', 'aria-label': 'Close the chat', onclick: () => { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } }, icon('x', 14))),
-    list,
-    s ? h('div', { class: 'sending', role: 'status' }, icon('clip', 14), h('span', {}, `Sending ${s.name}`), h('span', { class: 'mono' }, `${Math.round((s.sent / Math.max(1, s.size)) * 100)}%`)) : null,
-    h('form', { class: 'compose', onsubmit: (e: Event) => { e.preventDefault(); submit(); } },
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Attach a file', title: 'Attach a file (the office keeps it with the meeting)', disabled: s ? '' : null, onclick: () => picker.click() }, icon('clip', 16)),
-      picker, input, h('button', { class: 'btn primary sm', type: 'submit' }, 'Send')),
-  ].filter((x) => !!x) as HTMLElement[]);
+  const c = composer();
+  const sending = s ? h('div', { class: 'sending', role: 'status' }, icon('clip', 14), h('span', {}, `Sending ${s.name}`), h('span', { class: 'mono' }, `${Math.round((s.sent / Math.max(1, s.size)) * 100)}%`)) : h('div', { class: 'sending', hidden: true });
+  const oldList = roomEls.chat.querySelector(':scope > .chat-list');
+  if (oldList && c.form.parentElement === roomEls.chat) {
+    // the writing box stays where it is (with its text and focus): only the lines change
+    oldList.replaceWith(list);
+    roomEls.chat.querySelector(':scope > .sending')?.replaceWith(sending);
+  } else {
+    roomEls.chat.replaceChildren(
+      h('div', { class: 'chat-head' }, h('span', { class: 'tb-label' }, 'Meeting chat'), h('button', { class: 'icon-btn', 'aria-label': 'Close the chat', onclick: () => { state.chatOpen = false; app.querySelector('.room')?.classList.remove('chat-open'); renderControls(); } }, icon('x', 14))),
+      list, sending, c.form);
+    c.grow.fit();
+  }
+  c.attach.disabled = !!s;
   list.scrollTop = list.scrollHeight;
 }
 
+
+/**
+ * The chat's writing box, made once per meeting page: it keeps a half-written message (and its
+ * focus) while lines arrive. It grows with the text up to six lines, then scrolls; Enter sends,
+ * Shift+Enter starts a new line, and Enter while an input method is composing is left to it.
+ */
+let composeEls: { form: HTMLFormElement; input: HTMLTextAreaElement; attach: HTMLButtonElement; grow: { fit(): void; stop(): void } } | null = null;
+function composer(): NonNullable<typeof composeEls> {
+  if (composeEls) return composeEls;
+  const input = h('textarea', { class: 'input', rows: '1', maxlength: '2000', placeholder: 'Message everyone', 'aria-label': 'Message to the meeting', enterkeyhint: 'send' }) as HTMLTextAreaElement;
+  const grow = autoGrow(input);
+  const submit = () => { const t = input.value.trim(); if (!t) return; send({ t: 'chat', text: t }); input.value = ''; grow.fit(); };
+  input.addEventListener('keydown', (e) => { if (enterAction(e) === 'send') { e.preventDefault(); submit(); } });
+  const picker = h('input', { type: 'file', class: 'visually-hidden', 'aria-hidden': 'true', tabindex: '-1' }) as HTMLInputElement;
+  picker.addEventListener('change', () => { const f = picker.files?.[0]; picker.value = ''; if (f) void sendFile(f); });
+  const attach = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Attach a file', title: 'Attach a file (the office keeps it with the meeting)', onclick: () => picker.click() }, icon('clip', 16)) as HTMLButtonElement;
+  const form = h('form', { class: 'compose', onsubmit: (e: Event) => { e.preventDefault(); submit(); } },
+    attach, picker, input, h('button', { class: 'btn primary sm', type: 'submit' }, 'Send')) as HTMLFormElement;
+  composeEls = { form, input, attach, grow };
+  return composeEls;
+}
 
 const sizeText = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 

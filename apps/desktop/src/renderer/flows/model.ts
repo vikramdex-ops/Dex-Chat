@@ -1,6 +1,7 @@
 // The on-device sentence model for Describe-to-Automation, loaded on first use in a worker. If it
 // cannot load (an old PC without WebAssembly SIMD, a damaged install), drafting carries on with the
-// keyword ranker and says so.
+// keyword ranker and says so. Loaded, it holds about 140 MB in the window's process, so it is let
+// go after a few minutes unused; it loads again in about a second when next needed.
 import type { Ranker } from '@dex/core/flow-describe';
 
 export type ModelState = { phase: 'idle' | 'loading' | 'ready' } | { phase: 'failed'; reason: string };
@@ -11,6 +12,24 @@ let ready: Promise<boolean> | null = null;
 let seq = 0;
 const waiting = new Map<number, { resolve: (s: number[]) => void; reject: (e: Error) => void }>();
 const listeners = new Set<(s: ModelState) => void>();
+
+/** How long the loaded model is kept after its last use. */
+const KEEP_MS = 3 * 60_000;
+let keepTimer: ReturnType<typeof setTimeout> | null = null;
+/** Used just now: keep it a while longer. */
+function touch(): void {
+  if (keepTimer) clearTimeout(keepTimer);
+  keepTimer = setTimeout(unload, KEEP_MS);
+}
+function unload(): void {
+  keepTimer = null;
+  if (waiting.size) { touch(); return; }
+  if (!worker || state.phase !== 'ready') return;
+  worker.terminate();
+  worker = null;
+  ready = null;
+  set({ phase: 'idle' });
+}
 
 const set = (s: ModelState) => { state = s; for (const l of listeners) l(s); };
 export const modelState = () => state;
@@ -36,11 +55,12 @@ export function loadModel(timeoutMs = 45_000): Promise<boolean> {
     worker.onerror = (e) => { clearTimeout(timer); fail(`The on-device model could not load (${e.message || 'worker error'}).`); };
     worker.onmessage = (e: MessageEvent<{ type: string; id?: number; sims?: number[]; error?: string; message?: string }>) => {
       const m = e.data;
-      if (m.type === 'ready') { clearTimeout(timer); set({ phase: 'ready' }); resolve(true); return; }
+      if (m.type === 'ready') { clearTimeout(timer); set({ phase: 'ready' }); touch(); resolve(true); return; }
       if (m.type === 'failed') { clearTimeout(timer); fail(`The on-device model could not load (${m.message ?? 'unknown error'}).`); return; }
       if (m.type === 'ranked' && m.id !== undefined) {
         const w = waiting.get(m.id);
         waiting.delete(m.id);
+        touch();
         if (!w) return;
         if (m.sims) w.resolve(m.sims); else w.reject(new Error(m.error ?? 'ranking failed'));
       }
@@ -60,6 +80,7 @@ export async function modelRanker(): Promise<Ranker | null> {
     if (!worker) { reject(new Error('The model stopped.')); return; }
     const id = ++seq;
     waiting.set(id, { resolve, reject });
+    touch();
     worker.postMessage({ type: 'rank', id, clause, candidates });
     setTimeout(() => { if (waiting.delete(id)) reject(new Error('The model did not answer in time.')); }, 10_000);
   });

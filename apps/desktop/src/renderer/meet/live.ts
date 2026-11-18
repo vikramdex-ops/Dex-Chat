@@ -5,16 +5,20 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import type { RoomChatLine } from '@dex/core';
 import { callState, tell } from '../rooms/engine.ts';
+import { alertUser } from '../alerts.ts';
+import { tr } from '../i18n/index.ts';
 
 interface LiveState {
   /** Meeting chat by main Room. */
   chat: Map<string, RoomChatLine[]>;
-  /** Lines not seen yet (the panel shows a count on its tab). */
+  /** Lines from others not seen yet (the panel shows a count on its Chat tab, the folded Room's chip too). */
   unread: number;
+  /** The latest line from someone else while the chat is closed: a brief preview on the Room (meet/ChatPeek.tsx). */
+  peek: RoomChatLine | null;
   /** Bumped when a recording changes (the shelf reloads). */
   recordings: number;
 }
-let state: LiveState = { chat: new Map(), unread: 0, recordings: 0 };
+let state: LiveState = { chat: new Map(), unread: 0, peek: null, recordings: 0 };
 const subs = new Set<() => void>();
 const set = (p: Partial<LiveState>) => { state = { ...state, ...p }; for (const f of subs) f(); };
 export const useLive = <T,>(sel: (s: LiveState) => T): T => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => sel(state));
@@ -28,12 +32,34 @@ function add(line: RoomChatLine): void {
   if (list.some((l) => l.id === line.id)) return;
   list.push(line);
   if (list.length > 300) list.splice(0, list.length - 300);
-  set({ chat: new Map(state.chat).set(key, list), unread: chatOpen ? state.unread : state.unread + 1 });
+  // your own lines are never unread news
+  const theirs = !!selfId() && line.userId !== selfId();
+  set({ chat: new Map(state.chat).set(key, list), unread: chatOpen || !theirs ? state.unread : state.unread + 1, peek: theirs && !chatOpen ? line : state.peek });
+  if (theirs) notifyLine(line);
 }
+
+/**
+ * A line from someone else while the app is in the background (minimised, behind other windows):
+ * a system notification by the person's notification settings and quiet hours; clicking it opens
+ * the meeting's chat. In front, the Room shows the count and a preview instead.
+ */
+function notifyLine(line: RoomChatLine): void {
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
+  const room = callState().room;
+  if (!room) return;
+  const title = room.breakoutName ?? room.title ?? '';
+  const text = line.text || (line.file ? tr(`Shared a file: ${line.file.name}`) : '');
+  // the title is the app's words and the meeting's name; the line is theirs, kept as written
+  alertUser('personal', title ? `${tr('Meeting chat')} · ${title}` : tr('Meeting chat'), `${line.guest ? tr(`${line.name} (guest)`) : line.name}: ${text}`.slice(0, 200), 'dexconnect://meetchat');
+}
+
+let selfId: () => string = () => '';
+/** The preview was shown (or the chat opened). */
+export function clearPeek(): void { if (state.peek) set({ peek: null }); }
 
 let chatOpen = false;
 /** The panel's Chat tab is open (lines are read as they come). */
-export function setChatOpen(open: boolean): void { chatOpen = open; if (open && state.unread) set({ unread: 0 }); }
+export function setChatOpen(open: boolean): void { chatOpen = open; if (open && (state.unread || state.peek)) set({ unread: 0, peek: null }); }
 
 /** The meeting chat of the Room this PC is in, loaded the first time it is shown. */
 export function useRoomChat(roomId: string | null): RoomChatLine[] {
@@ -56,7 +82,8 @@ export async function sendRoomChat(roomId: string, text: string): Promise<void> 
 }
 
 let wired = false;
-export function startMeetLive(nameOf: (userId: string) => string): void {
+export function startMeetLive(nameOf: (userId: string) => string, me?: () => string): void {
+  if (me) selfId = me;
   if (wired) return;
   wired = true;
   window.dex.onHubEvent((name, data) => {
@@ -71,7 +98,7 @@ export function startMeetLive(nameOf: (userId: string) => string): void {
     else if (name === 'room.ended') {
       // the meeting chat is gone with the meeting
       const d = data as { roomId: string };
-      if (state.chat.has(d.roomId)) { const chat = new Map(state.chat); chat.delete(d.roomId); set({ chat, unread: 0 }); }
+      if (state.chat.has(d.roomId)) { const chat = new Map(state.chat); chat.delete(d.roomId); set({ chat, unread: 0, peek: null }); }
     }
   });
 }

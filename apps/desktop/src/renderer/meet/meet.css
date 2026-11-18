@@ -49,7 +49,14 @@
 .meet-chat-line.mine .meet-chat-body { box-shadow: inset 2px 0 0 var(--amber); padding-left: 25px; margin-left: 2px; }
 .meet-chat-sys { margin: 8px 14px 2px; font-size: 10px; letter-spacing: .08em; color: var(--text-3); text-align: center; }
 .meet-compose { display: flex; align-items: flex-end; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--stroke-strong); background: var(--layer); }
-.meet-compose textarea { flex: 1; min-height: 34px; max-height: 120px; resize: none; padding: 7px 10px; font: inherit; font-size: 13px; line-height: 1.4; }
+.meet-compose textarea { flex: 1; min-width: 0; height: 34px; min-height: 34px; resize: none; padding: 7px 10px; font: inherit; font-size: 13px; line-height: 18px; overflow-y: hidden; }
+/* past one line the box grows (six lines, then it scrolls, autogrow.ts) into a ruled writing panel */
+.meet-compose textarea.grown {
+  border-radius: 2px; border-left: 2px solid var(--accent); padding-left: 9px;
+  background-image: linear-gradient(transparent calc(var(--grow-lh, 18px) - 1px), var(--stroke) 0);
+  background-size: 100% var(--grow-lh, 18px); background-origin: content-box; background-clip: content-box; background-attachment: local;
+}
+.meet-compose textarea:focus { padding-bottom: 6px; }
 .meet-compose .icon-btn:not(:disabled) { color: var(--accent-ink); }
 .meet-polls, .meet-boards { display: grid; gap: 10px; padding: 12px; align-content: start; }
 .meet-polls > .btn, .meet-boards .notes-list > .btn { justify-self: start; }

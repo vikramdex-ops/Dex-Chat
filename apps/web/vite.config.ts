@@ -90,7 +90,8 @@ function webApp(): Plugin {
       const walk = (name: string) => {
         const f = bundle[name];
         if (!f || f.type !== 'chunk' || shell.has(name)) return;
-        shell.add(name);
+        // a chunk that only carries CSS is dropped by Vite after this hook: list its styles, not the empty script
+        if (f.code.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '').trim() !== '') shell.add(name);
         const meta = (f as { viteMetadata?: { importedCss: Set<string>; importedAssets: Set<string> } }).viteMetadata;
         for (const c of meta?.importedCss ?? []) shell.add(c);
         for (const a of meta?.importedAssets ?? []) shell.add(a);

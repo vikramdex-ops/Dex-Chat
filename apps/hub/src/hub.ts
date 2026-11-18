@@ -49,6 +49,7 @@ import { BotFlows, BotFlowsError } from './botflows.ts';
 import { BotFlowError } from '@dex/core/botflows';
 import { MiniApps, MiniAppError } from './miniapps.ts';
 import { MeetGuests } from './meet-guests.ts';
+import { KnockError, MeetLobby } from './meet-lobby.ts';
 import { MeetReports, ReportError } from './meet-reports.ts';
 import { MeetThreads, ThreadError } from './meet-threads.ts';
 import { Recordings, RecordingError } from './recordings.ts';
@@ -189,6 +190,8 @@ export class Hub {
   readonly rooms: Rooms;
   readonly meetings: Meetings;
   readonly meetGuests: MeetGuests;
+  /** Knocks: who waits in the lobbies of each person's meetings, wherever they are (meet-lobby.ts). */
+  readonly meetLobby: MeetLobby;
   /** Every meeting's page on the office's meeting site (Dexterity Meet): names, what a page may learn. */
   readonly meetPublic: MeetPublic;
   readonly reports: MeetReports;
@@ -416,6 +419,12 @@ export class Hub {
         log: (main) => this.meetThreads.chatLog(main),
         missed: (main, me, before) => this.meetThreads.missed(main, me, before),
         noteTaker: (roomId, userId) => { this.meetThreads.setNoteTaker(roomId, userId); },
+      },
+      // made further down, like the threads
+      lobby: {
+        changed: (meetingId) => this.meetLobby?.changed(meetingId),
+        decided: (meetingId, deviceIds, outcome, by) => this.meetLobby?.decided(meetingId, deviceIds, outcome, by),
+        entered: (room, m, me, deviceId) => this.meetLobby?.entered(room, m, me, deviceId),
       },
     });
     this.recordings = new Recordings({
@@ -706,6 +715,21 @@ export class Hub {
       },
       storeFile: (guestId, name, mime, data) => { const f = this.files.storeBuffer(guestId, name, mime, data); return { id: f.id, name: f.name, size: f.size }; },
     });
+    this.meetLobby = new MeetLobby({
+      lobbyOf: (id) => this.rooms.lobbyOf(id),
+      admittersOf: (id) => this.rooms.admittersOf(id),
+      liveRooms: () => [...this.rooms.rooms.values()].filter((r) => !r.parentId && !r.purpose).map((r) => this.rooms.view(r)),
+      meeting: (id) => this.meetings.get(id),
+      answer: (me, meetingId, deviceIds, allow) => this.rooms.answer(me, meetingId, deviceIds, allow),
+      userById: (uid) => this.store.userById(uid),
+      guestName: (uid) => this.meetGuests.visitors([uid])[0]?.name ?? null,
+      deliver: (userIds, name, data) => this.deliver(userIds, name, () => data),
+      card: (uid, ref, body) => this.nib.postKnock(uid, ref, body),
+      cardsChanged: (uids) => this.nib.touch(uids, 'knock'),
+      guestsChanged: (meetingId) => this.meetGuests.lobbyChanged(meetingId),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.nib.knockCard = (me, ref) => this.meetLobby.card(me, ref);
     this.gateway = new RemoteGateway({
       hubId: id, certPem: tls.cert, keyPem: tls.key, localPort: () => this.port, secret: this.gatewaySecret,
       log: (level, msg, extra) => this.log(level, msg, extra),
@@ -1852,7 +1876,7 @@ export class Hub {
             throw err;
           }
         }
-        if (typeof op === 'string' && /^(meet\.(thread|recap|recapChat|recapFor)$|ap\.(create|update|list)$|agenda\.(get|set|tick)$)/.test(op)) {
+        if (typeof op === 'string' && /^(meet\.(thread|recap|recapChat|recapFor)$|ap\.(create|update|list|history)$|agenda\.(get|set|tick)$)/.test(op)) {
           const me = this.store.userById(conn.userId!)!;
           try {
             switch (op) {
@@ -1863,10 +1887,20 @@ export class Hub {
               case 'ap.create': return this.meetThreads.createAction(me, d);
               case 'ap.update': return this.meetThreads.updateAction(me, d);
               case 'ap.list': return this.meetThreads.listActions(me, d);
+              case 'ap.history': return this.meetThreads.historyAction(me, d);
               default: return this.meetThreads.agenda(me, op, d);
             }
           } catch (err) {
             if (err instanceof ThreadError || err instanceof MsgError || err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (op === 'meet.knocks' || op === 'meet.knock.answer') {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            return op === 'meet.knocks' ? this.meetLobby.board(me.id) : this.meetLobby.answer(me, d);
+          } catch (err) {
+            if (err instanceof KnockError || err instanceof RoomError) throw new OpError(err.message);
             throw err;
           }
         }

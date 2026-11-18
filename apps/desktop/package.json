@@ -19,6 +19,8 @@
     "@dex/core": "*",
     "@fontsource-variable/outfit": "^5.3.0",
     "@huggingface/transformers": "4.3.2",
+    "@mediapipe/tasks-vision": "^1.2.3",
+    "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "@tesseract.js-data/eng": "^1.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -26,6 +28,8 @@
     "electron": "45.3.2",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
+    "jsqr": "^1.4.0",
+    "mediasoup-client": "^3.26.0",
     "pdfjs-dist": "^6.5.438",
     "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
@@ -45,7 +49,8 @@
     "files": [
       "dist-electron/**/*",
       "dist-renderer/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map"
     ],
     "extraResources": [
       {
@@ -90,7 +95,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Dexterity Connect",
       "runAfterFinish": true,
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "differentialPackage": false
     },
     "linux": {
       "target": [
@@ -120,12 +126,12 @@
     "dmg": {
       "title": "Dexterity Connect"
     },
-    "publish": null
-  },
-  "dependencies": {
-    "@mediapipe/tasks-vision": "^1.2.3",
-    "@sapphi-red/web-noise-suppressor": "^0.4.1",
-    "jsqr": "^1.4.0",
-    "mediasoup-client": "^3.26.0"
+    "publish": null,
+    "electronLanguages": [
+      "en-US",
+      "en-GB",
+      "hi",
+      "ta"
+    ]
   }
 }

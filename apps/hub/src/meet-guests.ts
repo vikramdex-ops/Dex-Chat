@@ -5,8 +5,9 @@
 // A guest has no office account: no Directory, no conversations, no presence, and the names of
 // the people in the meeting are all they learn about the office. Guests always wait in the lobby.
 import crypto from 'node:crypto';
-import { GUEST_FILE_CHUNK, GUEST_FILE_MAX, GUEST_NAME_MAX, MEETING_ID_RE, WEB_GUEST_DEVICE_PREFIX, WEB_GUEST_PREFIX, formatMeetingId, isWebGuest, isWebGuestDevice, ulid } from '@dex/core';
-import type { GuestDown, GuestRoomView, IceServer, PublicUser, RoomChatLine, RoomInfo, RoomVisitor, WebinarDown } from '@dex/core';
+import { GUEST_FILE_CHUNK, GUEST_FILE_MAX, GUEST_NAME_MAX, MEETING_ID_RE, WEB_GUEST_DEVICE_PREFIX, WEB_GUEST_PREFIX, controlEndText, formatMeetingId, isWebGuest, isWebGuestDevice, presenterRefusal, ulid } from '@dex/core';
+import type { ControlEndReason, GuestDown, GuestRoomView, IceServer, PublicUser, RoomChatLine, RoomInfo, RoomVisitor, WebinarDown } from '@dex/core';
+import { decodeInputBatch } from '@dex/core/assist';
 import type { Meeting, Meetings } from './meetings.ts';
 import type { Rooms } from './rooms.ts';
 import { RoomError } from './rooms.ts';
@@ -201,7 +202,21 @@ export class MeetGuests {
       return;
     }
     this.host.audit(null, 'meeting.guestKnocked', m.id, { name, ip: s.ip });
-    this.host.send(s.gid, { t: 'lobby', meetingId: formatMeetingId(m.id), title: m.title || 'Meeting', host: this.host.userById(m.hostId)?.displayName ?? 'The host' });
+    // still waiting (the hub may have let them in while this ran): the lobby, saying honestly whether a host is in
+    if (s.state === 'waiting' && this.sessions.has(s.gid)) this.sendLobby(s, m);
+  }
+
+  /** The lobby frame: the meeting, its host, and whether a host is in the Room now (otherwise they have been told). */
+  private sendLobby(s: Session, m: Meeting): void {
+    const hostIn = this.host.rooms.lobbyOf(m.id)?.hostIn ?? false;
+    this.host.send(s.gid, { t: 'lobby', meetingId: formatMeetingId(m.id), title: m.title || 'Meeting', host: this.host.userById(m.hostId)?.displayName ?? 'The host', hostIn });
+  }
+
+  /** A meeting's lobby changed (a host came in or left, the Room opened): its waiting guests hear it. */
+  lobbyChanged(meetingId: string): void {
+    const m = this.host.meetings.get(meetingId);
+    if (!m) return;
+    for (const s of this.sessions.values()) if (s.kind === 'meeting' && s.state === 'waiting' && s.meetingId === meetingId && s.name) this.sendLobby(s, m);
   }
 
   /** A webinar attendee's page: their link first, then questions, votes, polls, hands, reactions, signalling and handouts. */
@@ -299,6 +314,18 @@ export class MeetGuests {
       case 'fileChunk':
         this.fileChunk(s, me, f);
         return;
+      // "Give control": a guest may ask; the presenter decides (and must pick a guest on purpose)
+      case 'control':
+        if (f.a === 'ask') rooms.handle('room.control.ask', me, s.deviceId, { roomId });
+        else if (f.a === 'stop') rooms.handle('room.control.stop', me, s.deviceId, { roomId });
+        return;
+      case 'input': {
+        // only well-formed events go on (at most 32 a message); the Rooms pass them only from the
+        // person granted control and only to the presenter, whose PC checks them all again
+        const e = decodeInputBatch({ k: 'in', e: f.e });
+        if (e.length) rooms.handle('room.data', me, s.deviceId, { roomId, data: { k: 'in', e } });
+        return;
+      }
       default:
         // a guest session is the meeting and nothing else
         this.host.send(s.gid, { t: 'error', message: 'Not available to guests.' });
@@ -344,19 +371,29 @@ export class MeetGuests {
     }
   }
 
+  /** A person's name as a guest may read it. */
+  private nameOf(userId: string): string {
+    if (isWebGuest(userId)) return this.sessions.get(this.byUser.get(userId) ?? -1)?.name ?? 'Guest';
+    return this.host.userById(userId)?.displayName ?? 'Someone';
+  }
+
   /** The Room as a guest sees it: names and media of the people in it, nothing more. */
   private view(r: RoomInfo): GuestRoomView {
     const hands = new Map((r.hands ?? []).map((h, i) => [h.deviceId, i + 1] as const));
-    const nameOf = (userId: string) => {
-      if (isWebGuest(userId)) return this.sessions.get(this.byUser.get(userId) ?? -1)?.name ?? 'Guest';
-      return this.host.userById(userId)?.displayName ?? 'Someone';
-    };
+    const nameOf = (userId: string) => this.nameOf(userId);
+    const c = r.control;
+    // let in before the host came: the page says who has been told and will join
+    const hostHere = r.participants.some((p) => p.userId === r.hostId || (r.coHosts ?? []).includes(p.userId));
+    const hostAway = !hostHere && r.hostId && !r.parentId ? this.host.userById(r.hostId)?.displayName ?? 'The host' : null;
     return {
+      ...(hostAway ? { hostAway } : {}),
       roomId: r.id, meetingId: r.meetingId ? formatMeetingId(r.meetingId) : '', title: r.title || 'Meeting', startedAt: r.startedAt, locked: !!r.locked,
       seats: r.participants.map((p) => ({
         deviceId: p.deviceId, name: nameOf(p.userId), muted: p.muted, camera: p.camera, screen: p.screen,
         host: p.userId === r.hostId || (r.coHosts ?? []).includes(p.userId), guest: isWebGuest(p.userId), hand: hands.get(p.deviceId) ?? 0,
+        ...(p.screen && !presenterRefusal(p) && r.meetingKind !== 'webinar' ? { controllable: true } : {}),
       })),
+      control: c ? { presenterDevice: c.presenterDevice, controllerDevice: c.controllerDevice, controllerName: nameOf(c.controllerId) } : null,
       breakout: r.breakoutName ?? null,
       returningAt: r.breakouts?.returningAt ?? null,
       note: r.breakouts?.note ? { text: r.breakouts.note.text, at: r.breakouts.note.at } : null,
@@ -418,6 +455,12 @@ export class MeetGuests {
       }
       case 'room.ended':
         if (d.roomId === s.roomId) this.end(s, GUEST_CLOSE.done, d.endedBy ? 'The host ended the meeting.' : 'The meeting has ended.');
+        return;
+      case 'room.controlRefused':
+        if (d.roomId === s.roomId) this.host.send(s.gid, { t: 'control', state: 'refused', text: `${this.nameOf(String(d.by))} said no to control for now` });
+        return;
+      case 'room.controlEnded':
+        if (d.roomId === s.roomId && d.controllerId === s.userId) this.host.send(s.gid, { t: 'control', state: 'ended', text: controlEndText(d.why as ControlEndReason, this.nameOf(String(d.presenterId ?? '')), 'You', false) });
         return;
     }
   }

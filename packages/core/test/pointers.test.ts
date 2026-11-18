@@ -104,3 +104,90 @@ test('the board: highlights and ink fade, markers stay, only the presenter clear
   assert.ok(b.apply('dev-b', { k: 'drop', id: 'p9' }, now, false));
   assert.equal(b.markers.size, 0);
 });
+
+// ------------------------------------------------------------------ a marker on a shared screen, end to end
+import { overlayBox, pictureBox } from '../src/pointers.ts';
+import { fromPicture, toScreen } from '../src/assist.ts';
+
+/** WebRTC sends a smaller picture when it must, with even sides. */
+const sent = (w: number, h: number, k: number) => ({ w: Math.max(2, Math.round((w * k) / 2) * 2), h: Math.max(2, Math.round((h * k) / 2) * 2) });
+
+test('a marker placed on the shared video lands on the same pixel for the viewer, on the presenter\'s screen, and for remote control', () => {
+  // the presenter's monitors: physical pixels, Windows scaling, and where each sits (a second monitor left of or above the main one)
+  const monitors = [
+    { W: 1920, H: 1080, s: 1, px: 0, py: 0 },
+    { W: 1920, H: 1080, s: 1.25, px: 0, py: 0 },
+    { W: 2560, H: 1440, s: 1.5, px: 1920, py: 0 },
+    { W: 1920, H: 1200, s: 1.75, px: -1920, py: -120 },
+    { W: 3840, H: 2160, s: 2, px: 0, py: -2160 },
+    { W: 1366, H: 768, s: 1, px: 2560, py: 300 },
+    { W: 1080, H: 1920, s: 1.5, px: -1080, py: 0 },
+  ];
+  // the viewer's shared-screen element: wide, tall, phone-sized, odd sizes
+  const views = [
+    { x: 300, y: 80, width: 1100, height: 620 },
+    { x: 12, y: 140, width: 366, height: 520 },
+    { x: 0, y: 0, width: 2400, height: 900 },
+    { x: 41.5, y: 63.25, width: 777.5, height: 777.5 },
+  ];
+  let checked = 0;
+  for (const mon of monitors) {
+    const dip = { x: mon.px / mon.s, y: mon.py / mon.s, width: mon.W / mon.s, height: mon.H / mon.s };
+    const phys = { x: mon.px, y: mon.py, width: mon.W, height: mon.H };
+    for (const k of [1, 0.5, 0.37]) {
+      const f = sent(mon.W, mon.H, k);
+      for (const el of views) {
+        const box = pictureBox(el, f.w, f.h);
+        for (const [u, v] of [[0.03, 0.04], [0.5, 0.5], [0.97, 0.12], [0.21, 0.88], [0.999, 0.999]]) {
+          const cx = box.x + u * box.width;
+          const cy = box.y + v * box.height;
+          const p = toSurface(cx, cy, box);
+          assert.ok(p, 'a click on the picture is on the surface');
+          // the viewer draws it where they clicked
+          const back = fromSurface(p.x, p.y, box);
+          assert.ok(Math.abs(back.x - cx) <= 1 && Math.abs(back.y - cy) <= 1, `viewer: ${back.x},${back.y} vs ${cx},${cy}`);
+          // the physical pixel the viewer clicked on, through the (scaled) picture
+          const truth = { x: phys.x + ((cx - box.x) / box.width) * mon.W, y: phys.y + ((cy - box.y) / box.height) * mon.H };
+          // remote control injects there (same mapping as live pointers)
+          const c = fromPicture(cx, cy, el, f.w, f.h)!;
+          assert.deepEqual(c, p, 'control and pointers read the same point');
+          const inj = toScreen(c.x, c.y, phys);
+          assert.ok(Math.abs(inj.x - truth.x) <= 1 && Math.abs(inj.y - truth.y) <= 1, `injected ${inj.x},${inj.y} vs ${truth.x},${truth.y} (${mon.W}x${mon.H}@${mon.s})`);
+          // the presenter's pointer window: exactly over the display, or put elsewhere by Windows
+          for (const win of [dip, { ...dip, width: dip.width * 1.2, height: dip.height * 1.2 }, { x: dip.x + 40, y: dip.y + 30, width: dip.width - 40, height: dip.height - 78 }]) {
+            for (const zoom of [1, 1.25]) {
+              const inner = { width: win.width / zoom, height: win.height / zoom };
+              const q = fromSurface(p.x, p.y, overlayBox(dip, win, inner));
+              // the window's CSS pixel on the screen, in physical pixels
+              const sx = (win.x + (q.x * win.width) / inner.width) * mon.s;
+              const sy = (win.y + (q.y * win.height) / inner.height) * mon.s;
+              assert.ok(Math.abs(sx - truth.x) <= 1 && Math.abs(sy - truth.y) <= 1, `overlay ${sx},${sy} vs ${truth.x},${truth.y}`);
+              checked++;
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 1000);
+});
+
+test('the pointer window used to assume it covered the display: off by the difference when it did not', () => {
+  const dip = { x: 0, y: 0, width: 1536, height: 864 };
+  const win = { x: 0, y: 0, width: 1920, height: 1080 }; // made at the main monitor's scaling
+  const inner = { width: win.width, height: win.height };
+  const old = fromSurface(0.5, 0.5, { x: 0, y: 0, ...inner });
+  const now = fromSurface(0.5, 0.5, overlayBox(dip, win, inner));
+  assert.deepEqual(now, { x: 768, y: 432 });
+  assert.ok(Math.abs(old.x - now.x) > 100, 'the old placement was far off');
+});
+
+test('letterboxing: clicks on the bars are not on the picture', () => {
+  const el = { x: 0, y: 0, width: 1000, height: 1000 };
+  const box = pictureBox(el, 1920, 1080);
+  assert.equal(box.y, (1000 - 562.5) / 2);
+  assert.equal(toSurface(500, 100, box), null);
+  assert.deepEqual(toSurface(500, 500, box), { x: 0.5, y: 0.5 });
+  assert.deepEqual(pictureBox(el, 0, 0), el, 'no picture yet: the element');
+  assert.deepEqual(overlayBox(el, { x: 0, y: 0, width: 0, height: 0 }, { width: 10, height: 20 }), { x: 0, y: 0, width: 10, height: 20 });
+});

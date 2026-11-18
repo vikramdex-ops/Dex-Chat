@@ -23,6 +23,8 @@ export const INPUT_RATE = 120;
 export const INPUT_BATCH = 32;
 /** The requester stops control from their own keyboard with this chord (shown in the session bar). */
 export const STOP_HOTKEY = 'Ctrl+Alt+Shift+S';
+/** The quick way to take control back, an Esc for the person whose screen it is (never passed on from the controller). */
+export const STOP_QUICK = 'Shift+Esc';
 
 export interface KeyInfo {
   /** Windows virtual-key code. */
@@ -80,6 +82,7 @@ export const BLOCKED_CHORDS: ReadonlyArray<{ mods: Mod[]; keys: string[]; why: s
   { mods: ['ctrl', 'alt'], keys: ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'], why: 'Ctrl+Alt+F-key' },
   { mods: ['alt'], keys: ['PrintScreen'], why: 'Alt+SysRq' },
   { mods: ['ctrl', 'alt', 'shift'], keys: ['KeyS'], why: STOP_HOTKEY },
+  { mods: ['shift'], keys: ['Escape'], why: STOP_QUICK },
 ];
 
 /** The blocked chord a key-down would complete, given the modifiers already held (or null). */
@@ -198,13 +201,17 @@ export class InputGate {
 // ------------------------------------------------------------------ coordinates
 export interface Rect { x: number; y: number; width: number; height: number }
 
-/** A point in the shared picture (0..1) as a pixel on the requester's display (inside it, always). */
+/**
+ * A point in the shared picture (0..1) as a pixel on the requester's display (inside it, always):
+ * the pixel the point falls in (scaling by width - 1 instead drifted by up to two pixels near the
+ * right and bottom edges of a 4K screen).
+ */
 export function toScreen(x: number, y: number, display: Rect): { x: number; y: number } {
   const w = Math.max(1, Math.round(display.width));
   const h = Math.max(1, Math.round(display.height));
   return {
-    x: Math.round(display.x) + Math.min(w - 1, Math.max(0, Math.round(clamp01(x) * (w - 1)))),
-    y: Math.round(display.y) + Math.min(h - 1, Math.max(0, Math.round(clamp01(y) * (h - 1)))),
+    x: Math.round(display.x) + Math.min(w - 1, Math.max(0, Math.floor(clamp01(x) * w + 1e-6))),
+    y: Math.round(display.y) + Math.min(h - 1, Math.max(0, Math.floor(clamp01(y) * h + 1e-6))),
   };
 }
 
@@ -220,7 +227,11 @@ export function toVirtualDesk(px: number, py: number, vs: Rect): { x: number; y:
   return { x: Math.max(0, Math.min(65535, nx)), y: Math.max(0, Math.min(65535, ny)) };
 }
 
-/** Where a picture of srcW x srcH is drawn inside an element with object-fit: contain. */
+/**
+ * Where a picture of srcW x srcH is drawn inside an element with object-fit: contain (the shared
+ * screen's <video>): the letterbox bars are not the picture. Live pointers use the same mapping
+ * (pointers.ts pictureBox), so a marker and a click land on the same pixel.
+ */
 export function containBox(el: Rect, srcW: number, srcH: number): Rect {
   if (!(srcW > 0) || !(srcH > 0) || !(el.width > 0) || !(el.height > 0)) return { ...el };
   const scale = Math.min(el.width / srcW, el.height / srcH);

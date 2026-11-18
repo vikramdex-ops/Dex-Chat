@@ -1,12 +1,13 @@
 // "Give control" on the Room sheet (meetings and a webinar's stage): the item in a person's menu,
-// offered only to the person sharing a whole screen; "Ask for control" on the shared screen for
-// people in the desktop app; the presenter's request and consent sheets and the amber banner with
+// offered only to the person sharing a whole screen (a guest in a browser only by their own item,
+// marked GUEST); "Ask for control" on the shared screen for people in the desktop app (guests ask
+// from the meeting page, apps/gateway/meet/room.ts); the presenter's request and consent sheets and the amber banner with
 // a big Stop while control is on; and the controller's surface over the shared picture, which
 // says whose screen they control and has a Release button. The rules are in meet/control-store.ts, the
 // hub's in apps/hub/src/meet-control.ts.
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { controllerRefusal, presenterRefusal } from '@dex/core';
+import { BROWSER_VIEW_ONLY, controllerRefusal, isWebGuest, presenterRefusal } from '@dex/core';
 import type { PublicUser, RoomInfo, RoomParticipant } from '@dex/core';
 import { Avatar, Dialog, Icon, useToast } from '../ui.tsx';
 import { controlCapsNow, setLayout, setMinimized, sharedSource, useCall } from '../rooms/engine.ts';
@@ -22,9 +23,9 @@ function stageStaff(room: RoomInfo, userId: string): boolean | null {
   return (chatState().conversations.get(room.convId)?.members ?? []).includes(userId);
 }
 
-/** Whether this person could be given control in this Room (null), or why not. */
-export function controlRefusalFor(room: RoomInfo, p: RoomParticipant | undefined): string | null {
-  return controllerRefusal(p, p ? stageStaff(room, p.userId) : null);
+/** Whether this person could be given control in this Room (null), or why not; a guest only when picked on purpose (`guestPicked`). */
+export function controlRefusalFor(room: RoomInfo, p: RoomParticipant | undefined, guestPicked = false): string | null {
+  return controllerRefusal(p, p ? stageStaff(room, p.userId) : null, { guestPicked });
 }
 
 /** In a person's menu, for the person sharing their screen: give them control, take it back, or why not. */
@@ -34,8 +35,9 @@ export function ControlMenuItems({ room, deviceId, meDevice, nameOf, onDone }: {
   const me = room.participants.find((p) => p.deviceId === meDevice);
   const p = room.participants.find((x) => x.deviceId === deviceId);
   if (!screen || !p || deviceId === meDevice || room.purpose || !window.dex.assist) return null;
-  // not offered to browser guests, phones, or webinar attendees invited to speak
-  if (controlRefusalFor(room, p)) return null;
+  // not offered to phones or webinar attendees invited to speak; a guest in a browser only by name, as a guest
+  const guest = isWebGuest(p.userId);
+  if (controlRefusalFor(room, p, guest)) return null;
   const first = nameOf(p.userId).split(' ')[0];
   const c = room.control;
   if (c && c.controllerDevice === deviceId) {
@@ -54,9 +56,10 @@ export function ControlMenuItems({ room, deviceId, meDevice, nameOf, onDone }: {
   }
   const busy = !!c || (!!local && local.controllerDevice !== deviceId);
   return (
-    <button role="menuitem" className="ctl-item" disabled={busy} title={busy ? `${nameOf(c?.controllerId ?? local?.controllerId ?? '')} has control now: one person at a time` : `Let ${first} use your mouse and keyboard on the screen you share`}
+    <button role="menuitem" className="ctl-item" disabled={busy} title={busy ? `${nameOf(c?.controllerId ?? local?.controllerId ?? '')} has control now: one person at a time` : guest ? `${first} is a guest from outside the office, in a browser: they could use your mouse and keyboard` : `Let ${first} use your mouse and keyboard on the screen you share`}
       onClick={() => { onDone(); offerControl(deviceId, p.userId); }}>
-      <Icon name="screen" size={16} />Give control…
+      <Icon name="screen" size={16} />{guest ? 'Give control to this guest…' : 'Give control…'}
+      {guest && <span className="kbd">GUEST</span>}
     </button>
   );
 }
@@ -80,6 +83,7 @@ export function ShareControl({ room, presenter, meDevice, nameOf }: { room: Room
   }
   if (c) return <span className="ctl-flag mono" role="status">{nameOf(c.controllerId).toUpperCase()} IS CONTROLLING</span>;
   const why = presenterRefusal(presenter);
+  if (why && isWebGuest(presenter.userId)) return <span className="ctl-flag mono quiet" title={BROWSER_VIEW_ONLY}>VIEW ONLY · BROWSER</span>;
   if (why) return presenter.controlOff === 'mac' ? <span className="ctl-flag mono quiet" title={why}>VIEW ONLY · MAC</span> : null;
   // only people in the desktop app (not phones or browsers), and on a webinar's stage only its staff
   if (!window.dex.assist || controlRefusalFor(room, me)) return null;
@@ -112,7 +116,7 @@ export function ControlLayer({ room, users, meDevice, nameOf }: { room: RoomInfo
   return (
     <>
       {/* on the page itself, so it stays while the Room is folded into the title bar */}
-      {local && createPortal(<ControlBanner who={nameOf(local.controllerId)} onStop={() => void stopControl().catch((e: Error) => toast(e.message, true))} />, document.body)}
+      {local && createPortal(<ControlBanner who={nameOf(local.controllerId)} guest={isWebGuest(local.controllerId)} onStop={() => void stopControl().catch((e: Error) => toast(e.message, true))} />, document.body)}
       {ask && !consent && (
         <Dialog title={`${nameOf(ask.fromUser)} asks for control`} narrow onClose={refuseAsk}>
           <div className="cs-sheet ctl-request">
@@ -120,9 +124,10 @@ export function ControlLayer({ room, users, meDevice, nameOf }: { room: RoomInfo
               <Avatar user={users.get(ask.fromUser) ?? { id: ask.fromUser, displayName: nameOf(ask.fromUser) }} />
               <div>
                 <strong translate="no">{nameOf(ask.fromUser)}</strong>
-                <span className="mono faint">ASKS TO USE YOUR MOUSE AND KEYBOARD</span>
+                <span className="mono faint">{isWebGuest(ask.fromUser) ? 'GUEST · ASKS TO USE YOUR MOUSE AND KEYBOARD' : 'ASKS TO USE YOUR MOUSE AND KEYBOARD'}</span>
               </div>
             </div>
+            {isWebGuest(ask.fromUser) && <p className="hm-warn ctl-guest"><Icon name="info" size={15} />A guest from outside the office, joining from a browser. Accept only if you know who this is.</p>}
             <p className="cs-lead">They would click and type on the screen you are sharing in this meeting. If you accept, you choose on the next sheet, and you can stop it at any moment.</p>
             <div className="dialog-actions">
               <button className="btn ghost" onClick={refuseAsk}>Refuse</button>
@@ -135,7 +140,9 @@ export function ControlLayer({ room, users, meDevice, nameOf }: { room: RoomInfo
         <ControlConsentSheet who={nameOf(consent.userId)} onClose={closeConsent} onAllow={() => giveControl(consent.deviceId, consent.userId)}
           available={caps.controllable} reason={caps.off === 'mac' ? 'On a Mac your shared screen is view only: remote control needs Accessibility permission, which the app does not ask for.' : 'This PC cannot be controlled remotely (on Linux it needs xdotool on an X11 desktop).'}
           whole={whole} wholeNote="Share your whole screen first (not one window): control works on a whole screen."
-          lead={`${nameOf(consent.userId)} can click, type and open things on the screen you are sharing, as if they sat at your PC. Everyone in the meeting sees what they do.`}
+          lead={isWebGuest(consent.userId)
+            ? `${nameOf(consent.userId)} is a guest from outside the office, in a browser. They can click, type and open things on the screen you are sharing, as if they sat at your PC. Everyone in the meeting sees what they do.`
+            : `${nameOf(consent.userId)} can click, type and open things on the screen you are sharing, as if they sat at your PC. Everyone in the meeting sees what they do.`}
           ends="Control ends when you stop sharing, when either of you leaves, or when the meeting ends. One person at a time." />
       )}
     </>

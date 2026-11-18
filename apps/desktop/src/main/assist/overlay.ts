@@ -106,6 +106,7 @@ export class Overlays {
   /** A window finished drawing and listens: send it its state again. */
   resend(contentsId: number): void {
     if (this.bar && !this.bar.isDestroyed() && this.bar.webContents.id === contentsId) this.pushBar();
+    if (this.pointerWin && !this.pointerWin.isDestroyed() && this.pointerWin.webContents.id === contentsId) this.pushGeom();
   }
 
   /** Is this one of our overlay windows (their buttons may act)? */
@@ -114,19 +115,56 @@ export class Overlays {
   }
 
   // ------------------------------------------------------------ the presenter's pointer window
+  private pointerDisplay: Display | null = null;
+
+  /**
+   * A click-through window over the shared display. Its marks are placed from the display's and the
+   * window's real bounds (sent to it as `geom`), so they land on the shared pixels even when Windows
+   * sizes the window differently (a monitor with other scaling, the window moved by the system).
+   */
   showPointers(display: Display): void {
+    this.pointerDisplay = display;
     const b = display.bounds;
-    if (this.pointerWin && !this.pointerWin.isDestroyed()) { this.pointerWin.setBounds(b); return; }
+    if (this.pointerWin && !this.pointerWin.isDestroyed()) { this.place(this.pointerWin, b); return; }
     const w = new BrowserWindow({
       ...b, show: false, frame: false, transparent: true, backgroundColor: '#00000000', resizable: false, movable: false,
       focusable: false, skipTaskbar: true, hasShadow: false, title: 'Dexterity Connect · pointers', enableLargerThanScreen: true,
-      webPreferences: { preload: this.preload, sandbox: true, contextIsolation: true, nodeIntegration: false },
+      webPreferences: { preload: this.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, zoomFactor: 1 },
     });
     topmost(w, true);
     this.load(w, 'overlay=pointers');
-    w.once('ready-to-show', () => { w.setBounds(b); w.showInactive(); });
+    // a window made on another monitor first takes the main one's scaling: place it again once it is there
+    w.once('ready-to-show', () => { this.place(w, b); w.showInactive(); this.place(w, b); });
+    w.on('moved', () => this.pushGeom());
+    w.on('resize', () => this.pushGeom());
+    w.webContents.on('did-finish-load', () => { w.webContents.setZoomFactor(1); this.pushGeom(); });
     w.on('closed', () => { if (this.pointerWin === w) this.pointerWin = null; });
     this.pointerWin = w;
+  }
+
+  private place(w: BrowserWindow, b: Electron.Rectangle): void {
+    if (w.isDestroyed()) return;
+    const cur = w.getBounds();
+    if (cur.x !== b.x || cur.y !== b.y || cur.width !== b.width || cur.height !== b.height) w.setBounds(b);
+    this.pushGeom();
+  }
+
+  /** Displays were added, removed, moved or rescaled: follow the shared one (by its id). */
+  displaysChanged(all: Display[]): void {
+    const d = this.pointerDisplay;
+    if (!d || !this.pointerWin || this.pointerWin.isDestroyed()) return;
+    const now = all.find((x) => x.id === d.id);
+    if (!now) { this.hidePointers(); return; }
+    this.pointerDisplay = now;
+    this.place(this.pointerWin, now.bounds);
+  }
+
+  /** The display's and the window's bounds, for the window to place marks (overlayBox in @dex/core/pointers). */
+  private pushGeom(): void {
+    const w = this.pointerWin;
+    const d = this.pointerDisplay;
+    if (!w || w.isDestroyed() || !d) return;
+    w.webContents.send('overlay:state', { geom: { display: { ...d.bounds }, window: w.getBounds() } });
   }
 
   pointer(msg: unknown): void {
@@ -136,6 +174,7 @@ export class Overlays {
   hidePointers(): void {
     if (this.pointerWin && !this.pointerWin.isDestroyed()) this.pointerWin.destroy();
     this.pointerWin = null;
+    this.pointerDisplay = null;
   }
 
   /** The pointer window, for a look at what it draws (tests and screenshots). */

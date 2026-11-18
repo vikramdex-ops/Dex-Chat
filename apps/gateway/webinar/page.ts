@@ -411,7 +411,7 @@ function renderBar(): void {
       if (v) { v.muted = !st.sound; void v.play().catch(() => {}); }
       renderBar();
     }) : null,
-    tool(st.hand ? 'Hand up' : 'Raise hand', 'hand', st.hand, () => { st.hand = !st.hand; send({ t: 'hand', up: st.hand }); renderBar(); }, st.hand ? ' hand' : ''),
+    tool(st.hand ? 'Hand up' : 'Raise hand', 'hand', st.hand, () => { st.hand = !st.hand; send({ t: 'hand', up: st.hand }); renderBar(); }, st.hand ? ' raised' : ''),
     h('div', { class: 'react-row', role: 'group', 'aria-label': 'React' }, ...MEETING_REACTIONS.map((e) => h('button', { type: 'button', class: 'react-btn', 'aria-label': `React ${e}`, onclick: () => send({ t: 'react', emoji: e }) }, e))),
     h('button', { type: 'button', class: 'btn ghost leave', onclick: () => { st.ended = true; send({ t: 'leave' }); closePc(); if (tick) clearInterval(tick); message('Watch', 'You left the webinar', 'Open your link again to come back.', h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => { st.ended = false; watch(); } }, 'Watch again'))); } }, icon('door'), 'Leave'),
   ];

@@ -248,16 +248,29 @@ export function PointerLayer(props: PointerLayerProps) {
           {[...board.markers.entries()].map(([k, m]) => {
             const p = toLocal(m.x, m.y);
             const col = colorFor(m.from);
+            // the numbered disc sits exactly on the point (its centre is the point, the ticks say so);
+            // the note reads beside it, on the side with room
+            const flip = !!lr && p.x > lr.width - 200;
             return (
-              <g key={k} className="pt-pin" transform={`translate(${p.x} ${p.y})`}>
-                <line x1={0} y1={0} x2={14} y2={-18} style={{ stroke: col }} />
-                <circle cx={0} cy={0} r={3} style={{ fill: col }} />
-                <rect x={10} y={-34} width={22} height={18} rx={4} style={{ fill: col }} />
-                <text x={21} y={-21} className="pt-pin-n">{m.n}</text>
-                {m.note && <text x={36} y={-21} className="pt-pin-note">{m.note}</text>}
+              <g key={k} className="pt-pin" transform={`translate(${p.x} ${p.y})`} data-n={m.n}>
+                <path d="M0 -18V-12.5M0 12.5V18M-18 0H-12.5M12.5 0H18" className="pt-pin-ticks" style={{ stroke: col }} />
+                <circle cx={0} cy={0} r={10.5} className="pt-pin-disc" style={{ fill: col }} />
+                <text x={0} y={3.9} className={`pt-pin-n${m.n > 99 ? ' small' : ''}`}>{m.n}</text>
+                {m.note && <text x={flip ? -23 : 23} y={4} className="pt-pin-note" textAnchor={flip ? 'end' : 'start'}>{m.note}</text>}
               </g>
             );
           })}
+          {note && (() => {
+            // where the marker being written will land
+            const p = toLocal(note.x, note.y);
+            return (
+              <g className="pt-pin draft" transform={`translate(${p.x} ${p.y})`}>
+                <path d="M0 -18V-12.5M0 12.5V18M-18 0H-12.5M12.5 0H18" className="pt-pin-ticks" style={{ stroke: colorFor(self.deviceId) }} />
+                <circle cx={0} cy={0} r={10.5} className="pt-pin-disc" style={{ fill: colorFor(self.deviceId) }} />
+                <text x={0} y={3.9} className="pt-pin-n">{board.nextMarker()}</text>
+              </g>
+            );
+          })()}
           {[...board.cursors.values()].filter((c) => (showOwnCursor || c.from !== self.deviceId) && now - c.at < CURSOR_IDLE_MS).map((c) => {
             const p = toLocal(c.x, c.y);
             const col = colorFor(c.from);
@@ -275,7 +288,7 @@ export function PointerLayer(props: PointerLayerProps) {
         </svg>
       )}
       {note && (
-        <form className="pt-note" style={{ left: note.sx, top: note.sy }} onSubmit={(e) => { e.preventDefault(); placePin(); }} onPointerDown={(e) => e.stopPropagation()}>
+        <form className={`pt-note${lr && note.sx > lr.width - 320 ? ' flip' : ''}`} style={{ left: note.sx, top: note.sy }} onSubmit={(e) => { e.preventDefault(); placePin(); }} onPointerDown={(e) => e.stopPropagation()}>
           <span className="mono">MARKER {board.nextMarker()}</span>
           <input autoFocus className="input" maxLength={MAX_NOTE} placeholder="A short note (optional)" aria-label="Note on the marker" value={noteText} onChange={(e) => setNoteText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setNote(null); } }} />

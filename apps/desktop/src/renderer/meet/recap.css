@@ -75,3 +75,11 @@
   .recap-lines .rl-text { grid-column: 1 / -1; }
   .recap-lines li > .tag, .recap-lines li > .mono.faint:not(:first-child) { display: none; }
 }
+/* what the recap opens sits above it: menus, dialogs (an action point, a confirmation), the
+   recording player and the toasts that answer a click (they were drawn under its scrim before) */
+body:has(.recap-scrim) .rec-viewer { z-index: 73; }
+body:has(.recap-scrim) .scrim { z-index: 74; }
+body:has(.recap-scrim) .scrim:has(.confirm-actions) { z-index: 75; }
+body:has(.recap-scrim) .popover { z-index: 76; }
+body:has(.recap-scrim) .toasts { z-index: 78; }
+.recap-problem { display: flex; gap: 6px; align-items: center; margin: 6px 0; color: var(--amber-ink); }

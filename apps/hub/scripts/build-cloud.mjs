@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import zlib from 'node:zlib';
 import { blake3 } from '@noble/hashes/blake3.js';
 
 const run = promisify(execFile);
@@ -98,9 +99,13 @@ export async function buildCloudBundle(outFile = path.join(hubRoot, 'dist/cloud-
     const siteConfigPath = path.join(siteDir, 'wrangler.jsonc');
     const siteConfig = readJsonc(siteConfigPath);
     const dist = path.join(siteDir, siteConfig.pages_build_output_dir ?? 'dist');
+    // each file brotli-compressed when that saves something (the hub unpacks it just before the upload:
+    // Cloudflare takes the plain file and compresses it itself), so the hub carries a smaller bundle
     const files = walk(dist).map((rel) => {
       const data = fs.readFileSync(path.join(dist, rel));
-      return { path: `/${rel}`, hash: pagesHash(data, rel), contentType: TYPES[path.extname(rel).slice(1)] ?? 'application/octet-stream', b64: data.toString('base64') };
+      const br = zlib.brotliCompressSync(data, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: data.length } });
+      const body = br.length < data.length * 0.9 ? { br: br.toString('base64'), size: data.length } : { b64: data.toString('base64') };
+      return { path: `/${rel}`, hash: pagesHash(data, rel), contentType: TYPES[path.extname(rel).slice(1)] ?? 'application/octet-stream', ...body };
     });
     const worker = fs.readFileSync(path.join(dist, '_worker.js'), 'utf8');
     const headers = fs.existsSync(path.join(dist, '_headers')) ? fs.readFileSync(path.join(dist, '_headers'), 'utf8') : null;
@@ -124,7 +129,7 @@ export async function buildCloudBundle(outFile = path.join(hubRoot, 'dist/cloud-
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, JSON.stringify(bundle));
     const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
-    console.log(`cloud bundle: gateway ${gateway.hash} (${kb(main.length)}), meeting site ${site.hash} (${files.length} files, ${kb(files.reduce((n, f) => n + f.b64.length * 0.75, 0))}) → ${path.relative(process.cwd(), outFile)} (${kb(fs.statSync(outFile).size)})`);
+    console.log(`cloud bundle: gateway ${gateway.hash} (${kb(main.length)}), meeting site ${site.hash} (${files.length} files, ${kb(files.reduce((n, f) => n + (f.size ?? f.b64.length * 0.75), 0))}) → ${path.relative(process.cwd(), outFile)} (${kb(fs.statSync(outFile).size)})`);
     return outFile;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
