@@ -80,7 +80,10 @@ button:disabled { cursor: default; opacity: .45; }
 .tool:hover:not(:disabled) { color: var(--text); border-color: var(--text-3); }
 .tool.on, .tool.on:hover:not(:disabled) { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
 .tool.off { color: var(--text-2); }
-.tool.hand { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-soft); }
+/* a raised hand: amber, the same size and layout as every other tool (the tile's tag is .tags .hand) */
+.tool.raised, .tool.raised:hover:not(:disabled) { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-soft); }
+.tool > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool > svg { flex: none; }
 .lobby-wait { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--stroke-strong); border-radius: var(--radius); background: var(--layer-2); }
 .lobby-wait .mono { font-weight: 600; letter-spacing: .1em; }
 .wait-clock { margin-left: auto; color: var(--text-3); }
@@ -112,8 +115,8 @@ button:disabled { cursor: default; opacity: .45; }
 .tile .face { background: var(--tint); }
 .tile.hand-up .face-box { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft); }
 .tags { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
-.flag, .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
-.hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
+.flag, .tags .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
+.tags .hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
 .chat .flag { background: var(--subtle-2); color: var(--text-2); border-color: var(--stroke-strong); }
 .reacts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .reacts span { position: absolute; bottom: 8px; animation: rise 2.4s ease-out forwards; }

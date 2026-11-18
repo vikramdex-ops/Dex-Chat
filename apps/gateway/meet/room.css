@@ -29,8 +29,10 @@ body.in-room #app { display: block; padding: 0; }
 .tile .face { background: var(--tint); }
 .tile.hand-up .face-box { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft); }
 .tags { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
-.flag, .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
-.hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
+/* the tile's tags (a raised hand's place in line, HOST, GUEST): scoped to .tags, so the Raise hand
+   tool in the toolbar (.tool.raised) never takes their 20 px height */
+.flag, .tags .hand { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; font: 700 10px/1 var(--font-mono); letter-spacing: .08em; border: 1px solid rgba(232, 242, 243, .28); background: var(--cap); color: var(--cap-text); }
+.tags .hand { background: var(--amber); color: #3b2500; border-color: var(--amber); }
 .chat .flag { background: var(--subtle-2); color: var(--text-2); border-color: var(--stroke-strong); }
 .reacts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .reacts span { position: absolute; bottom: 8px; animation: rise 2.4s ease-out forwards; }
