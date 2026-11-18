@@ -125,6 +125,9 @@ body.in-room #app { display: block; padding: 0; }
   .controls .tool .short { display: block; }
   .leave { height: 50px; padding: 0 8px; gap: 4px; flex: 0 0 auto; justify-content: center; font-size: 14px; }
   .grid.strip { grid-auto-columns: 120px; }
+  /* the control tag goes under the picture's caption, at the bottom, on a narrow screen */
+  .ctl-tag { top: auto; bottom: 8px; font-size: 12px; }
+  .ctl-ask, .ctl-flag { top: 38px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .reacts span { animation: none; }

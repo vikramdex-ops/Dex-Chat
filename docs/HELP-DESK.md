@@ -91,8 +91,9 @@ a whole screen to be shared. While it is on:
 
 - an amber banner across the top of the app says *"Ravi Kumar is using your mouse and keyboard"*
   with a big **Stop control** button, and the share bar turns amber with its own **Stop control**;
-- **Ctrl+Alt+Shift+S** stops control at once from anywhere, even while the technician is typing
-  (a global shortcut of the requester's PC; the same keys from the technician are never passed on);
+- **Shift+Esc** or **Ctrl+Alt+Shift+S** stops control at once from anywhere, even while the
+  technician is typing (global shortcuts of the requester's PC; the same keys from the technician
+  are never passed on);
 - stopping the screen share, leaving or ending the session, the app reloading or losing the hub
   also stops control. Keys and buttons the technician was holding are released.
 
