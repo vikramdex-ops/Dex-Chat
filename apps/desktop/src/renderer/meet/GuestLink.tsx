@@ -68,6 +68,11 @@ export async function emailDraft(m: { subject: string; text: string; html: strin
   else window.location.href = url;
 }
 
+/** Copy for a click: says so when it worked, and why not when the clipboard refused (a copy that silently did nothing was the old way). */
+export function copyText(text: string, done: string, toast: (t: string, bad?: boolean) => void): void {
+  void navigator.clipboard.writeText(text).then(() => toast(done)).catch((e: Error) => toast(`Nothing was copied: ${e.message}`, true));
+}
+
 const safeFile = (s: string) => s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Meeting';
 
 
@@ -75,24 +80,38 @@ const safeFile = (s: string) => s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g,
 export function SlugField({ meetingId, value, site, onSave, compact }: { meetingId: string | null; value: string | null; site: string | null; onSave: (slug: string | null) => void | Promise<void>; compact?: boolean }) {
   const [text, setText] = useState(value ?? '');
   const [check, setCheck] = useState<{ slug: string; ok: boolean; problem: string | null } | null>(null);
-  // a new value from outside (saved, or a suggestion taken); what is being typed stays as typed
-  useEffect(() => { setText((t) => (normalizeSlug(t) === (value ?? '') ? t : value ?? '')); }, [value]);
+  // what this field last handed to onSave (a new meeting keeps a free name as soon as it is checked)
+  const sent = useRef<string | null | undefined>(undefined);
+  const emit = (s: string | null) => { sent.current = s; return onSave(s); };
+  // A new value from outside (saved, or a suggestion taken) fills the field. The field's own answer
+  // coming back (a name found taken, so nothing is kept yet) leaves what is typed as typed.
+  useEffect(() => {
+    if (sent.current !== undefined && (value ?? null) === sent.current) return;
+    sent.current = undefined;
+    setText((t) => (normalizeSlug(t) === (value ?? '') ? t : value ?? ''));
+  }, [value]);
   const slug = normalizeSlug(text);
   useEffect(() => {
+    // an existing meeting checks only a name that differs from its own; a new one checks whatever is
+    // in the field (a suggestion taken too), and keeps it only if it is free
+    if (!slug || (meetingId && slug === value)) { setCheck(null); return; }
+    if (check?.slug === slug) return;
     setCheck(null);
-    // a meeting not made yet (the new-meeting dialog): the name is kept as soon as it is free
-    if (!meetingId && !slug && value) void onSave(null);
-    if (!slug || slug === value) return;
     let alive = true;
     const t = setTimeout(() => {
       void window.dex.request('meet.slug.check', { slug, ...(meetingId ? { id: meetingId } : {}) }).then((c) => {
         if (!alive) return;
-        setCheck(c);
-        if (!meetingId) void onSave(c.ok ? c.slug : null);
-      }).catch(() => {});
+        setCheck({ ...c, slug });
+        if (!meetingId) void emit(c.ok ? c.slug : null);
+      }).catch((e: Error) => { if (alive) setCheck({ slug, ok: false, problem: `The name could not be checked: ${e.message}` }); });
     }, 250);
     return () => { alive = false; clearTimeout(t); };
   }, [slug, value, meetingId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const type = (v: string) => {
+    setText(v);
+    // a new meeting's name cleared: the page goes back to the meeting ID
+    if (!meetingId && !normalizeSlug(v) && value) void emit(null);
+  };
   const dirty = slug !== (value ?? '');
   const save = () => { if (dirty && (!slug || check?.ok)) void onSave(slug || null); };
   return (
@@ -100,11 +119,11 @@ export function SlugField({ meetingId, value, site, onSave, compact }: { meeting
       <div className="slug-row">
         <span className="mono slug-base" title={site ?? undefined}>{site ? `${site.replace(/^https?:\/\//, '')}/` : '…/'}</span>
         <input className="input mono" aria-label="The meeting's name on the meeting site" placeholder={meetingId ? formatMeetingId(meetingId) : 'p12-design-review'} maxLength={48} value={text}
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} />
+          onChange={(e) => type(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} />
         {meetingId && <button className="btn sm" disabled={!dirty || (!!slug && !check?.ok)} onClick={save}>Save name</button>}
       </div>
       <span className={`slug-note${check && !check.ok ? ' bad' : ''}`} role="status">
-        {!slug ? 'No name: the page is at the meeting ID.' : !dirty && meetingId ? 'Guests can type this name or click the link.' : !check && slug !== value ? 'Checking…' : check && !check.ok ? check.problem : `Free: …/${slug}`}
+        {!slug ? 'No name: the page is at the meeting ID.' : !dirty && meetingId ? 'Guests can type this name or click the link.' : check?.slug !== slug ? 'Checking…' : !check.ok ? check.problem : `Free: …/${slug}`}
       </span>
     </div>
   );
@@ -143,7 +162,7 @@ export function GuestLinkControls({ meetingId, compact, onChange }: { meetingId:
           <tbody>
             {v.guestUrl && (
               <tr><th className="label">Link</th><td className="mono guest-url" title={v.guestUrl}>{v.guestUrl}</td>
-                <td><button className="tb-link" onClick={() => void navigator.clipboard.writeText(v.guestUrl!).then(() => toast('Meeting link copied, with the passcode'))}><Glyph name="copy" size={13} />Copy</button></td></tr>
+                <td><button className="tb-link" onClick={() => copyText(v.guestUrl!, 'Meeting link copied, with the passcode', toast)}><Glyph name="copy" size={13} />Copy</button></td></tr>
             )}
             <tr><th className="label">Passcode</th><td className="mono guest-pass">{v.passcode}</td>
               <td><button className="tb-link" onClick={() => void confirmAction({ title: 'Give the meeting link a new passcode?', body: 'The link people have now stops working. Send the new one to the guests who still need it.', confirm: 'Renew the link' }).then((ok) => { if (ok) void change({ regenerate: true }, 'New passcode: the old link no longer works'); })}><Icon name="refresh" size={13} />Renew</button></td></tr>
@@ -199,8 +218,8 @@ export function MeetingInvite({ meeting, title, startAt, endAt, description, org
       {isHost && <GuestLinkControls meetingId={meeting.id} onChange={setPage} />}
       <div className="invite-actions">
         <span className="mono faint">ID {formatMeetingId(meeting.id)}</span>
-        {pageUrl && !page?.guestUrl && <button className="btn sm ghost" onClick={() => void navigator.clipboard.writeText(pageUrl).then(() => toast('Meeting page copied'))}><Glyph name="copy" size={14} />Copy page link</button>}
-        <button className="btn sm" onClick={() => void navigator.clipboard.writeText(invitationText(inv, when)).then(() => toast(page?.guestUrl ? 'Invitation copied, with the meeting link and passcode' : 'Invitation copied'))}>
+        {pageUrl && !page?.guestUrl && <button className="btn sm ghost" onClick={() => copyText(pageUrl, 'Meeting page copied', toast)}><Glyph name="copy" size={14} />Copy page link</button>}
+        <button className="btn sm" onClick={() => copyText(invitationText(inv, when), page?.guestUrl ? 'Invitation copied, with the meeting link and passcode' : 'Invitation copied', toast)}>
           <Glyph name="copy" size={14} />Copy invitation
         </button>
         <button className="btn sm" onClick={() => { saveText(`${safeFile(inv.title)}.ics`, buildIcs(inv, when), 'text/calendar;charset=utf-8'); toast('Invitation saved as an .ics file'); }}>
@@ -223,7 +242,7 @@ export function EventInvite({ ev, users, meId, office }: { ev: CalEvent; users: 
     void window.dex.request('meet.event', { eventId: ev.id }).then((x) => { if (alive) setM(x); }).catch((e: Error) => { if (alive) setProblem(e.message); });
     return () => { alive = false; };
   }, [ev.id]);
-  if (problem) return null;
+  if (problem) return <p className="faint guest-problem" role="status">{`The meeting's invitation tools could not load: ${problem}`}</p>;
   if (!m) return <div className="tl-more"><span className="spinner" /></div>;
   return (
     <div className="field">
@@ -240,7 +259,7 @@ export function PageLink({ url, label = 'Copy link' }: { url: string; label?: st
   return (
     <span className="page-link">
       <span className="mono page-url" title={url}>{url.replace(/^https?:\/\//, '')}</span>
-      <button className="tb-link" aria-label={`${label}: ${url}`} onClick={(e) => { e.stopPropagation(); void navigator.clipboard.writeText(url).then(() => toast('Meeting page copied')); }}><Glyph name="copy" size={12} />{label}</button>
+      <button className="tb-link" aria-label={`${label}: ${url}`} onClick={(e) => { e.stopPropagation(); copyText(url, 'Meeting page copied', toast); }}><Glyph name="copy" size={12} />{label}</button>
     </span>
   );
 }
