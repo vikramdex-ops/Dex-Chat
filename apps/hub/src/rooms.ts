@@ -80,7 +80,25 @@ export interface RoomHost {
   webinar?: WebinarHooks;
   /** Meeting threads (meet-threads.ts): occurrences, the meeting chat saved as it is said, the note-taker. */
   threads?: ThreadHooks;
+  /** Knocks (meet-lobby.ts): who waits for each meeting, wherever its hosts are. */
+  lobby?: LobbyHooks;
 }
+
+/** What the knocks module hears from the Rooms. */
+export interface LobbyHooks {
+  /** A meeting's waiting people, its Room, or who is in it changed. */
+  changed(meetingId: string): void;
+  /** People waiting were let in or turned away (by a person, or by the hub: the host came, the meeting ended). */
+  decided(meetingId: string, deviceIds: string[], outcome: 'admitted' | 'declined' | 'ended', by: string | null): void;
+  /** Someone came into a meeting's main Room. */
+  entered(room: RoomInfo, m: Meeting, me: PublicUser, deviceId: string): void;
+}
+
+/** A meeting's lobby as the knocks module reads it: the people waiting (in its Room's lobby or for it to open). */
+export interface LobbySnapshot { meeting: Meeting; room: RoomInfo | null; hostIn: boolean; waiting: LobbyEntry[] }
+
+/** Let in before the Room was open: the person opens it when they come, if they come within this long. */
+const PRE_ADMIT_MS = 15 * 60_000;
 
 /** What meeting threads hear from the Rooms. */
 export interface ThreadHooks {
@@ -124,6 +142,8 @@ export class Rooms {
   readonly host: RoomHost;
   /** People who came by a meeting's ID before it started, by meeting ID. */
   private readonly waiting = new Map<string, LobbyEntry[]>();
+  /** People a host let in before the meeting's Room was open, by meeting ID: user ID to when. */
+  private readonly preAdmitted = new Map<string, Map<string, number>>();
   private readonly limits = new Limiter();
   readonly breakouts: Breakouts;
   /** "Give control": who uses the presenter's mouse and keyboard in each Room (meet-control.ts). */
@@ -245,7 +265,10 @@ export class Rooms {
     const missed = r.everJoined.size <= 1;
     const durationMs = Date.now() - r.startedAt;
     // people still waiting in the lobby are told it is over
+    if (r.meeting && r.lobbyList.length) this.host.lobby?.decided(r.meeting.id, r.lobbyList.map((l) => l.deviceId), 'ended', endedBy ?? null);
     for (const l of r.lobbyList) this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: 'denied' });
+    r.lobbyList = [];
+    this.lobbyNote(r.meeting);
     this.host.deliverToUsers(this.audience(r), 'room.ended', { roomId: r.id, convId: r.convId, missed, startedBy: r.startedBy, durationMs, ...(endedBy ? { endedBy } : {}) });
     const view = this.view(r);
     if (r.meeting?.kind === 'webinar') this.host.webinar?.ended(view);
@@ -280,6 +303,8 @@ export class Rooms {
     };
     // nobody runs it yet (the host is not here): the first member of the office in it does
     if (!this.isHost(room, me.id) && me.role !== 'guest') room.coHostSet.add(me.id);
+    // people a host let in before the Room was open come straight in
+    if (meeting) for (const u of this.preAdmittedFor(meeting.id)) room.admittedUsers.add(u);
     this.rooms.set(room.id, room);
     // a meeting's Room belongs to an occurrence of its thread (lounges and support sessions do not)
     if (!special && this.host.threads) {
@@ -305,7 +330,128 @@ export class Rooms {
     this.publish(room);
     this.setBusy(me.id);
     if (meeting) this.releaseWaiting(room);
+    if (meeting && !special) {
+      this.lobbyNote(meeting);
+      this.entered(room, me, deviceId);
+    }
     return room;
+  }
+
+  /** Tell the knocks module (meet-lobby.ts) that a meeting's lobby or Room changed; it never breaks a Room. */
+  private lobbyNote(m: Meeting | null | undefined): void {
+    if (!m || !this.host.lobby) return;
+    try { this.host.lobby.changed(m.id); } catch (err) { this.host.audit?.(null, 'meeting.lobbyError', m.id, { error: (err as Error).message }); }
+  }
+
+  private entered(r: Room, me: PublicUser, deviceId: string): void {
+    const main = this.breakouts.main(r);
+    if (!main.meeting || !this.host.lobby || r.parentId) return;
+    try { this.host.lobby.entered(this.view(main), main.meeting, me, deviceId); } catch (err) { this.host.audit?.(null, 'meeting.lobbyError', main.meeting.id, { error: (err as Error).message }); }
+  }
+
+  private preAdmittedFor(meetingId: string): string[] {
+    const list = this.preAdmitted.get(meetingId);
+    if (!list) return [];
+    const now = Date.now();
+    for (const [u, at] of list) if (now - at > PRE_ADMIT_MS) list.delete(u);
+    if (!list.size) this.preAdmitted.delete(meetingId);
+    return [...list.keys()];
+  }
+
+  /** A host let this person in before the Room was open (used once). */
+  private takePreAdmit(meetingId: string, userId: string): boolean {
+    if (!this.preAdmittedFor(meetingId).includes(userId)) return false;
+    const list = this.preAdmitted.get(meetingId)!;
+    list.delete(userId);
+    if (!list.size) this.preAdmitted.delete(meetingId);
+    return true;
+  }
+
+  private preAdmit(meetingId: string, userId: string): void {
+    const list = this.preAdmitted.get(meetingId) ?? new Map<string, number>();
+    list.set(userId, Date.now());
+    // a meeting link shared widely: a bounded list
+    if (list.size > MAX_LOBBY) list.delete(list.keys().next().value!);
+    this.preAdmitted.set(meetingId, list);
+  }
+
+  /** May this person let people into the meeting: its host or a co-host, or a host of its running Room. */
+  private mayAdmit(m: Meeting, r: Room | undefined, userId: string): boolean {
+    return m.hostId === userId || m.coHosts.includes(userId) || (!!r && this.isHost(r, userId));
+  }
+
+  /** A meeting's lobby, for the knocks module: who waits in its Room's lobby or for it to open. */
+  lobbyOf(meetingId: string): LobbySnapshot | null {
+    const m = this.host.meetings?.get(meetingId);
+    if (!m) return null;
+    const r = this.runningFor(m);
+    const inLobby = r?.lobbyList ?? [];
+    const waiting = [...inLobby, ...(this.waiting.get(m.id) ?? []).filter((w) => !inLobby.some((l) => l.deviceId === w.deviceId))];
+    const hostIn = !!r && r.participants.some((p) => this.isHost(r, p.userId) || p.userId === m.hostId || m.coHosts.includes(p.userId));
+    return { meeting: m, room: r ? this.view(r, true) : null, hostIn, waiting: waiting.map((w) => ({ ...w })) };
+  }
+
+  /** Who may let people into a meeting: its host and co-hosts, and the hosts of its running Room (office members only). */
+  admittersOf(meetingId: string): string[] {
+    const m = this.host.meetings?.get(meetingId);
+    if (!m) return [];
+    const r = this.runningFor(m);
+    return [...new Set([m.hostId, ...m.coHosts, ...(r ? [r.hostId, ...r.coHostSet].filter((u): u is string => !!u) : [])])].filter((u) => !isWebGuest(u));
+  }
+
+  /**
+   * Let people waiting for a meeting in (or turn them away) from anywhere: the knock's card, the
+   * indicator, a notification. Someone in the Room's lobby comes in as from the Room's own list;
+   * someone waiting for the Room to open is let in now and opens it when they come (it waits for
+   * the host there). `which`: their devices, or null for everyone waiting.
+   */
+  answer(me: PublicUser, meetingId: string, which: string[] | null, allow: boolean): number {
+    const m = this.meetings().get(meetingId);
+    if (!m) throw new RoomError('That meeting no longer exists.');
+    const r = this.runningFor(m);
+    if (!this.mayAdmit(m, r, me.id)) throw new RoomError('Only the host and co-hosts can let people in.');
+    const want = (deviceId: string) => !which || which.includes(deviceId);
+    let n = 0;
+    if (r) {
+      const picked = r.lobbyList.filter((l) => want(l.deviceId));
+      if (picked.length) { this.decide(r, picked, allow, me); n += picked.length; }
+    }
+    const list = this.waiting.get(m.id) ?? [];
+    const early = list.filter((w) => want(w.deviceId));
+    if (early.length) {
+      const rest = list.filter((w) => !early.includes(w));
+      if (rest.length) this.waiting.set(m.id, rest); else this.waiting.delete(m.id);
+      for (const w of early) {
+        if (!allow) continue;
+        this.preAdmit(m.id, w.userId);
+        if (r) { r.admittedUsers.add(w.userId); r.removedUsers.delete(w.userId); }
+        if (!isWebGuest(w.userId)) this.host.meetings?.admitted(m, w.userId);
+      }
+      // the knocks module hears first, so it can tell a let-in person's arrival apart
+      this.host.lobby?.decided(m.id, early.map((w) => w.deviceId), allow ? 'admitted' : 'declined', me.id);
+      this.host.audit?.(me.id, allow ? 'meeting.admitted' : 'meeting.denied', m.id, { people: early.map((w) => w.userId), guests: early.filter((w) => isWebGuest(w.userId)).length, beforeOpen: !r });
+      for (const w of early) this.host.deliverToDevice(w.deviceId, 'meet.lobby', { meetingId: m.id, state: allow ? 'admitted' : 'denied' });
+      n += early.length;
+    }
+    if (!n) throw new RoomError('They are no longer waiting.');
+    this.lobbyNote(m);
+    return n;
+  }
+
+  /** People in a running Room's lobby let in or turned away by a host. */
+  private decide(r: Room, picked: LobbyEntry[], allow: boolean, me: PublicUser): void {
+    r.lobbyList = r.lobbyList.filter((l) => !picked.includes(l));
+    for (const l of picked) {
+      if (!allow) continue;
+      r.admittedUsers.add(l.userId);
+      r.removedUsers.delete(l.userId);
+      if (r.meeting) this.host.meetings?.admitted(r.meeting, l.userId);
+    }
+    if (r.meeting) this.host.lobby?.decided(r.meeting.id, picked.map((l) => l.deviceId), allow ? 'admitted' : 'declined', me.id);
+    for (const l of picked) this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: allow ? 'admitted' : 'denied' });
+    this.host.audit?.(me.id, allow ? 'meeting.admitted' : 'meeting.denied', r.meeting?.id ?? r.id, { roomId: r.id, people: picked.map((l) => l.userId), guests: picked.filter((l) => isWebGuest(l.userId)).length });
+    this.publish(r);
+    this.lobbyNote(r.meeting);
   }
 
   /** Put a device in a Room. */
@@ -323,6 +469,10 @@ export class Rooms {
     this.publish(r);
     this.setBusy(me.id);
     if (hostCame) this.releaseWaiting(r);
+    if (!r.purpose) {
+      this.lobbyNote(this.breakouts.main(r).meeting);
+      this.entered(r, me, deviceId);
+    }
     return this.view(r, this.isHost(r, me.id));
   }
 
@@ -350,6 +500,7 @@ export class Rooms {
       r.lobbyList.push({ userId: me.id, deviceId, at: Date.now(), reason: 'admit' });
     }
     this.publish(r);
+    this.lobbyNote(r.meeting);
   }
 
   /** A Room started or its host arrived: people waiting by the meeting's ID come in, or move to its lobby. */
@@ -360,16 +511,20 @@ export class Rooms {
     if (!list?.length) return;
     const hostHere = r.participants.some((p) => this.isHost(r, p.userId));
     const keep: LobbyEntry[] = [];
+    const released: string[] = [];
     for (const w of list) {
       if (w.reason === 'host' && !hostHere && !m.settings.joinBeforeHost) { keep.push(w); continue; }
       const needsHost = w.reason === 'admit';
       if (needsHost) {
         if (!r.lobbyList.some((l) => l.deviceId === w.deviceId) && r.lobbyList.length < MAX_LOBBY) r.lobbyList.push({ ...w, reason: 'admit' });
         this.host.deliverToDevice(w.deviceId, 'meet.lobby', { meetingId: m.id, state: 'waiting', reason: 'admit' });
-      } else this.host.deliverToDevice(w.deviceId, 'meet.lobby', { meetingId: m.id, state: 'admitted' });
+      } else { released.push(w.deviceId); this.host.deliverToDevice(w.deviceId, 'meet.lobby', { meetingId: m.id, state: 'admitted' }); }
     }
     if (keep.length) this.waiting.set(m.id, keep); else this.waiting.delete(m.id);
+    // people who waited only for the host to arrive come in by themselves
+    if (released.length) this.host.lobby?.decided(m.id, released, 'admitted', null);
     this.publish(r);
+    this.lobbyNote(m);
   }
 
   private runningFor(m: Meeting): Room | undefined {
@@ -411,6 +566,16 @@ export class Rooms {
     }
     // not started yet
     const isHost = m.hostId === me.id || m.coHosts.includes(me.id);
+    // a host let them in from the lobby before the Room was open: they open it, and wait there for the host
+    if (!isHost && this.takePreAdmit(m.id, me.id)) {
+      const convId = store.ensureConv(m);
+      if (!this.host.members(convId).includes(me.id)) store.admitted(m, me.id);
+      // no ringing: the meeting has not started for its invitees
+      const room = this.open(convId, me, deviceId, false, m, false, fromOutside);
+      room.admittedUsers.add(me.id);
+      this.publish(room);
+      return { room: this.view(room, this.isHost(room, me.id)) };
+    }
     const outsider = me.role === 'guest' || !store.insider(m, me.id);
     const needsAdmit = !isHost && (isWebGuest(me.id) || m.settings.lobby === 'everyone' || (m.settings.lobby === 'outside' && outsider));
     if (!isHost && (!m.settings.joinBeforeHost || needsAdmit)) {
@@ -420,6 +585,7 @@ export class Rooms {
         this.leaveAll(deviceId);
         list.push({ userId: me.id, deviceId, at: Date.now(), reason: needsAdmit ? 'admit' : 'host' });
         this.waiting.set(m.id, list);
+        this.lobbyNote(m);
       }
       return { waiting: needsAdmit && m.settings.joinBeforeHost ? 'admit' : 'host', meeting: this.meetingInfo(m) };
     }
@@ -589,17 +755,7 @@ export class Rooms {
         const ids = Array.isArray(d.deviceIds) ? new Set(d.deviceIds.map(String).slice(0, MAX_LOBBY)) : null;
         const picked = r.lobbyList.filter((l) => d.all === true || ids?.has(l.deviceId));
         if (!picked.length) throw new RoomError('No one is waiting.');
-        r.lobbyList = r.lobbyList.filter((l) => !picked.includes(l));
-        for (const l of picked) {
-          if (d.allow === true) {
-            r.admittedUsers.add(l.userId);
-            r.removedUsers.delete(l.userId);
-            if (r.meeting) this.host.meetings?.admitted(r.meeting, l.userId);
-          }
-          this.host.deliverToDevice(l.deviceId, 'meet.lobby', { meetingId: r.meeting?.id ?? '', state: d.allow === true ? 'admitted' : 'denied' });
-        }
-        this.host.audit?.(me.id, d.allow === true ? 'meeting.admitted' : 'meeting.denied', r.meeting?.id ?? r.id, { roomId: r.id, people: picked.map((l) => l.userId), guests: picked.filter((l) => isWebGuest(l.userId)).length });
-        this.publish(r);
+        this.decide(r, picked, d.allow === true, me);
         return { ok: true };
       }
       case 'room.lock': {
@@ -810,17 +966,22 @@ export class Rooms {
   }
 
   private dropWaiting(deviceId: string, meetingId?: string): void {
+    const touched = new Set<string>();
     for (const [id, list] of [...this.waiting]) {
       if (meetingId && id !== meetingId) continue;
       const rest = list.filter((w) => w.deviceId !== deviceId);
+      if (rest.length === list.length) continue;
+      touched.add(id);
       if (rest.length) this.waiting.set(id, rest); else this.waiting.delete(id);
     }
     for (const r of this.rooms.values()) {
       if (meetingId && r.meeting?.id !== meetingId) continue;
       if (!r.lobbyList.some((l) => l.deviceId === deviceId)) continue;
       r.lobbyList = r.lobbyList.filter((l) => l.deviceId !== deviceId);
+      if (r.meeting) touched.add(r.meeting.id);
       this.publish(r);
     }
+    for (const id of touched) this.lobbyNote(this.host.meetings?.get(id));
   }
 
   private removeDevice(r: Room, deviceId: string): void {
@@ -852,6 +1013,7 @@ export class Rooms {
       this.publish(r);
     }
     this.setBusy(p.userId);
+    if (!r.purpose && this.rooms.has(r.id)) this.lobbyNote(main.meeting);
   }
 
   /** Guests never inherit host controls; anyone in the conversation or let in can. */

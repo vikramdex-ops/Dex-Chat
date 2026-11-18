@@ -176,11 +176,16 @@ export type GuestUp =
 
 /** A participant as a guest sees them: a name and their media, nothing else about them. */
 export interface GuestSeat { deviceId: string; name: string; muted: boolean; camera: boolean; screen: boolean; host: boolean; guest: boolean; hand: number }
-export interface GuestRoomView { roomId: string; meetingId: string; title: string; startedAt: number; seats: GuestSeat[]; locked: boolean; breakout: string | null; returningAt: number | null; note: { text: string; at: number } | null }
+export interface GuestRoomView { roomId: string; meetingId: string; title: string; startedAt: number; seats: GuestSeat[]; locked: boolean; breakout: string | null; returningAt: number | null; note: { text: string; at: number } | null; /** The host's name while neither they nor a co-host is in the Room (they have been told); absent otherwise. */ hostAway?: string | null }
 
 /** From the hub to the browser guest. */
 export type GuestDown =
-  | { t: 'lobby'; meetingId: string; title: string; host: string }
+  /**
+   * In the lobby (sent again when it changes). `hostIn`: a host is in the meeting now and sees the
+   * guest waiting; false: the meeting is not open or no host is in it, and the host has been told
+   * (a notification and a card from Nib) and lets them in from wherever they are.
+   */
+  | { t: 'lobby'; meetingId: string; title: string; host: string; hostIn?: boolean }
   | { t: 'admitted'; self: { deviceId: string; name: string }; room: GuestRoomView; iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>; chat: RoomChatLine[] }
   | { t: 'room'; room: GuestRoomView }
   | { t: 'moved'; room: GuestRoomView }

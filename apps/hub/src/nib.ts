@@ -6,7 +6,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { ulid } from '@dex/core';
 import { isSealed } from '@dex/core/e2e';
-import type { Conversation, Department, Message, PublicUser } from '@dex/core';
+import type { Conversation, Department, KnockView, Message, PublicUser } from '@dex/core';
 import {
   NIB_ACCOUNT, NIB_DEFAULTS, NIB_NAME, NIB_WORK_INTENTS, addDays, buildLeadCard, buildRegister, buildWeek, checkNibConfig, effectiveWrapAt,
   liteItem, minutesOf, nudgePlan, nudgePolicy, parseWork, qtyText, sheetAccess, visibleItems, weekdayOf,
@@ -290,6 +290,17 @@ export class Nib {
     const m = this.d.messaging.members(convId);
     return m.length === 2 && m.includes(this.nibId);
   }
+
+  /** Knock cards (meet-lobby.ts): the knock as the viewer may see it; set by the hub. */
+  knockCard: ((me: PublicUser, ref: string) => KnockView | null) | null = null;
+  /**
+   * Someone waits in the lobby of a meeting this person may let people into: a card with Admit
+   * and Decline in their conversation with Nib (once per knock and person). Posted whether or not
+   * day sheets are on: Nib is how the office's own news reaches a person.
+   */
+  postKnock(uid: string, ref: string, body: string): boolean { return !!this.post(uid, 'knock', ref, body); }
+  /** Cards of a kind changed for these people (their apps fetch them again). */
+  touch(uids: string[], kind: NibCardKind): void { this.changed(this.today(), [kind], uids); }
 
   /** A card in someone's conversation with Nib, once per kind, reference and person. */
   private post(uid: string, kind: NibCardKind, ref: string, body: string): string | null {
@@ -764,6 +775,10 @@ export class Nib {
       case 'holidays': case 'holidaysDone': {
         if (!this.d.days) throw denied();
         return { kind, view: this.d.days.view(me, ref) };
+      }
+      case 'knock': {
+        if (!this.posted('knock', ref, me.id)) throw denied();
+        try { return { kind: 'knock', knock: this.knockCard?.(me, ref) ?? null }; } catch (err) { throw new NibError((err as Error).message); }
       }
       case 'reply': {
         const r = this.db.prepare('SELECT * FROM nib_replies WHERE id = ? AND user_id = ?').get(ref, me.id) as { text: string; parse: string; item_id: string | null } | undefined;

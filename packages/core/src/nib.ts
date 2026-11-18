@@ -5,6 +5,7 @@
 // these, so the same words parse the same way on a PC and on the hub.
 
 import type { HolidayOps, HolidayReadView } from './holidays.ts';
+import type { KnockView } from './meet-lobby.ts';
 
 // ---------------------------------------------------------------- identity and configuration
 export const NIB_ACCOUNT = 'system\\nib';
@@ -1052,7 +1053,7 @@ export function qtyText(q: NibQty | null): string {
 
 // ---------------------------------------------------------------- ops and events
 export interface NibCardRef { kind: NibCardKind; ref: string }
-export type NibCardKind = 'lead' | 'register' | 'followup' | 'week' | 'ask' | 'leave' | 'cover' | 'welcome' | 'joiner' | 'hello' | 'reply' | 'leaveSpace' | 'holidays' | 'holidaysDone';
+export type NibCardKind = 'lead' | 'register' | 'followup' | 'week' | 'ask' | 'leave' | 'cover' | 'welcome' | 'joiner' | 'hello' | 'reply' | 'leaveSpace' | 'holidays' | 'holidaysDone' | 'knock';
 export interface NibItemInput {
   id?: string;
   giverId?: string | null;
@@ -1097,7 +1098,9 @@ export type NibCard =
   | { kind: 'hello'; userId: string }
   | { kind: 'reply'; parse: NibParse; text: string; itemId: string | null; userId: string }
   /** A holiday circular Nib read (docs/HOLIDAYS.md), and the summary once it is registered. */
-  | { kind: 'holidays' | 'holidaysDone'; view: HolidayReadView };
+  | { kind: 'holidays' | 'holidaysDone'; view: HolidayReadView }
+  /** Someone waiting in the lobby of a meeting you host (null: the hub no longer knows this knock, e.g. after a restart). */
+  | { kind: 'knock'; knock: KnockView | null };
 export interface NibSheetView { userId: string; date: string; day: NibDay | null; items: NibItem[]; access: SheetAccess }
 
 export interface NibOps extends HolidayOps {

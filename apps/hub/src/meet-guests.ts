@@ -201,7 +201,21 @@ export class MeetGuests {
       return;
     }
     this.host.audit(null, 'meeting.guestKnocked', m.id, { name, ip: s.ip });
-    this.host.send(s.gid, { t: 'lobby', meetingId: formatMeetingId(m.id), title: m.title || 'Meeting', host: this.host.userById(m.hostId)?.displayName ?? 'The host' });
+    // still waiting (the hub may have let them in while this ran): the lobby, saying honestly whether a host is in
+    if (s.state === 'waiting' && this.sessions.has(s.gid)) this.sendLobby(s, m);
+  }
+
+  /** The lobby frame: the meeting, its host, and whether a host is in the Room now (otherwise they have been told). */
+  private sendLobby(s: Session, m: Meeting): void {
+    const hostIn = this.host.rooms.lobbyOf(m.id)?.hostIn ?? false;
+    this.host.send(s.gid, { t: 'lobby', meetingId: formatMeetingId(m.id), title: m.title || 'Meeting', host: this.host.userById(m.hostId)?.displayName ?? 'The host', hostIn });
+  }
+
+  /** A meeting's lobby changed (a host came in or left, the Room opened): its waiting guests hear it. */
+  lobbyChanged(meetingId: string): void {
+    const m = this.host.meetings.get(meetingId);
+    if (!m) return;
+    for (const s of this.sessions.values()) if (s.kind === 'meeting' && s.state === 'waiting' && s.meetingId === meetingId && s.name) this.sendLobby(s, m);
   }
 
   /** A webinar attendee's page: their link first, then questions, votes, polls, hands, reactions, signalling and handouts. */
@@ -351,7 +365,11 @@ export class MeetGuests {
       if (isWebGuest(userId)) return this.sessions.get(this.byUser.get(userId) ?? -1)?.name ?? 'Guest';
       return this.host.userById(userId)?.displayName ?? 'Someone';
     };
+    // let in before the host came: the page says who has been told and will join
+    const hostHere = r.participants.some((p) => p.userId === r.hostId || (r.coHosts ?? []).includes(p.userId));
+    const hostAway = !hostHere && r.hostId && !r.parentId ? this.host.userById(r.hostId)?.displayName ?? 'The host' : null;
     return {
+      ...(hostAway ? { hostAway } : {}),
       roomId: r.id, meetingId: r.meetingId ? formatMeetingId(r.meetingId) : '', title: r.title || 'Meeting', startedAt: r.startedAt, locked: !!r.locked,
       seats: r.participants.map((p) => ({
         deviceId: p.deviceId, name: nameOf(p.userId), muted: p.muted, camera: p.camera, screen: p.screen,
