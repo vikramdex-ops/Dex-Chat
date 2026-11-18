@@ -103,16 +103,25 @@ rules, or pruned when they pass a size.
 
 ## Start-up and use
 
-`perf.mts --quick` before these changes (the renderer's start-up code is unchanged by them):
+`perf.mts --quick`, before and after these changes, on the busy machine above:
 
-| | Value | Budget |
-| --- | --- | --- |
-| Start, warm | 646 ms | 1,500 ms |
-| Start, cold | 726 ms | 3,000 ms |
-| Script loaded at start | 57 files, 1.8 MB (of 91 chunks, 5.6 MB) | |
+| | Before | After | Budget |
+| --- | --- | --- | --- |
+| Start, warm | 646 ms | 698 ms | 1,500 ms |
+| Start, cold | 726 ms | 617 ms | 3,000 ms |
+| Conversation open again (p50) | 76 ms | 84 ms | 150 ms |
+| Scrolling back 5,000 messages | 229 s, 886 long tasks | 211 s, 814 long tasks | no long task over 50 ms |
+| Window after ten minutes of use / after a garbage collection | 847 / 308 MB | 866 / 324 MB | 400 MB |
+| Budgets missed | 7 | 7 | |
+
+Both runs missed the same kinds of budgets (lens switches by a few milliseconds, the first open of
+the busiest conversation, long tasks while scrolling and typing, one hub operation, the window
+right after ten minutes of use), with the 4 cores saturated by other work and Chromium drawing in
+software. Run it on an office PC for numbers to hold the app to. Script loaded at start: 57 files,
+1.8 MB, of 91 chunks and 5.6 MB.
 
 The window loads only what it shows: calls, the whiteboard, PDF.js, OCR, the sentence model, the
-segmenter, the Control room, the bot maker and each language's words load when first used.
+segmenter, the Control room, the bot maker's editor and each language's words load when first used.
 
 ## How to measure
 
