@@ -172,11 +172,23 @@ export type GuestUp =
   | { t: 'file'; id: string; name: string; mime: string; size: number }
   | { t: 'fileChunk'; id: string; i: number; data: string }
   | { t: 'leave' }
-  | { t: 'ping' };
+  | { t: 'ping' }
+  /** Ask the person sharing their screen for control, or give it back (or withdraw the ask). */
+  | { t: 'control'; a: 'ask' | 'stop' }
+  /** Input while the guest has control: { k: 'in', e: [...] } events (assist.ts), passed only to the presenter. */
+  | { t: 'input'; e: unknown[] };
 
 /** A participant as a guest sees them: a name and their media, nothing else about them. */
-export interface GuestSeat { deviceId: string; name: string; muted: boolean; camera: boolean; screen: boolean; host: boolean; guest: boolean; hand: number }
-export interface GuestRoomView { roomId: string; meetingId: string; title: string; startedAt: number; seats: GuestSeat[]; locked: boolean; breakout: string | null; returningAt: number | null; note: { text: string; at: number } | null }
+export interface GuestSeat {
+  deviceId: string; name: string; muted: boolean; camera: boolean; screen: boolean; host: boolean; guest: boolean; hand: number;
+  /** Their shared screen can be controlled (a whole screen, from a PC that allows it): a guest may ask. */
+  controllable?: boolean;
+}
+export interface GuestRoomView {
+  roomId: string; meetingId: string; title: string; startedAt: number; seats: GuestSeat[]; locked: boolean; breakout: string | null; returningAt: number | null; note: { text: string; at: number } | null;
+  /** Someone is using the presenter's mouse and keyboard (the guest may be that someone). */
+  control?: { presenterDevice: string; controllerDevice: string; controllerName: string } | null;
+}
 
 /** From the hub to the browser guest. */
 export type GuestDown =
@@ -197,6 +209,8 @@ export type GuestDown =
   | { t: 'error'; message: string }
   /** A webinar speaker going back to the audience: the page returns to the webinar's watch page. */
   | { t: 'demoted'; to: string }
+  /** Control: the presenter said no to the guest's ask, or control the guest had ended (with the words why). */
+  | { t: 'control'; state: 'refused' | 'ended'; text: string }
   | { t: 'pong' };
 
 // ---------------------------------------------------------------- the protocol, extended

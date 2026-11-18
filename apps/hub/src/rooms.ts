@@ -135,6 +135,7 @@ export class Rooms {
     this.control = new MeetControl({
       host,
       stageStaff: (r, userId) => (r.meeting?.kind === 'webinar' ? (this.host.webinar?.staff?.(r.meeting, userId) ?? false) : null),
+      guestName: (userId) => this.host.visitorsOf?.([userId])[0]?.name ?? null,
     });
   }
 
