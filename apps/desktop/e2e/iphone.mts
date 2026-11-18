@@ -162,6 +162,16 @@ try {
   assert.equal(manifest.start_url, '/app/');
   assert.ok(await safari.page.evaluate(async () => (await fetch(document.querySelector<HTMLLinkElement>('link[rel=apple-touch-icon]')!.href)).ok));
   assert.ok(await safari.page.locator('link[rel=apple-touch-startup-image]').count() >= 20);
+  // every file the app keeps for offline use exists (one missing file used to cost the app its offline copy and its notifications)
+  const missing = await safari.page.evaluate(async () => {
+    const text = await (await fetch('/app/sw.js')).text();
+    const list = JSON.parse(text.match(/\[("[^\]]*)\]/)![0]) as string[];
+    const bad: string[] = [];
+    for (const p of list) if (!(await fetch(`/app/${p}`)).ok) bad.push(p);
+    return { bad, n: list.length };
+  });
+  assert.ok(missing.n > 10, 'the offline list is there');
+  assert.deepEqual(missing.bad, [], 'every file on the offline list exists');
   // the app shell is kept for offline use
   await safari.page.waitForFunction(() => navigator.serviceWorker.controller !== null || navigator.serviceWorker.ready.then(() => true), null, { timeout: 15000 });
   await safari.ctx.close();

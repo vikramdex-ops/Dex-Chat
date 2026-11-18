@@ -59,6 +59,10 @@ await sleep(500);
 // here, the email draft for "Send by email"
 process.env.DEXCONNECT_TEST_DRIVES = '{"drives":[]}';
 const a = await launch('priya', 'Priya Raman', { audio: voices().a, width: 1440, height: 900 });
+// Nib's start-of-day prompt depends on the time of day the walk runs; it is not what this walk tests
+await a.page.addLocatorHandler(a.page.locator('.nib-callout'), async () => {
+  await a.page.locator('.nib-callout').getByRole('button', { name: 'Not now' }).click({ timeout: 2000 }).catch(() => {});
+});
 const browser = await pw.chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${voices().b}`, '--autoplay-policy=no-user-gesture-required'] });
 const results: Record<string, unknown> = {};
 const appShot = async (p: any, name: string) => {
