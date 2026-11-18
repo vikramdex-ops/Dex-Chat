@@ -458,16 +458,19 @@ function renderControls(): void {
   if (!roomEls) return;
   const hasMic = !!state.local?.getAudioTracks().length;
   const hasCam = !!state.local?.getVideoTracks().length;
-  const tool = (on: boolean | null, label: string, ico: string, f: () => void, extra: Record<string, unknown> = {}) =>
-    h('button', { type: 'button', class: `tool${on === true ? ' on' : on === false ? ' off' : ''}`, 'aria-pressed': on === null ? undefined : String(on), onclick: f, ...extra }, icon(ico), h('span', {}, label));
+  // on a phone the label is one short word (Camera, Share, Hand): pressed or not shows in the button's look,
+  // and its accessible name stays the whole label
+  const tool = (on: boolean | null, label: string, ico: string, f: () => void, extra: Record<string, unknown> = {}, short = label) =>
+    h('button', { type: 'button', class: `tool${on === true ? ' on' : on === false ? ' off' : ''}`, 'aria-pressed': on === null ? undefined : String(on), 'aria-label': label, title: label, onclick: f, ...extra },
+      icon(ico), h('span', { class: 'long' }, label), h('span', { class: 'short', 'aria-hidden': 'true' }, short));
   const canShare = typeof navigator.mediaDevices?.getDisplayMedia === 'function';
   roomEls.controls.replaceChildren(...[
-    tool(state.micOn && hasMic, state.micOn && hasMic ? 'Mic on' : 'Mic off', state.micOn && hasMic ? 'mic' : 'mic-off', () => { state.micOn = !state.micOn; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderField(); renderBanners(); }, { disabled: !hasMic }),
-    tool(state.camOn && hasCam, state.camOn && hasCam ? 'Camera on' : 'Camera off', state.camOn && hasCam ? 'cam' : 'cam-off', () => void toggleCamera()),
-    canShare ? tool(!!state.screen, state.screen ? 'Stop sharing' : 'Share screen', 'screen', () => void toggleScreen()) : null,
-    tool(state.hand, state.hand ? 'Hand up' : 'Raise hand', 'hand', () => { state.hand = !state.hand; send({ t: 'hand', up: state.hand }); renderControls(); }, { class: `tool${state.hand ? ' raised' : ''}` }),
+    tool(state.micOn && hasMic, state.micOn && hasMic ? 'Mic on' : 'Mic off', state.micOn && hasMic ? 'mic' : 'mic-off', () => { state.micOn = !state.micOn; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderField(); renderBanners(); }, { disabled: !hasMic }, 'Mic'),
+    tool(state.camOn && hasCam, state.camOn && hasCam ? 'Camera on' : 'Camera off', state.camOn && hasCam ? 'cam' : 'cam-off', () => void toggleCamera(), {}, 'Cam'),
+    canShare ? tool(!!state.screen, state.screen ? 'Stop sharing' : 'Share screen', 'screen', () => void toggleScreen(), {}, state.screen ? 'Stop' : 'Share') : null,
+    tool(state.hand, state.hand ? 'Hand up' : 'Raise hand', 'hand', () => { state.hand = !state.hand; send({ t: 'hand', up: state.hand }); renderControls(); }, { class: `tool${state.hand ? ' raised' : ''}` }, 'Hand'),
     tool(null, 'React', 'react', (e?: unknown) => openReact((e as MouseEvent | undefined)?.currentTarget as HTMLElement | undefined), { 'aria-haspopup': 'menu' }),
-    tool(state.chatOpen, state.unread ? `Chat · ${state.unread}` : 'Chat', 'chat', () => { state.chatOpen = !state.chatOpen; state.unread = 0; app.querySelector('.room')?.classList.toggle('chat-open', state.chatOpen); renderControls(); renderChat(); }),
+    tool(state.chatOpen, state.unread ? `Chat · ${state.unread}` : 'Chat', 'chat', () => { state.chatOpen = !state.chatOpen; state.unread = 0; app.querySelector('.room')?.classList.toggle('chat-open', state.chatOpen); renderControls(); renderChat(); }, {}, state.unread ? `Chat ${state.unread}` : 'Chat'),
     h('button', { type: 'button', class: 'leave', onclick: () => leaveMeeting() }, 'Leave', icon('door', 16)),
   ].filter((x): x is HTMLButtonElement => !!x));
 }

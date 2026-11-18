@@ -2,7 +2,7 @@
 // channel), over a picture people look at together and over a whiteboard (messages through the
 // hub, which knows who is looking), and on the presenter's own screen (a click-through window).
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { overlayBox, pictureBox, readPointerBatch } from '@dex/core/pointers';
 import type { Box, PointerMsg } from '@dex/core/pointers';
 import type { FileInfo, PointSession, PublicUser } from '@dex/core';
@@ -231,6 +231,7 @@ export function LookHost({ users, meId }: { users: Map<string, PublicUser>; meId
 export function PointerOverlay() {
   const names = useRef(new Map<string, { name: string; color: string }>());
   const [presenter, setPresenter] = useState<string | null>(null);
+  const presenterNow = useRef<string | null>(null);
   const listeners = useRef(new Set<(dev: string, user: string, m: PointerMsg[]) => void>());
   const transport = useMemo<PointerTransport>(() => ({ send: () => {}, subscribe: (f) => { listeners.current.add(f); return () => listeners.current.delete(f); } }), []);
   // where the shared display is inside this window (the main process says, as the window moves)
@@ -242,7 +243,8 @@ export function PointerOverlay() {
       const d = raw as { from: string; userId: string; name: string; color: string; presenter: boolean; m: unknown };
       const key = d.userId || d.from;
       names.current.set(key, { name: d.name, color: d.color });
-      if (d.presenter) setPresenter(d.from);
+      // who presents must be known before their message is applied (their Clear all, pointers off)
+      if (d.presenter && presenterNow.current !== d.from) { presenterNow.current = d.from; flushSync(() => setPresenter(d.from)); }
       const m = readPointerBatch({ k: 'pt', m: [d.m] });
       for (const f of listeners.current) f(d.from, key, m);
     });
