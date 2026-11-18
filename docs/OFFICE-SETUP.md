@@ -155,6 +155,13 @@ Their seat is given automatically if their name matches the drawing.
 **Phones and home laptops (each person does this; no administrator needed):** **Preferences → Your devices →
 Add my phone** (scan the QR code) or **Add my laptop** (a code to paste).
 
+**iPhones and iPads:** the same **Add my phone** QR code. It opens Dexterity Connect for iPhone in Safari, a
+web app the office serves from its own meeting site (nothing from the App Store, no Apple account). They copy
+the code, tap **Share → Add to Home Screen**, open it from the Home Screen and tap **Paste the code**.
+What you need to have done: step 4 (access from outside, and the meeting site with **Set up with Cloudflare**),
+because an iPhone always reaches the office through the gateway, even on the office Wi-Fi. Notifications need
+iOS 16.4 or later; calls ring only while the app is open. Details: [`IPHONE.md`](IPHONE.md).
+
 **Zoho Calendar (each person does this):** they click **Connect Zoho Calendar**:
 
 - where it appears: in their Calendar or in **Preferences → Calendar**;
