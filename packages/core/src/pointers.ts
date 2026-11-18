@@ -261,6 +261,35 @@ export function fromSurface(x: number, y: number, box: Box, rot = 0): { x: numbe
   return { x: box.x + u * box.width, y: box.y + v * box.height };
 }
 
+/**
+ * Where a shared picture of srcW x srcH is drawn inside an element with object-fit: contain (the
+ * shared screen's <video>): the letterbox bars are not the picture. The same mapping turns the
+ * controller's pointer into input positions (assist.ts fromPicture), so a marker and a click land
+ * on the same pixel.
+ */
+export function pictureBox(el: Box, srcW: number, srcH: number): Box {
+  if (!(srcW > 0) || !(srcH > 0) || !(el.width > 0) || !(el.height > 0)) return { ...el };
+  const scale = Math.min(el.width / srcW, el.height / srcH);
+  const width = srcW * scale;
+  const height = srcH * scale;
+  return { x: el.x + (el.width - width) / 2, y: el.y + (el.height - height) / 2, width, height };
+}
+
+/**
+ * Where the shared display is inside the presenter's own pointer window, in that window's CSS
+ * pixels. `display` and `win` are in the same screen coordinates (Electron's DIPs, which may be
+ * negative on a monitor left of or above the main one); `inner` is the window's viewport
+ * (innerWidth x innerHeight). The window should cover the display exactly, but Windows may size or
+ * place it differently (a monitor with another scaling, a taskbar, the window moved by the system),
+ * and a page zoom changes CSS pixels: the marks follow the display, not the window.
+ */
+export function overlayBox(display: Box, win: Box, inner: { width: number; height: number }): Box {
+  if (!(win.width > 0) || !(win.height > 0) || !(inner.width > 0) || !(inner.height > 0)) return { x: 0, y: 0, width: Math.max(0, inner.width), height: Math.max(0, inner.height) };
+  const kx = inner.width / win.width;
+  const ky = inner.height / win.height;
+  return { x: (display.x - win.x) * kx, y: (display.y - win.y) * ky, width: display.width * kx, height: display.height * ky };
+}
+
 /** Make a short id for a mark. */
 export function markId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`.slice(0, MAX_ID);

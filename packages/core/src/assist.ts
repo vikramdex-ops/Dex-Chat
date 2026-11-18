@@ -4,6 +4,8 @@
 // chords that are never passed on (Ctrl+Alt+Del, Win+L…), and a mapping from the shared picture
 // to the requester's screen. Pure logic, shared by the app's UI and its main process.
 
+import { pictureBox } from './pointers.ts';
+
 export type MouseButton = 'left' | 'right' | 'middle';
 
 /**
@@ -198,13 +200,17 @@ export class InputGate {
 // ------------------------------------------------------------------ coordinates
 export interface Rect { x: number; y: number; width: number; height: number }
 
-/** A point in the shared picture (0..1) as a pixel on the requester's display (inside it, always). */
+/**
+ * A point in the shared picture (0..1) as a pixel on the requester's display (inside it, always):
+ * the pixel the point falls in (scaling by width - 1 instead drifted by up to two pixels near the
+ * right and bottom edges of a 4K screen).
+ */
 export function toScreen(x: number, y: number, display: Rect): { x: number; y: number } {
   const w = Math.max(1, Math.round(display.width));
   const h = Math.max(1, Math.round(display.height));
   return {
-    x: Math.round(display.x) + Math.min(w - 1, Math.max(0, Math.round(clamp01(x) * (w - 1)))),
-    y: Math.round(display.y) + Math.min(h - 1, Math.max(0, Math.round(clamp01(y) * (h - 1)))),
+    x: Math.round(display.x) + Math.min(w - 1, Math.max(0, Math.floor(clamp01(x) * w + 1e-6))),
+    y: Math.round(display.y) + Math.min(h - 1, Math.max(0, Math.floor(clamp01(y) * h + 1e-6))),
   };
 }
 
@@ -220,14 +226,8 @@ export function toVirtualDesk(px: number, py: number, vs: Rect): { x: number; y:
   return { x: Math.max(0, Math.min(65535, nx)), y: Math.max(0, Math.min(65535, ny)) };
 }
 
-/** Where a picture of srcW x srcH is drawn inside an element with object-fit: contain. */
-export function containBox(el: Rect, srcW: number, srcH: number): Rect {
-  if (!(srcW > 0) || !(srcH > 0) || !(el.width > 0) || !(el.height > 0)) return { ...el };
-  const scale = Math.min(el.width / srcW, el.height / srcH);
-  const width = srcW * scale;
-  const height = srcH * scale;
-  return { x: el.x + (el.width - width) / 2, y: el.y + (el.height - height) / 2, width, height };
-}
+/** Where a picture of srcW x srcH is drawn inside an element with object-fit: contain (the same mapping live pointers use). */
+export function containBox(el: Rect, srcW: number, srcH: number): Rect { return pictureBox(el, srcW, srcH); }
 
 /** A point on the technician's screen over the shared video, as 0..1 in the picture (null in the letterbox). */
 export function fromPicture(clientX: number, clientY: number, el: Rect, srcW: number, srcH: number): { x: number; y: number } | null {

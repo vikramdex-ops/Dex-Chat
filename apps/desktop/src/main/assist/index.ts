@@ -210,6 +210,22 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   });
   ipcMain.on('assist:pointer', (e, msg: unknown) => { if (fromMain(e)) overlays.pointer(msg); });
 
+  // a monitor plugged in or out, moved, or its scaling changed: the pointer window follows its display
+  // and remote control maps onto the display's new pixels (or stops, when it is gone)
+  const displays = () => {
+    const all = screen.getAllDisplays();
+    overlays.displaysChanged(all);
+    if (share?.display) {
+      const now = all.find((x) => x.id === share!.display!.id) ?? null;
+      if (now) share.display = now;
+      control?.setDisplay(now ? injectorRect(now) : null);
+      if (!now) { setHotkey(false); tellMain('control', share.state.context); }
+    }
+  };
+  screen.on('display-metrics-changed', displays);
+  screen.on('display-added', displays);
+  screen.on('display-removed', displays);
+
   app.on('before-quit', () => { stopAll('the app closed'); overlays.closeAll(); });
   app.on('will-quit', () => { if (hotkey) globalShortcut.unregister(HOTKEY); });
   appLog.info('main', 'help desk ready', { control: caps().control, os: `${os.type()} ${os.release()}`, data: path.basename(app.getPath('userData')) });

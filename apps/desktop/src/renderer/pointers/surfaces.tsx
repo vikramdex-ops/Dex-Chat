@@ -3,8 +3,7 @@
 // hub, which knows who is looking), and on the presenter's own screen (a click-through window).
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { readPointerBatch } from '@dex/core/pointers';
-import { containBox } from '@dex/core/assist';
+import { overlayBox, pictureBox, readPointerBatch } from '@dex/core/pointers';
 import type { Box, PointerMsg } from '@dex/core/pointers';
 import type { FileInfo, PointSession, PublicUser } from '@dex/core';
 import { onRoomData, selfDevice, sendRoomData, sharedSource } from '../rooms/engine.ts';
@@ -48,7 +47,7 @@ function mediaBox(el: HTMLVideoElement | HTMLImageElement | null | undefined): B
   if (!r.width || !r.height) return null;
   const w = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
   const h = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
-  return containBox({ x: r.left, y: r.top, width: r.width, height: r.height }, w, h);
+  return pictureBox({ x: r.left, y: r.top, width: r.width, height: r.height }, w, h);
 }
 
 const nameFrom = (users: Map<string, PublicUser>) => (id: string) => users.get(id)?.displayName ?? 'Someone';
@@ -234,19 +233,31 @@ export function PointerOverlay() {
   const [presenter, setPresenter] = useState<string | null>(null);
   const listeners = useRef(new Set<(dev: string, user: string, m: PointerMsg[]) => void>());
   const transport = useMemo<PointerTransport>(() => ({ send: () => {}, subscribe: (f) => { listeners.current.add(f); return () => listeners.current.delete(f); } }), []);
-  useEffect(() => window.dex.overlay?.onState((raw) => {
-    const d = raw as { from: string; userId: string; name: string; color: string; presenter: boolean; m: unknown };
-    const key = d.userId || d.from;
-    names.current.set(key, { name: d.name, color: d.color });
-    if (d.presenter) setPresenter(d.from);
-    const m = readPointerBatch({ k: 'pt', m: [d.m] });
-    for (const f of listeners.current) f(d.from, key, m);
-  }), []);
+  // where the shared display is inside this window (the main process says, as the window moves)
+  const geom = useRef<{ display: Box; window: Box } | null>(null);
+  useEffect(() => {
+    const off = window.dex.overlay?.onState((raw) => {
+      const g = (raw as { geom?: { display: Box; window: Box } }).geom;
+      if (g) { geom.current = g; return; }
+      const d = raw as { from: string; userId: string; name: string; color: string; presenter: boolean; m: unknown };
+      const key = d.userId || d.from;
+      names.current.set(key, { name: d.name, color: d.color });
+      if (d.presenter) setPresenter(d.from);
+      const m = readPointerBatch({ k: 'pt', m: [d.m] });
+      for (const f of listeners.current) f(d.from, key, m);
+    });
+    // listening now: the main process sends where the display is
+    window.dex.overlay?.ready();
+    return off;
+  }, []);
   useEffect(() => { document.documentElement.classList.add('pt-overlay-doc'); }, []);
   return (
     <div className="pt-overlay">
       <PointerLayer transport={transport} self={{ deviceId: 'overlay', userId: 'overlay' }} presenterDevice={presenter} tools={false}
-        box={() => ({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight })}
+        box={() => {
+          const inner = { width: window.innerWidth, height: window.innerHeight };
+          return geom.current ? overlayBox(geom.current.display, geom.current.window, inner) : { x: 0, y: 0, ...inner };
+        }}
         nameOf={(u) => names.current.get(u)?.name ?? 'Someone'} colorOf={(u) => names.current.get(u)?.color ?? '#2a8c98'} />
     </div>
   );
