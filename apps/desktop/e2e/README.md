@@ -23,8 +23,8 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
 
 ### Extra setup for some scripts
 
-- **Browser pages** (`m2-guest`, `m3-webinar`, `remote`, `phone-sec`, `assist-phone`) open Chromium. Install it once with `npx playwright-core install chromium`.
-- **Gateway pages** (`m2-guest`, `m3-webinar`, `remote`) run the gateway locally with Wrangler (`apps/gateway`).
+- **Browser pages** (`m2-guest`, `m3-webinar`, `lobby`, `remote`, `phone-sec`, `assist-phone`) open Chromium. Install it once with `npx playwright-core install chromium`.
+- **Gateway pages** (`m2-guest`, `m3-webinar`, `lobby`, `remote`) run the gateway locally with Wrangler (`apps/gateway`).
 - **Accessibility checks** (axe) in `tourlib.mts` run only when `DEX_AXE` points at a copy of `axe.min.js`. axe-core is not a dependency of this repository.
 
 ## What is here
@@ -34,7 +34,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
 - `tourlib.mts`: screenshot tours and layout checks used by the meetings and gateway scripts.
 - **One script per area:**
   - messaging: `nav`, `msgacts`, `search`, `format`, `links`, `polish`
-  - meetings: `meet`, `m2-*`, `m3-webinar`, `lounge`, `pointers`, `meetrecap` (threads, action points, recaps; a browser guest through the gateway; a hub restart mid-meeting)
+  - meetings: `meet`, `m2-*`, `m3-webinar`, `lounge`, `pointers`, `meetrecap` (threads, action points, recaps; a browser guest through the gateway; a hub restart mid-meeting), `lobby` (who is waiting: a browser guest at a personal room while the host's app is elsewhere, the notification, indicator, corner card and Nib card, Decline and Admit from them, the meeting chat's count and background notification, End for everyone from every tab and the folded chip, an instant meeting's lobby, Hindi; uses the system Chrome when Playwright's Chromium is not installed; screenshots in `LOBBY_OUT`)
   - files: `files`, `pdf`, `media`, `ocr`, `dmsearch`
   - bots: `bots-*`, `botmaker`, `flows`, `templates`, `botnet` (bots talking to bots: a handoff with its relay card, a query in a flow, an event, a refusal, a loop stopped; scheduled jobs in plain words, a dry run, runs with the hub's clock moved, missed runs, the job sheet and the network sheet)
   - org chart: `org`, `orgscape`

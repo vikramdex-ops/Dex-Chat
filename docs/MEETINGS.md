@@ -373,6 +373,121 @@ process) is ignored; asking, accepting and the stop keys; and stopping the share
 Each phase ships with end-to-end tests that drive several app instances through the feature. The
 performance targets above are measured in CI-like runs on the e2e harness.
 
+### Who is waiting: knocks, delivered (November 2026)
+
+**The problem it fixes.** A guest who opened a host's link while the host was not in the Room (a
+standing personal room shared with a client, a scheduled meeting not started yet) waited for the
+Room to open, and nobody was told: the lobby list lived only inside a running Room. Now everyone
+waiting for a meeting is news to everyone who may let them in, wherever they are in the app, in
+every kind of meeting: personal rooms, Calendar meetings, instant meetings (*Start meeting* in the
+Meet lens), and Rooms of conversations with a lobby.
+
+**Who is told.** The meeting's host and its co-hosts, and the hosts and co-hosts of its running
+Room (someone made co-host in the Room is told about everyone still waiting). Office members only;
+never bots or guests.
+
+**What they get, for each person waiting (a knock):**
+
+- **A notification** through the app's own path (`alertUser('personal', …)`): a system notification
+  when the app is minimised or in the background, by the person's notification settings and quiet
+  hours ("None" and quiet hours silence it; "Mentions and Direct messages" still lets it through,
+  as a knock is addressed to you). Title *Waiting in the lobby · Your personal room* (or the
+  meeting's title), body *Dana Wright (guest, name not verified) asks to join*. Clicking it opens
+  the indicator's list. Not sent while you are looking at that meeting's own Room (its lobby strip
+  shows the knock there). Phones get it the same way (they share the renderer); a phone that is not
+  connected gets Nib's message through the usual missed-message push.
+- **The indicator** in the title bar, reachable from every lens and sheet: amber **N WAITING** while
+  anyone waits. Its list groups people by meeting: name (a browser guest's marked *GUEST · NAME NOT
+  VERIFIED*: they typed it themselves), how long they have waited, **Decline** and **Admit**, and
+  **Admit all** when several wait for one meeting; and a note when no host is in the Room or it is
+  not open (*Admit opens it for them; they wait there for you*). It also lists **your meetings
+  running without you** (people inside, guests included) with **Join**, as a quieter teal *IN YOUR
+  ROOM* mark when nobody waits.
+- **A corner card** that drops in when someone knocks (top right; a phone shows the newest only)
+  with Decline, Admit, and a close button that keeps it in the indicator.
+- **Nib's card** in their conversation with Nib (`nib.card` kind `knock`, posted whether or not day
+  sheets are on): the meeting, its ID, the name (a guest's marked as unverified), *WAITING SINCE
+  14:06 · 3 MIN*, and **Admit** and **Decline** that work from the card itself, on a PC or a phone.
+  The card changes in place when anyone answers (*You let them in at 14:08* / *Priya Raman turned
+  them away at 14:08*), when the person comes in (*In the meeting since 14:08*), gives up (*Left the
+  lobby at 14:07, before anyone answered*) or the meeting ends first: no stale buttons. Answering
+  an answered knock says who already did. At most 20 knock cards per meeting in ten minutes (a link
+  shared too widely); the notification and the indicator still come. Nib's message itself does not
+  notify a second time.
+
+**Admit when the Room is not open (decided behaviour).** Admit lets the person in at once: they
+open the Room themselves (no one is rung, as the meeting has not started for its invitees) and
+wait there; the host's card and indicator then offer **Join now**. The guest's page says *Priya
+Raman let you in and has been told you are here. They join you shortly.* until a host comes in.
+Sound: the guest is alone in the Room, so nothing they say reaches anyone until a host joins; the
+host's app never joins by itself (Admit never turns on anyone's microphone). A colleague waiting
+for a personal room (they wait for its host) is let in the same way. A let-in person who does not
+come within 15 minutes waits again.
+
+**The guest's page is honest.** In the lobby it says *The host will let you in* when a host is in
+the meeting, and otherwise *The host has been told*: *Priya Raman is not in the meeting yet. They
+have been told you are waiting, and will let you in when they open it.* It changes by itself when a
+host comes in or leaves, and is announced to screen readers when it changes.
+
+**Joined notices.** When someone comes into a meeting you organise (personal room, Calendar or
+instant meeting) while you are not in it, you are told: a notification only when the app is in the
+background (*Joined your meeting · Weekly piping*, *Ravi Kumar is in the meeting without you*,
+opening the meeting), the indicator's *Running without you* row with **Join**, and a let-in guest's
+knock card shows they came in.
+
+**Inside the Room.** A host sees the lobby strip across the top of the Room whatever panel tab is
+open: *LOBBY · 2*, each name (guests marked as not verified) with **Decline** and **Admit**, and
+**Admit all**; it is announced to screen readers as people arrive. The People tab keeps its full
+list.
+
+**The meeting chat** (the chat everyone in the Room reads, guests too): a line from someone else
+while the app is minimised or in the background is a system notification (*Meeting chat · Client
+review*, *Dana Wright (guest): Shall we start with sheet 3?*), by the notification settings and
+quiet hours, never for your own lines; clicking it brings back the Room on its Chat tab. In the
+app, with the Chat tab closed, the tab carries a teal unread count (the chat it shows: the meeting
+chat when the Room has guests or people from outside, otherwise its conversation's unread
+messages, never both for the same line), the folded Room's chip carries it too, and a short
+preview of the line rises at the foot of the Room for five seconds (no sound, no focus taken,
+still when motion is reduced); clicking it opens the chat.
+
+**End for everyone, always reachable.** For whoever may end the meeting (its host and co-hosts),
+**End for everyone** sits beside **Leave Room** in the Room's title block on every panel tab (it
+moved there from the People tab), and the folded Room's chip in the title bar carries **END**, so
+it can be ended from any lens. Both ask first (*End the meeting for everyone?*, **End for
+everyone** / **Keep it going**). Hidden from people who cannot end it.
+
+**Where it lives.**
+
+- **Hub**: `apps/hub/src/meet-lobby.ts` (`MeetLobby`): one knock per waiting device, made and closed
+  by watching the Rooms (`rooms.ts` reports every lobby change through `RoomHost.lobby`:
+  `changed`, `decided`, `entered`), whether the person waits in a running Room's lobby or for the
+  Room to open (the pre-start list was invisible before). `Rooms.answer` lets people in or turns
+  them away from outside the Room; a person let in before the Room is open is pre-admitted and
+  opens it (no ringing). Ops `meet.knocks` (the board: open knocks for you, your meetings running
+  without you) and `meet.knock.answer` (`id`, or `meetingId` with `all`); events `meet.knocked`,
+  `meet.knocks` (sent only when a person's board changed) and `meet.joined`. Nib posts the card
+  (`Nib.postKnock`) and draws it from `nib.card`, only for people who were told. Guests:
+  `meet-guests.ts` sends `lobby` frames with `hostIn` and a Room view with `hostAway`.
+- **Types**: `packages/core/src/meet-lobby.ts` (`KnockView`, `LobbyBoard`, `HostedLive`,
+  `JoinedNotice`).
+- **App**: `apps/desktop/src/renderer/meet/knocks.ts` (the store and notifications),
+  `LobbyBell.tsx` (the indicator, its list, the corner cards and the Room's lobby strip),
+  `KnockCard.tsx` (Nib's card), `ChatPeek.tsx` and `live.ts` (the meeting chat's count, preview and
+  notification), `EndAll.tsx` (End for everyone); deep links `dexconnect://lobby/…` and
+  `dexconnect://meetchat`.
+- **Guest page**: `apps/gateway/meet/landing.ts` and `room.ts`.
+
+**Tests.** `apps/hub/test/meet-lobby.test.ts`: a browser guest at a personal room while its host is
+elsewhere (event, board, Nib card naming the guest as unverified, Admit from the card opening the
+Room for the guest without ringing, the joined notice, the host joining and the guest's page
+following, answering twice); Decline from the card, and who may not see or answer it; a colleague
+waiting for a personal room let in and opening it; an instant meeting with a co-host told too, a
+knock answered from the Room's own list reaching the card, a guest who gives up, Admit all by
+meeting; the organiser told when someone joins without them, and not once they are in. End to end:
+`apps/desktop/e2e/lobby.mts` with the real gateway Worker (`wrangler dev`) and a browser guest
+(the notification calls are recorded in the main process; the background is a minimised, unfocused
+window).
+
 ## Meeting threads, action points and recaps
 
 *Delivered (November 2026): designed first, described here as built.* After any meeting, everyone
