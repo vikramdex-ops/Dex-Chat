@@ -4064,7 +4064,7 @@
  "You are in another Room. Leave it first.": "lounges/store.ts",
  "{0} · Action point": "meet/actions.tsx",
  "{0} (guest)": "meet/actions.tsx",
- "{0} changed the words to “{1}”": "meet/actions.tsx",
+ "{0} changed the words to": "meet/actions.tsx",
  "{0} done": "meet/actions.tsx",
  "{0} dropped": "meet/actions.tsx",
  "{0} dropped it": "meet/actions.tsx",

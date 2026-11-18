@@ -263,11 +263,12 @@ export function ApSheet({ ap, users, meId, onClose }: { ap: ActionPoint; users: 
 const hmDay = (t: number) => `${new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' })} ${formatTime(t)}`;
 
 /** One change as a sentence: "Priya gave it to Ravi Kumar". */
-function changeLines(c: ActionChange, who: string, nameOf: (id: string) => string): string[] {
+function changeLines(c: ActionChange, who: string, nameOf: (id: string) => string): Array<string | [string, string]> {
   if (c.kind === 'logged') return [`${who} logged it`];
-  const out: string[] = [];
+  const out: Array<string | [string, string]> = [];
   for (const f of c.fields) {
-    if (f.field === 'text') out.push(`${who} changed the words to “${f.to}”`);
+    // the words themselves stay as written (never run through the translations)
+    if (f.field === 'text') out.push([`${who} changed the words to`, f.to]);
     else if (f.field === 'owner') out.push(!f.to ? `${who} took the owner off` : f.to.startsWith('~') ? `${who} gave it to ${f.to.slice(1)}, a guest` : `${who} gave it to ${nameOf(f.to)}`);
     else if (f.field === 'due') out.push(f.to ? `${who} set the date to ${dueLabel(f.to)}` : `${who} took the date off`);
     else if (f.to === 'done') out.push(c.kind === 'ticked' ? `${who} marked it done on the day sheet` : `${who} marked it done`);
@@ -297,7 +298,7 @@ function ApHistory({ ap, users, meId }: { ap: ActionPoint; users: Map<string, Pu
       {changes && changes.length > 0 && (
         <ol>
           {changes.flatMap((c, i) => changeLines(c, person(c.by), person).map((t, j) => (
-            <li key={`${i}-${j}`}><span className="mono faint">{hmDay(c.at)}</span><span>{t}</span></li>
+            <li key={`${i}-${j}`}><span className="mono faint">{hmDay(c.at)}</span>{typeof t === 'string' ? <span>{t}</span> : <span><span>{t[0]}</span> <q translate="no">{t[1]}</q></span>}</li>
           )))}
         </ol>
       )}

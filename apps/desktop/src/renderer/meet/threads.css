@@ -109,3 +109,4 @@
 .ap-sheet .ap-history ol { max-height: 220px; }
 /* the recap's top row (tick, number, words, state, pencil) stays on one line on a phone: the words wrap instead */
 .ap-strip.compact > .ap-title { flex: 1 1 0; }
+.ap-dialog.ap-sheet { display: grid; gap: 14px; }
