@@ -161,7 +161,7 @@ export function ApStrip({ ap, users, meId, compact, title }: { ap: ActionPoint; 
   const owner = ownerText(ap, users, meId);
   const ref = apRef(ap.n);
   // in the thread the message is the task; words revised since show here (the recap always shows them)
-  const shownTitle = title !== undefined ? title : ap.revisedAt && ap.text ? <span translate="no">{ap.text}</span> : undefined;
+  const shownTitle = title !== undefined ? title : !compact && ap.revisedAt && ap.text ? <span translate="no">{ap.text}</span> : undefined;
   return (
     <div className={`ap-strip${done ? ' done' : ''}${late ? ' late' : ''}${compact ? ' compact' : ''}`} role="group" aria-label={`Action point ${ref}`}>
       <button className="ap-box" role="checkbox" aria-checked={done} aria-disabled={!may || undefined}

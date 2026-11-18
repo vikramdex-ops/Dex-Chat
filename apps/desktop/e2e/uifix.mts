@@ -41,6 +41,7 @@ const onTop = (sel: string) => page.evaluate((s: string) => {
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 20));
   return !!hit && el.contains(hit);
 }, sel);
+let ravi: { disconnect(): void } | null = null;
 const openRecap = (occId: string) => page.evaluate((id: string) => window.dispatchEvent(new CustomEvent('dex-recap', { detail: id })), occId);
 
 try {
@@ -49,11 +50,12 @@ try {
   // Ravi joins the office (a second colleague to own points)
   const { HubClient } = await import('../../../packages/core/src/hub-client.ts');
   const { createIdentity } = await import('../../../packages/core/src/index.ts');
-  const ravi = new HubClient({ identity: createIdentity(), account: { username: 'ravi', domain: 'DEX', displayName: 'Ravi Kumar', hostname: 'RAVI-PC' } });
-  ravi.connect({ host: '127.0.0.1', port: hub.port, fp: hub.fingerprint });
-  for (let i = 0; i < 100 && ravi.state.kind !== 'ready'; i++) await sleep(100);
-  assert.equal(ravi.state.kind, 'ready', 'Ravi is in');
-  const raviId = ravi.session!.me.id;
+  const raviC = new HubClient({ identity: createIdentity(), account: { username: 'ravi', domain: 'DEX', displayName: 'Ravi Kumar', hostname: 'RAVI-PC' } });
+  ravi = raviC;
+  raviC.connect({ host: '127.0.0.1', port: hub.port, fp: hub.fingerprint });
+  for (let i = 0; i < 100 && raviC.state.kind !== 'ready'; i++) await sleep(100);
+  assert.equal(raviC.state.kind, 'ready', 'Ravi is in');
+  const raviId = raviC.session!.me.id;
   await page.reload(); await page.locator('.frame').waitFor();
 
   // ------------------------------------------------------------ 1. the recap's action points
@@ -99,13 +101,13 @@ try {
   await row.locator('.ap-status', { hasText: 'DONE' }).waitFor();
   await sheet.locator('.recap-label', { hasText: '1 of 2 done' }).waitFor();
   // saved on the hub, for everyone
-  const saved = (await ravi.request('ap.list', { convId: m.convId! })).actions.find((a: ActionPoint) => a.id === ap.id)!;
+  const saved = (await raviC.request('ap.list', { convId: m.convId! })).actions.find((a: ActionPoint) => a.id === ap.id)!;
   assert.equal(saved.text, 'Kowshik to finish 3 drawings and send them to the client');
   assert.equal(saved.ownerId, raviId);
   assert.equal(saved.due, dueYmd);
   assert.equal(saved.status, 'done');
   // Ravi opens it again from his side: the recap follows, and the history says who did what
-  await ravi.request('ap.update', { id: ap.id, status: 'open' });
+  await raviC.request('ap.update', { id: ap.id, status: 'open' });
   await row.locator('.ap-status', { hasText: 'OPEN' }).waitFor();
   await row.locator('.ap-title').click();
   await dlg.waitFor();
@@ -327,6 +329,7 @@ try {
   throw e;
 } finally {
   await app.close();
+  ravi?.disconnect();
   owner.disconnect();
   await hub.stop();
 }
