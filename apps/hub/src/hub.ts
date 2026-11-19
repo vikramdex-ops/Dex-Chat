@@ -68,6 +68,7 @@ import { BackupFailure, Backups, LOCK_FILE } from './backup.ts';
 import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 import { ZohoError, ZohoSync } from './zoho.ts';
+import { SheetsError, SheetsLink } from './sheets.ts';
 import type { ZohoTestOptions } from './zoho.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
@@ -113,6 +114,8 @@ export interface HubOptions {
   firstRun?: BackupPickOptions | false;
   /** Zoho Calendar against a mock server (tests only; also DEX_ZOHO_TEST_DCS and DEX_ZOHO_CALLBACK_PORT). */
   zoho?: ZohoTestOptions;
+  /** Tests only: the port a mock Dexterity Sheets server answers the discovery question on (loopback only). */
+  sheetsDiscoveryPort?: number;
   /** "Set up with Cloudflare": where Cloudflare is and what to deploy (tests use a stand-in; src/cfdeploy.ts). */
   cloudflare?: { endpoints?: CfEndpoints; bundle?: () => CloudBundle | null; fetch?: typeof fetch; waits?: CfSetupOptions['waits'] };
   /** The iPhone web app's notifications (webpush.ts): tests send to a local push service. */
@@ -225,6 +228,8 @@ export class Hub {
   readonly feeds: CalendarFeeds;
   /** Zoho Calendar sync for people who connect their Zoho account (zoho.ts, docs/ZOHO-CALENDAR.md). */
   readonly zoho: ZohoSync;
+  /** Dexterity Sheets' read API for Nib (sheets.ts, docs/INTEGRATIONS.md). */
+  readonly sheets: SheetsLink;
   /** The office's days off and compensatory working days, and the holiday circulars read (holidays.ts). */
   readonly holidays: Holidays;
   /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
@@ -539,8 +544,18 @@ export class Hub {
       active: (uid) => this.canSignIn(uid),
     });
     { const prev = this.files.extraRead; this.files.extraRead = (userId, fileId) => prev(userId, fileId) || this.webinars.mayReadHandout(userId, fileId); }
+    this.sheets = new SheetsLink({
+      dataDir: opts.dataDir,
+      meta: (k) => this.store.meta(k, () => ''),
+      setMeta: (k, v) => this.setMeta(k, v),
+      toAdmins: (name, data) => this.emit(name, data, (c) => this.isAdminConn(c)),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+      digestPeople: () => this.nib.sheetsDigestPeople(),
+      discoveryPort: opts.sheetsDiscoveryPort,
+    });
     this.nib = new Nib({
-      db: this.store.db, store: this.store, messaging: this.messaging, desk: this.desk, calendar: this.calendar, work: this.work, days: this.holidays,
+      db: this.store.db, store: this.store, messaging: this.messaging, desk: this.desk, calendar: this.calendar, work: this.work, days: this.holidays, sheets: this.sheets,
       deliver: (userIds, name, data) => this.deliver(userIds, name, data),
       online: (uid) => [...this.conns].some((c) => c.ready && c.userId === uid),
       busy: (uid) => {
@@ -2043,6 +2058,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof CalError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && (op.startsWith('admin.sheets.') || op === 'nib.sheets.ask')) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = op === 'nib.sheets.ask' ? await this.nib.sheetsAnswer(me, String(d.text ?? '')) : await this.sheets.handle(op, me, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof SheetsError || err instanceof NibError) throw new OpError(err.message);
             throw err;
           }
         }

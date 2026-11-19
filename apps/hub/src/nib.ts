@@ -22,7 +22,11 @@ import type { Calendar } from './calendar.ts';
 import type { Work } from './work.ts';
 import type { Holidays } from './holidays.ts';
 import type { HolidayReadView } from '@dex/core/holidays';
+import { assignedAnswer, isOpenItem, matchBook, mentionsAnswer, safeWorkbookLink, sheetsAsk, whoAnswer } from '@dex/core/sheets';
+import type { SheetsAsk } from '@dex/core/sheets';
 import { localDate } from './work.ts';
+import { SheetsError } from './sheets.ts';
+import type { SheetsLink } from './sheets.ts';
 
 export class NibError extends Error {}
 
@@ -54,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_nib_leave_user ON nib_leave(user_id, to_date);
 CREATE TABLE IF NOT EXISTS nib_acks (date TEXT NOT NULL, giver_id TEXT NOT NULL, user_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (date, giver_id, user_id));
 CREATE TABLE IF NOT EXISTS nib_prefs (user_id TEXT PRIMARY KEY, wrap_at TEXT, welcome_seen TEXT, pinned INTEGER NOT NULL DEFAULT 0, hello INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS nib_replies (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, parse TEXT NOT NULL, item_id TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS nib_sheets (user_id TEXT PRIMARY KEY, digest INTEGER NOT NULL DEFAULT 0, last_digest TEXT);
 `;
 
 interface ItemRow {
@@ -120,7 +125,12 @@ export interface NibDeps {
   userChanged: (userId: string) => void;
   userAdded: (u: PublicUser) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>) => void;
+  /** Dexterity Sheets' read API (sheets.ts): people ask Nib about their own Sheets items. */
+  sheets?: SheetsLink;
 }
+
+/** How long after the morning time Nib keeps trying a Sheets server that did not answer. */
+const SHEETS_DIGEST_TRIES_MS = 3 * 3600_000;
 
 export class Nib {
   private nibId: string | null;
@@ -939,10 +949,25 @@ export class Nib {
       return;
     }
     if (!msg.body || isSealed(msg.body) || !this.isNibConv(convId)) return;
+    const said = msg.body.replace(/^\/(?:got|done|nib)\s+/i, '');
+    // a question for Dexterity Sheets is answered from Sheets, never written on the day sheet;
+    // "who's in X" without saying Sheets is a Sheets question only when Sheets has a book called X
+    const ask = sheetsAsk(said);
+    if (ask && (ask.kind !== 'who' || ask.named || this.d.sheets?.configured())) {
+      void this.sheetsReply(author, ask).then((text) => {
+        if (text === null) this.answerWords(author, said);
+        else this.sheetsSay(author.id, text);
+      }).catch((err: Error) => this.d.log('warn', 'nib sheets answer', { error: err.message }));
+      return;
+    }
+    this.answerWords(author, said);
+  }
+
+  /** Words to Nib about the day: noted on the day sheet when they are work, answered with a card. */
+  private answerWords(author: PublicUser, body: string): void {
     const cfg = this.config();
     const users = this.d.store.activeUsers().filter((u) => u.role !== 'bot' && u.role !== 'guest');
     const giverIds = new Set(cfg.givers.map((g) => g.userId));
-    const body = msg.body.replace(/^\/(?:got|done|nib)\s+/i, '');
     const p = parseWork(body, { people: users.map((u) => ({ id: u.id, name: u.displayName, giver: giverIds.has(u.id) })), projects: cfg.projects, today: this.today(), meId: author.id });
     let itemId: string | null = null;
     try {
@@ -958,6 +983,94 @@ export class Nib {
     const fallback = itemId ? `Noted: ${[p.activity, p.project, qtyText(p.qty)].filter(Boolean).join(' · ')}` : p.intent === 'nothing' ? 'Nothing today. Fair enough.' : 'Here is what I found.';
     this.post(author.id, 'reply', id, fallback);
     if (itemId) this.pushMe([author.id]);
+  }
+
+  // ------------------------------------------------------------ Dexterity Sheets
+  /** People who asked for the morning list of their open Sheets items. */
+  sheetsDigestPeople(): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM nib_sheets WHERE digest = 1').get() as { n: number }).n;
+  }
+  private sheetsDigestOn(uid: string): boolean {
+    return !!(this.db.prepare('SELECT digest FROM nib_sheets WHERE user_id = ?').get(uid) as { digest: number } | undefined)?.digest;
+  }
+
+  /** A plain Markdown line from Nib in someone's conversation with Nib (its workbook links get cards). */
+  private sheetsSay(uid: string, text: string): { convId: string; messageId: string } | null {
+    const convId = this.convFor(uid);
+    if (!convId) return null;
+    try {
+      const msg = this.d.messaging.sendAs(this.bot(), this.d.messaging.memberConv(convId, this.id), text.slice(0, 4000), undefined, [], `nibsheets|${ulid()}|${uid}`.slice(0, 96), {});
+      return { convId, messageId: msg.id };
+    } catch (err) {
+      this.d.log('warn', 'nib sheets line not posted', { error: (err as Error).message });
+      return null;
+    }
+  }
+
+  /** `nib.sheets.ask`: the app's Nib box asked; the answer goes in the conversation with Nib too. */
+  async sheetsAnswer(me: PublicUser, text: string): Promise<{ convId: string | null; messageId: string | null; text: string }> {
+    if (me.role === 'bot' || me.role === 'guest') throw new NibError('Nib answers members of the office.');
+    const ask = sheetsAsk(String(text ?? ''));
+    if (!ask) throw new NibError('Ask about Dexterity Sheets, for example “what’s assigned to me in Sheets?”.');
+    const answer = await this.sheetsReply(me, ask.kind === 'who' ? { ...ask, named: true } : ask) ?? '';
+    const posted = this.sheetsSay(me.id, answer);
+    return { convId: posted?.convId ?? null, messageId: posted?.messageId ?? null, text: answer };
+  }
+
+  /**
+   * Nib's answer to a Sheets question, always about the person asking (their own Windows account);
+   * null when "who's in X" turns out not to be about a workbook.
+   */
+  private async sheetsReply(me: PublicUser, ask: SheetsAsk): Promise<string | null> {
+    const sheets = this.d.sheets;
+    if (ask.kind === 'digest') {
+      this.db.prepare('INSERT INTO nib_sheets (user_id, digest) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET digest = excluded.digest').run(me.id, ask.on ? 1 : 0);
+      if (!ask.on) return 'Done. No more morning list from Dexterity Sheets.';
+      const note = sheets?.configured() ? '' : ' Dexterity Sheets is not connected to the hub yet, so the list starts once an administrator connects it.';
+      return `Done. Each workday at ${this.config().startPromptAt} I’ll list your open items in Dexterity Sheets, only when there are any. Say “Sheets digest off” to stop.${note}`;
+    }
+    if (!sheets?.configured()) {
+      if (ask.kind === 'who' && !ask.named) return null;
+      return 'Dexterity Sheets is not connected to the hub yet. An administrator connects it in Control room → Integrations.';
+    }
+    try {
+      if (ask.kind === 'assigned') return assignedAnswer(await sheets.assigned(me.account), this.today(), { digestOn: this.sheetsDigestOn(me.id) });
+      if (ask.kind === 'mentions') return mentionsAnswer(await sheets.mentions(me.account, new Date(this.now() - 7 * DAY_MS)), 'in the last 7 days');
+      const books = await sheets.books();
+      const book = matchBook(books, ask.book);
+      if (!book) return ask.named ? `I couldn’t find a workbook called “${ask.book}” on the Sheets server.` : null;
+      const names = book.online.map((acct) => this.d.store.userByAccount(acct.toLowerCase())?.displayName ?? acct);
+      return whoAnswer(book, safeWorkbookLink(book.link), [...new Set(names)]);
+    } catch (err) {
+      if (err instanceof SheetsError) return `I couldn’t ask Dexterity Sheets: ${err.message}`;
+      throw err;
+    }
+  }
+
+  /** The morning list, for people who asked for it: their open Sheets items, once a workday. */
+  private sheetsRunning = false;
+  private sheetsTick(now: number, date: string, cfg: NibConfig): void {
+    const sheets = this.d.sheets;
+    if (this.sheetsRunning || !sheets?.configured() || !this.workday(date, cfg)) return;
+    const from = this.at(date, cfg.startPromptAt);
+    if (now < from || now > from + SHEETS_DIGEST_TRIES_MS) return;
+    const due = (this.db.prepare('SELECT user_id FROM nib_sheets WHERE digest = 1 AND (last_digest IS NULL OR last_digest <> ?)').all(date) as Array<{ user_id: string }>)
+      .map((r) => this.member(r.user_id)).filter((u): u is PublicUser => !!u && !this.leaveOn(u.id, date));
+    if (!due.length) return;
+    this.sheetsRunning = true;
+    void (async () => {
+      for (const u of due) {
+        try {
+          const items = await sheets.assigned(u.account);
+          this.db.prepare('UPDATE nib_sheets SET last_digest = ? WHERE user_id = ?').run(date, u.id);
+          if (items.some(isOpenItem)) this.sheetsSay(u.id, assignedAnswer(items, date, { digest: true }));
+        } catch (err) {
+          // the server did not answer: tried again next minute, for a while
+          this.d.log('warn', 'nib sheets morning list', { error: (err as Error).message });
+          break;
+        }
+      }
+    })().finally(() => { this.sheetsRunning = false; });
   }
 
   /** Read a holiday circular and answer with what it says (a card the app draws from nib.card). */
@@ -1002,6 +1115,8 @@ export class Nib {
     const cfg = this.config();
     const date = localDate(now);
     this.leaveTick(date);
+    // asked for by each person, so it runs whether or not the office keeps day sheets
+    this.sheetsTick(now, date, cfg);
     if (!cfg.enabled) return;
     if (this.workday(date, cfg)) {
       this.askTick(now, date, cfg);

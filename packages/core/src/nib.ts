@@ -6,6 +6,7 @@
 
 import type { HolidayOps, HolidayReadView } from './holidays.ts';
 import type { KnockView } from './meet-lobby.ts';
+import { sheetsAsk } from './sheets.ts';
 
 // ---------------------------------------------------------------- identity and configuration
 export const NIB_ACCOUNT = 'system\\nib';
@@ -222,7 +223,7 @@ export interface NibWelcome {
 }
 
 // ---------------------------------------------------------------- the parser
-export type NibIntent = 'got' | 'done' | 'progress' | 'blocked' | 'leave' | 'nothing' | 'remind' | 'where' | 'who' | 'meeting' | 'brief' | 'help' | 'wrap' | 'unknown';
+export type NibIntent = 'got' | 'done' | 'progress' | 'blocked' | 'leave' | 'nothing' | 'remind' | 'where' | 'who' | 'meeting' | 'brief' | 'help' | 'wrap' | 'sheets' | 'unknown';
 export const NIB_WORK_INTENTS: NibIntent[] = ['got', 'done', 'progress', 'blocked'];
 export interface NibPerson { id: string; name: string; giver?: boolean }
 export interface NibParseContext {
@@ -395,6 +396,9 @@ export function parseWork(input: string, ctx: NibParseContext): NibParse {
   if (!trimmed) return out;
   // ---- skills first: they are whole sentences of their own kind
   if (NOTHING_RE.test(trimmed)) return { ...out, intent: 'nothing', confidence: 0.9 };
+  // a question for Dexterity Sheets (sheets.ts); "who's in X" without saying Sheets stays "who"
+  const sheets = sheetsAsk(trimmed);
+  if (sheets && (sheets.kind !== 'who' || sheets.named)) return { ...out, intent: 'sheets', confidence: 0.9, activity: trimmed };
   for (const [intent, re] of SKILLS) if (re.test(trimmed)) return { ...out, intent, confidence: 0.85, activity: trimmed };
   if (LEAVE_RE.test(trimmed) || /^half[- ]day(?: today| tomorrow)?\.?$/i.test(trimmed)) {
     const due = dueFrom(trimmed, ctx.today);
@@ -586,6 +590,7 @@ export const NIB_INTENT_EXAMPLES: Record<Exclude<NibIntent, 'unknown' | 'progres
   brief: ['what do I have today', 'give me my morning brief'],
   help: ['how do I share my screen', 'how to start a room'],
   wrap: ['send my day sheet', 'wrap up my day'],
+  sheets: ['what is assigned to me in Sheets', 'any mentions for me', 'who is in the line list workbook'],
 };
 
 // ---------------------------------------------------------------- reminders in plain words

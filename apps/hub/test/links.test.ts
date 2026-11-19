@@ -359,7 +359,8 @@ test('tool links: Sleuth, Dexterity Sheets, Project Opener and Datum', async () 
   assert.equal(sheet.kind, 'workbook');
   assert.equal(sheet.title, 'Line list 100');
   assert.equal(sheet.subtitle, 'Dexterity Sheets · PC-SERVER:47810');
-  assert.equal(sheet.meta.find((x) => x.key === 'location')?.value, 'Line List!B4');
+  assert.equal(sheet.meta.find((x) => x.key === 'sheet')?.value, 'Line List');
+  assert.equal(sheet.meta.find((x) => x.key === 'location')?.value, 'B4');
   const proj = await priya.request('links.preview', { url: 'projectopener://open/P12513%20As-built%20isometrics/' });
   assert.equal(proj.kind, 'project');
   assert.equal(proj.title, 'P12513 As-built isometrics');

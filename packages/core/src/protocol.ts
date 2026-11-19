@@ -1262,7 +1262,7 @@ export interface LinkAction {
 }
 
 export interface LinkCardMeta {
-  key: 'author' | 'updated' | 'size' | 'members' | 'status' | 'type' | 'site' | 'path' | 'when' | 'dimensions' | 'tool' | 'department' | 'replies' | 'location';
+  key: 'author' | 'updated' | 'size' | 'members' | 'status' | 'type' | 'site' | 'path' | 'when' | 'dimensions' | 'tool' | 'department' | 'replies' | 'location' | 'sheet';
   label: string;
   value: string;
   /** For author: the person's id; for updated/when: the time (ms); for size: bytes. */

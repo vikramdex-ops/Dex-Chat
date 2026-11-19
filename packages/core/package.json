@@ -44,6 +44,8 @@
     "./meet-threads": "./src/meet-threads.ts",
     "./notices": "./src/notices.ts",
     "./zoho": "./src/zoho.ts",
+    "./sheets": "./src/sheets.ts",
+    "./share": "./src/share.ts",
     "./cfsetup": "./src/cfsetup.ts",
     "./holidays": "./src/holidays.ts",
     "./webpush": "./src/webpush.ts",

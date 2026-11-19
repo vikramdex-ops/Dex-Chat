@@ -25,7 +25,7 @@ dexconnect://share?text=<message>&file=<absolute path>&to=<who>&from=<tool name>
 | `file` | A file on this PC to attach. Repeat for up to 20 files. |
 | `to` | Optional. Someone's Windows sign-in (`DEXTERITY\priya.raman` or just `priya.raman`) for a Direct message, or `space:<Space name>`. |
 | `from` | Optional. Your tool's name, shown in the dialog. |
-| `title`, `link` | Optional. A labelled link added on a new line, for example a job folder or a web page. |
+| `title`, `link` | Optional. A labelled link added on a new line, for example a job folder, a web page or a workbook cell. Web and office-tool links (`https`, `dexterity`, `projectopener`, `sleuth`, `datum`, `dexconnect`) are written as `[title](link)`; others as `title: link`. |
 
 Encode each value with URL encoding (spaces as `%20`, backslashes as `%5C`).
 
@@ -388,6 +388,7 @@ note are in [`NIB.md`](NIB.md). The operations the app uses:
 | `nib.sheet { userId, date }` | the person, their givers (their items), the management | one day sheet |
 | `nib.leave.plan`, `nib.leave`, `nib.leave.cancel`, `nib.cover.take`, `nib.welcome.seen` | members | the leave note |
 | `admin.nib.get`, `admin.nib.set`, `admin.nib.preview` | administrators | the configuration (audited as `nib.config`), and a register now |
+| `nib.sheets.ask { text }` | members | a Dexterity Sheets question from the Nib box; the answer is also posted in the conversation with Nib (see [Dexterity Sheets](#dexterity-sheets)) |
 
 Events: `nib.me` (your day changed) and `nib.changed { date, kinds }` (cards to draw again).
 
@@ -560,7 +561,7 @@ can read).
 | `dexconnect://desk/task/<id>` | `task` | The task, due, open, overdue or done |
 | `dexconnect://meet/<meeting ID>` | `meeting` | Title, host, kind, whether it is running (how many people, only for people inside the meeting), lobby; `join` and `copy-path` (the meeting link). Anyone signed in may see what `meet.get` shows for an ID |
 | `sleuth://search?q=` | `search` | The search; `open-in-tool` (Sleuth) |
-| `dexterity://open/<server>/<book>?at=` | `workbook` | The workbook's name, its server and cell; `open-in-tool` (Dexterity Sheets) |
+| `dexterity://open/<server>/<book>?at=<Sheet>!<Cell>` | `workbook` | The workbook's name and server, the sheet (`meta` key `sheet`) and cell (`location`); `open-in-tool` (*Open at B4*) opens the whole link, `?at=` included, so Sheets goes to the cell |
 | `projectopener://open/<id>` | `project` | The project; `open-in-tool` (Project Opener) |
 | `datum://c/<id>`, `datum://m/<module>/<calculator>` | `component`, `calculator` | `open-in-tool` (Datum) |
 | `\\server\share\…`, `file://…`, `D:\…` | `folder`, `path` | The name, the folder, the file type and server; actions `open-in-tool` (label *Open folder*, `tool: 'folder'`) and `copy-path`. The hub never reads the path. The apps draw these cards themselves (see *Share paths and drive letters* below) and no longer ask the hub; the hub still answers for other clients. |
@@ -779,11 +780,63 @@ the pointer; a reference cannot be edited.
 | Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`) | `projectopener://` links in messages open the project |
 | Sleuth | Result menu → *Share to Dexterity Connect…* (the file and the text found) | Line numbers (`6"-P-1001-A1B`) and drawing numbers (`ISO-1001-01`) in messages run that search in Sleuth (`sleuth://search?q=`) |
 | Datum | Component page → *Share* (key figures, dimensions, `datum://c/<id>`) | `datum://` links open the component, calculator or module page |
-| Dexterity Sheets | Share → *Share to Dexterity Connect* (the shared spreadsheet's `dexterity://` link) | `dexterity://` links open the spreadsheet |
+| Dexterity Sheets | Being built on the Sheets side (not released yet): *Share to Dexterity Connect* (`dexconnect://share`), and mention and assignment notices from the Sheets server through the Bot API. Connect is ready for both | `dexterity://open/…?at=` links open the workbook at the cell; Nib answers "what's assigned to me in Sheets?" from the Sheets server's read API (below) |
 
 Links for a tool show as a chip with the tool's name. Dexterity Connect opens only these schemes,
 and only when the tool is installed on that PC. The tool-side changes are on each repository's
 `claude/epic-fermi-h7zdk1` branch.
+
+## Dexterity Sheets
+
+Both directions use what is above; nothing in Connect is special to Sheets except Nib reading it.
+
+**Sheets → Connect**
+
+- *Share to Dexterity Connect* in the Sheets app opens
+  `dexconnect://share?from=Dexterity%20Sheets&title=<book>&link=<dexterity://open/<server>/<book>?at=<Sheet>!<Cell>>`
+  (the link URL-encoded as a whole). The message is written as a Markdown link, `[<book>](<link>)`,
+  and its card shows the server, sheet and cell. A sheet name with spaces or quotes is encoded
+  (`%20`, `%27`) so the link is never cut short.
+- Mention and assignment notices come from the Sheets server through the Bot API
+  (`POST /api/bot/message`, Pulse cards through `POST /api/bot/widget`) with an ordinary integration
+  token an administrator creates for it. Put the `dexterity://open/…?at=` link in the text or the
+  card's `url` so it opens at the cell.
+
+**Connect → Sheets: Nib reads the Sheets server**
+
+An administrator sets this in **Control room → Integrations → Dexterity Sheets**: the server (typed
+as a name or address, or **Find on the network**) and the token generated in Sheets Server Manager,
+then **Test**. Stored on the hub like the Zoho client secret: the token is sealed (AES-256-GCM with
+`sheets.key` beside the database), never logged, never sent back to the Control room or to anyone's
+PC; changes are audited as `sheets.config` without it.
+
+- Finding: the UDP question `DEXSHEETS?1` to port 47811 (broadcast, and loopback for a server on
+  the hub's PC); each answer is `{ "name", "address": "0.0.0.0:<port>", "version" }`. The read API
+  is assumed on TCP **47812** of the PC that answered.
+- The read API: HTTP, JSON, `Authorization: Bearer <token>`, answered within 6 seconds.
+
+| Request | Answer |
+| --- | --- |
+| `GET /api/v1/health` | `{ name, version }` (the **Test** button) |
+| `GET /api/v1/people/{user}/assigned` | `[{ book, sheet, cell, title, status, due, link }]` |
+| `GET /api/v1/people/{user}/mentions?since=<ISO 8601>` | `[{ book, sheet, cell, from, text, at, link }]` (Nib asks for the last 7 days) |
+| `GET /api/v1/books` | `[{ id, name, sharer, online: [user] }]`; an optional `link` per book is used when present |
+
+`{user}` is always the asking person's own Windows account, `DOMAIN\user` in lower case,
+URL-encoded (`dex%5Cpriya`); Sheets matches it without regard to case. `online` lists accounts in the
+same form; Nib shows the names the office knows. `link` must be a `dexterity://open/…` link or it is
+shown as plain words. An item counts as done when its `status` is `done`, `closed`, `complete(d)`,
+`resolved`, `finished`, `cancelled` or `n/a`; everything else is open. `due` is read as
+`YYYY-MM-DD…`. `401`/`403` mean the token was refused.
+
+| Operation | Who | What |
+| --- | --- | --- |
+| `admin.sheets.get` | administrators | `{ url, hasToken, configured, lastTest, digestPeople }` |
+| `admin.sheets.set { url?, token? }` | administrators | a new token replaces the saved one; empty keeps it; `null` removes it |
+| `admin.sheets.test { url?, token? }` | administrators | `GET /api/v1/health` with what is typed, or the saved settings |
+| `admin.sheets.discover` | administrators | `[{ name, address, version, url }]` that answered within two seconds |
+
+Event: `admin.sheets` (the settings changed).
 
 ## Outside the office
 

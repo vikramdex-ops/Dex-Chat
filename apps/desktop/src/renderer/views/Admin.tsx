@@ -5,6 +5,7 @@ import type { AuditEntry, DeviceRecord, PublicUser, Session } from '@dex/core';
 import type { AppState } from '../../shared/bridge.ts';
 import { OfflineBanner } from '../App.tsx';
 import { ZohoAdmin } from './ZohoCalendar.tsx';
+import { SheetsAdmin } from './SheetsAdmin.tsx';
 import { Integrations } from './Integrations.tsx';
 import { BotsAdmin } from '../bots/BotsAdmin.tsx';
 import { OrgAdmin } from './OrgAdmin.tsx';
@@ -326,6 +327,7 @@ export function Admin({ state, session }: { state: AppState; session: Session })
       {tab === 'remote' && <RemoteAdmin />}
       {tab === 'usage' && <UsageAdmin users={session.users} />}
       {tab === 'integrations' && <ZohoAdmin users={session.users} live={live} />}
+      {tab === 'integrations' && <SheetsAdmin live={live} />}
       {tab === 'integrations' && <Integrations state={state} />}
       {tab === 'automations' && <AutomationsAdmin session={session} />}
       {tab === 'bots' && <BotsAdmin users={session.users} />}

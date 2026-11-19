@@ -3,34 +3,15 @@
 // it goes and confirms. Nothing is sent without that confirmation.
 import { useEffect, useMemo, useState } from 'react';
 import type { Conversation, PublicUser, Session } from '@dex/core';
+import type { ShareRequest } from '@dex/core/share';
 import { Dialog, Icon, useToast } from '../ui.tsx';
 import { addConversation, sendMessage, useChat } from '../chat/store.ts';
 import { ConvTile, convTitle } from '../chat/Switchboard.tsx';
 import { formatSize } from '../chat/files.tsx';
 
-export interface ShareRequest {
-  text: string;
-  files: string[];
-  /** Preselect: a Windows account ("DOMAIN\\name" or "name") or "space:Name". */
-  to: string | null;
-  /** Which tool asked, shown to the person. */
-  from: string | null;
-}
-
-/** Read a dexconnect://share link. Returns null for anything else. */
-export function parseShare(url: string): ShareRequest | null {
-  let u: URL;
-  try { u = new URL(url); } catch { return null; }
-  if (u.protocol !== 'dexconnect:' || !/^\/*share\/?$/.test(`${u.hostname}${u.pathname}`)) return null;
-  const p = u.searchParams;
-  const parts = [p.get('text') ?? '', p.get('link') ? `${p.get('title') ? `${p.get('title')}: ` : ''}${p.get('link')}` : ''].filter(Boolean);
-  return {
-    text: parts.join('\n').slice(0, 8000),
-    files: p.getAll('file').filter((f) => f.trim()).slice(0, 20),
-    to: p.get('to'),
-    from: p.get('from')?.slice(0, 40) ?? null,
-  };
-}
+// the link is read in @dex/core (share.ts), where it is tested
+export { parseShare } from '@dex/core/share';
+export type { ShareRequest } from '@dex/core/share';
 
 export function ShareDialog({ req, session, onDone }: { req: ShareRequest; session: Session; onDone: (convId: string | null) => void }) {
   const toast = useToast();

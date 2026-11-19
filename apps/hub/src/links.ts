@@ -15,6 +15,7 @@ import type { IncomingMessage } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { isSealed } from '@dex/core/e2e';
 import { formatMeetingId } from '@dex/core';
+import { bookName, parseWorkbookLink } from '@dex/core/sheets';
 import { cleanMappings, networkRoots } from '@dex/core/sharepaths';
 import type { CalEvent, FileInfo, LinkAction, LinkCard, LinkCardMeta, LinkSettings, LinkThread, MeetingInfo, Message, PublicUser } from '@dex/core';
 import type { FileStore } from './files.ts';
@@ -790,10 +791,13 @@ export class Links {
     }
     if (scheme === 'dexterity') {
       if (segs[0] === 'open' && segs[2]) {
-        const book = segs[2];
-        const name = book.replace(/-[0-9a-f]{4,8}$/i, '').replace(/[-_]+/g, ' ').trim();
-        const where = u?.searchParams.get('at');
-        return card('workbook', name ? name.charAt(0).toUpperCase() + name.slice(1) : book, `Dexterity Sheets · ${segs[1]}`, 'sheets', 'Open in Dexterity Sheets', where ? [meta('location', 'Cell', where.slice(0, 80))] : []);
+        // the whole link opens, ?at=<Sheet>!<Cell> included, so Sheets goes to the cell
+        const wb = parseWorkbookLink(url);
+        const book = wb?.book ?? segs.slice(2).join('/');
+        const rows: LinkCardMeta[] = [];
+        if (wb?.sheet) rows.push(meta('sheet', 'Sheet', wb.sheet.slice(0, 80)));
+        if (wb?.cell) rows.push(meta('location', 'Cell', wb.cell.slice(0, 80)));
+        return card('workbook', bookName(book), `Dexterity Sheets · ${segs[1]}`, 'sheets', wb?.cell ? `Open at ${wb.cell.slice(0, 20)}` : 'Open in Dexterity Sheets', rows);
       }
       return card('tool', 'Dexterity Sheets', 'Dexterity Sheets', 'sheets', 'Open Dexterity Sheets');
     }

@@ -12,6 +12,7 @@ import type { Conversation, Message, PublicUser } from '@dex/core';
 import { Icon, Popover } from '../ui.tsx';
 import { addConversation, chatState, useChat } from './store.ts';
 import { mayStartPath, pathAt } from '@dex/core/sharepaths';
+import { bookName, parseWorkbookLink } from '@dex/core/sheets';
 import type { PathSpan } from '@dex/core/sharepaths';
 import { PATH_WORDS, myDrives, toLocalText, usePathView } from './sharepaths.ts';
 import { tr } from '../i18n/index.ts';
@@ -65,6 +66,7 @@ function ToolLink({ url }: { url: string }) {
   else if (/^dexconnect:\/\/conversation\//.test(url)) label = 'Open the conversation';
   else if (/^dexconnect:\/\/meet\//.test(url)) label = `Meeting ${label.replace(/^meet\//, '')}`;
   else if (/^dexconnect:\/\/floor\//.test(url)) label = tr(`Walk to ${label.replace(/^floor\//, '')}`);
+  else if (scheme === 'dexterity') { const wb = parseWorkbookLink(url); if (wb) label = [bookName(wb.book), wb.at].filter(Boolean).join(' · '); }
   return (
     <button className="tool-link" title={url} onClick={() => void window.dex.openLink?.(url).catch((e: Error) => window.dispatchEvent(new CustomEvent('dex-toast', { detail: e.message })))}>
       <span className="tool-name">{TOOL_NAME[scheme] ?? scheme}</span>{label.length > 60 ? `${label.slice(0, 57)}…` : label}

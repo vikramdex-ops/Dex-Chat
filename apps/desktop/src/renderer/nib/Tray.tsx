@@ -184,7 +184,7 @@ function Annotated({ text, p }: { text: string; p: NibParse }) {
 }
 const INTENT_WORD: Record<string, string> = {
   got: 'NEW WORK', done: 'DONE', progress: 'PROGRESS', blocked: 'BLOCKED', leave: 'LEAVE', nothing: 'NOTHING TODAY', remind: 'REMINDER',
-  where: 'FIND', who: 'WHO', meeting: 'MEETING', brief: 'BRIEF', help: 'HOW TO', wrap: 'WRAP-UP', unknown: 'NOTE',
+  where: 'FIND', who: 'WHO', meeting: 'MEETING', brief: 'BRIEF', help: 'HOW TO', wrap: 'WRAP-UP', sheets: 'SHEETS', unknown: 'NOTE',
 };
 
 /** What Enter in Nib's box does, by the kind of line. Returns true when the words were used up. */
@@ -195,6 +195,13 @@ export async function act(p: NibParse, text: string, toast: (t: string, bad?: bo
     case 'brief': openTray({ v: 'brief' }); return true;
     case 'nothing': await nibDay({ nothing: true }); toast('Nothing today. Fair enough.'); return true;
     case 'remind': case 'where': case 'who': case 'meeting': case 'help': openTray({ v: 'skill', skill: p.intent, query: text }); return true;
+    case 'sheets': {
+      // answered from Dexterity Sheets in the conversation with Nib, where its workbook links open at the cell
+      const r = await window.dex.request('nib.sheets.ask', { text });
+      if (r.convId && r.messageId) window.dispatchEvent(new CustomEvent('dex-open-message', { detail: { convId: r.convId, messageId: r.messageId } }));
+      else toast(r.text.split('\n')[0]);
+      return true;
+    }
   }
   if (!p.activity && !p.project && !p.giver) { toast('Say what the work is, and who it’s from.', true); return false; }
   // progress on something already on the sheet updates it rather than adding a second line
