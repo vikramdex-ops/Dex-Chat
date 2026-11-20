@@ -137,6 +137,18 @@ Vivo, Oppo, Realme, OnePlus, Samsung, Huawei) restrict to save battery. *(As bui
   `GET /notify/wait` (pinned to the hub's certificate, with a per-device token kept in the Keystore and revoked with
   the device) and shows what arrives with the person's preferences. This works on the office network; outside it the
   app's own connection through the gateway carries notifications while it runs.
+- **Handing over.** When Android destroys the app's WebView (swiped away from recents), the plugin tells the
+  service at once, so it starts waiting for messages itself; it used to keep believing the app was connected.
+- **Reopening is calm.** The shared UI keeps showing the last state through a reconnect and says nothing for
+  3 s (`conn-notice.ts`): a phone back from the background usually reconnects well within that. After 3 s one
+  row under the title bar says the hub is away; reopening the app shows the mark alone until it is connected,
+  and the Connecting card only if that takes longer. Back in the foreground, a phone waiting to reconnect tries
+  at once, and one that was away for over a minute checks its connection with a `ping` and reconnects if it
+  does not answer. It remembers which way worked last on Wi-Fi and on mobile data (`apps/mobile/src/route.ts`)
+  and, on mobile data or where the gateway worked last time, tries the gateway first (the office address
+  cannot answer there, and waiting for it to time out took seconds); the office network is still tried
+  straight after, and preferred as soon as the hub is found on it. Moving from Wi-Fi to mobile data reconnects
+  through the gateway at once.
 - **Nothing lost.** On every reconnect the app asks the hub (`notify.missed`) for what arrived since the last message
   it or the service heard about, and shows it (encrypted DMs are opened on the phone first).
 - **Battery exemption** (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), asked only after a sheet explains why.
@@ -255,9 +267,27 @@ Each phase ends with installers built by CI, a test pass, and a short demo note.
 ### In-app updater (desktop and Android)
 - **When it checks:** at start-up, every 4 hours while running, and when you click "Check for updates".
   It checks quietly while you're in a call and holds the prompt until the call ends.
-- **Where it checks:** the public release repository when the PC has internet. Otherwise the hub's update
-  mirror, which the hub refreshes whenever it has internet, or which an admin fills by uploading an installer
-  from the admin console. Offices that never connect still update.
+- **Where it checks:** everywhere at once, and the newest build found anywhere wins
+  (`packages/core/src/update-sources.ts`). *(As built.)*
+  - the hub's update mirror on the office network (pinned to the hub's certificate), which the hub refreshes
+    whenever it has internet: offices that never connect still update;
+  - the same mirror **through the internet gateway** when the app is connected that way (at home, on mobile
+    data): a phone or laptop on a network that blocks GitHub still updates, from the office;
+  - the public feed on `raw.githubusercontent.com`, and a second copy of it on jsDelivr
+    (`cdn.jsdelivr.net/gh/dexterity-admin/dexterity-connect@update-feed/<channel>.json`), for networks
+    where GitHub's raw files are blocked or unreliable (some Indian mobile networks, Jio notably). jsDelivr
+    can lag a release by up to about 12 hours, which is harmless: the version comparison picks the newest.
+  - On Android every feed is fetched natively (no WebView CORS or content security policy in the way).
+- **Where it downloads from:** the first route that offers exactly that file (same version, size and
+  SHA-512), falling back to the next when one fails: the hub on the office network; then GitHub before the
+  gateway when GitHub's feed answered, or the gateway before GitHub when it did not (GitHub is probably
+  blocked there). Through the gateway the phone streams the APK into `cache/updates` with the native
+  `updateResume`/`updateWrite` (in order, never past the expected size, SHA-512 checked before the file gets
+  its name, so Android's installer accepts only a verified file); the desktop uses the same
+  `downloadVerifiedFrom` as for a URL. Every route resumes a partial download.
+- **When nothing answers:** Preferences → Updates lists where the app looked (office hub on the office
+  network, office hub through the gateway, GitHub, jsDelivr) and which answered, says what to do, and links
+  the download page (`dexterity-admin.github.io/dexterity-connect/#download`) as a last resort.
 - **Flow:** "Update available" → background download with progress (resumable, so a dropped download
   continues) → SHA-512 check against the release manifest → "Restart to update" (or install on quit) → the app
   relaunches into the new version and shows what changed.
