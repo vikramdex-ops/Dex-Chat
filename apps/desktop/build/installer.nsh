@@ -17,7 +17,8 @@
 ; is what happens when the app was installed for all users (Program Files, HKLM) and the update
 ; runs with the person's ordinary rights, as the in-app updater starts it. Instead: start this
 ; setup again with administrator rights (Windows asks once) and carry on there; if it already has
-; them, or the person said no, say what to do in plain words, and open the app again so nobody is
+; them, or the person said no, say what to do in plain words (even in a silent update: someone is
+; waiting for it), and open the app again so nobody is
 ; left without it. Tested by apps/desktop/build/update-test.ps1.
 !include "FileFunc.nsh"
 !macro dexUninstallCheck
@@ -38,7 +39,7 @@
         Quit
       ${endif}
     ${endif}
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Dexterity Connect could not replace the version already on this PC (code $R0).$\r$\n$\r$\nIt was installed for everyone who uses this PC, so Windows has to allow the update. Close Dexterity Connect (right-click its icon by the clock, Quit), then run the setup again and click Yes when Windows asks for permission.$\r$\n$\r$\nThe version you have keeps working until then." /SD IDOK
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Dexterity Connect could not replace the version already on this PC (code $R0).$\r$\n$\r$\nIt was installed for everyone who uses this PC, so Windows has to allow the update. Close Dexterity Connect (right-click its icon by the clock, Quit), then run the setup again and click Yes when Windows asks for permission.$\r$\n$\r$\nThe version you have keeps working until then."
     ${if} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
       Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}"'
     ${endif}
