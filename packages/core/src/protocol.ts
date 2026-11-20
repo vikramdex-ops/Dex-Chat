@@ -846,7 +846,12 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'admin.revoke': { req: { deviceId: string }; res: DeviceRecord };
   'admin.audit': { req: { limit?: number } | void; res: AuditEntry[] };
   'admin.updates': { req: { refresh?: boolean } | void; res: UpdateMirrorInfo };
-  'admin.bots': { req: void; res: Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean }> };
+  /** `viaNib`: its notices (POST /api/bot/notify) arrive through Nib; `notices`: passed on in the last 7 days. */
+  'admin.bots': { req: void; res: Array<{ bot: PublicUser; createdAt: number; lastUsed: number | null; active: boolean; viaNib: boolean; notices: number; lastNotice: number | null; readsLeave: boolean }> };
+  /** Whether an integration's notices arrive through Nib (on) or as its own Direct messages. */
+  'admin.bots.notices': { req: { userId: string; viaNib: boolean }; res: { ok: true; viaNib: boolean } };
+  /** Let an integration read who is on leave (dates and cover), for a tool's handover: GET /api/bot/leave. */
+  'admin.bots.leave': { req: { userId: string; readsLeave: boolean }; res: { ok: true; readsLeave: boolean } };
   'admin.bots.create': { req: { name: string }; res: { bot: PublicUser; token: string } };
   'admin.bots.revoke': { req: { userId: string }; res: { ok: true } };
   /** Slack-compatible incoming webhooks: a URL that posts into one Space as an integration. */

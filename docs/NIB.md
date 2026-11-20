@@ -70,6 +70,15 @@ Nib is one permanent identity on the hub (`system\nib`, role `bot`, no token), m
 time anyone in the office opens the app. The older system bot ("Dexterity Connect") keeps sending
 account notices (devices, roles), so security notices stay in their own plain channel.
 
+**What office tools tell you.** Project Opener, Dexterity Sheets, Hopper and any other tool an
+administrator gave a token can tell a person something through Nib: a task given to you, a mention,
+a watcher that fired. It arrives here as one line that starts with the tool's name (**Project
+Opener** · Task · from Vikram Shah), then what happened and a link that opens it in the tool. The
+hub writes that first line, so a tool's notice never passes for Nib's own words. These arrive whether
+or not day sheets are on. An administrator can switch a tool's *Notices through Nib* off in Control
+room → Integrations; its notices then come as Direct messages from the tool. The contract for tool
+builders is [`TOOL-NOTICES.md`](TOOL-NOTICES.md).
+
 ## 3. Day sheets
 
 ### 3.1 The start of the day
@@ -281,8 +290,8 @@ It shows exactly what will happen, then **Do it** does all of it:
 | Day sheets | No nudges on those days; one grouped line in the management register. |
 | Back | The first time you open the app on your return day, Nib's tray opens on **Welcome back**: conversations that moved and where you were mentioned, work your cover logged against your items, reminders moved to today, and today's meetings. |
 
-**Office tools see it too.** A tool with a Nib key ([`INTEGRATIONS.md`](INTEGRATIONS.md#nib-keys-for-office-tools))
-reads a person's leave (the dates and the cover, never the kind, note or handover) and is told when it
+**Office tools see it too.** An integration an administrator allowed to read leave
+([`TOOL-NOTICES.md`](TOOL-NOTICES.md#who-is-on-leave-get-apibotleave)) reads a person's leave (the dates and the cover, never the kind, note or handover) and is told when it
 changes. Project Opener uses it to fill in its Handover page and to hand work over when the leave starts
 and back when it ends.
 
@@ -349,8 +358,8 @@ a hub whose administrator saved Nib's settings keeps exactly what was saved.
 **Tables** (hub, `apps/hub/src/nib.ts`): `nib_items` (one per activity per day), `nib_days` (the
 givers picked, state, notes, when sent, asks), `nib_asks` (each ask: level, time), `nib_posts`
 (which card was posted to whom), `nib_snapshots` (the register as sent), `nib_leave`, `nib_acks`,
-`nib_prefs`. The configuration is one JSON value in `meta`. Office tools' Nib keys live in
-`apps/hub/src/nibtools.ts`: `nib_tools` (name, scopes, token hash, last use, revoked) and
+`nib_prefs`. The configuration is one JSON value in `meta`. Office tools' leave reads live in
+`apps/hub/src/toolleave.ts`: `tool_leave_prefs` (which integration may read leave) and
 `nib_leave_changes` (whose leave changed, kept 30 days).
 
 **Cards** are messages from Nib whose `clientId` is `nib-<kind>-<ref>`. The hub adds

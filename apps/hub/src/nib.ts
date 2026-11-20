@@ -504,7 +504,7 @@ export class Nib {
     return r ? { back: addDays(r.to_date, 1), coverId: r.cover_id } : null;
   }
 
-  /** Someone's leave was noted or cancelled (the hub tells office tools: nibtools.ts). */
+  /** Someone's leave was noted or cancelled (the hub tells office tools: toolleave.ts). */
   onLeaveChanged: ((uid: string) => void) | null = null;
   /** For office tools: leave that ends on or after this day, dates and cover only. */
   leaveFrom(uid: string, date: string): Array<{ id: string; from: string; to: string; half: 'am' | 'pm' | null; coverId: string | null }> {
@@ -1014,6 +1014,24 @@ export class Nib {
       return { convId, messageId: msg.id };
     } catch (err) {
       this.d.log('warn', 'nib sheets line not posted', { error: (err as Error).message });
+      return null;
+    }
+  }
+
+  /**
+   * A notice an office tool asked the hub to pass on (toolnotices.ts): a plain line in the person's
+   * conversation with Nib. The text already starts with the tool's name, written by the hub. Posted
+   * whether or not day sheets are on (as knocks are); null for someone Nib does not write to (a
+   * guest), so the caller can send it in the tool's own name instead.
+   */
+  toolLine(uid: string, text: string): { convId: string; messageId: string } | null {
+    const convId = this.convFor(uid);
+    if (!convId) return null;
+    try {
+      const msg = this.d.messaging.sendAs(this.bot(), this.d.messaging.memberConv(convId, this.id), text.slice(0, 4000), undefined, [], `nibtool|${ulid()}|${uid}`.slice(0, 96), {});
+      return { convId, messageId: msg.id };
+    } catch (err) {
+      this.d.log('warn', 'nib tool notice not posted', { error: (err as Error).message });
       return null;
     }
   }

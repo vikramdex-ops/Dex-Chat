@@ -53,8 +53,8 @@ export function Integrations({ state }: { state: AppState }) {
   return (
     <div className="integrations">
       <p className="muted" style={{ marginBottom: 14 }}>
-        Office tools post into Dexterity Connect with a token: Hopper file alerts, Sheets mentions, Sleuth reports.
-        A tool can message people directly (by their Windows sign-in) or post into a Space.
+        Office tools post into Dexterity Connect with a token: Hopper file alerts, Sheets mentions, Project Opener tasks.
+        A tool can tell people something through Nib (by their Windows sign-in), message them itself or post into a Space.
       </p>
       <form className="setting" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create(); }}>
         <Icon name="plus" className="lead" />
@@ -81,9 +81,27 @@ export function Integrations({ state }: { state: AppState }) {
         {bots?.map((b) => (
           <div key={b.bot.id} className="list-row roles">
             <Avatar user={b.bot} size="sm" />
-            <div><div style={{ fontWeight: 600 }}>{b.bot.displayName}</div><div className="faint" style={{ fontSize: 12 }}>created {relativeTime(b.createdAt)} · last used {relativeTime(b.lastUsed)}</div></div>
+            <div><div style={{ fontWeight: 600 }}>{b.bot.displayName}</div><div className="faint" style={{ fontSize: 12 }}>created {relativeTime(b.createdAt)} · last used {relativeTime(b.lastUsed)}{b.notices > 0 ? ` · ${b.notices} notices this week` : ''}</div></div>
             <span><span className={`chip ${b.active ? 'ok' : 'bad'}`}>{b.active ? 'Active' : 'Revoked'}</span></span>
             <span className="row-actions">
+              {b.active && (
+                <label className="faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }} title="On: what this tool tells people arrives in their conversation with Nib, under the tool's name. Off: it arrives as a Direct message from the tool.">
+                  <input type="checkbox" checked={b.viaNib} disabled={!live} onChange={(e) => {
+                    const viaNib = e.target.checked;
+                    void window.dex.request('admin.bots.notices', { userId: b.bot.id, viaNib }).then(() => { toast(viaNib ? 'Its notices now arrive through Nib' : 'Its notices now arrive as its own messages'); void load(); }).catch((err: Error) => toast(err.message, true));
+                  }} />
+                  Notices through Nib
+                </label>
+              )}
+              {b.active && (
+                <label className="faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }} title="On: this tool may read who is on leave and who covers (from Nib's leave note: dates and cover only), as Project Opener does to hand work over. Off by default.">
+                  <input type="checkbox" checked={b.readsLeave} disabled={!live} onChange={(e) => {
+                    const readsLeave = e.target.checked;
+                    void window.dex.request('admin.bots.leave', { userId: b.bot.id, readsLeave }).then(() => { toast(readsLeave ? 'It can now read who is on leave' : 'It can no longer read leave'); void load(); }).catch((err: Error) => toast(err.message, true));
+                  }} />
+                  Reads leave
+                </label>
+              )}
               {b.active && <button className="btn ghost" disabled={!live} onClick={() => { setCmdFor(cmdFor === b.bot.id ? null : b.bot.id); setCmdForm({ url: '', lines: commands.filter((c) => c.botId === b.bot.id).map((c) => `/${c.command} - ${c.description}`).join('\n'), actions: actions.filter((a) => a.botId === b.bot.id).map((a) => `${a.label}${a.scope === 'everywhere' ? '' : ` (${a.scope})`}`).join('\n') }); }}>
                 Commands{commands.some((c) => c.botId === b.bot.id) ? ` · ${commands.filter((c) => c.botId === b.bot.id).length}` : ''}
               </button>}
@@ -144,9 +162,18 @@ Content-Type: application/json
 
 Trust the hub's certificate by its fingerprint:
 ${state.hub?.fingerprint}`}</pre>
+        <p className="muted" style={{ fontSize: 13 }}>To tell people something through Nib (a task, a mention, an alert), post a notice instead. The same key is delivered once, so a tool can safely send it again after a timeout.</p>
+        <pre className="md-pre selectable">{`POST https://${state.hub?.host}:${state.hub?.port}/api/bot/notify
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "to": ["priya.raman"], "key": "task-0412-assigned", "kind": "task",
+  "title": "Check ISO-1001 rev B", "text": "Due Friday.",
+  "link": { "title": "Open in Project Opener", "url": "projectopener://open/…" } }
+
+GET https://${state.hub?.host}:${state.hub?.port}/api/bot/hello   checks the token (a tool's Test button)`}</pre>
       </details>
       {bots && bots.some((b) => b.active) && <Webhooks state={state} bots={bots.filter((b) => b.active)} />}
-      <NibTools state={state} />
     </div>
   );
 }
@@ -187,64 +214,5 @@ function Webhooks({ state, bots }: { state: AppState; bots: Bots }) {
         </div>
       ))}
     </section>
-  );
-}
-
-/**
- * Nib for office tools: one key per tool (Project Opener) that lets Nib write to a member and read
- * members' leave, nothing else. The tool gets it once through the office's shared configuration.
- */
-function NibTools({ state }: { state: AppState }) {
-  const toast = useToast();
-  const live = state.phase === 'ready';
-  const [list, setList] = useState<Ops['admin.nib.tools']['res']>([]);
-  const [name, setName] = useState('Project Opener');
-  const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
-  const load = useCallback(() => window.dex.request('admin.nib.tools').then(setList).catch(() => setList([])), []);
-  useEffect(() => { void load(); }, [load]);
-  const create = () => window.dex.request('admin.nib.tools.create', { name: name.trim(), scopes: ['message', 'leave'] })
-    .then((r) => { setIssued({ name: r.tool.name, token: r.token }); void load(); })
-    .catch((err: Error) => toast(err.message, true));
-  const config = issued ? JSON.stringify({ hub: `https://${state.hub?.host}:${state.hub?.port}`, fingerprint: state.hub?.fingerprint, nib_key: issued.token }, null, 2) : '';
-  return (
-    <div style={{ marginTop: 22 }}>
-      <div className="eyebrow">Nib for office tools</div>
-      <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-        A key lets a tool have Nib write to a person (Project Opener's mentions, tasks and watcher hits) and read
-        when people are on leave and who covers. Nothing else. Each message is in the audit trail; revoke the key at any time.
-      </p>
-      <form className="setting" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create(); }}>
-        <Icon name="plus" className="lead" />
-        <input className="input" style={{ flex: 1 }} placeholder="Tool, e.g. Project Opener" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} disabled={!live} />
-        <button className="btn primary" disabled={!live || !name.trim()}>Create Nib key</button>
-      </form>
-      {issued && (
-        <div className="card token-card">
-          <div className="eyebrow">Nib key for {issued.name} · shown once</div>
-          <p className="muted" style={{ fontSize: 13 }}>For Project Opener: save this as <code>connect.json</code> in the Team Hub folder. Every Project Opener in the office picks it up; nobody sets anything.</p>
-          <pre className="md-pre selectable">{config}</pre>
-          <div className="row-actions">
-            <button className="btn primary" onClick={() => { void navigator.clipboard.writeText(config); toast('Copied'); }}><Icon name="copy" size={15} />Copy connect.json</button>
-            <button className="btn ghost" onClick={() => setIssued(null)}>Done</button>
-          </div>
-        </div>
-      )}
-      <div className="list" style={{ marginTop: 10 }}>
-        {list.length === 0 && <div className="list-row faint">No Nib keys yet.</div>}
-        {list.map((k) => (
-          <div key={k.id} className="list-row roles">
-            <Icon name="lock" />
-            <div><div style={{ fontWeight: 600 }}>{k.name}</div><div className="faint" style={{ fontSize: 12 }}>{k.scopes.join(' · ')} · created {relativeTime(k.createdAt)} · last used {relativeTime(k.lastUsed)}</div></div>
-            <span><span className={`chip ${k.revokedAt ? 'bad' : 'ok'}`}>{k.revokedAt ? 'Revoked' : 'Active'}</span></span>
-            <span className="row-actions">
-              {!k.revokedAt && <button className="btn ghost danger" disabled={!live} onClick={() => {
-                if (!confirm(`Revoke the Nib key for ${k.name}? It stops working immediately.`)) return;
-                void window.dex.request('admin.nib.tools.revoke', { id: k.id }).then(() => { toast('Revoked'); void load(); }).catch((e: Error) => toast(e.message, true));
-              }}>Revoke</button>}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
