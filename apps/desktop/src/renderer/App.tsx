@@ -19,6 +19,7 @@ import { BatteryPrompt } from './views/NotifyCheck.tsx';
 import { WebPushPrompt } from './views/WebApp.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { Onboarding } from './views/Onboarding.tsx';
+import { useConnNotice } from './conn-notice.ts';
 import { Home } from './views/Home.tsx';
 import { People } from './views/People.tsx';
 import { SettingsView } from './views/Settings.tsx';
@@ -194,15 +195,56 @@ export function App() {
   const lastSession = useRef<Session | null>(null);
   if (state?.session) lastSession.current = state.session;
   const everReady = !!lastSession.current;
+  const due = useConnNotice(state?.phase);
+  if (state?.phase === 'ready') rememberConnected();
 
   if (!state) return null;
   const showShell = state.phase === 'ready' || (everReady && (state.phase === 'offline' || state.phase === 'connecting'));
+  // reopening the app (a phone brought back, a PC starting): a quiet splash while it reconnects,
+  // "Connecting…" only if that takes a while; someone joining for the first time sees it at once
+  const reopening = !showShell && !due && !!state.hub && (state.phase === 'offline' || state.phase === 'connecting') && wasConnected();
   return (
     <ToastHost>
       {showShell && lastSession.current
         ? <Shell state={state} session={state.session ?? lastSession.current} />
-        : <Onboarding state={state} />}
+        : reopening ? <Splash /> : <Onboarding state={state} />}
     </ToastHost>
+  );
+}
+
+/** This device has been connected before (remembered in this browser storage only, for the splash above). */
+const CONNECTED_KEY = 'dex.connectedBefore';
+let connectedNoted = false;
+function rememberConnected(): void {
+  if (connectedNoted) return;
+  connectedNoted = true;
+  try { localStorage.setItem(CONNECTED_KEY, '1'); } catch { /* private mode: the splash is skipped */ }
+}
+function wasConnected(): boolean {
+  try { return localStorage.getItem(CONNECTED_KEY) === '1'; } catch { return false; }
+}
+
+function Splash() {
+  return (
+    <div className="splash" role="status">
+      <img src={logo} alt="" />
+      <span className="visually-hidden">Opening Dexterity Connect…</span>
+    </div>
+  );
+}
+
+/** The hub has been away for a few seconds: say so, plainly, above whatever was last shown. */
+function ConnNotice({ state }: { state: AppState }) {
+  return (
+    <div className="conn-notice" role="status">
+      <Icon name="wifi" size={16} />
+      <span>
+        <b>{state.phase === 'offline'
+          ? state.retryInMs ? `Not connected to the office hub · trying again in ${Math.ceil(state.retryInMs / 1000)} s` : 'Not connected to the office hub · trying again…'
+          : 'Reconnecting to the office hub…'}</b>
+        <span className="faint"> You are seeing what was here at the last connection.</span>
+      </span>
+    </div>
   );
 }
 
@@ -610,8 +652,13 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     else setLens(s === 'people' || s === 'directory' ? 'directory' : s === 'desk' || s === 'calendar' || s === 'meet' || s === 'notices' ? s : 'pulse');
   };
 
-  const conn = state.phase === 'ready'
-    ? { warn: false, text: state.via === 'remote' ? `${session.hub.name} · via the internet` : session.hub.name }
+  // a quick reconnect is not news: the pill keeps its last look until the hub has been away a while
+  const connDue = useConnNotice(state.phase);
+  const lastVia = useRef(state.via);
+  if (state.phase === 'ready') lastVia.current = state.via;
+  const via = state.phase === 'ready' ? state.via : connDue ? undefined : lastVia.current;
+  const conn = state.phase === 'ready' || !connDue
+    ? { warn: false, text: via === 'remote' ? `${session.hub.name} · via the internet` : session.hub.name }
     : state.phase === 'offline'
       ? { warn: true, text: `Reconnecting${state.retryInMs ? ` in ${Math.ceil(state.retryInMs / 1000)}s` : '…'}` }
       : { warn: true, text: 'Connecting…' };
@@ -654,9 +701,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
         </div>
         <div className="titlebar-right">
           <UpdatePill state={state} />
-          <span className={`conn${conn.warn ? ' warn' : ''}${state.via === 'remote' && !conn.warn ? ' remote' : ''}`} role="status" aria-label={conn.text}
-            title={state.via === 'remote' ? 'Outside the office: connected through the internet gateway, encrypted to the hub' : state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
-            {state.via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
+          <span className={`conn${conn.warn ? ' warn' : ''}${via === 'remote' && !conn.warn ? ' remote' : ''}`} role="status" aria-label={conn.text}
+            title={via === 'remote' ? 'Outside the office: connected through the internet gateway, encrypted to the hub' : state.hub ? `${state.hub.host}:${state.hub.port}` : ''}>
+            {via === 'remote' && !conn.warn ? <Icon name="globe" size={14} /> : <span className="pip" />}<span className="conn-text">{conn.text}</span>
           </span>
           {session.me.role !== 'guest' && session.me.role !== 'bot' && live && <NibButton />}
           <div className="me-wrap">
@@ -716,6 +763,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
           </div>
         </div>
       </header>
+      {connDue && <ConnNotice state={state} />}
 
       {/* an urgent notice takes its own row between the title bar and the lens: it pushes the lens down, never covers it */}
       <NoticeBanner />
@@ -828,7 +876,8 @@ function OutOfOffice({ session, onClose }: { session: Session; onClose: () => vo
 }
 
 export function OfflineBanner({ state }: { state: AppState }) {
-  if (state.phase === 'ready') return null;
+  const due = useConnNotice(state.phase);
+  if (state.phase === 'ready' || !due) return null;
   return (
     <div className="offline-banner" role="status">
       <Icon name="wifi" />

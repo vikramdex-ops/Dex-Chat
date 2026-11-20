@@ -58,6 +58,13 @@ export interface SessionOptions {
   invite?: string;
   /** Pairing token sent with the first registration. */
   pair?: string;
+  /**
+   * Try the internet gateway before the office network (asked at each connection attempt): a
+   * phone on mobile data, or whose last connection went that way. If the gateway does not answer,
+   * the office network is tried straight away, and while on the gateway the office network is
+   * probed and preferred as soon as it answers.
+   */
+  preferRemote?: () => boolean;
 }
 
 interface Pending {
@@ -79,11 +86,15 @@ export class HubSession extends Emitter {
   /** Which way the current connection goes, and how often the office network failed in a row. */
   private via: 'lan' | 'remote' = 'lan';
   private lanFails = 0;
+  /** The gateway was tried first and did not answer, this round: the office network next. */
+  private remoteFails = 0;
+  /** The next attempt goes to the office network whatever the preference (it just answered a probe). */
+  private lanNext = false;
   /** How many of target.alts were tried since the last connection or retry round. */
   private altsTried = 0;
   private probeTimer: ReturnType<typeof setInterval> | null = null;
   private readonly pending = new Map<string, Pending>();
-  private readonly opts: Required<Omit<SessionOptions, 'openRemote'>> & { openRemote?: OpenSocket };
+  private readonly opts: Required<Omit<SessionOptions, 'openRemote' | 'preferRemote'>> & { openRemote?: OpenSocket; preferRemote?: () => boolean };
 
   constructor(opts: SessionOptions) {
     super();
@@ -106,13 +117,24 @@ export class HubSession extends Emitter {
     this.opts.pair = token;
   }
 
-  connect(target: HubTarget): void {
+  connect(target: HubTarget, opts: { via?: 'lan' } = {}): void {
     this.disconnect();
     this.target = { ...target };
     this.attempts = 0;
     this.lanFails = 0;
+    this.remoteFails = 0;
     this.altsTried = 0;
+    this.lanNext = opts.via === 'lan';
     this.open();
+  }
+
+  /** Waiting to reconnect (the app came back to the foreground, the network changed): try now. */
+  retryNow(): boolean {
+    if (this.state.kind !== 'offline' || !this.target || !this.retryTimer) return false;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.open();
+    return true;
   }
 
   /** Is the current connection through the internet gateway? */
@@ -166,7 +188,11 @@ export class HubSession extends Emitter {
     const gen = ++this.generation;
     const live = () => gen === this.generation;
     this.setState({ kind: 'connecting', target });
-    const remote = !!(target.remote && this.opts.openRemote && (this.lanFails > 0 || !target.host));
+    const canRemote = !!(target.remote && this.opts.openRemote);
+    const lanNext = this.lanNext;
+    this.lanNext = false;
+    const preferRemote = !lanNext && this.remoteFails === 0 && !!this.opts.preferRemote?.();
+    const remote = canRemote && (!target.host || (!lanNext && (this.lanFails > 0 || preferRemote)));
     this.via = remote ? 'remote' : 'lan';
     let opened = false;
     this.sock = (remote ? this.opts.openRemote! : this.opts.open)(target, {
@@ -202,7 +228,7 @@ export class HubSession extends Emitter {
           this.open();
           return;
         }
-        if (!remote && !opened && target.remote && this.opts.openRemote) {
+        if (!remote && !opened && target.remote && this.opts.openRemote && this.remoteFails === 0) {
           // the office network is not reachable: go through the gateway straight away
           this.lanFails++;
           this.generation++;
@@ -210,7 +236,16 @@ export class HubSession extends Emitter {
           this.open();
           return;
         }
+        if (remote && !opened && target.host && this.lanFails === 0 && this.remoteFails === 0) {
+          // the gateway was tried first and did not answer: the office network straight away
+          this.remoteFails++;
+          this.generation++;
+          this.sock = null;
+          this.open();
+          return;
+        }
         if (remote) this.lanFails = 0; // next time, try the office network first again
+        this.remoteFails = 0;
         this.onClosed(reason);
       },
     });
@@ -241,7 +276,7 @@ export class HubSession extends Emitter {
           if (done) return;
           done = true;
           probe.close();
-          if (fp === target.fp && this.target === target) { this.lanFails = 0; this.connect(target); }
+          if (fp === target.fp && this.target === target) { this.lanFails = 0; this.connect(target, { via: 'lan' }); }
         },
         onMessage: () => {},
         onClose: () => { done = true; },

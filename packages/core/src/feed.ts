@@ -7,6 +7,15 @@ export type Platform = 'win-x64' | 'mac-arm64' | 'mac-x64' | 'android' | 'hub-wi
 export const PUBLIC_REPO = 'dexterity-admin/dexterity-connect';
 export const FEED_BRANCH = 'update-feed';
 export const feedUrl = (channel: Channel) => `https://raw.githubusercontent.com/${PUBLIC_REPO}/${FEED_BRANCH}/${channel}.json`;
+/**
+ * The same feed through a second CDN (jsDelivr serves files of a public branch), for networks where
+ * raw.githubusercontent.com is blocked or unreliable (some Indian mobile networks). jsDelivr keeps a
+ * branch's files for up to 12 hours, so this copy can lag behind a release; it is only a fallback,
+ * and the newest version found anywhere wins.
+ */
+export const mirrorFeedUrl = (channel: Channel) => `https://cdn.jsdelivr.net/gh/${PUBLIC_REPO}@${FEED_BRANCH}/${channel}.json`;
+/** Where people can always download the newest version by hand (opened in the browser). */
+export const DOWNLOAD_PAGE = 'https://dexterity-admin.github.io/dexterity-connect/#download';
 
 export interface UpdateAsset {
   platform: Platform;
@@ -31,6 +40,8 @@ export interface UpdateFeed {
 }
 
 const VERSION_RE = /^\d+(\.\d+){1,3}$/;
+/** A base64 SHA-512 digest (64 bytes). A pattern rather than Buffer: this file also runs in the phone's WebView, which has no Buffer. */
+const SHA512_RE = /^[A-Za-z0-9+/]{86}==$/;
 
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number);
@@ -56,7 +67,7 @@ export function parseFeed(value: unknown, opts: { allowHttp?: boolean } = {}): U
     if (typeof a.file !== 'string' || !/^[\w.\-]+$/.test(a.file)) continue;
     if (typeof a.url !== 'string' || !(opts.allowHttp ? /^(https?:\/\/|\/)/ : /^(https:\/\/|\/)/).test(a.url)) continue;
     if (typeof a.size !== 'number' || a.size <= 0) continue;
-    if (typeof a.sha512 !== 'string' || Buffer.from(a.sha512, 'base64').length !== 64) continue;
+    if (typeof a.sha512 !== 'string' || !SHA512_RE.test(a.sha512)) continue;
     assets.push({ platform: a.platform as Platform, file: a.file, url: a.url, size: a.size, sha512: a.sha512 });
   }
   return {

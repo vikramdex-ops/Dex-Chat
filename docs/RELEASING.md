@@ -47,6 +47,15 @@ Nothing is published yet, so you can install and try the build first.
 
 The version is `<major.minor>.<yyMMddHH>`, so every build is newer than the last.
 
+Where installed apps look for the new version (all at once; the newest wins, and a download falls
+back from one route to the next): the hub's mirror on the office network, the same mirror through
+the internet gateway, the feed on `raw.githubusercontent.com` and its copy on jsDelivr
+(`cdn.jsdelivr.net/gh/dexterity-admin/dexterity-connect@update-feed/<channel>.json`). jsDelivr keeps a
+branch's files for up to about 12 hours; to make it pick up a release at once, open
+`https://purge.jsdelivr.net/gh/dexterity-admin/dexterity-connect@update-feed/stable.json` (and
+`beta.json`). Nothing else is needed: apps on networks that block GitHub get the release from the
+hub through the gateway as soon as the hub has mirrored it (within its 6-hour refresh).
+
 Publishing also uploads copies without the version in their names (`DexterityConnect-Setup.exe`,
 `DexterityConnectHub-Setup.exe`, `DexterityConnectHub-win-x64.zip`, `DexterityConnect.apk`), so
 `https://github.com/dexterity-admin/dexterity-connect/releases/latest/download/<name>` always gives

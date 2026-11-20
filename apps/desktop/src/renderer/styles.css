@@ -1417,3 +1417,30 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .titlebar.tb-icons .lens-bar .lens { padding: 0 11px; }
 .titlebar.tb-min .brand span, .titlebar.tb-min .conn-text { display: none; }
 .titlebar.tb-min .lens-bar .lens { padding: 0 9px; }
+
+/* After a failed update check or download: where the app looked (ruled rows), what to do, the website */
+.update-help { margin-top: 10px; display: grid; gap: 8px; justify-items: start; }
+.update-help .faint { margin: 0; }
+.update-tried { list-style: none; margin: 0; padding: 0; width: 100%; border-top: 1px solid var(--stroke); }
+.update-tried li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--stroke); font-size: 12px; }
+.update-tried li > span:last-child { font-family: var(--font-mono); font-size: 11px; flex: none; }
+.update-tried .tried-ok { color: var(--accent-ink); }
+.update-tried .tried-no { color: var(--text-2); }
+
+/* Reopening the app: the mark alone while it reconnects (the Connecting card only if that takes a while) */
+.splash { position: fixed; inset: 0; display: grid; place-items: center; }
+.splash img { width: 72px; height: 72px; opacity: .9; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+/* The hub has been away for a few seconds: one ruled row under the title bar */
+.conn-notice { display: flex; align-items: center; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--stroke); background: var(--amber-soft); color: var(--text); font-size: 13px; line-height: 1.35; }
+.conn-notice svg { flex: none; color: var(--amber-ink); }
+.conn-notice b { font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) { .conn-notice { animation: conn-notice-in .2s var(--ease); } }
+@keyframes conn-notice-in { from { opacity: 0; } to { opacity: 1; } }
+/* its own row of the frame's grid, under the title bar (beside the notice board's urgent banner) */
+.frame:has(> .conn-notice) { grid-template-rows: var(--titlebar) auto 1fr; }
+.frame:has(> .conn-notice):has(> .nb-banner) { grid-template-rows: var(--titlebar) auto auto 1fr; }
+@media (max-width: 720px) {
+  .frame:has(> .conn-notice) { grid-template-rows: var(--titlebar) auto 1fr auto; }
+  .frame:has(> .conn-notice):has(> .nb-banner) { grid-template-rows: var(--titlebar) auto auto 1fr auto; }
+}

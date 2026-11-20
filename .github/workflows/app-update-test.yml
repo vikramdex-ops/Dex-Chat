@@ -1,0 +1,65 @@
+# Updating the Windows app from one published version to another on a clean Windows PC, the way the
+# in-app updater does it (the app running, then the new setup with /S --updated --force-run), and
+# also with the app closed. Uses the installers already on the releases page; builds and publishes
+# nothing. Run it from Actions > app update test > Run workflow.
+name: app update test
+
+on:
+  # also when the test itself changes (a workflow can be started by hand only once it is on main)
+  push:
+    paths: [".github/workflows/app-update-test.yml", "apps/desktop/build/update-test.ps1", "apps/desktop/build/installer.nsh"]
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "version installed first (e.g. 0.1.106)"
+        required: true
+        default: "0.1.106"
+      to:
+        description: "version updated to (e.g. 0.1.108), or 'build' for a setup built from this branch"
+        required: true
+        default: "build"
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: ${{ (inputs.to || 'build') == 'build' }}
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Build this branch's setup (a version above every release, so it is an update)
+        if: ${{ (inputs.to || 'build') == 'build' }}
+        shell: bash
+        run: |
+          npm ci
+          npm version 0.1.900 --no-git-tag-version -w @dex/desktop
+          npm run build -w @dex/desktop
+          (cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false GH_TOKEN= npx electron-builder --win nsis --publish never)
+      - name: Download the setups
+        shell: pwsh
+        env:
+          FROM: ${{ inputs.from || '0.1.106' }}
+          TO: ${{ inputs.to || 'build' }}
+        run: |
+          $base = 'https://github.com/dexterity-admin/dexterity-connect/releases/download'
+          New-Item -ItemType Directory -Force setups | Out-Null
+          Invoke-WebRequest "$base/v$env:FROM/DexterityConnect-Setup-$env:FROM.exe" -OutFile setups/old.exe
+          if ($env:TO -eq 'build') { Copy-Item (Get-ChildItem apps/desktop/release/*.exe | Select-Object -First 1).FullName setups/new.exe }
+          else { Invoke-WebRequest "$base/v$env:TO/DexterityConnect-Setup-$env:TO.exe" -OutFile setups/new.exe }
+          Get-ChildItem setups | Format-Table Name, Length
+      - name: Update with the app running, then with it closed
+        shell: pwsh
+        run: ./apps/desktop/build/update-test.ps1 -Old setups/old.exe -New setups/new.exe
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-update-logs
+          path: update-test-logs
+          if-no-files-found: ignore

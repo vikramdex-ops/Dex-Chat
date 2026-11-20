@@ -362,6 +362,84 @@ public class DexNativePlugin extends Plugin {
         });
     }
 
+    /**
+     * Updates that do not come from a URL (the office hub through the internet gateway, whose
+     * encrypted channel lives in the app's JavaScript): the app streams the bytes here in order.
+     * updateResume says where a partial download stopped, or that the file is already complete and
+     * verified; updateWrite appends at exactly that offset (0 starts over), never past the expected
+     * size, and with done=true checks the size and SHA-512 before the file gets its final name in
+     * cache/updates, the only folder installApk accepts. The same guarantees as download().
+     */
+    @PluginMethod
+    public void updateResume(PluginCall call) {
+        final String name = call.getString("file", "");
+        final long size = call.getLong("size", 0L);
+        final String sha512 = call.getString("sha512", "");
+        if (!name.matches("[\\w.\\-]+") || size <= 0 || sha512.isEmpty()) { call.reject("Invalid download request"); return; }
+        io.execute(() -> {
+            try {
+                File dir = new File(getContext().getCacheDir(), "updates");
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("Cannot create the update folder");
+                File dest = new File(dir, name);
+                File part = new File(dir, name + ".part");
+                JSObject ret = new JSObject();
+                if (dest.exists() && dest.length() == size && sha512.equals(sha512Of(dest))) {
+                    ret.put("offset", size);
+                    ret.put("path", dest.getAbsolutePath());
+                    call.resolve(ret);
+                    return;
+                }
+                // keep only the file being downloaded
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) if (!f.getName().equals(part.getName())) f.delete();
+                if (getContext().getCacheDir().getUsableSpace() < size + 50L * 1024 * 1024) throw new Exception("Not enough free storage for the update.");
+                long offset = part.exists() ? part.length() : 0;
+                if (offset >= size) { part.delete(); offset = 0; }
+                ret.put("offset", offset);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Download failed" : e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void updateWrite(PluginCall call) {
+        final String name = call.getString("file", "");
+        final long size = call.getLong("size", 0L);
+        final String sha512 = call.getString("sha512", "");
+        final long offset = call.getLong("offset", -1L);
+        final String data = call.getString("data", "");
+        final boolean done = Boolean.TRUE.equals(call.getBoolean("done", false));
+        if (!name.matches("[\\w.\\-]+") || size <= 0 || sha512.isEmpty() || offset < 0 || offset > size || data == null) { call.reject("Invalid download request"); return; }
+        io.execute(() -> {
+            try {
+                File dir = new File(getContext().getCacheDir(), "updates");
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("Cannot create the update folder");
+                File dest = new File(dir, name);
+                File part = new File(dir, name + ".part");
+                long have = part.exists() ? part.length() : 0;
+                if (offset != 0 && offset != have) throw new Exception("The download went out of order; it will resume.");
+                byte[] bytes = data.isEmpty() ? new byte[0] : Base64.decode(data, Base64.DEFAULT);
+                if (offset + bytes.length > size) { part.delete(); throw new Exception("The download is larger than expected."); }
+                // offset 0 starts the file over (a new download, or a source that ignored the range)
+                try (OutputStream out = new FileOutputStream(part, offset != 0)) { out.write(bytes); }
+                JSObject ret = new JSObject();
+                ret.put("received", offset + bytes.length);
+                if (done) {
+                    if (part.length() != size) throw new Exception("The download was incomplete; it will resume.");
+                    if (!sha512.equals(sha512Of(part))) { part.delete(); throw new Exception("The downloaded update failed its integrity check and was discarded."); }
+                    if (dest.exists() && !dest.delete()) throw new Exception("Could not finish saving the update.");
+                    if (!part.renameTo(dest)) throw new Exception("Could not finish saving the update.");
+                    ret.put("path", dest.getAbsolutePath());
+                }
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage() == null ? "Download failed" : e.getMessage());
+            }
+        });
+    }
+
     private void progress(long received, long total) {
         JSObject e = new JSObject();
         e.put("received", received);
@@ -789,6 +867,10 @@ public class DexNativePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        // the app's own connection goes with its WebView: the background service waits for
+        // messages itself from now on (it used to keep believing the app was connected)
+        HubService.appConnected = false;
+        HubService.poke();
         for (WebSocket ws : sockets.values()) ws.cancel();
         sockets.clear();
         io.shutdownNow();

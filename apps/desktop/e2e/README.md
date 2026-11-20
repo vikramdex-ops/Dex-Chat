@@ -9,7 +9,7 @@ Each script prints `… E2E PASSED` when it succeeds and saves screenshots (ligh
 ```bash
 npm ci
 npm run desktop:build                 # the scripts run the built app
-npm run build -w @dex/mobile          # only for the phone scripts (phone, phone-sec, assist-phone)
+npm run build -w @dex/mobile          # only for the phone scripts (phone, phone-sec, phone-resume, anyupdate, assist-phone)
 npm run e2e                           # every script, one after another
 npm run e2e -- nav search pdf         # only these
 npm run e2e -- --isolated             # each hub on its own free port (when something else uses 47900)
@@ -23,8 +23,8 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
 
 ### Extra setup for some scripts
 
-- **Browser pages** (`m2-guest`, `m3-webinar`, `lobby`, `remote`, `phone-sec`, `assist-phone`) open Chromium. Install it once with `npx playwright-core install chromium`.
-- **Gateway pages** (`m2-guest`, `m3-webinar`, `lobby`, `remote`) run the gateway locally with Wrangler (`apps/gateway`).
+- **Browser pages** (`m2-guest`, `m3-webinar`, `lobby`, `remote`, `phone-sec`, `phone-resume`, `anyupdate`, `assist-phone`) open Chromium. Install it once with `npx playwright-core install chromium`.
+- **Gateway pages** (`m2-guest`, `m3-webinar`, `lobby`, `remote`, `anyupdate`) run the gateway locally with Wrangler (`apps/gateway`).
 - **Accessibility checks** (axe) in `tourlib.mts` run only when `DEX_AXE` points at a copy of `axe.min.js`. axe-core is not a dependency of this repository.
 
 ## What is here
@@ -38,7 +38,7 @@ npm run e2e -- --isolated             # each hub on its own free port (when some
   - files: `files`, `pdf`, `media`, `ocr`, `dmsearch`
   - bots: `bots-*`, `botmaker`, `flows`, `templates`, `botnet` (bots talking to bots: a handoff with its relay card, a query in a flow, an event, a refusal, a loop stopped; scheduled jobs in plain words, a dry run, runs with the hub's clock moved, missed runs, the job sheet and the network sheet)
   - org chart: `org`, `orgscape`
-  - devices: `pair`, `phone`, `phone-sec`, `iphone` (the iPhone web app against a real hub and the gateway, in Chromium with iPhone emulation: the Add to Home Screen guide, joining with a pasted code, messages, a photo and a file, Web Push to a local push service, a tapped notification, offline; needs `npm run build -w @dex/web`; screenshots in `IPHONE_OUT`)
+  - devices: `pair`, `phone`, `phone-sec`, `phone-resume` (reopening the phone app: a short trip to the background with its socket closed shows nothing and keeps the conversation, a message sent meanwhile appears; a long outage gets one row after 3 s; a recreated WebView shows the mark, then the app; the phone app's own code in Chromium with `phonemock.mts`, the stand-in native layer), `anyupdate` (updates on any network: GitHub and jsDelivr unreachable, the phone on mobile data and a laptop at home find and download the build from the hub through the local gateway, verified; what a failed check shows, in Hindi too), `iphone` (the iPhone web app against a real hub and the gateway, in Chromium with iPhone emulation: the Add to Home Screen guide, joining with a pasted code, messages, a photo and a file, Web Push to a local push service, a tapped notification, offline; needs `npm run build -w @dex/web`; screenshots in `IPHONE_OUT`)
   - Control room: `admin2`, `m2-admin`, `owners` (several owners, handing over, what an administrator may not change), `policy`, `dlp`, `hubupdate` (the hub updating itself, against a stand-in feed and launcher: a new version found and checked, Update now waiting for a live call, the setup started when it ends, an update that went back with its log and Try again, the setup check line, the switch; screenshots in `HUBUPDATE_OUT`)
   - seating: `seating` (the real floor plan: dragging people onto seats, a swap, a team moved with a preview, a plan for Monday applied by the hub's clock, the moved person's notice and walk, revisions compared, a bench added in the layout editor, a CSV import, 150 seats measured; screenshots in `SEATING_OUT`)
   - notice board: `notices` (desks, scheduled issue, acknowledgement and its register, Rev B, PDF search, urgent banner, expiry; screenshots in `NOTICES_OUT`)

@@ -1,8 +1,13 @@
 // In-app updater: finds, downloads, verifies and installs new builds without leaving the app.
 //
-// Where builds come from, in order of preference for the same version:
-//   1. the office hub's mirror (fast LAN copy, works with no internet)
-//   2. the public release feed on GitHub
+// Where builds come from (packages/core/src/update-sources.ts): all asked at once, newest wins,
+// and for the same version in this order of preference:
+//   1. the office hub's mirror on the office network (fast LAN copy, works with no internet)
+//   2. the same mirror through the internet gateway, when the app is connected that way (at home)
+//   3. the public release feed on GitHub
+//   4. the same feed through a second CDN (jsDelivr), for networks that block GitHub's raw files
+// The download falls back from one route to the next; every route ends in the same size and
+// SHA-512 check (downloadVerified / downloadVerifiedFrom).
 // When it checks: shortly after start-up, every 4 hours, when the hub (re)connects, and on demand.
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
@@ -10,8 +15,9 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { chooseUpdate, compareVersions, downloadVerified, feedUrl, fetchFeed, HttpError } from '@dex/core/updates';
-import type { Channel, Platform, UpdateChoice, UpdateFeed } from '@dex/core/updates';
+import { checkSources, compareVersions, parseFeed, downloadVerified, downloadVerifiedFrom, fetchFeed, hubFeedPath, HttpError, internetFeedUrl, pickUpdate, reportOf, tryRoutes } from '@dex/core/updates';
+import type { Channel, Platform, Route, UpdateFeed, UpdatePick, UpdateSource } from '@dex/core/updates';
+import type { TunnelRequest, TunnelResponse } from '@dex/core/remote';
 import type { UpdateState } from '../shared/bridge.ts';
 
 export interface UpdaterOptions {
@@ -20,9 +26,13 @@ export interface UpdaterOptions {
   downloadDir: string;
   channel: () => Channel;
   autoDownload: () => boolean;
+  /** The hub on the office network (null when not connected that way). */
   hub: () => { host: string; port: number; fp: string } | null;
-  /** Development only: test against a local feed, pretending to be another platform. */
+  /** HTTP to the hub through the internet gateway's encrypted channel, while connected that way. */
+  tunnel?: () => ((req: TunnelRequest) => Promise<TunnelResponse>) | null;
+  /** Development only: test against a local feed (and mirror), pretending to be another platform. */
   feedBase?: string;
+  mirrorBase?: string;
   platformOverride?: Platform;
   allowHttp?: boolean;
   /** Called right before quitting into the installer, to remember the notes for "what's new". */
@@ -41,12 +51,8 @@ export function currentPlatform(): Platform | null {
   return null;
 }
 
-interface Candidate extends UpdateChoice {
-  source: 'hub' | 'internet';
-  /** Absolute download URL */
-  url: string;
-  pin?: string;
-}
+const hubBaseOf = (hub: { host: string; port: number }) => `https://${hub.host.includes(':') ? `[${hub.host}]` : hub.host}:${hub.port}`;
+type Candidate = UpdatePick;
 
 export class Updater extends EventEmitter {
   state: UpdateState;
@@ -105,23 +111,21 @@ export class Updater extends EventEmitter {
     } catch { /* nothing downloaded yet */ }
   }
 
-  private async feedsFrom(source: 'hub' | 'internet', channels: Channel[]): Promise<{ feeds: UpdateFeed[]; reachable: boolean; base?: string; pin?: string }> {
-    let base: string;
-    let pin: string | undefined;
-    if (source === 'hub') {
-      const hub = this.opts.hub();
-      if (!hub) return { feeds: [], reachable: false };
-      base = `https://${hub.host.includes(':') ? `[${hub.host}]` : hub.host}:${hub.port}/updates`;
-      pin = hub.fp;
-    } else {
-      base = this.opts.feedBase ?? '';
-    }
-    const results = await Promise.allSettled(channels.map((ch) =>
-      fetchFeed(source === 'hub' || this.opts.feedBase ? `${base}/${ch}.json` : feedUrl(ch), { pinnedFingerprint: pin, timeoutMs: 10000, allowHttp: this.opts.allowHttp })));
-    const feeds = results.flatMap((r) => (r.status === 'fulfilled' && r.value ? [r.value] : []));
-    // a 404 means "reachable, nothing published there yet"
-    const reachable = results.some((r) => r.status === 'fulfilled' || (r.reason instanceof HttpError && r.reason.status === 404));
-    return { feeds, reachable, base, pin };
+  /** How each source is asked for a channel's feed; a source that does not apply now is left out. */
+  private fetchers(): Partial<Record<UpdateSource, (ch: Channel) => Promise<UpdateFeed | null>>> {
+    const o = this.opts;
+    const quiet404 = (p: Promise<UpdateFeed | null>) => p.catch((err) => { if (err instanceof HttpError && err.status === 404) return null; throw err; });
+    const out: Partial<Record<UpdateSource, (ch: Channel) => Promise<UpdateFeed | null>>> = {};
+    const hub = o.hub();
+    if (hub) out['hub-lan'] = (ch) => quiet404(fetchFeed(`${hubBaseOf(hub)}${hubFeedPath(ch)}`, { pinnedFingerprint: hub.fp, timeoutMs: 10000, allowHttp: o.allowHttp }));
+    const tunnel = o.tunnel?.();
+    if (tunnel) out['hub-gateway'] = (ch) => feedThroughTunnel(tunnel, hubFeedPath(ch), o.allowHttp);
+    // development: a local feed stands in for GitHub, and the mirror only when one is given
+    if (o.feedBase) out.internet = (ch) => quiet404(fetchFeed(`${o.feedBase}/${ch}.json`, { timeoutMs: 10000, allowHttp: o.allowHttp }));
+    else out.internet = (ch) => quiet404(fetchFeed(internetFeedUrl('internet', ch), { timeoutMs: 10000 }));
+    if (o.mirrorBase) out.mirror = (ch) => quiet404(fetchFeed(`${o.mirrorBase}/${ch}.json`, { timeoutMs: 10000, allowHttp: o.allowHttp }));
+    else if (!o.feedBase) out.mirror = (ch) => quiet404(fetchFeed(internetFeedUrl('mirror', ch), { timeoutMs: 10000 }));
+    return out;
   }
 
   /** Look for a newer build. `manual` checks report "up to date" and errors loudly. */
@@ -131,24 +135,18 @@ export class Updater extends EventEmitter {
     if (!this.platform) return;
     this.set({ phase: 'checking', error: null });
     const channels: Channel[] = this.opts.channel() === 'beta' ? ['stable', 'beta'] : ['stable'];
-    const [hub, net] = await Promise.all([this.feedsFrom('hub', channels), this.feedsFrom('internet', channels)]);
-
-    const hubPick = chooseUpdate(this.opts.version, hub.feeds, this.platform);
-    const netPick = chooseUpdate(this.opts.version, net.feeds, this.platform);
-    let pick: Candidate | null = null;
-    if (hubPick && (!netPick || compareVersions(hubPick.feed.version, netPick.feed.version) >= 0)) {
-      pick = { ...hubPick, source: 'hub', url: `${hub.base!.replace(/\/updates$/, '')}${hubPick.asset.url}`, pin: hub.pin };
-    } else if (netPick) {
-      pick = { ...netPick, source: 'internet', url: netPick.asset.url };
-    }
+    const results = await checkSources(this.fetchers(), channels);
+    const checked = reportOf(results);
+    const pick = pickUpdate(this.opts.version, results, this.platform);
+    this.opts.log?.('update check', { sources: checked.map((c) => `${c.source}:${c.ok ? 'ok' : 'no answer'}`).join(' '), found: pick?.feed.version ?? '' });
 
     if (!pick) {
-      if (!hub.reachable && !net.reachable) {
-        this.set({ phase: this.readyFile ? 'ready' : 'error', lastCheck: Date.now(), error: 'Could not reach the office hub or the internet to check for updates.' });
+      if (!results.some((r) => r.reachable)) {
+        this.set({ phase: this.readyFile ? 'ready' : 'error', lastCheck: Date.now(), checked, error: 'Could not check for updates: neither the office hub nor the update servers on the internet answered.' });
         if (!manual) this.set({ phase: this.readyFile ? 'ready' : 'idle' });
         return;
       }
-      this.set({ phase: this.readyFile ? 'ready' : 'up-to-date', lastCheck: Date.now() });
+      this.set({ phase: this.readyFile ? 'ready' : 'up-to-date', lastCheck: Date.now(), checked });
       return;
     }
 
@@ -161,10 +159,10 @@ export class Updater extends EventEmitter {
     this.candidate = pick;
     this.readyFile = null;
     this.set({
-      phase: 'available', lastCheck: Date.now(), progress: null,
+      phase: 'available', lastCheck: Date.now(), progress: null, checked,
       available: {
         version: pick.feed.version, notes: pick.feed.notes, releasedAt: pick.feed.releasedAt,
-        mandatory: pick.mandatory, size: pick.asset.size, source: pick.source,
+        mandatory: pick.mandatory, size: pick.asset.size, source: pick.source === 'hub-lan' || pick.source === 'hub-gateway' ? 'hub' : 'internet',
       },
     });
     if (pick.mandatory || this.opts.autoDownload() || manual) await this.download();
@@ -177,37 +175,49 @@ export class Updater extends EventEmitter {
     this.abort = new AbortController();
     const dest = path.join(this.opts.downloadDir, c.asset.file);
     this.set({ phase: 'downloading', error: null, progress: { received: 0, total: c.asset.size } });
+    const onProgress = (p: { received: number; total: number }) => {
+      const now = Date.now();
+      if (now - this.lastProgressPush > 250 || p.received === p.total) {
+        this.lastProgressPush = now;
+        this.set({ progress: p });
+      }
+    };
+    const signal = this.abort.signal;
     try {
       await this.ensureSpace(c.asset.size);
-      await downloadVerified(c.url, dest, c.asset, {
-        pinnedFingerprint: c.pin,
-        signal: this.abort.signal,
-        timeoutMs: 60000,
-        onProgress: (p) => {
-          const now = Date.now();
-          if (now - this.lastProgressPush > 250 || p.received === p.total) {
-            this.lastProgressPush = now;
-            this.set({ progress: p });
-          }
-        },
-      });
+      const { route } = await tryRoutes(c.routes, (r) => this.downloadFrom(r, dest, c, signal, onProgress),
+        (r, err) => this.opts.log?.('update download failed; trying the next source', { route: r.route, error: err.message }));
       this.readyFile = dest;
       this.retries = 0;
       this.set({ phase: 'ready', progress: { received: c.asset.size, total: c.asset.size } });
+      this.opts.log?.('update downloaded', { version: c.feed.version, route: route.route });
       this.emit('ready', c.feed.version, c.mandatory);
     } catch (err) {
       const message = (err as Error).name === 'AbortError' ? 'Download cancelled.' : (err as Error).message;
-      this.opts.log?.('update download failed', { error: message, source: c.source });
-      // if the hub copy failed, the next attempt goes to the internet (and vice versa)
-      if (c.source === 'hub' && /certificate|ECONNREFUSED|timed out|EHOSTUNREACH/.test(message)) this.candidate = { ...c, source: 'internet', url: c.asset.url.startsWith('/') ? c.url : c.asset.url, pin: undefined };
+      this.opts.log?.('update download failed', { error: message });
       this.set({ phase: 'error', error: message });
-      if (this.retries < 3) {
+      if (this.retries < 3 && (err as Error).name !== 'AbortError') {
         this.retries++;
         this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.download(); }, RETRY_MS);
       }
     } finally {
       this.abort = null;
     }
+  }
+
+  /** One route: the hub on the office network (pinned), the hub through the gateway, or GitHub. */
+  private async downloadFrom(r: Route, dest: string, c: Candidate, signal: AbortSignal, onProgress: (p: { received: number; total: number }) => void): Promise<string> {
+    if (r.route === 'hub-lan') {
+      const hub = this.opts.hub();
+      if (!hub) throw new Error('not on the office network any more');
+      return downloadVerified(`${hubBaseOf(hub)}${r.url}`, dest, c.asset, { pinnedFingerprint: hub.fp, signal, timeoutMs: 60000, onProgress });
+    }
+    if (r.route === 'hub-gateway') {
+      const tunnel = this.opts.tunnel?.();
+      if (!tunnel) throw new Error('not connected through the internet gateway any more');
+      return downloadVerifiedFrom(async (headers) => tunnel({ method: 'GET', path: r.url, headers }), dest, c.asset, { signal, onProgress });
+    }
+    return downloadVerified(r.url, dest, c.asset, { signal, timeoutMs: 60000, onProgress, allowHttp: this.opts.allowHttp });
   }
 
   private async ensureSpace(bytes: number): Promise<void> {
@@ -269,5 +279,24 @@ export class Updater extends EventEmitter {
   /** Called when the user quits normally: install silently if a build is ready. */
   installOnQuit(): void {
     if (this.state.phase === 'ready' && this.readyFile) this.install(false);
+  }
+}
+
+/** A channel's feed from the hub through the gateway's channel (the hub's links are paths on the hub). */
+async function feedThroughTunnel(tunnel: (req: TunnelRequest) => Promise<TunnelResponse>, p: string, allowHttp?: boolean): Promise<UpdateFeed | null> {
+  const res = await tunnel({ method: 'GET', path: p, headers: { 'cache-control': 'no-cache' } });
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for await (const part of res.body) {
+    size += part.length;
+    if (size > 256 * 1024) throw new Error('update feed is too large');
+    parts.push(part);
+  }
+  if (res.status === 404) return null;
+  if (res.status !== 200) throw new HttpError(res.status, `HTTP ${res.status} from the hub through the gateway`);
+  try {
+    return parseFeed(JSON.parse(Buffer.concat(parts).toString('utf8')), { allowHttp });
+  } catch {
+    return null;
   }
 }
