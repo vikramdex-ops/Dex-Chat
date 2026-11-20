@@ -1108,6 +1108,13 @@ export type NibCard =
   | { kind: 'knock'; knock: KnockView | null };
 export interface NibSheetView { userId: string; date: string; day: NibDay | null; items: NibItem[]; access: SheetAccess }
 
+export type NibToolScope = 'message' | 'leave';
+/** A Nib key for an office tool (the token itself is never shown again). */
+export interface NibToolKey {
+  id: string; name: string; scopes: NibToolScope[]; createdAt: number; createdBy: string | null;
+  lastUsed: number | null; revokedAt: number | null;
+}
+
 export interface NibOps extends HolidayOps {
   'nib.me': { req: void; res: NibMe };
   /** The start card: who gave you work today (and optional first items). */
@@ -1132,6 +1139,11 @@ export interface NibOps extends HolidayOps {
   'admin.nib.set': { req: Partial<NibConfig>; res: NibConfig };
   /** Post today's register to the administrator now, to check it. */
   'admin.nib.preview': { req: void; res: { ok: true } };
+  /** Nib keys for office tools (Project Opener): what each may do, when used, revoked or not. */
+  'admin.nib.tools': { req: void; res: NibToolKey[] };
+  /** A new key; the token is shown once. Scopes: "message" (Nib writes to a member), "leave" (read leave). */
+  'admin.nib.tools.create': { req: { name: string; scopes?: NibToolScope[] }; res: { tool: NibToolKey; token: string } };
+  'admin.nib.tools.revoke': { req: { id: string }; res: { ok: true } };
 }
 export interface NibEvents {
   'nib.me': NibMe;

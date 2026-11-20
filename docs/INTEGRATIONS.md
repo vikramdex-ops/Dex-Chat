@@ -372,9 +372,10 @@ off.
 
 ### Nib, the office's companion
 
-Nib is not an integration: it is part of the hub, one permanent bot identity with no token, and
-nothing outside the hub can post as it. Its design, the day sheets, the register and the leave
-note are in [`NIB.md`](NIB.md). The operations the app uses:
+Nib is not an integration: it is part of the hub, one permanent bot identity with no token of its
+own. The only way in from outside is a **Nib key** (below), which an administrator issues to one
+office tool for two things. Its design, the day sheets, the register and the leave note are in
+[`NIB.md`](NIB.md). The operations the app uses:
 
 | Operation | Who | What |
 | --- | --- | --- |
@@ -391,6 +392,39 @@ note are in [`NIB.md`](NIB.md). The operations the app uses:
 | `nib.sheets.ask { text }` | members | a Dexterity Sheets question from the Nib box; the answer is also posted in the conversation with Nib (see [Dexterity Sheets](#dexterity-sheets)) |
 
 Events: `nib.me` (your day changed) and `nib.changed { date, kinds }` (cards to draw again).
+
+#### Nib keys for office tools
+
+A tool that should reach people through Nib (Project Opener's mentions, tasks given and watcher
+hits) and know when they are on leave gets a **Nib key**: one per tool, issued by the hub, revocable,
+and limited to the scopes it was made with. Nobody sets anything up per person.
+
+**Enable it once (administrator):** Control room → Integrations → *Nib for office tools* → name the
+tool (`Project Opener`) → **Create Nib key**. The key is shown once, already inside the file the tool
+reads; for Project Opener, **Copy connect.json** and save it as `connect.json` in the root of the
+Team Hub folder:
+
+```json
+{ "hub": "https://<hub>:47900", "fingerprint": "AB:CD:…", "nib_key": "nibt_…" }
+```
+
+Every Project Opener in the office picks it up within a minute. To stop it, **Revoke** the key (it
+fails at once with 401) and delete the file. The key is shared by the office's copies of the tool
+through the shared folder, so treat it like the folder: it can make Nib write to members, labelled
+with the tool's name, and read leave dates and covers; it cannot read messages, post into Spaces or
+act as a person.
+
+| Request (`Authorization: Bearer nibt_…`) | Scope | What |
+| --- | --- | --- |
+| `POST /api/nib/message { id, to: [sign-in], text, card?: { title, lines?, url? } }` | `message` | Nib writes to each member in their conversation with Nib, headed with the tool's name. `id` (`[A-Za-z0-9._:-]`, up to 64) makes a retry harmless: each id reaches each person once. The card's `url` may be `https` or an office tool link (`projectopener`, `dexconnect`, `sleuth`, `datum`, `dexterity`). Answers `{ delivered, unknown, failed }`; 503 when Nib is off. |
+| `GET /api/nib/leave?account=<sign-in>` | `leave` | That member's leave from today on: `{ today, leave: [{ id, from, to, half, current, cover: { account, name } \| null }] }`. Never the kind, the note or the handover. |
+| `GET /api/nib/leave/changes?since=<cursor>` | `leave` | `{ cursor, accounts }`: whose leave was noted or cancelled after `cursor` (without `since`, only the cursor to start from). Poll it; read `leave` only for the accounts it names. |
+
+Trust the hub by its certificate fingerprint, as with the Bot API. Requests are limited to 600 a
+minute per key. The audit trail records `nib.tool.created`, `nib.tool.revoked` and every
+`nib.tool.message` (who it reached); a key's last use shows in Control room. Administrators can
+also list, create and revoke keys over the protocol: `admin.nib.tools`, `admin.nib.tools.create
+{ name, scopes? }` (`message`, `leave`; both by default), `admin.nib.tools.revoke { id }`.
 
 ### Integrations with their own logic (sessions)
 
@@ -777,7 +811,7 @@ the pointer; a reference cannot be edited.
 | --- | --- | --- |
 | Hopper | File alerts and link notices through the Bot API | — |
 | Slate | — | Notes open in Slate and its saves come back into the note; text, CSV and log attachments open in Slate |
-| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`) | `projectopener://` links in messages open the project |
+| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`); mentions, tasks given and watcher hits from Nib through a [Nib key](#nib-keys-for-office-tools); Handover follows the leave note | `projectopener://` links in messages open the project |
 | Sleuth | Result menu → *Share to Dexterity Connect…* (the file and the text found) | Line numbers (`6"-P-1001-A1B`) and drawing numbers (`ISO-1001-01`) in messages run that search in Sleuth (`sleuth://search?q=`) |
 | Datum | Component page → *Share* (key figures, dimensions, `datum://c/<id>`) | `datum://` links open the component, calculator or module page |
 | Dexterity Sheets | Being built on the Sheets side (not released yet): *Share to Dexterity Connect* (`dexconnect://share`), and mention and assignment notices from the Sheets server through the Bot API. Connect is ready for both | `dexterity://open/…?at=` links open the workbook at the cell; Nib answers "what's assigned to me in Sheets?" from the Sheets server's read API (below) |

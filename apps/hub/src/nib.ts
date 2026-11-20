@@ -504,6 +504,15 @@ export class Nib {
     return r ? { back: addDays(r.to_date, 1), coverId: r.cover_id } : null;
   }
 
+  /** Someone's leave was noted or cancelled (the hub tells office tools: nibtools.ts). */
+  onLeaveChanged: ((uid: string) => void) | null = null;
+  /** For office tools: leave that ends on or after this day, dates and cover only. */
+  leaveFrom(uid: string, date: string): Array<{ id: string; from: string; to: string; half: 'am' | 'pm' | null; coverId: string | null }> {
+    return this.leaveRows(uid).filter((r) => r.to_date >= date).map((r) => ({ id: r.id, from: r.from_date, to: r.to_date, half: r.half, coverId: r.cover_id }));
+  }
+  /** Today on the hub's calendar. */
+  todayDate(): string { return this.today(); }
+
   /** On leave on that day (overdue reminders wait until they are back). */
   awayOn(uid: string, date: string): boolean { return !!this.leaveOn(uid, date); }
 
@@ -680,6 +689,7 @@ export class Nib {
         if (r.event_id) { try { this.d.calendar.handle('cal.cancel', me, { eventId: r.event_id }); } catch { /* already gone */ } }
         this.db.prepare(`UPDATE nib_days SET state = 'open' WHERE user_id = ? AND state = 'leave' AND date >= ? AND date <= ?`).run(me.id, r.from_date, r.to_date);
         this.d.audit(me.id, 'nib.leaveCancelled', r.id, { from: r.from_date, to: r.to_date });
+        this.onLeaveChanged?.(me.id);
         return this.me(me);
       }
 
@@ -899,6 +909,7 @@ export class Nib {
     }
     this.d.audit(me.id, 'nib.leave', id, { from: d.from, to, kind, cover: coverId, leads: leadIds.length, spaces: spaceIds.length });
     this.pushMe([me.id]);
+    this.onLeaveChanged?.(me.id);
     return { leave: toLeave(this.leaveById(id)!), done };
   }
   private span(l: NibLeave): string {

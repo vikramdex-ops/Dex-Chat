@@ -74,6 +74,7 @@ import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 import { WebPush, makeVapidKeys } from './webpush.ts';
 import { Nib, NibError } from './nib.ts';
+import { NibTools } from './nibtools.ts';
 import { Holidays, HolidaysError } from './holidays.ts';
 import { NoticeBoard, NoticeError } from './notices.ts';
 import { Seating, SeatingError } from './seating.ts';
@@ -234,6 +235,7 @@ export class Hub {
   readonly holidays: Holidays;
   /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
   readonly nib: Nib;
+  readonly nibTools: NibTools;
   /** Meeting threads, action points and recaps (meet-threads.ts). */
   readonly meetThreads: MeetThreads;
   /** The notice board: the issuing desks' register of notices (notices.ts, docs/ANNOUNCEMENTS.md). */
@@ -578,6 +580,18 @@ export class Hub {
     };
     // bots asking Nib about leave, and jobs leaving people on leave out
     this.botflows.net.leave = (uid, date) => this.nib.leaveInfo(uid, date);
+    // office tools (Project Opener) through Nib, with their own revocable keys
+    this.nibTools = new NibTools({
+      db: this.store.db,
+      userById: (id) => this.store.userById(id),
+      userForAccount: (a) => this.store.userForAccount(a),
+      audit: (actor, action, target, detail) => this.store.audit(actor, action, target, detail),
+      note: (uid, key, text) => this.nib.note(uid, key, text),
+      leaveFrom: (uid, date) => this.nib.leaveFrom(uid, date),
+      today: () => this.nib.todayDate(),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.nib.onLeaveChanged = (uid) => this.nibTools.leaveChanged(uid);
     this.botflows.jobs.away = (uid, date) => this.nib.awayOn(uid, date);
     this.meetThreads = new MeetThreads({
       db: this.store.db, messaging: this.messaging,
@@ -977,6 +991,7 @@ export class Hub {
     if ((req.url ?? '').startsWith('/files')) { void this.fileRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/notify/')) { this.missed.route(req, res); return; }
     if ((req.url ?? '').startsWith('/api/bot/')) { void this.botRoute(req, res); return; }
+    if ((req.url ?? '').startsWith('/api/nib/')) { void this.nibTools.route(req, res); return; }
     if ((req.url ?? '').startsWith('/api/hooks/')) { void this.hookRoute(req, res); return; }
     if ((req.url ?? '').startsWith('/cal/')) { this.feeds.route(req, res); return; }
     if (/^\/api\/(flows|sessions)(\/|\?|$)/.test(req.url ?? '')) { void this.botflows.route(req, res); return; }
@@ -1735,6 +1750,20 @@ export class Hub {
         this.store.audit(me.id, 'bot.created', bot.id, { name });
         this.emit('user.added', bot);
         return { bot, token } satisfies Ops['admin.bots.create']['res'];
+      }
+
+      case 'admin.nib.tools': {
+        this.requireAdmin(conn);
+        return this.nibTools.list() satisfies Ops['admin.nib.tools']['res'];
+      }
+      case 'admin.nib.tools.create': {
+        const me = this.requireAdmin(conn);
+        try { return this.nibTools.create(me, d.name, d.scopes) satisfies Ops['admin.nib.tools.create']['res']; } catch (err) { throw new OpError((err as Error).message); }
+      }
+      case 'admin.nib.tools.revoke': {
+        const me = this.requireAdmin(conn);
+        try { this.nibTools.revoke(me, d.id); } catch (err) { throw new OpError((err as Error).message); }
+        return { ok: true } satisfies Ops['admin.nib.tools.revoke']['res'];
       }
 
       case 'admin.hooks.list': {

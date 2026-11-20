@@ -146,6 +146,7 @@ Trust the hub's certificate by its fingerprint:
 ${state.hub?.fingerprint}`}</pre>
       </details>
       {bots && bots.some((b) => b.active) && <Webhooks state={state} bots={bots.filter((b) => b.active)} />}
+      <NibTools state={state} />
     </div>
   );
 }
@@ -186,5 +187,64 @@ function Webhooks({ state, bots }: { state: AppState; bots: Bots }) {
         </div>
       ))}
     </section>
+  );
+}
+
+/**
+ * Nib for office tools: one key per tool (Project Opener) that lets Nib write to a member and read
+ * members' leave, nothing else. The tool gets it once through the office's shared configuration.
+ */
+function NibTools({ state }: { state: AppState }) {
+  const toast = useToast();
+  const live = state.phase === 'ready';
+  const [list, setList] = useState<Ops['admin.nib.tools']['res']>([]);
+  const [name, setName] = useState('Project Opener');
+  const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
+  const load = useCallback(() => window.dex.request('admin.nib.tools').then(setList).catch(() => setList([])), []);
+  useEffect(() => { void load(); }, [load]);
+  const create = () => window.dex.request('admin.nib.tools.create', { name: name.trim(), scopes: ['message', 'leave'] })
+    .then((r) => { setIssued({ name: r.tool.name, token: r.token }); void load(); })
+    .catch((err: Error) => toast(err.message, true));
+  const config = issued ? JSON.stringify({ hub: `https://${state.hub?.host}:${state.hub?.port}`, fingerprint: state.hub?.fingerprint, nib_key: issued.token }, null, 2) : '';
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div className="eyebrow">Nib for office tools</div>
+      <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+        A key lets a tool have Nib write to a person (Project Opener's mentions, tasks and watcher hits) and read
+        when people are on leave and who covers. Nothing else. Each message is in the audit trail; revoke the key at any time.
+      </p>
+      <form className="setting" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create(); }}>
+        <Icon name="plus" className="lead" />
+        <input className="input" style={{ flex: 1 }} placeholder="Tool, e.g. Project Opener" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} disabled={!live} />
+        <button className="btn primary" disabled={!live || !name.trim()}>Create Nib key</button>
+      </form>
+      {issued && (
+        <div className="card token-card">
+          <div className="eyebrow">Nib key for {issued.name} · shown once</div>
+          <p className="muted" style={{ fontSize: 13 }}>For Project Opener: save this as <code>connect.json</code> in the Team Hub folder. Every Project Opener in the office picks it up; nobody sets anything.</p>
+          <pre className="md-pre selectable">{config}</pre>
+          <div className="row-actions">
+            <button className="btn primary" onClick={() => { void navigator.clipboard.writeText(config); toast('Copied'); }}><Icon name="copy" size={15} />Copy connect.json</button>
+            <button className="btn ghost" onClick={() => setIssued(null)}>Done</button>
+          </div>
+        </div>
+      )}
+      <div className="list" style={{ marginTop: 10 }}>
+        {list.length === 0 && <div className="list-row faint">No Nib keys yet.</div>}
+        {list.map((k) => (
+          <div key={k.id} className="list-row roles">
+            <Icon name="lock" />
+            <div><div style={{ fontWeight: 600 }}>{k.name}</div><div className="faint" style={{ fontSize: 12 }}>{k.scopes.join(' · ')} · created {relativeTime(k.createdAt)} · last used {relativeTime(k.lastUsed)}</div></div>
+            <span><span className={`chip ${k.revokedAt ? 'bad' : 'ok'}`}>{k.revokedAt ? 'Revoked' : 'Active'}</span></span>
+            <span className="row-actions">
+              {!k.revokedAt && <button className="btn ghost danger" disabled={!live} onClick={() => {
+                if (!confirm(`Revoke the Nib key for ${k.name}? It stops working immediately.`)) return;
+                void window.dex.request('admin.nib.tools.revoke', { id: k.id }).then(() => { toast('Revoked'); void load(); }).catch((e: Error) => toast(e.message, true));
+              }}>Revoke</button>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
