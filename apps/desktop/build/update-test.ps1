@@ -134,8 +134,11 @@ function Invoke-SetupAsUser([string] $exe, [string] $arguments, [string] $label,
     Start-Sleep -Seconds 2
   }
   Write-Host "  the setup is still open after $seconds s: it is showing something" -ForegroundColor Yellow
+  $script:dialog = ''
   foreach ($p in Get-Process -Name $name -ErrorAction SilentlyContinue) {
-    Get-WindowText $p.Id | ForEach-Object { Write-Host "    $_" }
+    $t = Get-WindowText $p.Id
+    $script:dialog += ($t -join "`n")
+    $t | ForEach-Object { Write-Host "    $_" }
     foreach ($c in Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.Id)") {
       Write-Host "    child: $($c.Name) $($c.CommandLine)"
       Get-WindowText ([int] $c.ProcessId) | ForEach-Object { Write-Host "      $_" }
@@ -146,22 +149,38 @@ function Invoke-SetupAsUser([string] $exe, [string] $arguments, [string] $label,
   return 'stuck'
 }
 
-foreach ($case in 'all-users', 'app-as-admin') {
-  Step "Without administrator rights: $case"
+foreach ($case in 'all-users', 'all-users-admin', 'app-as-admin') {
+  Step "Update: $case"
   Remove-App
-  $flag = if ($case -eq 'all-users') { '/S /allusers' } else { '/S' }
+  $flag = if ($case -like 'all-users*') { '/S /allusers' } else { '/S' }
   $code = Invoke-Setup $Old $flag "install-old-$case"
   Check ($code -eq 0) "old setup ($flag) exit code 0 (got $code)"
   $a = Get-App
   Check ($null -ne $a) "installed: $($a.Version) in $($a.Dir) ($($a.Key -replace '^.*::', ''))"
   if (-not $a) { continue }
-  # the app as the person normally has it open; for app-as-admin this test runs elevated, so it is too
+  # the app as the person normally has it open (this test runs elevated, so for app-as-admin it is too)
   [void](Start-App $a.Dir)
-  $r = Invoke-SetupAsUser $New '/S --updated --force-run' "update-$case"
-  Check ($r -eq 'finished') "the update finished without a dialog ($r)"
+  $script:dialog = ''
+  if ($case -eq 'all-users-admin') {
+    # the person clicked Yes when Windows asked: the setup runs with administrator rights
+    $code = Invoke-Setup $New '/S --updated --force-run' "update-$case"
+    $r = if ($code -eq 0) { 'finished' } else { "exit $code" }
+  } else {
+    $r = Invoke-SetupAsUser $New '/S --updated --force-run' "update-$case"
+  }
   Start-Sleep -Seconds 5
   $b = Get-App
-  Check ([bool] $b -and ($b.Version -eq $newVersion -or $b.Version -eq ($newVersion -replace '\.0$', ''))) "the new version is installed ($($b.Version))"
+  $updated = [bool] $b -and ($b.Version -eq $newVersion -or $b.Version -eq ($newVersion -replace '\.0$', ''))
+  Check ($script:dialog -notmatch 'Failed to uninstall old application files') 'never the bare "Failed to uninstall old application files" error'
+  if ($case -eq 'all-users') {
+    # without administrator rights the setup asks Windows for them; where Windows cannot give them
+    # (this runner has no consent prompt), it says what to do and opens the app the person had
+    Check ($updated -or $script:dialog -match 'Windows has to allow the update') "updated ($($b.Version)), or told what to do ($r)"
+    if (-not $updated) { Start-Sleep -Seconds 5; Check ((Get-AppProcesses $a.Dir).Count -gt 0) 'and the app is open again' }
+  } else {
+    Check ($r -eq 'finished') "the update finished without a dialog ($r)"
+    Check $updated "the new version is installed ($($b.Version))"
+  }
   Save-Screen "after-$case"
 }
 
