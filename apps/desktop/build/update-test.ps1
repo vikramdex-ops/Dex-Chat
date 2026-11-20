@@ -19,7 +19,10 @@ function Get-App {
     foreach ($k in Get-ChildItem $root -ErrorAction SilentlyContinue) {
       $p = Get-ItemProperty $k.PSPath
       if ($p.DisplayName -like 'Dexterity Connect*' -and $p.DisplayName -notlike '*Hub*') {
-        return [pscustomobject]@{ Key = $k.PSPath; Version = $p.DisplayVersion; Dir = $p.InstallLocation; Uninstall = $p.UninstallString; Quiet = $p.QuietUninstallString }
+        # the setup records no InstallLocation: the folder is the uninstaller's
+        $dir = $p.InstallLocation
+        if (-not $dir -and $p.UninstallString -match '^"?([^"]+\\)[^"\\]+\.exe') { $dir = $Matches[1].TrimEnd('\') }
+        return [pscustomobject]@{ Key = $k.PSPath; Version = $p.DisplayVersion; Dir = $dir; Uninstall = $p.UninstallString; Quiet = $p.QuietUninstallString }
       }
     }
   }
