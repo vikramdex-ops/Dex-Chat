@@ -455,9 +455,13 @@ void app.whenReady().then(async () => {
     downloadDir: path.join(app.getPath('userData'), 'updates'),
     channel: () => config.settings.updateChannel,
     autoDownload: () => config.settings.autoDownloadUpdates,
-    // outside the office there is internet: updates come from the release feed, not the hub's mirror
+    // the hub's mirror on the office network, or through the gateway outside it (a network that
+    // blocks GitHub still gets updates from the office), alongside the public feed and its mirror
     hub: () => (controller?.viaGateway ? null : controller?.hubEndpoint() ?? null),
+    tunnel: () => (controller?.viaGateway ? (r) => controller!.http(r) : null),
     feedBase: devUpdates ? process.env.DEXCONNECT_FEED_BASE : undefined,
+    mirrorBase: devUpdates ? process.env.DEXCONNECT_MIRROR_BASE : undefined,
+    log: (msg, extra) => appLog.info('update', msg, extra),
     platformOverride: devUpdates ? (process.env.DEXCONNECT_UPDATER_PLATFORM as never) || undefined : undefined,
     allowHttp: devUpdates,
     beforeInstall: (v, notes) => { config.pendingNotes = { version: v, notes }; saveConfig(config); },

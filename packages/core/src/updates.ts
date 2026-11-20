@@ -6,9 +6,11 @@ import fsp from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
+import { once } from 'node:events';
 import type { TLSSocket } from 'node:tls';
 
 export * from './feed.ts';
+export * from './update-sources.ts';
 import { parseFeed } from './feed.ts';
 import type { UpdateFeed } from './feed.ts';
 
@@ -112,16 +114,41 @@ export interface DownloadProgress {
   total: number;
 }
 
+/** A response from wherever a build comes from: a URL, or the hub through the gateway's channel. */
+export interface RangeResponse {
+  status: number;
+  body: AsyncIterable<Uint8Array>;
+}
+/** Starts a download; `headers` carries the Range header when a partial file is resumed. */
+export type RangeOpener = (headers: Record<string, string>) => Promise<RangeResponse>;
+
 /**
  * Download `url` to `dest`, resuming a previous partial download (`dest.part`) when the server
  * supports ranges, and verify size and SHA-512 before the file appears under its final name.
  * A file that fails verification is deleted so the next attempt starts clean.
  */
-export async function downloadVerified(
+export function downloadVerified(
   url: string,
   dest: string,
   expected: { size: number; sha512: string },
   opts: FetchOptions & { onProgress?: (p: DownloadProgress) => void } = {},
+): Promise<string> {
+  const open: RangeOpener = async (headers) => {
+    const res = await httpGet(url, { ...opts, timeoutMs: opts.timeoutMs ?? 30000, headers });
+    return { status: res.statusCode ?? 0, body: res };
+  };
+  return downloadVerifiedFrom(open, dest, expected, opts);
+}
+
+/**
+ * The same, from any source that streams bytes (the hub through the internet gateway): the same
+ * resume, size limit and SHA-512 check, so where a build came from never decides whether it is trusted.
+ */
+export async function downloadVerifiedFrom(
+  open: RangeOpener,
+  dest: string,
+  expected: { size: number; sha512: string },
+  opts: { onProgress?: (p: DownloadProgress) => void; signal?: AbortSignal } = {},
 ): Promise<string> {
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   if (fs.existsSync(dest) && (await fsp.stat(dest)).size === expected.size && (await sha512File(dest)) === expected.sha512) {
@@ -132,30 +159,35 @@ export async function downloadVerified(
   let offset = fs.existsSync(part) ? (await fsp.stat(part)).size : 0;
   if (offset >= expected.size) { await fsp.rm(part, { force: true }); offset = 0; }
 
-  const res = await httpGet(url, { ...opts, timeoutMs: opts.timeoutMs ?? 30000, headers: offset ? { range: `bytes=${offset}-` } : {} });
-  if (offset && res.statusCode !== 206) offset = 0; // server ignored the range: start over
+  const res = await open(offset ? { range: `bytes=${offset}-` } : {});
+  if (res.status < 200 || res.status >= 300) {
+    void drain(res.body);
+    throw new HttpError(res.status, `Download failed (HTTP ${res.status})`);
+  }
+  if (offset && res.status !== 206) offset = 0; // the server ignored the range: start over
   const out = fs.createWriteStream(part, { flags: offset ? 'a' : 'w' });
+  let outError: NodeJS.ErrnoException | null = null;
+  out.on('error', (err) => { outError = err; });
   let received = offset;
   opts.onProgress?.({ received, total: expected.size });
   try {
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const fail = (err: Error) => { if (!settled) { settled = true; reject(err); } res.destroy(); };
-      res.on('data', (chunk: Buffer) => {
-        if (settled) return;
-        received += chunk.length;
-        if (received > expected.size) { fail(new Error('download is larger than expected')); return; }
-        if (!out.write(chunk)) { res.pause(); out.once('drain', () => res.resume()); }
-        opts.onProgress?.({ received, total: expected.size });
-      });
-      res.on('end', () => { if (!settled) out.end(() => { settled = true; resolve(); }); });
-      res.on('error', (err) => fail(err));
-      res.on('aborted', () => fail(new Error('download interrupted; it will resume')));
-      out.on('error', (err: NodeJS.ErrnoException) => fail(err.code === 'ENOSPC' ? new Error('not enough free disk space for the update') : err));
-    });
+    for await (const chunk of res.body) {
+      if (opts.signal?.aborted) throw Object.assign(new Error('Download cancelled.'), { name: 'AbortError' });
+      if (outError) throw outError;
+      received += chunk.length;
+      if (received > expected.size) throw new Error('download is larger than expected');
+      if (!out.write(chunk)) await once(out, 'drain');
+      opts.onProgress?.({ received, total: expected.size });
+    }
+    if (outError) throw outError;
+    await new Promise<void>((resolve, reject) => out.end((err?: Error | null) => (err ? reject(err) : resolve())));
   } catch (err) {
-    out.destroy();
-    throw err;
+    // keep what arrived (the next attempt resumes from it); a broken disk write is not kept
+    if (outError) out.destroy(); else await new Promise<void>((resolve) => out.end(() => resolve()));
+    const e = err as NodeJS.ErrnoException;
+    if (e.code === 'ENOSPC') throw new Error('not enough free disk space for the update');
+    if (e.name === 'AbortError' || /larger than expected/.test(e.message)) throw e;
+    throw new Error(`download interrupted (${e.message}); it will resume`);
   }
 
   const size = (await fsp.stat(part)).size;
@@ -168,4 +200,8 @@ export async function downloadVerified(
   await fsp.rm(dest, { force: true });
   await fsp.rename(part, dest);
   return dest;
+}
+
+async function drain(body: AsyncIterable<Uint8Array>): Promise<void> {
+  try { for await (const _ of body) { /* discard */ } } catch { /* gone */ }
 }

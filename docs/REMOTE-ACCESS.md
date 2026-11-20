@@ -37,8 +37,14 @@ and how to set it up.
 - **Calls** carry their signalling through the channel. The audio and video use WebRTC, encrypted
   end to end with DTLS-SRTP. Across networks they need STUN/TURN; see *Calls across networks*.
 - **Devices pick the route themselves.** They try the office network first and use the gateway
-  when it is unreachable. Once the hub is seen on the office Wi-Fi again, they move back to it. The
-  title bar shows a globe while the app is going through the internet.
+  when it is unreachable. A phone on mobile data, or on a Wi-Fi where the gateway worked last time,
+  tries the gateway first, then the office network. Once the hub is seen on the office Wi-Fi again,
+  they move back to it. The title bar shows a globe while the app is going through the internet.
+- **Updates come through it too.** A phone or laptop connected through the gateway asks the hub's
+  update mirror through the channel (`GET /updates/<channel>.json` and `/updates/files/…`, with
+  ranges, so a dropped download resumes), alongside GitHub and jsDelivr, and downloads from whichever
+  works: a network that blocks GitHub still updates, from the office. The build's size and SHA-512 are
+  checked as for any other download.
 
 ## What is exposed, and how it is limited
 

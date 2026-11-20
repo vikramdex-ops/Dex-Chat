@@ -1,5 +1,6 @@
 // Update surfaces: the title-bar pill, the required-update prompt and the "what's new" card.
-import type { AppState } from '../shared/bridge.ts';
+import { DOWNLOAD_PAGE } from '@dex/core/feed';
+import type { AppState, UpdateState } from '../shared/bridge.ts';
 import { Icon } from './ui.tsx';
 import { formatTime } from './time.ts';
 
@@ -78,7 +79,7 @@ export function UpdateSettings({ state }: { state: AppState }) {
     case 'downloading': line = `Downloading ${u.available?.version}… ${pct(u.progress)}% of ${formatBytes(u.progress?.total ?? 0)}`; break;
     case 'ready': line = state.platform === 'ios-web' ? 'Your office updated Dexterity Connect. Reload to use the new version.' : `Version ${u.available?.version} is ready. It installs when you restart or quit.`; break;
     case 'installing': line = 'Installing…'; break;
-    case 'error': line = u.error ?? 'Something went wrong.'; break;
+    case 'error': line = nothingAnswered(u) ? 'Could not check for updates: neither the office hub nor the update servers on the internet answered.' : u.error ?? 'Something went wrong.'; break;
     default: line = u.lastCheck ? `Last checked ${new Date(u.lastCheck).toLocaleString()}.` : 'Checks automatically when the app opens and every few hours.';
   }
   // the iPhone app updates with the office's gateway: nothing to download, a reload to use it
@@ -91,6 +92,7 @@ export function UpdateSettings({ state }: { state: AppState }) {
           <div>Dexterity Connect {u.currentVersion}</div>
           <div className={`faint${u.phase === 'error' ? ' danger-text' : ''}`}>{line}</div>
           {u.phase === 'downloading' && <div className="bar" style={{ marginTop: 8 }}><span style={{ width: `${pct(u.progress)}%` }} /></div>}
+          {u.phase === 'error' && state.platform !== 'ios-web' && <UpdateHelp u={u} phone={state.platform === 'android'} />}
         </div>
         {u.phase === 'ready'
           ? <button className="btn primary" onClick={() => void window.dex.installUpdate()}>{state.platform === 'ios-web' ? 'Reload to update' : 'Restart to update'}</button>
@@ -101,5 +103,42 @@ export function UpdateSettings({ state }: { state: AppState }) {
               </button>}
       </div>
     </>
+  );
+}
+
+const nothingAnswered = (u: UpdateState) => !!u.checked?.length && u.checked.every((c) => !c.ok);
+
+/** Where a check looks, in the words people know. */
+const SOURCE_LABEL: Record<NonNullable<UpdateState['checked']>[number]['source'], string> = {
+  'hub-lan': 'Office hub, on the office network',
+  'hub-gateway': 'Office hub, through the internet gateway',
+  internet: 'GitHub, where releases are published',
+  mirror: 'jsDelivr, a second copy on the internet',
+};
+
+/** After a failed check or download: what was tried, what to do, and the website as a last resort. */
+function UpdateHelp({ u, phone }: { u: UpdateState; phone: boolean }) {
+  const none = nothingAnswered(u);
+  return (
+    <div className="update-help">
+      {!!u.checked?.length && (
+        <ul className="update-tried" aria-label="Where the app looked for updates">
+          {u.checked.map((c) => (
+            <li key={c.source}>
+              <span>{SOURCE_LABEL[c.source]}</span>
+              <span className={c.ok ? 'tried-ok' : 'tried-no'}>{c.ok ? 'Answered' : 'No answer'}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="faint">
+        {none
+          ? phone
+            ? 'Check that this phone is online, on mobile data or Wi-Fi, and try again. If it keeps failing, download the newest version from the Dexterity Connect website and install it over this one. Nothing on the phone is lost.'
+            : 'Check that this PC is online and try again. If it keeps failing, download the newest version from the Dexterity Connect website and install it over this one. Nothing on the PC is lost.'
+          : 'The app tries again by itself. If it keeps failing, download the newest version from the Dexterity Connect website and install it over this one.'}
+      </p>
+      <a className="btn sm" href={DOWNLOAD_PAGE} target="_blank" rel="noreferrer noopener"><Icon name="open" size={14} />Open the download page</a>
+    </div>
   );
 }

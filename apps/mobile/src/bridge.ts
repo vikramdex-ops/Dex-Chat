@@ -9,6 +9,8 @@ import { b64 as b64Chunked, createEncKeys } from '@dex/core/e2e';
 import type { EncKeyPair } from '@dex/core/e2e';
 import { DAMAGED_FILE } from '@dex/core/e2e-files';
 import { loadSecret } from './keys.ts';
+import { networkKind, preferGateway, rememberRoute } from './route.ts';
+import type { RouteMemory } from './route.ts';
 import type { MissedNotice } from '@dex/core/protocol';
 import { E2EClient } from '@dex/core/e2e-client';
 import { ed25519 } from '@noble/curves/ed25519.js';
@@ -17,8 +19,10 @@ import { DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION } from '@dex/core/pr
 import type { FileInfo, OpName, Ops, WindowsAccount } from '@dex/core/protocol';
 import { HubSession } from '@dex/core/session';
 import type { ClientState, HubTarget } from '@dex/core/session';
-import { chooseUpdate, feedUrl, parseFeed } from '@dex/core/feed';
-import type { Channel, UpdateChoice } from '@dex/core/feed';
+import { compareVersions, parseFeed } from '@dex/core/feed';
+import type { Channel, UpdateAsset, UpdateFeed } from '@dex/core/feed';
+import { checkSources, hubFeedPath, internetFeedUrl, pickUpdate, reportOf, tryRoutes } from '@dex/core/update-sources';
+import type { Route, UpdatePick, UpdateSource } from '@dex/core/update-sources';
 import { openRemoteSocket, parsePairCode, parseSetupCode } from '@dex/core/remote';
 import type { RawHandlers } from '@dex/core/remote';
 import { SETTINGS_EXTRA_DEFAULTS, type AppState, type DexBridge, type DiscoveredHub, type JoinRequest, type NotifyHealth, type Phase, type Settings, type SettingsPage, type UpdateState } from '../../desktop/src/shared/bridge.ts';
@@ -30,6 +34,9 @@ interface DexNativePlugin {
   wsClose(o: { id: string }): Promise<void>;
   httpGet(o: { url: string; fingerprint?: string }): Promise<{ status: number; body: string }>;
   download(o: { url: string; fingerprint?: string; file: string; size: number; sha512: string }): Promise<{ path: string }>;
+  /** Updates streamed in by the app (the hub through the gateway): where a partial file stopped, and appending to it. */
+  updateResume(o: { file: string; size: number; sha512: string }): Promise<{ offset: number; path?: string }>;
+  updateWrite(o: { file: string; size: number; sha512: string; offset: number; data: string; done?: boolean }): Promise<{ received: number; path?: string }>;
   installApk(o: { path: string }): Promise<void>;
   deviceInfo(): Promise<{ model: string; manufacturer: string; androidVersion: string; appVersion: string }>;
   fileGet(o: { url: string; fingerprint: string; token: string; id: string; name: string }): Promise<{ path: string }>;
@@ -136,7 +143,12 @@ interface MobileConfig {
   pendingNotes?: { version: string; notes: string } | null;
   /** Other offices this phone belongs to. */
   otherHubs?: HubTarget[];
+  /** The way to the hub that worked last, on Wi-Fi and on mobile data (route.ts). */
+  routes?: RouteMemory;
 }
+
+/** The Network Information API, where the WebView has it (Android's does). */
+const connection = () => (navigator as Navigator & { connection?: { type?: string; addEventListener?: (t: 'change', fn: () => void) => void } }).connection;
 
 const DEFAULTS: MobileConfig = {
   hub: null, displayName: null, officeAccount: null,
@@ -171,7 +183,7 @@ class MobileApp {
   private readonly hubs = new Map<string, DiscoveredHub>();
   private readonly listeners = { state: new Set<(s: AppState) => void>(), event: new Set<(n: string, d: unknown) => void>() };
   private update: UpdateState = { phase: 'idle', currentVersion: '0.0.0', lastCheck: null, available: null, progress: null, error: null, justUpdated: null };
-  private choice: (UpdateChoice & { source: 'hub' | 'internet'; url: string; pin?: string }) | null = null;
+  private choice: UpdatePick | null = null;
   private readyPath: string | null = null;
 
   async init(): Promise<void> {
@@ -212,10 +224,47 @@ class MobileApp {
     setTimeout(() => void this.checkForUpdates(false), 8000);
     setInterval(() => void this.checkForUpdates(false), 4 * 3600 * 1000);
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.hiddenAt = Date.now(); else this.resumed();
       if (!document.hidden) void this.checkForUpdates(false, true);
       // a phone in a pocket counts as away
       if (this.session.state.kind === 'ready') void this.session.request('me.idle', { idle: document.hidden }).catch(() => {});
     });
+    // from Wi-Fi to mobile data (or back): reconnect the way that works there, now
+    connection()?.addEventListener?.('change', () => this.networkChanged());
+  }
+
+  // ---------------------------------------------------------- coming back
+  private hiddenAt = 0;
+  private network = networkKind(connection());
+
+  /**
+   * Back in the foreground. The connection usually survived (the background service keeps the
+   * app alive); if it is waiting to reconnect, try now rather than after the back-off; if the
+   * phone was away a while, make sure the connection still answers, and reconnect at once if not.
+   * The screen keeps showing what it had meanwhile (the shared UI says nothing for a few seconds).
+   */
+  private resumed(): void {
+    const away = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
+    this.hiddenAt = 0;
+    this.network = networkKind(connection());
+    if (this.session.retryNow()) return;
+    if (this.session.state.kind !== 'ready' || away < 60_000 || !this.config.hub) return;
+    const hub = this.config.hub;
+    const check = this.session.request('ping');
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('no answer')), 4000));
+    Promise.race([check, timeout]).catch(() => {
+      // a connection that died while the phone slept: start again, the quickest way first
+      if (this.config.hub === hub && this.session.state.kind === 'ready') this.session.connect(hub);
+    });
+  }
+
+  private networkChanged(): void {
+    const was = this.network;
+    this.network = networkKind(connection());
+    if (this.session.retryNow()) return;
+    const st = this.session.state;
+    // the office network's address means nothing on mobile data: go through the gateway now
+    if (was !== 'cellular' && this.network === 'cellular' && st.kind === 'ready' && st.via !== 'remote' && this.config.hub?.remote) this.session.connect(this.config.hub);
   }
 
   private async save(): Promise<void> {
@@ -329,6 +378,11 @@ class MobileApp {
       sign: (payload) => b64(ed25519.sign(payload, secret)),
       account: this.account,
       invite: this.invite,
+      // on mobile data, or where the gateway worked last time, the gateway first (route.ts)
+      preferRemote: () => preferGateway({
+        network: networkKind(connection()), memory: this.config.routes,
+        hasGateway: !!this.config.hub?.remote, hasOfficeAddress: !!this.config.hub?.host,
+      }),
       open: (target, h) => {
         const id = `ws${++this.sockSeq}`;
         this.sockets.set(id, h);
@@ -351,6 +405,7 @@ class MobileApp {
       }, target as HubTarget & { remote: { url: string; hubId: string } }, h),
     });
     s.on('state', (st: ClientState) => {
+      if (st.kind === 'ready') this.config.routes = rememberRoute(this.config.routes, networkKind(connection()), st.via ?? 'lan');
       if (st.kind === 'ready' || st.kind === 'pending') { this.config.hub = { ...st.target }; void this.save(); }
       if (st.kind === 'ready' || st.kind === 'rejected') s.setPair('');
       if (st.kind === 'ready') {
@@ -480,14 +535,17 @@ class MobileApp {
             if (cur && cur.hubId === b.id && cur.fp === b.fp && (cur.host !== h.address || outside) && (st.kind === 'offline' || outside)) {
               this.config.hub = { ...cur, host: h.address, port: b.port };
               void this.save();
-              this.session.connect(this.config.hub);
+              // found on the office network: use it, whatever the gateway preference
+              this.session.connect(this.config.hub, { via: 'lan' });
             }
           } catch { /* ignore malformed answers */ }
         }
         this.push();
       } catch { /* Wi-Fi off; try again */ }
-      const ready = this.session?.state.kind === 'ready';
-      await new Promise((r) => setTimeout(r, ready ? 30000 : 4000));
+      const st = this.session?.state;
+      // through the gateway on Wi-Fi (perhaps just arrived at the office): look more often
+      const wait = st?.kind !== 'ready' ? 4000 : st.via === 'remote' && networkKind(connection()) === 'wifi' ? 10000 : 30000;
+      await new Promise((r) => setTimeout(r, wait));
     }
   }
 
@@ -537,42 +595,72 @@ class MobileApp {
   }
 
   // ---------------------------------------------------------- updates
+  // Every source at once, newest wins (packages/core/src/update-sources.ts): the hub on the office
+  // network, the hub through the gateway (at home, on mobile data), GitHub and its jsDelivr mirror,
+  // all fetched natively (no WebView CORS or CSP in the way). The APK then comes from the first
+  // route that works, each ending in the same size and SHA-512 check.
+
+  /** The hub on the office network, when the app is connected that way. */
+  private lanHub(): { base: string; fp: string } | null {
+    const hub = this.config.hub;
+    if (this.session.state.kind !== 'ready' || this.session.viaGateway || !hub?.host || !hub.fp) return null;
+    return { base: `https://${hub.host.includes(':') ? `[${hub.host}]` : hub.host}:${hub.port}`, fp: hub.fp };
+  }
+
+  private async feedFrom(url: string, fingerprint?: string): Promise<UpdateFeed | null> {
+    const r = await Native.httpGet({ url, ...(fingerprint ? { fingerprint } : {}) });
+    if (r.status === 404) return null;
+    if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+    try { return parseFeed(JSON.parse(r.body)); } catch { return null; }
+  }
+
+  private async feedThroughGateway(path: string): Promise<UpdateFeed | null> {
+    const r = await this.session.http({ method: 'GET', path, headers: { 'cache-control': 'no-cache' } });
+    let text = '';
+    const dec = new TextDecoder();
+    for await (const part of r.body) { text += dec.decode(part, { stream: true }); if (text.length > 256 * 1024) throw new Error('update feed is too large'); }
+    if (r.status === 404) return null;
+    if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+    try { return parseFeed(JSON.parse(text)); } catch { return null; }
+  }
+
   async checkForUpdates(manual: boolean, quiet = false): Promise<void> {
     const ph = this.update.phase;
     if (ph === 'checking' || ph === 'downloading' || ph === 'installing') return;
     if (quiet && this.update.lastCheck && Date.now() - this.update.lastCheck < 30 * 60 * 1000) return;
     this.setUpdate({ phase: 'checking', error: null });
     const channels: Channel[] = this.config.settings.updateChannel === 'beta' ? ['stable', 'beta'] : ['stable'];
-    const hub = this.session.state.kind === 'ready' ? this.config.hub : null;
-    const hubBase = hub ? `https://${hub.host}:${hub.port}` : null;
-
-    const fromHub = hub && hubBase ? await Promise.all(channels.map((ch) =>
-      Native.httpGet({ url: `${hubBase}/updates/${ch}.json`, fingerprint: hub.fp })
-        .then((r) => (r.status === 200 ? parseFeed(JSON.parse(r.body)) : null)).catch(() => null))) : [];
-    const fromNet = await Promise.all(channels.map((ch) =>
-      fetch(feedUrl(ch), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => parseFeed(j)).catch(() => null)));
-
-    const hubPick = chooseUpdate(this.version, fromHub, 'android');
-    const netPick = chooseUpdate(this.version, fromNet, 'android');
-    if (hubPick && (!netPick || hubPick.feed.version >= netPick.feed.version)) {
-      this.choice = { ...hubPick, source: 'hub', url: `${hubBase}${hubPick.asset.url}`, pin: hub!.fp };
-    } else if (netPick) {
-      this.choice = { ...netPick, source: 'internet', url: netPick.asset.url };
-    } else {
-      const reachable = fromHub.some(Boolean) || fromNet.some(Boolean);
+    const fetchers: Partial<Record<UpdateSource, (ch: Channel) => Promise<UpdateFeed | null>>> = {};
+    const lan = this.lanHub();
+    if (lan) fetchers['hub-lan'] = (ch) => this.feedFrom(`${lan.base}${hubFeedPath(ch)}`, lan.fp);
+    if (this.session.viaGateway) fetchers['hub-gateway'] = (ch) => this.feedThroughGateway(hubFeedPath(ch));
+    fetchers.internet = (ch) => this.feedFrom(internetFeedUrl('internet', ch));
+    fetchers.mirror = (ch) => this.feedFrom(internetFeedUrl('mirror', ch));
+    const results = await checkSources(fetchers, channels);
+    const checked = reportOf(results);
+    console.info(`[update] checked ${checked.map((c) => `${c.source}:${c.ok ? 'ok' : 'no answer'}`).join(' ')}`);
+    const pick = pickUpdate(this.version, results, 'android');
+    if (!pick) {
+      const reachable = results.some((r) => r.reachable);
       this.setUpdate({
         phase: this.readyPath ? 'ready' : reachable || !manual ? 'up-to-date' : 'error',
-        lastCheck: Date.now(),
-        error: reachable || !manual ? null : 'Could not reach the office hub or the internet to check for updates.',
+        lastCheck: Date.now(), checked,
+        error: reachable || !manual ? null : 'Could not check for updates: neither the office hub nor the update servers on the internet answered.',
       });
       return;
     }
-    const c = this.choice;
+    // already downloaded this build (or a newer one): still ready to install
+    if (this.readyPath && this.choice && compareVersions(this.choice.feed.version, pick.feed.version) >= 0) {
+      this.setUpdate({ phase: 'ready', lastCheck: Date.now(), checked });
+      return;
+    }
+    this.choice = pick;
+    this.readyPath = null;
     this.setUpdate({
-      phase: 'available', lastCheck: Date.now(),
-      available: { version: c.feed.version, notes: c.feed.notes, releasedAt: c.feed.releasedAt, mandatory: c.mandatory, size: c.asset.size, source: c.source },
+      phase: 'available', lastCheck: Date.now(), checked,
+      available: { version: pick.feed.version, notes: pick.feed.notes, releasedAt: pick.feed.releasedAt, mandatory: pick.mandatory, size: pick.asset.size, source: pick.source === 'hub-lan' || pick.source === 'hub-gateway' ? 'hub' : 'internet' },
     });
-    if (c.mandatory || this.config.settings.autoDownloadUpdates || manual) await this.downloadUpdate();
+    if (pick.mandatory || this.config.settings.autoDownloadUpdates || manual) await this.downloadUpdate();
   }
 
   async downloadUpdate(): Promise<void> {
@@ -580,12 +668,65 @@ class MobileApp {
     if (!c || this.update.phase === 'downloading') return;
     this.setUpdate({ phase: 'downloading', progress: { received: 0, total: c.asset.size }, error: null });
     try {
-      const { path } = await Native.download({ url: c.url, fingerprint: c.pin, file: c.asset.file, size: c.asset.size, sha512: c.asset.sha512 });
-      this.readyPath = path;
+      const { value, route } = await tryRoutes(c.routes, (r) => this.downloadFrom(r, c.asset),
+        (r, err) => console.warn(`[update] ${r.route} failed (${err.message}); trying the next source`));
+      console.info(`[update] downloaded ${c.feed.version} via ${route.route}`);
+      this.readyPath = value;
       this.setUpdate({ phase: 'ready' });
     } catch (err) {
       this.setUpdate({ phase: 'error', error: (err as Error).message });
     }
+  }
+
+  private async downloadFrom(r: Route, asset: UpdateAsset): Promise<string> {
+    const expected = { file: asset.file, size: asset.size, sha512: asset.sha512 };
+    if (r.route === 'hub-lan') {
+      const lan = this.lanHub();
+      if (!lan) throw new Error('Not on the office network any more.');
+      return (await Native.download({ url: `${lan.base}${r.url}`, fingerprint: lan.fp, ...expected })).path;
+    }
+    if (r.route === 'internet') return (await Native.download({ url: r.url, ...expected })).path;
+    return this.downloadThroughGateway(r.url, expected);
+  }
+
+  /**
+   * The APK from the office hub through the gateway's encrypted channel, written in order into
+   * cache/updates by the native side, which checks its size and SHA-512 at the end. A dropped
+   * connection keeps what arrived; the next attempt asks for the rest.
+   */
+  private async downloadThroughGateway(path: string, expected: { file: string; size: number; sha512: string }): Promise<string> {
+    if (!this.session.viaGateway) throw new Error('Not connected through the internet gateway any more.');
+    const start = await Native.updateResume(expected);
+    if (start.path) return start.path;
+    let offset = start.offset;
+    const r = await this.session.http({ method: 'GET', path, headers: offset ? { range: `bytes=${offset}-` } : {} });
+    if (r.status !== 200 && r.status !== 206) {
+      for await (const _ of r.body) { /* drain */ }
+      throw new Error(`Download failed (HTTP ${r.status})`);
+    }
+    if (r.status !== 206) offset = 0; // the hub sent the whole file: start over
+    this.setUpdate({ progress: { received: offset, total: expected.size } });
+    let pending: Uint8Array[] = [];
+    let queued = 0;
+    const flush = async (done: boolean) => {
+      const data = new Uint8Array(queued);
+      let o = 0;
+      for (const p of pending) { data.set(p, o); o += p.length; }
+      pending = []; queued = 0;
+      const w = await Native.updateWrite({ ...expected, offset, data: data.length ? b64Chunked(data) : '', done });
+      offset = w.received;
+      this.setUpdate({ progress: { received: offset, total: expected.size } });
+      return w;
+    };
+    for await (const part of r.body) {
+      if (offset + queued + part.length > expected.size) throw new Error('The download is larger than expected.');
+      pending.push(part);
+      queued += part.length;
+      if (queued >= 512 * 1024) await flush(false);
+    }
+    const done = await flush(true);
+    if (!done.path) throw new Error('The download was incomplete; it will resume.');
+    return done.path;
   }
 
   async installUpdate(): Promise<void> {

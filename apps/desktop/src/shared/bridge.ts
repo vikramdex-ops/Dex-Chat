@@ -22,6 +22,11 @@ export interface UpdateState {
   available: { version: string; notes: string; releasedAt: string; mandatory: boolean; size: number; source: 'hub' | 'internet' } | null;
   progress: { received: number; total: number } | null;
   error: string | null;
+  /**
+   * Where the last check looked and which answered: the hub on the office network, the hub through
+   * the internet gateway, GitHub, and the second internet mirror. Shown when nothing answered.
+   */
+  checked?: Array<{ source: 'hub-lan' | 'hub-gateway' | 'internet' | 'mirror'; ok: boolean }>;
   /** Shown once after the app relaunches into a new version. */
   justUpdated: { version: string; notes: string } | null;
 }
