@@ -4,6 +4,8 @@ import { parsePairCode } from '@dex/core/remote';
 import { test, after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { createIdentity } from '@dex/core';
@@ -165,4 +167,47 @@ test('from outside the office: join, approval, messages both ways, files, and th
 
   await until(asha.c, (s) => s.kind !== 'ready', 8000);
   assert.equal((await owner.request('admin.remote.get')).status.connected, false);
+});
+
+test('from outside the office: the update mirror through the gateway (feed, then the build in two ranges)', async (t) => {
+  if (skip) { t.skip(skip); return; }
+  // a hub whose mirror already holds a build (the public feed itself is never asked here)
+  const { hub, owner, dir } = await office({ updates: { firstCheckDelayMs: 3_600_000 } });
+  const apk = new Uint8Array(300_000).map((_, i) => (i * 7) % 253);
+  const sha512 = crypto.createHash('sha512').update(apk).digest('base64');
+  const version = '0.1.120';
+  fs.mkdirSync(path.join(dir, 'updates', 'files', version), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'updates', 'files', version, `DexterityConnect-${version}.apk`), apk);
+  fs.writeFileSync(path.join(dir, 'updates', 'stable.json'), JSON.stringify({
+    schema: 1, channel: 'stable', version, releasedAt: '2026-11-19T00:00:00Z', notes: 'Through the gateway',
+    assets: [{ platform: 'android', file: `DexterityConnect-${version}.apk`, url: `https://github.com/dexterity-admin/dexterity-connect/releases/download/v${version}/DexterityConnect-${version}.apk`, size: apk.length, sha512 }],
+  }));
+  await owner.request('admin.remote.set', { url: gateway!.url, enabled: true });
+  await connected(owner);
+  const phone = outside('ravi-phone', hub, await deadPort());
+  await until(phone.c, (s) => s.kind === 'pending', 15000);
+  await owner.request('admin.decide', { deviceId: phone.identity.deviceId, approve: true });
+  await until(phone.c, (s) => s.kind === 'ready', 15000);
+  assert.equal(phone.c.viaGateway, true);
+
+  const read = async (r: { body: AsyncIterable<Uint8Array> }) => { const parts: Uint8Array[] = []; for await (const p of r.body) parts.push(p); return Buffer.concat(parts); };
+  // the feed, with the hub's own links (no sign-in needed, as on the office network)
+  const f = await phone.c.http({ method: 'GET', path: '/updates/stable.json', headers: { 'cache-control': 'no-cache' } });
+  assert.equal(f.status, 200);
+  const feed = JSON.parse((await read(f)).toString()) as { version: string; assets: Array<{ url: string; sha512: string }> };
+  assert.equal(feed.version, version);
+  assert.equal(feed.assets[0].url, `/updates/files/${version}/DexterityConnect-${version}.apk`);
+  // the build, resumed: the first part, then the rest with a range
+  const first = await phone.c.http({ method: 'GET', path: feed.assets[0].url, headers: { range: 'bytes=0-99999' } });
+  assert.equal(first.status, 206);
+  const a = await read(first);
+  const rest = await phone.c.http({ method: 'GET', path: feed.assets[0].url, headers: { range: `bytes=${a.length}-` } });
+  assert.equal(rest.status, 206);
+  const whole = Buffer.concat([a, await read(rest)]);
+  assert.equal(crypto.createHash('sha512').update(whole).digest('base64'), feed.assets[0].sha512);
+  // nothing else on the hub is reachable this way, and no path escapes the mirror
+  assert.ok([403, 404].includes((await phone.c.http({ method: 'GET', path: '/updates/files/0.1.120/..%2F..%2Fhub.db' })).status));
+  assert.equal((await phone.c.http({ method: 'GET', path: '/updates/files/0.1.119/DexterityConnect-0.1.119.apk' })).status, 404);
+  assert.equal((await phone.c.http({ method: 'GET', path: '/notify/wait' })).status, 403);
+  await owner.request('admin.remote.set', { enabled: false });
 });
