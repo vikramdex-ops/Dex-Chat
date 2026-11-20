@@ -70,6 +70,15 @@ Nib is one permanent identity on the hub (`system\nib`, role `bot`, no token), m
 time anyone in the office opens the app. The older system bot ("Dexterity Connect") keeps sending
 account notices (devices, roles), so security notices stay in their own plain channel.
 
+**What office tools tell you.** Project Opener, Dexterity Sheets, Hopper and any other tool an
+administrator gave a token can tell a person something through Nib: a task given to you, a mention,
+a watcher that fired. It arrives here as one line that starts with the tool's name (**Project
+Opener** · Task · from Vikram Shah), then what happened and a link that opens it in the tool. The
+hub writes that first line, so a tool's notice never passes for Nib's own words. These arrive whether
+or not day sheets are on. An administrator can switch a tool's *Notices through Nib* off in Control
+room → Integrations; its notices then come as Direct messages from the tool. The contract for tool
+builders is [`TOOL-NOTICES.md`](TOOL-NOTICES.md).
+
 ## 3. Day sheets
 
 ### 3.1 The start of the day

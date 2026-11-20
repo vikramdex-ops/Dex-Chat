@@ -69,6 +69,7 @@ import { OffboardError, Offboarding } from './offboard.ts';
 import { CalFeedError, CalendarFeeds } from './calfeed.ts';
 import { ZohoError, ZohoSync } from './zoho.ts';
 import { SheetsError, SheetsLink } from './sheets.ts';
+import { ToolNotices } from './toolnotices.ts';
 import type { ZohoTestOptions } from './zoho.ts';
 import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
@@ -234,6 +235,8 @@ export class Hub {
   readonly holidays: Holidays;
   /** Nib, the office's companion: day sheets, the register, the leave note (nib.ts). */
   readonly nib: Nib;
+  /** Office tools telling people things through Nib (toolnotices.ts, docs/TOOL-NOTICES.md). */
+  readonly toolNotices: ToolNotices;
   /** Meeting threads, action points and recaps (meet-threads.ts). */
   readonly meetThreads: MeetThreads;
   /** The notice board: the issuing desks' register of notices (notices.ts, docs/ANNOUNCEMENTS.md). */
@@ -569,6 +572,11 @@ export class Hub {
       userChanged: (uid) => { const u = this.store.userById(uid); if (u) this.emit('user.updated', u); },
       userAdded: (u) => this.emit('user.added', u),
       log: (level, msg, extra) => this.log(level, msg, extra),
+    });
+    this.toolNotices = new ToolNotices({
+      db: this.store.db, store: this.store, messaging: this.messaging, nib: this.nib,
+      hub: () => ({ id: this.info.id, name: this.info.name, version: this.info.version }),
+      log: (level, msg, extra) => this.log(level, msg, extra), now: () => this.nib.now(),
     });
     { const prev = this.messaging.onPosted; this.messaging.onPosted = (author, convId, msg) => { prev?.(author, convId, msg); try { this.nib.onPosted(author, convId, msg); } catch (err) { this.log('warn', 'nib reply failed', { error: (err as Error).message }); } }; }
     this.botflows.away = (me, answers) => {
@@ -1022,6 +1030,18 @@ export class Hub {
         this.emit('widgets.updated', list);
         reply(200, { ok: true });
       } catch (err) { reply(400, { ok: false, error: (err as Error).message }); }
+      return;
+    }
+    // tool notices (toolnotices.ts, docs/TOOL-NOTICES.md): a tool's Test button, and notices through Nib
+    if (req.method === 'GET' && req.url?.split('?')[0] === '/api/bot/hello') { req.resume(); reply(200, this.toolNotices.hello(bot)); return; }
+    if (req.method === 'POST' && req.url?.split('?')[0] === '/api/bot/notify') {
+      let raw = '';
+      try { for await (const c of req) { raw += c; if (raw.length > 64 * 1024) throw new Error('too large'); } } catch { reply(413, { ok: false, error: 'Notice too large.' }); return; }
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); } catch { reply(400, { ok: false, error: 'Invalid JSON.' }); return; }
+      const r = this.toolNotices.notify(bot, parsed);
+      res.writeHead(r.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...(r.body.retryAfterSec ? { 'retry-after': String(r.body.retryAfterSec) } : {}) });
+      res.end(JSON.stringify(r.body));
       return;
     }
     if (req.method !== 'POST' || req.url?.split('?')[0] !== '/api/bot/message') { req.resume(); reply(404, { ok: false, error: 'not found' }); return; }
@@ -1661,7 +1681,16 @@ export class Hub {
 
       case 'admin.bots':
         this.requireAdmin(conn);
-        return this.store.bots();
+        return this.store.bots().map((b) => ({ ...b, viaNib: this.toolNotices.viaNib(b.bot.id), ...this.toolNotices.stats(b.bot.id) })) satisfies Ops['admin.bots']['res'];
+
+      case 'admin.bots.notices': {
+        const me = this.requireAdmin(conn);
+        const bot = typeof d.userId === 'string' ? this.store.userById(d.userId) : null;
+        if (!bot || bot.role !== 'bot') throw new OpError('Integration not found.');
+        this.toolNotices.setViaNib(bot.id, d.viaNib !== false);
+        this.store.audit(me.id, 'bot.notices', bot.id, { name: bot.displayName, viaNib: d.viaNib !== false });
+        return { ok: true, viaNib: this.toolNotices.viaNib(bot.id) } satisfies Ops['admin.bots.notices']['res'];
+      }
 
       case 'e2e.publish': {
         const encKey = typeof d.encKey === 'string' ? d.encKey : '';

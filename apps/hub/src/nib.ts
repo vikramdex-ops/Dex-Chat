@@ -1007,6 +1007,24 @@ export class Nib {
     }
   }
 
+  /**
+   * A notice an office tool asked the hub to pass on (toolnotices.ts): a plain line in the person's
+   * conversation with Nib. The text already starts with the tool's name, written by the hub. Posted
+   * whether or not day sheets are on (as knocks are); null for someone Nib does not write to (a
+   * guest), so the caller can send it in the tool's own name instead.
+   */
+  toolLine(uid: string, text: string): { convId: string; messageId: string } | null {
+    const convId = this.convFor(uid);
+    if (!convId) return null;
+    try {
+      const msg = this.d.messaging.sendAs(this.bot(), this.d.messaging.memberConv(convId, this.id), text.slice(0, 4000), undefined, [], `nibtool|${ulid()}|${uid}`.slice(0, 96), {});
+      return { convId, messageId: msg.id };
+    } catch (err) {
+      this.d.log('warn', 'nib tool notice not posted', { error: (err as Error).message });
+      return null;
+    }
+  }
+
   /** `nib.sheets.ask`: the app's Nib box asked; the answer goes in the conversation with Nib too. */
   async sheetsAnswer(me: PublicUser, text: string): Promise<{ convId: string | null; messageId: string | null; text: string }> {
     if (me.role === 'bot' || me.role === 'guest') throw new NibError('Nib answers members of the office.');
