@@ -1437,3 +1437,10 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .conn-notice b { font-weight: 600; }
 @media (prefers-reduced-motion: no-preference) { .conn-notice { animation: conn-notice-in .2s var(--ease); } }
 @keyframes conn-notice-in { from { opacity: 0; } to { opacity: 1; } }
+/* its own row of the frame's grid, under the title bar (beside the notice board's urgent banner) */
+.frame:has(> .conn-notice) { grid-template-rows: var(--titlebar) auto 1fr; }
+.frame:has(> .conn-notice):has(> .nb-banner) { grid-template-rows: var(--titlebar) auto auto 1fr; }
+@media (max-width: 720px) {
+  .frame:has(> .conn-notice) { grid-template-rows: var(--titlebar) auto 1fr auto; }
+  .frame:has(> .conn-notice):has(> .nb-banner) { grid-template-rows: var(--titlebar) auto auto 1fr auto; }
+}
