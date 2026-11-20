@@ -1,5 +1,5 @@
-// Leave for office tools: an integration an administrator allowed to read leave (Control room →
-// Integrations → "Reads leave") asks who is away, from Nib's leave note, with its integration token.
+// Leave for office tools: an integration an administrator allowed to read leave asks who is away,
+// from Nib's leave note, with its integration token (the switch: Control room → Integrations → Reads leave).
 // Project Opener uses it to fill in and run its Handover. Off for every integration until an
 // administrator turns it on; the switch is audited (`bot.leave`). A tool tells people things with
 // tool notices (toolnotices.ts); this is only the reading side.
