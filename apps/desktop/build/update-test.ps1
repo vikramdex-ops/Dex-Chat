@@ -118,6 +118,53 @@ foreach ($running in $true, $false) {
   Save-Screen "after-$label"
 }
 
+# Updates run the way they do on an office PC: as the signed-in person WITHOUT administrator rights
+# (runas /trustlevel:0x20000 strips them, as UAC does), over an install made for all users, and
+# over an app running as administrator.
+function Invoke-SetupAsUser([string] $exe, [string] $arguments, [string] $label, [int] $seconds = 240) {
+  $full = (Resolve-Path $exe).Path
+  $before = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object Id)
+  & runas.exe /trustlevel:0x20000 "`"$full`" $arguments" | Out-Null
+  Start-Sleep -Seconds 3
+  $name = [IO.Path]::GetFileNameWithoutExtension($full)
+  $deadline = (Get-Date).AddSeconds($seconds)
+  while ((Get-Date) -lt $deadline) {
+    $p = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+    if (-not $p.Count) { return 'finished' }
+    Start-Sleep -Seconds 2
+  }
+  Write-Host "  the setup is still open after $seconds s: it is showing something" -ForegroundColor Yellow
+  foreach ($p in Get-Process -Name $name -ErrorAction SilentlyContinue) {
+    Get-WindowText $p.Id | ForEach-Object { Write-Host "    $_" }
+    foreach ($c in Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.Id)") {
+      Write-Host "    child: $($c.Name) $($c.CommandLine)"
+      Get-WindowText ([int] $c.ProcessId) | ForEach-Object { Write-Host "      $_" }
+    }
+  }
+  Save-Screen "$label-stuck"
+  Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force
+  return 'stuck'
+}
+
+foreach ($case in 'all-users', 'app-as-admin') {
+  Step "Without administrator rights: $case"
+  Remove-App
+  $flag = if ($case -eq 'all-users') { '/S /allusers' } else { '/S' }
+  $code = Invoke-Setup $Old $flag "install-old-$case"
+  Check ($code -eq 0) "old setup ($flag) exit code 0 (got $code)"
+  $a = Get-App
+  Check ($null -ne $a) "installed: $($a.Version) in $($a.Dir) ($($a.Key -replace '^.*::', ''))"
+  if (-not $a) { continue }
+  # the app as the person normally has it open; for app-as-admin this test runs elevated, so it is too
+  [void](Start-App $a.Dir)
+  $r = Invoke-SetupAsUser $New '/S --updated --force-run' "update-$case"
+  Check ($r -eq 'finished') "the update finished without a dialog ($r)"
+  Start-Sleep -Seconds 5
+  $b = Get-App
+  Check ([bool] $b -and ($b.Version -eq $newVersion -or $b.Version -eq ($newVersion -replace '\.0$', ''))) "the new version is installed ($($b.Version))"
+  Save-Screen "after-$case"
+}
+
 Step 'App logs'
 $appLogs = Join-Path $env:APPDATA 'Dexterity Connect\logs'
 if (Test-Path $appLogs) { Copy-Item -Recurse $appLogs (Join-Path $Logs 'app') }
