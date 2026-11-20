@@ -645,6 +645,11 @@
         arrive there (lead cards, registers, leave notices), and you can write to Nib there as to anyone. The header shows a
         <span class="tag">BOT</span> tag, <i>Your office companion</i>, and the cells <b>Your sheet</b> (how many items) and <b>Wrap-up</b>
         (your wrap-up time).</dd>
+        <dt>What office tools tell you</dt><dd>The office's other tools tell you things through Nib too: a task given to you in
+        Project Opener, a mention in Dexterity Sheets, a watcher that fired. Each arrives in Nib's conversation as one message that
+        starts with the tool's name (<b>Project Opener</b> · Task · from Vikram Shah), then what happened and a link that opens it
+        in that tool. That first line is written by the hub, so you can always tell a tool's notice from Nib's own words. You are
+        told once, even when the tool had to send it again. While you are on leave the notices wait for you in the same place.</dd>
         <dt>From anywhere</dt><dd>Press <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>N</kbd> in any Windows program, or choose <b>Tell Nib…</b>
         in the menu of the Dexterity Connect icon in the notification area: the app comes forward with Nib's box ready. In any Dock,
         <code>/nib</code> does the same.</dd>
@@ -2137,7 +2142,7 @@
   </div>
   <dl class="kv">
     <dt>10 Usage</dt><dd>For 7, 30 or 90 days: people active, messages, Rooms, files stored, messages per day, the busiest Spaces and who writes most, and meetings by week (count, hours, average size, browser guests, recordings), with <b>Show as table</b> and CSV.</dd>
-    <dt>11 Integrations</dt><dd><b>Zoho Calendar · one step for the whole office</b> (section 19.5). Tokens for office tools that post into Dexterity Connect (Hopper file alerts, Sheets mentions, Sleuth reports): give a name and <b>Create token</b>; revoke one any time. <b>Webhooks for other tools</b> accept Slack-style messages into a chosen Space. <b>For tool builders: the Bot API</b> explains the rest (see <code>docs/INTEGRATIONS.md</code>).</dd>
+    <dt>11 Integrations</dt><dd><b>Zoho Calendar · one step for the whole office</b> (section 19.5). Tokens for office tools that post into Dexterity Connect (Hopper file alerts, Sheets mentions, Project Opener tasks): give a name and <b>Create token</b>, then <b>Copy settings</b> and paste them into the tool; revoke one any time. <b>Notices through Nib</b>, on each tool's row, decides where what the tool tells people arrives: on (as it starts), in each person's conversation with Nib under the tool's name; off, as a Direct message from the tool. The row also shows how many notices it sent this week. <b>Webhooks for other tools</b> accept Slack-style messages into a chosen Space. <b>For tool builders: the Bot API</b> explains the rest (see <code>docs/INTEGRATIONS.md</code> and, for notices through Nib, <code>docs/TOOL-NOTICES.md</code>).</dd>
     <dt>12 Automations</dt><dd>Every rule in the office, office-wide rules that watch every Space (drafted from words like a conversation's rules, section 13), and the switch <b>Webhooks may call the office network</b> (off: automations call only addresses on the internet).</dd>
     <dt>13 Bots &amp; tools</dt><dd><b>Flows</b>: the office's bots, with bots people asked to make office-wide waiting for review (approve, or send back with a note), pause or retire. <b>Tools in conversations</b>: small tools that can be added to a Space, each reviewed before use. <b>Bot network</b> and <b>Job sheet</b> show the whole office's (sections 12.11 and 12.13). <b>Office holidays</b>: the office's days off by year, each with its kind and where it came from, and <b>Read a holiday circular…</b> (section 19.3).</dd>
   </dl>

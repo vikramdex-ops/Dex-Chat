@@ -47,6 +47,27 @@ Content-Type: application/json
 Trust the hub by its certificate fingerprint (shown on the same page) rather than a certificate
 authority. Hopper's notices use this.
 
+### Notices through Nib (any tool, one call)
+
+To tell a person something (a task, a mention, a watcher that fired) a tool posts a **notice** with
+the same token, and it arrives in the person's conversation with Nib under the tool's name:
+
+```
+POST https://<hub>:47900/api/bot/notify
+Authorization: Bearer <token>
+
+{ "to": ["priya.raman"], "key": "task-0412-assigned", "kind": "task", "from": "vikram",
+  "title": "Check ISO-1001 rev B", "text": "Due Friday.",
+  "link": { "title": "Open in Project Opener", "url": "projectopener://open/…" } }
+```
+
+The same `key` is delivered once per person, so a tool can send it again after a timeout; the answer
+says per person `delivered`, `duplicate`, `unknown` or `failed`, and whether they are on leave.
+`GET /api/bot/hello` checks the token. An administrator can switch **Notices through Nib** off per
+integration; the notice then comes from the integration itself. The whole contract, what a tool
+should do when Connect is away and every edge case are in [`TOOL-NOTICES.md`](TOOL-NOTICES.md).
+Project Opener uses this.
+
 ### Incoming webhooks (Slack-style)
 
 Tools and services that already know how to post to a Slack "incoming webhook" can post to
@@ -373,7 +394,9 @@ off.
 ### Nib, the office's companion
 
 Nib is not an integration: it is part of the hub, one permanent bot identity with no token, and
-nothing outside the hub can post as it. Its design, the day sheets, the register and the leave
+nothing outside the hub can post as it. An office tool that wants Nib to tell someone something asks
+the hub with a notice ([`TOOL-NOTICES.md`](TOOL-NOTICES.md)); the hub writes the line and puts the
+tool's name first. Its design, the day sheets, the register and the leave
 note are in [`NIB.md`](NIB.md). The operations the app uses:
 
 | Operation | Who | What |
@@ -777,7 +800,7 @@ the pointer; a reference cannot be edited.
 | --- | --- | --- |
 | Hopper | File alerts and link notices through the Bot API | — |
 | Slate | — | Notes open in Slate and its saves come back into the note; text, CSV and log attachments open in Slate |
-| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`) | `projectopener://` links in messages open the project |
+| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`); mentions, tasks, handovers and watcher hits as notices through Nib ([`TOOL-NOTICES.md`](TOOL-NOTICES.md)), set up once in Project Opener's *Settings → Connect and mail* | `projectopener://` links in messages open the project |
 | Sleuth | Result menu → *Share to Dexterity Connect…* (the file and the text found) | Line numbers (`6"-P-1001-A1B`) and drawing numbers (`ISO-1001-01`) in messages run that search in Sleuth (`sleuth://search?q=`) |
 | Datum | Component page → *Share* (key figures, dimensions, `datum://c/<id>`) | `datum://` links open the component, calculator or module page |
 | Dexterity Sheets | Being built on the Sheets side (not released yet): *Share to Dexterity Connect* (`dexconnect://share`), and mention and assignment notices from the Sheets server through the Bot API. Connect is ready for both | `dexterity://open/…?at=` links open the workbook at the cell; Nib answers "what's assigned to me in Sheets?" from the Sheets server's read API (below) |

@@ -53,8 +53,8 @@ export function Integrations({ state }: { state: AppState }) {
   return (
     <div className="integrations">
       <p className="muted" style={{ marginBottom: 14 }}>
-        Office tools post into Dexterity Connect with a token: Hopper file alerts, Sheets mentions, Sleuth reports.
-        A tool can message people directly (by their Windows sign-in) or post into a Space.
+        Office tools post into Dexterity Connect with a token: Hopper file alerts, Sheets mentions, Project Opener tasks.
+        A tool can tell people something through Nib (by their Windows sign-in), message them itself or post into a Space.
       </p>
       <form className="setting" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create(); }}>
         <Icon name="plus" className="lead" />
@@ -81,9 +81,18 @@ export function Integrations({ state }: { state: AppState }) {
         {bots?.map((b) => (
           <div key={b.bot.id} className="list-row roles">
             <Avatar user={b.bot} size="sm" />
-            <div><div style={{ fontWeight: 600 }}>{b.bot.displayName}</div><div className="faint" style={{ fontSize: 12 }}>created {relativeTime(b.createdAt)} · last used {relativeTime(b.lastUsed)}</div></div>
+            <div><div style={{ fontWeight: 600 }}>{b.bot.displayName}</div><div className="faint" style={{ fontSize: 12 }}>created {relativeTime(b.createdAt)} · last used {relativeTime(b.lastUsed)}{b.notices > 0 ? ` · ${b.notices} notices this week` : ''}</div></div>
             <span><span className={`chip ${b.active ? 'ok' : 'bad'}`}>{b.active ? 'Active' : 'Revoked'}</span></span>
             <span className="row-actions">
+              {b.active && (
+                <label className="faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }} title="On: what this tool tells people arrives in their conversation with Nib, under the tool's name. Off: it arrives as a Direct message from the tool.">
+                  <input type="checkbox" checked={b.viaNib} disabled={!live} onChange={(e) => {
+                    const viaNib = e.target.checked;
+                    void window.dex.request('admin.bots.notices', { userId: b.bot.id, viaNib }).then(() => { toast(viaNib ? 'Its notices now arrive through Nib' : 'Its notices now arrive as its own messages'); void load(); }).catch((err: Error) => toast(err.message, true));
+                  }} />
+                  Notices through Nib
+                </label>
+              )}
               {b.active && <button className="btn ghost" disabled={!live} onClick={() => { setCmdFor(cmdFor === b.bot.id ? null : b.bot.id); setCmdForm({ url: '', lines: commands.filter((c) => c.botId === b.bot.id).map((c) => `/${c.command} - ${c.description}`).join('\n'), actions: actions.filter((a) => a.botId === b.bot.id).map((a) => `${a.label}${a.scope === 'everywhere' ? '' : ` (${a.scope})`}`).join('\n') }); }}>
                 Commands{commands.some((c) => c.botId === b.bot.id) ? ` · ${commands.filter((c) => c.botId === b.bot.id).length}` : ''}
               </button>}
@@ -144,6 +153,16 @@ Content-Type: application/json
 
 Trust the hub's certificate by its fingerprint:
 ${state.hub?.fingerprint}`}</pre>
+        <p className="muted" style={{ fontSize: 13 }}>To tell people something through Nib (a task, a mention, an alert), post a notice instead. The same key is delivered once, so a tool can safely send it again after a timeout.</p>
+        <pre className="md-pre selectable">{`POST https://${state.hub?.host}:${state.hub?.port}/api/bot/notify
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "to": ["priya.raman"], "key": "task-0412-assigned", "kind": "task",
+  "title": "Check ISO-1001 rev B", "text": "Due Friday.",
+  "link": { "title": "Open in Project Opener", "url": "projectopener://open/…" } }
+
+GET https://${state.hub?.host}:${state.hub?.port}/api/bot/hello   checks the token (a tool's Test button)`}</pre>
       </details>
       {bots && bots.some((b) => b.active) && <Webhooks state={state} bots={bots.filter((b) => b.active)} />}
     </div>
