@@ -9,6 +9,8 @@ import { b64 as b64Chunked, createEncKeys } from '@dex/core/e2e';
 import type { EncKeyPair } from '@dex/core/e2e';
 import { DAMAGED_FILE } from '@dex/core/e2e-files';
 import { loadSecret } from './keys.ts';
+import { networkKind, preferGateway, rememberRoute } from './route.ts';
+import type { RouteMemory } from './route.ts';
 import type { MissedNotice } from '@dex/core/protocol';
 import { E2EClient } from '@dex/core/e2e-client';
 import { ed25519 } from '@noble/curves/ed25519.js';
@@ -141,7 +143,12 @@ interface MobileConfig {
   pendingNotes?: { version: string; notes: string } | null;
   /** Other offices this phone belongs to. */
   otherHubs?: HubTarget[];
+  /** The way to the hub that worked last, on Wi-Fi and on mobile data (route.ts). */
+  routes?: RouteMemory;
 }
+
+/** The Network Information API, where the WebView has it (Android's does). */
+const connection = () => (navigator as Navigator & { connection?: { type?: string; addEventListener?: (t: 'change', fn: () => void) => void } }).connection;
 
 const DEFAULTS: MobileConfig = {
   hub: null, displayName: null, officeAccount: null,
@@ -217,10 +224,47 @@ class MobileApp {
     setTimeout(() => void this.checkForUpdates(false), 8000);
     setInterval(() => void this.checkForUpdates(false), 4 * 3600 * 1000);
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.hiddenAt = Date.now(); else this.resumed();
       if (!document.hidden) void this.checkForUpdates(false, true);
       // a phone in a pocket counts as away
       if (this.session.state.kind === 'ready') void this.session.request('me.idle', { idle: document.hidden }).catch(() => {});
     });
+    // from Wi-Fi to mobile data (or back): reconnect the way that works there, now
+    connection()?.addEventListener?.('change', () => this.networkChanged());
+  }
+
+  // ---------------------------------------------------------- coming back
+  private hiddenAt = 0;
+  private network = networkKind(connection());
+
+  /**
+   * Back in the foreground. The connection usually survived (the background service keeps the
+   * app alive); if it is waiting to reconnect, try now rather than after the back-off; if the
+   * phone was away a while, make sure the connection still answers, and reconnect at once if not.
+   * The screen keeps showing what it had meanwhile (the shared UI says nothing for a few seconds).
+   */
+  private resumed(): void {
+    const away = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
+    this.hiddenAt = 0;
+    this.network = networkKind(connection());
+    if (this.session.retryNow()) return;
+    if (this.session.state.kind !== 'ready' || away < 60_000 || !this.config.hub) return;
+    const hub = this.config.hub;
+    const check = this.session.request('ping');
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('no answer')), 4000));
+    Promise.race([check, timeout]).catch(() => {
+      // a connection that died while the phone slept: start again, the quickest way first
+      if (this.config.hub === hub && this.session.state.kind === 'ready') this.session.connect(hub);
+    });
+  }
+
+  private networkChanged(): void {
+    const was = this.network;
+    this.network = networkKind(connection());
+    if (this.session.retryNow()) return;
+    const st = this.session.state;
+    // the office network's address means nothing on mobile data: go through the gateway now
+    if (was !== 'cellular' && this.network === 'cellular' && st.kind === 'ready' && st.via !== 'remote' && this.config.hub?.remote) this.session.connect(this.config.hub);
   }
 
   private async save(): Promise<void> {
@@ -334,6 +378,11 @@ class MobileApp {
       sign: (payload) => b64(ed25519.sign(payload, secret)),
       account: this.account,
       invite: this.invite,
+      // on mobile data, or where the gateway worked last time, the gateway first (route.ts)
+      preferRemote: () => preferGateway({
+        network: networkKind(connection()), memory: this.config.routes,
+        hasGateway: !!this.config.hub?.remote, hasOfficeAddress: !!this.config.hub?.host,
+      }),
       open: (target, h) => {
         const id = `ws${++this.sockSeq}`;
         this.sockets.set(id, h);
@@ -356,6 +405,7 @@ class MobileApp {
       }, target as HubTarget & { remote: { url: string; hubId: string } }, h),
     });
     s.on('state', (st: ClientState) => {
+      if (st.kind === 'ready') this.config.routes = rememberRoute(this.config.routes, networkKind(connection()), st.via ?? 'lan');
       if (st.kind === 'ready' || st.kind === 'pending') { this.config.hub = { ...st.target }; void this.save(); }
       if (st.kind === 'ready' || st.kind === 'rejected') s.setPair('');
       if (st.kind === 'ready') {
@@ -485,14 +535,17 @@ class MobileApp {
             if (cur && cur.hubId === b.id && cur.fp === b.fp && (cur.host !== h.address || outside) && (st.kind === 'offline' || outside)) {
               this.config.hub = { ...cur, host: h.address, port: b.port };
               void this.save();
-              this.session.connect(this.config.hub);
+              // found on the office network: use it, whatever the gateway preference
+              this.session.connect(this.config.hub, { via: 'lan' });
             }
           } catch { /* ignore malformed answers */ }
         }
         this.push();
       } catch { /* Wi-Fi off; try again */ }
-      const ready = this.session?.state.kind === 'ready';
-      await new Promise((r) => setTimeout(r, ready ? 30000 : 4000));
+      const st = this.session?.state;
+      // through the gateway on Wi-Fi (perhaps just arrived at the office): look more often
+      const wait = st?.kind !== 'ready' ? 4000 : st.via === 'remote' && networkKind(connection()) === 'wifi' ? 10000 : 30000;
+      await new Promise((r) => setTimeout(r, wait));
     }
   }
 

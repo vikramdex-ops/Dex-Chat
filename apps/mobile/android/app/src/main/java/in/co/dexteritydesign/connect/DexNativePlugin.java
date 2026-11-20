@@ -867,6 +867,10 @@ public class DexNativePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        // the app's own connection goes with its WebView: the background service waits for
+        // messages itself from now on (it used to keep believing the app was connected)
+        HubService.appConnected = false;
+        HubService.poke();
         for (WebSocket ws : sockets.values()) ws.cancel();
         sockets.clear();
         io.shutdownNow();
