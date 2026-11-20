@@ -145,6 +145,17 @@ function Invoke-SetupAsUser([string] $exe, [string] $arguments, [string] $label,
     }
   }
   Save-Screen "$label-stuck"
+  # answer the message as a person would (OK), so what the setup does next runs too
+  foreach ($p in Get-Process -Name $name -ErrorAction SilentlyContinue) {
+    $root = [System.Windows.Automation.AutomationElement]::RootElement
+    $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty), $p.Id
+    foreach ($w in $root.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)) {
+      $ok = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::NameProperty), 'OK'))
+      if ($ok) { ($ok.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke(); Write-Host '  clicked OK' }
+    }
+  }
+  $deadline = (Get-Date).AddSeconds(30)
+  while ((Get-Date) -lt $deadline -and @(Get-Process -Name $name -ErrorAction SilentlyContinue).Count) { Start-Sleep -Seconds 1 }
   Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force
   return 'stuck'
 }
