@@ -1423,7 +1423,7 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
 .update-help .faint { margin: 0; }
 .update-tried { list-style: none; margin: 0; padding: 0; width: 100%; border-top: 1px solid var(--stroke); }
 .update-tried li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--stroke); font-size: 12px; }
-.update-tried li > span:last-child { font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; flex: none; }
+.update-tried li > span:last-child { font-family: var(--font-mono); font-size: 11px; flex: none; }
 .update-tried .tried-ok { color: var(--accent-ink); }
 .update-tried .tried-no { color: var(--text-2); }
 

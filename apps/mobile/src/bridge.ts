@@ -19,7 +19,7 @@ import { DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION } from '@dex/core/pr
 import type { FileInfo, OpName, Ops, WindowsAccount } from '@dex/core/protocol';
 import { HubSession } from '@dex/core/session';
 import type { ClientState, HubTarget } from '@dex/core/session';
-import { parseFeed } from '@dex/core/feed';
+import { compareVersions, parseFeed } from '@dex/core/feed';
 import type { Channel, UpdateAsset, UpdateFeed } from '@dex/core/feed';
 import { checkSources, hubFeedPath, internetFeedUrl, pickUpdate, reportOf, tryRoutes } from '@dex/core/update-sources';
 import type { Route, UpdatePick, UpdateSource } from '@dex/core/update-sources';
@@ -649,7 +649,13 @@ class MobileApp {
       });
       return;
     }
+    // already downloaded this build (or a newer one): still ready to install
+    if (this.readyPath && this.choice && compareVersions(this.choice.feed.version, pick.feed.version) >= 0) {
+      this.setUpdate({ phase: 'ready', lastCheck: Date.now(), checked });
+      return;
+    }
     this.choice = pick;
+    this.readyPath = null;
     this.setUpdate({
       phase: 'available', lastCheck: Date.now(), checked,
       available: { version: pick.feed.version, notes: pick.feed.notes, releasedAt: pick.feed.releasedAt, mandatory: pick.mandatory, size: pick.asset.size, source: pick.source === 'hub-lan' || pick.source === 'hub-gateway' ? 'hub' : 'internet' },
