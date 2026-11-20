@@ -5,6 +5,9 @@
 name: app update test
 
 on:
+  # also when the test itself changes (a workflow can be started by hand only once it is on main)
+  push:
+    paths: [".github/workflows/app-update-test.yml", "apps/desktop/build/update-test.ps1"]
   workflow_dispatch:
     inputs:
       from:
@@ -28,8 +31,8 @@ jobs:
       - name: Download both setups
         shell: pwsh
         env:
-          FROM: ${{ inputs.from }}
-          TO: ${{ inputs.to }}
+          FROM: ${{ inputs.from || '0.1.106' }}
+          TO: ${{ inputs.to || '0.1.108' }}
         run: |
           $base = 'https://github.com/dexterity-admin/dexterity-connect/releases/download'
           New-Item -ItemType Directory -Force setups | Out-Null
