@@ -142,6 +142,18 @@ who covers. The notice is still delivered; the tool can tell the sender.
 Reference clients: `project_opener/lan/connect_bot.py` in Project Opener (Python, standard library
 only) and `crates/collab/src/connect.rs` in Dexterity Sheets (Rust, `/api/bot/message`).
 
+## Who is on leave: `GET /api/bot/leave`
+
+A tool that hands work over (Project Opener's Handover) can read Nib's leave note, once an
+administrator ticks **Reads leave** on the integration's row in Control room → Integrations. It is
+off for every integration until then (`403` with the reason), and the switch is audited as
+`bot.leave`.
+
+| Request | Answer |
+| --- | --- |
+| `GET /api/bot/leave?account=<sign-in>` | `{ "ok": true, "account", "today", "leave": [{ "id", "from", "to", "half", "current", "cover": { "account", "name" } \| null }] }`: that person's leave from today on, oldest first. Never the kind, the note or the handover. `404` when nobody has that sign-in. |
+| `GET /api/bot/leave/changes?since=<cursor>` | `{ "ok": true, "cursor", "accounts" }`: whose leave was noted or cancelled after `cursor` (kept 30 days). Without `since`, only the cursor to start from. Poll it, and read `leave` only for the accounts it names (or when the day changes, since `current` does). |
+
 ## Edge cases, and what happens
 
 | Case | Result |
@@ -163,11 +175,12 @@ only) and `crates/collab/src/connect.rs` in Dexterity Sheets (Rust, `/api/bot/me
 
 ## Inside the hub
 
-`apps/hub/src/toolnotices.ts` (the requests, the keys in `tool_notices`, the switch in
+`apps/hub/src/toolleave.ts` (the leave reads, the switch in `tool_leave_prefs`, the change cursor in
+`nib_leave_changes`; tested in `apps/hub/test/toolleave.test.ts`), `apps/hub/src/toolnotices.ts` (the requests, the keys in `tool_notices`, the switch in
 `tool_notice_prefs`, the rate limit), `Nib.toolLine` in `apps/hub/src/nib.ts` (the line in the
 conversation with Nib), routed from `botRoute` in `apps/hub/src/hub.ts`. Operations for the
 Control room: `admin.bots` (each integration with `viaNib`, `notices` in the last 7 days and
-`lastNotice`) and `admin.bots.notices { userId, viaNib }`.
+`lastNotice`) and `admin.bots.notices { userId, viaNib }`, `admin.bots.leave { userId, readsLeave }` (and `readsLeave` in `admin.bots`).
 
 **Tests**: `apps/hub/test/toolnotices.test.ts` (hello; a notice through Nib in the tool's name and
 once per key; no key; the administrator's switch and the fallback; a Space; someone on leave; every

@@ -93,6 +93,15 @@ export function Integrations({ state }: { state: AppState }) {
                   Notices through Nib
                 </label>
               )}
+              {b.active && (
+                <label className="faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }} title="On: this tool may read who is on leave and who covers (from Nib's leave note: dates and cover only), as Project Opener does to hand work over. Off by default.">
+                  <input type="checkbox" checked={b.readsLeave} disabled={!live} onChange={(e) => {
+                    const readsLeave = e.target.checked;
+                    void window.dex.request('admin.bots.leave', { userId: b.bot.id, readsLeave }).then(() => { toast(readsLeave ? 'It can now read who is on leave' : 'It can no longer read leave'); void load(); }).catch((err: Error) => toast(err.message, true));
+                  }} />
+                  Reads leave
+                </label>
+              )}
               {b.active && <button className="btn ghost" disabled={!live} onClick={() => { setCmdFor(cmdFor === b.bot.id ? null : b.bot.id); setCmdForm({ url: '', lines: commands.filter((c) => c.botId === b.bot.id).map((c) => `/${c.command} - ${c.description}`).join('\n'), actions: actions.filter((a) => a.botId === b.bot.id).map((a) => `${a.label}${a.scope === 'everywhere' ? '' : ` (${a.scope})`}`).join('\n') }); }}>
                 Commands{commands.some((c) => c.botId === b.bot.id) ? ` · ${commands.filter((c) => c.botId === b.bot.id).length}` : ''}
               </button>}

@@ -75,6 +75,7 @@ import { MeetPublic, PublicPageError } from './meet-public.ts';
 import { MissedNotices } from './missed.ts';
 import { WebPush, makeVapidKeys } from './webpush.ts';
 import { Nib, NibError } from './nib.ts';
+import { ToolLeaveReads } from './toolleave.ts';
 import { Holidays, HolidaysError } from './holidays.ts';
 import { NoticeBoard, NoticeError } from './notices.ts';
 import { Seating, SeatingError } from './seating.ts';
@@ -237,6 +238,8 @@ export class Hub {
   readonly nib: Nib;
   /** Office tools telling people things through Nib (toolnotices.ts, docs/TOOL-NOTICES.md). */
   readonly toolNotices: ToolNotices;
+  /** Office tools reading who is on leave, when an administrator allows it (toolleave.ts). */
+  readonly toolLeave: ToolLeaveReads;
   /** Meeting threads, action points and recaps (meet-threads.ts). */
   readonly meetThreads: MeetThreads;
   /** The notice board: the issuing desks' register of notices (notices.ts, docs/ANNOUNCEMENTS.md). */
@@ -586,6 +589,15 @@ export class Hub {
     };
     // bots asking Nib about leave, and jobs leaving people on leave out
     this.botflows.net.leave = (uid, date) => this.nib.leaveInfo(uid, date);
+    // office tools (Project Opener's Handover) reading leave, when an administrator allows it
+    this.toolLeave = new ToolLeaveReads({
+      db: this.store.db,
+      userById: (id) => this.store.userById(id),
+      userForAccount: (a) => this.store.userForAccount(a),
+      leaveFrom: (uid, date) => this.nib.leaveFrom(uid, date),
+      today: () => this.nib.todayDate(),
+    });
+    this.nib.onLeaveChanged = (uid) => this.toolLeave.leaveChanged(uid);
     this.botflows.jobs.away = (uid, date) => this.nib.awayOn(uid, date);
     this.meetThreads = new MeetThreads({
       db: this.store.db, messaging: this.messaging,
@@ -1033,6 +1045,7 @@ export class Hub {
       return;
     }
     // tool notices (toolnotices.ts, docs/TOOL-NOTICES.md): a tool's Test button, and notices through Nib
+    { const leave = this.toolLeave.handle(bot, req.method ?? '', req.url ?? '/'); if (leave) { req.resume(); reply(leave.status, leave.body); return; } }
     if (req.method === 'GET' && req.url?.split('?')[0] === '/api/bot/hello') { req.resume(); reply(200, this.toolNotices.hello(bot)); return; }
     if (req.method === 'POST' && req.url?.split('?')[0] === '/api/bot/notify') {
       let raw = '';
@@ -1681,7 +1694,16 @@ export class Hub {
 
       case 'admin.bots':
         this.requireAdmin(conn);
-        return this.store.bots().map((b) => ({ ...b, viaNib: this.toolNotices.viaNib(b.bot.id), ...this.toolNotices.stats(b.bot.id) })) satisfies Ops['admin.bots']['res'];
+        return this.store.bots().map((b) => ({ ...b, viaNib: this.toolNotices.viaNib(b.bot.id), ...this.toolNotices.stats(b.bot.id), readsLeave: this.toolLeave.readsLeave(b.bot.id) })) satisfies Ops['admin.bots']['res'];
+
+      case 'admin.bots.leave': {
+        const me = this.requireAdmin(conn);
+        const bot = typeof d.userId === 'string' ? this.store.userById(d.userId) : null;
+        if (!bot || bot.role !== 'bot') throw new OpError('Integration not found.');
+        this.toolLeave.setReadsLeave(bot.id, d.readsLeave === true);
+        this.store.audit(me.id, 'bot.leave', bot.id, { name: bot.displayName, readsLeave: d.readsLeave === true });
+        return { ok: true, readsLeave: this.toolLeave.readsLeave(bot.id) } satisfies Ops['admin.bots.leave']['res'];
+      }
 
       case 'admin.bots.notices': {
         const me = this.requireAdmin(conn);

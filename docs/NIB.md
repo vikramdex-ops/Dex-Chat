@@ -290,6 +290,11 @@ It shows exactly what will happen, then **Do it** does all of it:
 | Day sheets | No nudges on those days; one grouped line in the management register. |
 | Back | The first time you open the app on your return day, Nib's tray opens on **Welcome back**: conversations that moved and where you were mentioned, work your cover logged against your items, reminders moved to today, and today's meetings. |
 
+**Office tools see it too.** An integration an administrator allowed to read leave
+([`TOOL-NOTICES.md`](TOOL-NOTICES.md#who-is-on-leave-get-apibotleave)) reads a person's leave (the dates and the cover, never the kind, note or handover) and is told when it
+changes. Project Opener uses it to fill in its Handover page and to hand work over when the leave starts
+and back when it ends.
+
 The bot maker's **Leave note** template gains an end action, **Nib marks the person away**
 (`do: "away"`), that hands its answers to this skill, so a bot built from it does all of the above
 too.
@@ -353,7 +358,9 @@ a hub whose administrator saved Nib's settings keeps exactly what was saved.
 **Tables** (hub, `apps/hub/src/nib.ts`): `nib_items` (one per activity per day), `nib_days` (the
 givers picked, state, notes, when sent, asks), `nib_asks` (each ask: level, time), `nib_posts`
 (which card was posted to whom), `nib_snapshots` (the register as sent), `nib_leave`, `nib_acks`,
-`nib_prefs`. The configuration is one JSON value in `meta`.
+`nib_prefs`. The configuration is one JSON value in `meta`. Office tools' leave reads live in
+`apps/hub/src/toolleave.ts`: `tool_leave_prefs` (which integration may read leave) and
+`nib_leave_changes` (whose leave changed, kept 30 days).
 
 **Cards** are messages from Nib whose `clientId` is `nib-<kind>-<ref>`. The hub adds
 `message.nib = { kind, ref }` to them (a view extra, like Decisions); the app draws the card from

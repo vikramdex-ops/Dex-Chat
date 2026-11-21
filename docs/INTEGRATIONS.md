@@ -415,6 +415,14 @@ note are in [`NIB.md`](NIB.md). The operations the app uses:
 
 Events: `nib.me` (your day changed) and `nib.changed { date, kinds }` (cards to draw again).
 
+#### Leave for office tools
+
+An integration can also read who is on leave and who covers (Nib's leave note: dates and cover only),
+once an administrator ticks **Reads leave** on its row in Control room → Integrations (off by default,
+audited as `bot.leave`): `GET /api/bot/leave?account=` and `GET /api/bot/leave/changes?since=`.
+Project Opener uses it to fill in and run its Handover. The contract is in
+[`TOOL-NOTICES.md`](TOOL-NOTICES.md#who-is-on-leave-get-apibotleave).
+
 ### Integrations with their own logic (sessions)
 
 An integration that decides each step itself can still keep its state on the hub, so it survives
@@ -800,7 +808,7 @@ the pointer; a reference cannot be edited.
 | --- | --- | --- |
 | Hopper | File alerts and link notices through the Bot API | — |
 | Slate | — | Notes open in Slate and its saves come back into the note; text, CSV and log attachments open in Slate |
-| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`); mentions, tasks, handovers and watcher hits as notices through Nib ([`TOOL-NOTICES.md`](TOOL-NOTICES.md)), set up once in Project Opener's *Settings → Connect and mail* | `projectopener://` links in messages open the project |
+| Project Opener | Project menu → *Share to Dexterity Connect…* (title, client, description, `projectopener://open/<id>`); mentions, tasks, handovers and watcher hits as notices through Nib ([`TOOL-NOTICES.md`](TOOL-NOTICES.md)), set up once for the office through the Team Hub; its Handover follows the leave note (*Reads leave*) | `projectopener://` links in messages open the project |
 | Sleuth | Result menu → *Share to Dexterity Connect…* (the file and the text found) | Line numbers (`6"-P-1001-A1B`) and drawing numbers (`ISO-1001-01`) in messages run that search in Sleuth (`sleuth://search?q=`) |
 | Datum | Component page → *Share* (key figures, dimensions, `datum://c/<id>`) | `datum://` links open the component, calculator or module page |
 | Dexterity Sheets | Being built on the Sheets side (not released yet): *Share to Dexterity Connect* (`dexconnect://share`), and mention and assignment notices from the Sheets server through the Bot API. Connect is ready for both | `dexterity://open/…?at=` links open the workbook at the cell; Nib answers "what's assigned to me in Sheets?" from the Sheets server's read API (below) |
