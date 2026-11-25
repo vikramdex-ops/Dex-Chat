@@ -19,7 +19,7 @@ export function ffmpegCandidates(configured: string | null, env: NodeJS.ProcessE
   const out: string[] = [];
   if (configured) out.push(configured);
   if (env.DEX_FFMPEG) out.push(env.DEX_FFMPEG);
-  for (const dir of (env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : ':')) if (dir.trim()) out.push(path.join(dir.trim(), exe));
+  for (const dir of (env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : ':')) if (dir.trim()) out.push((platform === 'win32' ? path.win32 : path.posix).join(dir.trim(), exe));
   if (platform === 'win32') {
     const pf = env.ProgramFiles ?? 'C:\\Program Files';
     out.push(

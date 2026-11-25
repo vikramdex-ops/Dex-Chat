@@ -239,15 +239,17 @@ test('a hub that was running before the names: they fill only the empty seats, o
   const doss = await join('doss', 'Doss Kumar');
   const d = await owner.request('seating.draft', { moves: [{ seatId: 'W-A31', to: P(me(priya)) }, { seatId: 'W-C30', to: P(me(mukesh)) }, { seatId: 'W-A33', to: { kind: 'hot' } }] });
   await owner.request('seating.apply', { id: d.id });
-  owner.disconnect();
+  // everyone's id now: their apps are offline while the hub restarts
+  const id = { priya: me(priya), doss: me(doss) };
+  for (const c of [owner, priya, mukesh, doss]) c.disconnect();
   await hub.stop();
 
   hub = await startHub(dir);
   let h = hub.seating.holders();
-  assert.deepEqual(h['W-A31'], P(me(priya)), 'Priya keeps the seat the drawing gave Sharada');
+  assert.deepEqual(h['W-A31'], P(id.priya), 'Priya keeps the seat the drawing gave Sharada');
   assert.deepEqual(h['W-A33'], { kind: 'hot' });
   assert.equal(h['W-A40'], undefined, 'Mukesh is already seated, so his name is not put on W-A40');
-  assert.deepEqual(h['W-A50'], P(me(doss)), 'Doss, already here with no seat, takes his named seat');
+  assert.deepEqual(h['W-A50'], P(id.doss), 'Doss, already here with no seat, takes his named seat');
   // 40 names, less Sharada's and Madhu's seats (held), Mukesh (seated elsewhere) and Doss (claimed)
   assert.equal(named(h).length, 36);
   const revs = hub.store.db.prepare('SELECT rev, kind, note FROM seat_revs ORDER BY n').all() as Array<{ rev: string; kind: string; note: string }>;

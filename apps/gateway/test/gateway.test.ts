@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import WebSocket from 'ws';
 import { loadOrCreateCertificate } from '../../hub/src/tls.ts';
 
@@ -26,15 +26,24 @@ const homeHubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dexgw-home-'));
 
 before(async () => {
   const root = path.resolve(import.meta.dirname, '..');
-  const bin = path.resolve(root, '../../node_modules/.bin/wrangler');
+  // wrangler's own script under this node: the .bin shim is a shell script that Windows cannot spawn
+  const bin = path.resolve(root, '../../node_modules/wrangler/bin/wrangler.js');
+  const win = process.platform === 'win32';
   const s = net.createServer();
   await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
   const port = (s.address() as net.AddressInfo).port;
   await new Promise<void>((r) => s.close(() => r()));
+  // an inspector port of its own: wrangler's default (9229) clashes with the hub's remote tests running alongside
+  const i = net.createServer();
+  await new Promise<void>((r) => i.listen(0, '127.0.0.1', () => r()));
+  const inspector = (i.address() as net.AddressInfo).port;
+  await new Promise<void>((r) => i.close(() => r()));
   // a fresh state directory: wrong passcodes and the remembered hub start from nothing
-  const child = spawn(bin, ['dev', '--ip', '127.0.0.1', '--port', String(port), '--config', path.join(root, 'wrangler.jsonc'), '--persist-to', persist, '--show-interactive-dev-session=false', '--log-level', 'info'],
-    { cwd: root, detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  stop = async () => { try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* gone */ } };
+  const child = spawn(process.execPath, [bin, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(inspector), '--config', path.join(root, 'wrangler.jsonc'), '--persist-to', persist, '--show-interactive-dev-session=false', '--log-level', 'info'],
+    { cwd: root, detached: !win, windowsHide: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.on('error', () => { /* reported through 'exit' */ });
+  // the whole tree (wrangler and its workerd): a process group here, taskkill /T on Windows
+  stop = async () => { try { if (win) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-child.pid!, 'SIGKILL'); } catch { /* gone */ } };
   try {
     await new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('wrangler did not start in 90 s')), 90_000);

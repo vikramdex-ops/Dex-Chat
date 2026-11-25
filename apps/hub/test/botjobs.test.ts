@@ -128,7 +128,7 @@ test('a job for the maker’s team leaves people on leave out; a failure is told
   const { hub, owner, priya, ravi, at } = await setup();
   await owner.request('admin.org.setProfile', { userId: me(priya), managerId: me(owner) });
   await owner.request('admin.org.setProfile', { userId: me(ravi), managerId: me(owner) });
-  await ravi.request('me.update', { ooo: { until: monday(1, 9), message: 'On leave', delegateId: null } });
+  await ravi.request('me.update', { ooo: { until: Math.max(monday(1, 9), Date.now() + 7 * 86400_000), message: 'On leave', delegateId: null } });
   const ts = template('friday-timesheet');
   ts.jobs![0].when = 'every Monday at 17:00';
   const made = await owner.request('botflow.make', { definition: ts, scope: 'office' });
