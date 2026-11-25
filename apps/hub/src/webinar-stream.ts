@@ -160,6 +160,8 @@ export class LiveStream {
     let buf = '';
     p.stdout!.setEncoding('utf8');
     p.stdout!.on('data', (chunk: string) => {
+      // progress still arriving from a stopped (or replaced) ffmpeg never turns the status back to live
+      if (this.proc !== p) return;
       buf += chunk;
       let i: number;
       while ((i = buf.search(/progress=(continue|end)\r?\n/)) >= 0) {
