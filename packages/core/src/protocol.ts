@@ -325,6 +325,8 @@ export interface Conversation {
   muted: boolean;
   /** Each member's last read message id (read receipts). */
   reads: Record<string, string | null>;
+  /** Each member's newest message received on one of their devices (delivery receipts; missing on older hubs). */
+  delivered?: Record<string, string>;
   /** Viewer's own organisation: pinned to the top (when), their section name, muted until. */
   pinnedAt: number | null;
   section: string | null;
@@ -966,6 +968,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'conv.addMembers': { req: { convId: string; userIds: string[] }; res: Conversation };
   'conv.update': { req: { convId: string; name?: string; topic?: string | null }; res: Conversation };
   'conv.read': { req: { convId: string; messageId: string }; res: Conversation };
+  /** This device received messages up to these (delivery receipts), several conversations at once. */
+  'conv.delivered': { req: { items: Array<{ convId: string; messageId: string }> }; res: { ok: true } };
   'conv.mute': { req: { convId: string; muted: boolean; /** mute until this time (then notifications come back) */ until?: number | null }; res: Conversation };
   /** The viewer's own sidebar: pin to the top, or file under a section of their own. */
   'conv.organise': { req: { convId: string; pinned?: boolean; section?: string | null }; res: Conversation };
@@ -1190,6 +1194,8 @@ export interface Events extends FlowEvents, BotEvents, NibEvents {
   'msg.removed': { convId: string; messageIds: string[] };
   'typing': { convId: string; userId: string; parentId: string | null };
   'read': { convId: string; userId: string; messageId: string };
+  /** To the writers of the messages it covers: someone's device received them. */
+  'delivered': { convId: string; userId: string; messageId: string };
   'room.ring': { room: RoomInfo; from: string };
   'room.updated': RoomInfo;
   'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number; /** a host ended it for everyone */ endedBy?: string };

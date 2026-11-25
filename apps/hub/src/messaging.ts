@@ -250,6 +250,8 @@ export class Messaging {
     add('conv_members', 'section', 'TEXT');
     add('conv_members', 'muted_until', 'INTEGER');
     add('conv_members', 'moderator', 'INTEGER NOT NULL DEFAULT 0');
+    // delivery receipts: the newest message one of the person's devices has received
+    add('conv_members', 'last_delivered_id', 'TEXT');
     add('conversations', 'archived', 'INTEGER NOT NULL DEFAULT 0');
     add('conversations', 'post_policy', "TEXT NOT NULL DEFAULT 'everyone'");
     // hubs upgraded from a version without search: index what is already there
@@ -377,6 +379,7 @@ export class Messaging {
       createdBy: c.created_by, createdAt: c.created_at, members: this.members(c.id), lastMessage: this.preview(c.id),
       joined: !!m, unread, mentions, lastReadId: m?.last_read_id ?? null, muted: !!m?.muted,
       reads: this.readsFor(c.id, viewer),
+      delivered: this.deliveredFor(c.id),
       pinnedAt: m?.pinned_at ?? null, section: m?.section ?? null, mutedUntil: m?.muted_until ?? null,
       archived: !!c.archived, postPolicy: c.post_policy ?? 'everyone',
       moderators: (this.db.prepare('SELECT user_id FROM conv_members WHERE conv_id = ? AND moderator = 1').all(c.id) as Array<{ user_id: string }>).map((r) => r.user_id),
@@ -391,11 +394,11 @@ export class Messaging {
   private viewMany(rows: ConvRow[], viewer: string): Conversation[] {
     if (!rows.length) return [];
     const ids = new Set(rows.map((c) => c.id));
-    const byConv = new Map<string, Array<{ user_id: string; last_read_id: string | null; moderator: number; receipts: number }>>();
+    const byConv = new Map<string, Array<{ user_id: string; last_read_id: string | null; last_delivered_id: string | null; moderator: number; receipts: number }>>();
     // everyone in the conversations the viewer is in (a conversation browsed, not joined, is looked up by itself below)
-    for (const r of this.db.prepare(`SELECT cm.conv_id, cm.user_id, cm.last_read_id, cm.moderator, COALESCE(u.receipts, 1) AS receipts
+    for (const r of this.db.prepare(`SELECT cm.conv_id, cm.user_id, cm.last_read_id, cm.last_delivered_id, cm.moderator, COALESCE(u.receipts, 1) AS receipts
       FROM conv_members mine JOIN conv_members cm ON cm.conv_id = mine.conv_id LEFT JOIN users u ON u.id = cm.user_id
-      WHERE mine.user_id = ? ORDER BY cm.conv_id, cm.joined_at`).all(viewer) as Array<{ conv_id: string; user_id: string; last_read_id: string | null; moderator: number; receipts: number }>) {
+      WHERE mine.user_id = ? ORDER BY cm.conv_id, cm.joined_at`).all(viewer) as Array<{ conv_id: string; user_id: string; last_read_id: string | null; last_delivered_id: string | null; moderator: number; receipts: number }>) {
       if (!ids.has(r.conv_id)) continue;
       let list = byConv.get(r.conv_id);
       if (!list) byConv.set(r.conv_id, list = []);
@@ -417,6 +420,7 @@ export class Messaging {
         createdBy: c.created_by, createdAt: c.created_at, members: list.map((r) => r.user_id), lastMessage: this.preview(c.id),
         joined: !!mine, unread: mine ? unread.get(c.id) ?? 0 : 0, mentions: mine ? mentions.get(c.id) ?? 0 : 0, lastReadId: mine?.last_read_id ?? null, muted: !!o?.muted,
         reads: Object.fromEntries(list.filter((r) => r.user_id === viewer || (share && r.receipts !== 0)).map((r) => [r.user_id, r.last_read_id])),
+        delivered: Object.fromEntries(list.flatMap((r) => (r.last_delivered_id ? [[r.user_id, r.last_delivered_id] as const] : []))),
         pinnedAt: o?.pinned_at ?? null, section: o?.section ?? null, mutedUntil: o?.muted_until ?? null,
         archived: !!c.archived, postPolicy: c.post_policy ?? 'everyone',
         moderators: list.filter((r) => r.moderator === 1).map((r) => r.user_id),
@@ -525,6 +529,16 @@ export class Messaging {
     const mine = rows.find((r) => r.user_id === viewer);
     const share = mine?.receipts !== 0;
     return Object.fromEntries(rows.filter((r) => r.user_id === viewer || (share && r.receipts !== 0)).map((r) => [r.user_id, r.last_read_id]));
+  }
+
+  /**
+   * Who has the conversation's messages on a device, up to where (delivery receipts). Delivered says
+   * nothing about reading, so it is shown whatever the person's read receipts are, like a postman's
+   * signature rather than a reply.
+   */
+  private deliveredFor(convId: string): Record<string, string> {
+    const rows = this.db.prepare('SELECT user_id, last_delivered_id FROM conv_members WHERE conv_id = ? AND last_delivered_id IS NOT NULL').all(convId) as Array<{ user_id: string; last_delivered_id: string }>;
+    return Object.fromEntries(rows.map((r) => [r.user_id, r.last_delivered_id]));
   }
 
   private receiptsOn(userId: string): boolean {
@@ -836,6 +850,24 @@ export class Messaging {
           this.pushConv(c.id, [me.id]);
         }
         return this.view(c, me.id);
+      }
+
+      case 'conv.delivered': {
+        // a device of mine received these messages: each item moves my "delivered up to" mark on, never
+        // back. Only the people who wrote the messages it covers are told (not every member of a big Space).
+        const items = Array.isArray(d.items) ? d.items.slice(0, 300) : [];
+        for (const it of items as Array<Record<string, unknown>>) {
+          if (!it || typeof it !== 'object' || typeof it.convId !== 'string' || typeof it.messageId !== 'string') continue;
+          const row = this.db.prepare('SELECT last_delivered_id FROM conv_members WHERE conv_id = ? AND user_id = ?').get(it.convId, me.id) as { last_delivered_id: string | null } | undefined;
+          if (!row) continue;
+          const msg = this.message(it.messageId);
+          if (!msg || msg.conv_id !== it.convId || msg.id <= (row.last_delivered_id ?? '')) continue;
+          const writers = (this.db.prepare(`SELECT DISTINCT author_id FROM (SELECT author_id FROM messages WHERE conv_id = ? AND id > ? AND id <= ? AND system IS NULL
+            ORDER BY id DESC LIMIT 200) WHERE author_id != ?`).all(msg.conv_id, row.last_delivered_id ?? '', msg.id, me.id) as Array<{ author_id: string }>).map((r) => r.author_id);
+          this.db.prepare('UPDATE conv_members SET last_delivered_id = ? WHERE conv_id = ? AND user_id = ?').run(msg.id, msg.conv_id, me.id);
+          if (writers.length) this.deliver(writers, 'delivered', () => ({ convId: msg.conv_id, userId: me.id, messageId: msg.id }));
+        }
+        return { ok: true } satisfies Ops['conv.delivered']['res'];
       }
 
       case 'conv.mute': {

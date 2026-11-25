@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parsePath, toUnc, toLocal, findPaths, shareableText, localText, viewPath, cleanMappings, networkRoots, candidates, folderOf, toFileUrl, under,
+  parsePath, toUnc, toLocal, findPaths, pathAt, shareableText, localText, viewPath, cleanMappings, networkRoots, candidates, folderOf, toFileUrl, under,
 } from '../src/sharepaths.ts';
 import type { DriveMap } from '../src/sharepaths.ts';
 
@@ -101,8 +101,24 @@ test('find: paths in running text, with the full stop at the end of a sentence l
   const text = 'The GA is at X:\\P12513\\Iso\\GA-101.pdf. Standards: \\\\nas01\\Standards\\Rev4\\, and see "Z:\\P 12\\GA 1.pdf" or file:///X:/P12513/a%20b.pdf!';
   assert.deepEqual(findPaths(text).map((s) => s.path), ['X:\\P12513\\Iso\\GA-101.pdf', '\\\\nas01\\Standards\\Rev4\\', 'Z:\\P 12\\GA 1.pdf', 'file:///X:/P12513/a%20b.pdf']);
   assert.deepEqual(findPaths('(see X:\\Jobs\\P1)').map((s) => s.path), ['X:\\Jobs\\P1']);
-  assert.deepEqual(findPaths('X:\\Jobs\\P-12 (Rev B)').map((s) => s.path), ['X:\\Jobs\\P-12'], 'unquoted paths end at a space');
+  assert.deepEqual(findPaths('Look at X:\\Jobs\\P-12 (Rev B)').map((s) => s.path), ['X:\\Jobs\\P-12'], 'in a sentence, an unquoted last name ends at a space');
+  assert.deepEqual(findPaths('X:\\Jobs\\P-12 (Rev B)').map((s) => s.path), ['X:\\Jobs\\P-12 (Rev B)'], 'a path on a line of its own takes the whole line');
   assert.deepEqual(findPaths('https://example.com/a and mailto:x and 10:30 and C:Windows and abc:\\x').map((s) => s.path), []);
+});
+
+test('find: names with spaces, unquoted, as they are copied from Explorer', () => {
+  const full = 'Z:\\J123– DM-ACF PACKAGE- TECHNIMONT\\2- Piping\\2- P&IDs\\ACF_MB\\Received on (18-07-2026)\\ACF_MB.pdf';
+  assert.deepEqual(findPaths(full).map((s) => s.path), [full], 'the whole path, not up to the first space');
+  assert.deepEqual(findPaths(`Lokesh sent ${full} for review.`).map((s) => s.path), [full], 'in a sentence too');
+  const unc = '\\\\192.168.0.200\\Project\\J123– DM-ACF PACKAGE- TECHNIMONT\\2- Piping';
+  assert.deepEqual(findPaths(`Isos: ${unc} has them`).map((s) => s.path), [unc], 'a UNC path carries on through folders with spaces, and a name hanging on a dash takes its next word');
+  assert.deepEqual(findPaths(`Isos in ${unc}\\Area 3 drawings now`).map((s) => s.path), [`${unc}\\Area`], 'in a sentence a last name without an extension still ends at its space');
+  assert.deepEqual(findPaths('See X:\\P12\\GA list.xlsx and reply').map((s) => s.path), ['X:\\P12\\GA list.xlsx'], 'words up to an extension finish the file name');
+  assert.deepEqual(findPaths('See X:\\P12\\GA.pdf and notes.txt').map((s) => s.path), ['X:\\P12\\GA.pdf'], 'a name with its extension already ends at the space');
+  assert.deepEqual(findPaths('X:\\Jobs and/or Y:\\Old').map((s) => s.path), ['X:\\Jobs', 'Y:\\Old'], 'a slash in a sentence is not the backslash path going on');
+  assert.deepEqual(findPaths('X:\\Jobs\\P12 or \\\\nas01\\Old\\P12').map((s) => s.path), ['X:\\Jobs\\P12', '\\\\nas01\\Old\\P12'], 'a second path is not a folder of the first');
+  assert.deepEqual(findPaths('F:\\Site photos\\Day 1\\').map((s) => s.path), ['F:\\Site photos\\Day 1\\'], 'F: is a drive, not file://');
+  assert.equal(pathAt(`x ${full}`, 2)?.path, full, 'drawn piece by piece, the same path');
 });
 
 test('find: Hindi and Tamil text around paths', () => {

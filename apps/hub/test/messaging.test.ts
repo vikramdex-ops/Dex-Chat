@@ -33,6 +33,32 @@ test('messages arrive live, count as unread for others and clear when read', asy
   assert.equal((await receipt).userId, me(priya));
 });
 
+test('delivery receipts: a device that got a message tells its writer once; never back, never to others', async () => {
+  const { owner, priya, ravi } = await office();
+  const space = await owner.request('conv.create', { kind: 'space', name: 'Piping P-14', members: [me(priya), me(ravi)] });
+  const first = await send(owner, space.id, 'GA drawings are in');
+  const second = await send(ravi, space.id, 'Isos follow tomorrow');
+  // Priya's device received both: Vikram and Ravi each hear it, Priya herself does not
+  const toOwner = nextEvent<{ userId: string; messageId: string }>(owner, 'delivered');
+  const toRavi = nextEvent<{ userId: string; messageId: string }>(ravi, 'delivered');
+  let priyaHeard = false;
+  priya.on('event', (name: string) => { if (name === 'delivered') priyaHeard = true; });
+  await priya.request('conv.delivered', { items: [{ convId: space.id, messageId: second.id }] });
+  assert.deepEqual([(await toOwner).userId, (await toOwner).messageId], [me(priya), second.id]);
+  assert.equal((await toRavi).userId, me(priya));
+  assert.equal(priyaHeard, false);
+  // the mark is in the conversation as everyone sees it, and an older message does not move it back
+  await priya.request('conv.delivered', { items: [{ convId: space.id, messageId: first.id }] });
+  const seen = (await owner.request('conv.list')).find((c) => c.id === space.id)!;
+  assert.equal(seen.delivered?.[me(priya)], second.id);
+  // a conversation Priya is not in, or a message from elsewhere, is ignored
+  const other = await owner.request('conv.create', { kind: 'space', name: 'Bids', private: true, members: [me(ravi)] });
+  const hidden = await send(owner, other.id, 'Tender due Friday');
+  await priya.request('conv.delivered', { items: [{ convId: other.id, messageId: hidden.id }, { convId: space.id, messageId: hidden.id }] });
+  assert.equal((await owner.request('conv.list')).find((c) => c.id === other.id)!.delivered?.[me(priya)], undefined);
+  assert.equal((await owner.request('conv.list')).find((c) => c.id === space.id)!.delivered?.[me(priya)], second.id);
+});
+
 test('open Spaces can be found and joined; private ones stay hidden', async () => {
   const { owner, priya, ravi } = await office();
   const open = await owner.request('conv.create', { kind: 'space', name: 'Site visits' });

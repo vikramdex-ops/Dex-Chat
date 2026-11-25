@@ -9,9 +9,9 @@ import { plainSnippet } from '../localsearch/tokenize.ts';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { HASHTAG_RE, STICKER_RE } from '@dex/core';
 import type { Conversation, Message, PublicUser } from '@dex/core';
-import { Icon, Popover } from '../ui.tsx';
+import { Icon, Popover, useToast } from '../ui.tsx';
 import { addConversation, chatState, useChat } from './store.ts';
-import { mayStartPath, pathAt } from '@dex/core/sharepaths';
+import { folderOf, mayStartPath, pathAt } from '@dex/core/sharepaths';
 import { bookName, parseWorkbookLink } from '@dex/core/sheets';
 import type { PathSpan } from '@dex/core/sharepaths';
 import { PATH_WORDS, myDrives, toLocalText, usePathView } from './sharepaths.ts';
@@ -167,13 +167,37 @@ function SpaceRef({ id }: { id: string }) {
  */
 function SharePath({ span, ctx }: { span: PathSpan; ctx: Ctx }) {
   const v = usePathView(span.path, ctx.authorId, ctx.meId);
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
   if (!v) return <>{span.raw}</>;
   const text = span.quoted ? span.raw.replace(span.path, v.shown) : v.shown;
-  const title = v.unc && v.unc.toLowerCase() !== v.shown.replace(/\\$/, '').toLowerCase() ? v.unc
+  const where = v.unc && v.unc.toLowerCase() !== v.shown.replace(/\\$/, '').toLowerCase() ? v.unc
     : v.hint ? tr(PATH_WORDS.maybe) : v.scope === 'local' ? tr(v.owner === 'me' ? PATH_WORDS.mine : PATH_WORDS.theirs) : undefined;
+  // the path is a way in: a file opens in its own program, a folder in Explorer, through whichever form
+  // works on this PC; where nothing can be opened (a phone, another PC's C:), a click copies it
+  const canOpen = !!v.open && !!window.dex.openFolder && (v.folder || !!window.dex.openSharePath);
+  const fail = (e: Error) => toast(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), true);
+  const act = (folder: boolean) => {
+    if (busy) return;
+    if (!canOpen) { void navigator.clipboard.writeText(v.shown).then(() => toast(tr(PATH_WORDS.copied))); return; }
+    setBusy(true);
+    const p = folder || v.folder ? window.dex.openFolder!(folderOf(v.open!, v.folder)) : window.dex.openSharePath!(v.open!);
+    void p.catch(fail).finally(() => setBusy(false));
+  };
+  const title = [canOpen ? tr(v.folder ? PATH_WORDS.openFolder : PATH_WORDS.openFile) : tr(PATH_WORDS.copy), where].filter(Boolean).join('\n');
   return (
-    <span className={`share-path${v.hint ? ' maybe' : ''}${v.scope === 'local' ? ' local' : ''}`} translate="no" title={title} data-unc={v.unc ?? undefined}>
-      {text}{v.hint ? <span className="sr-only"> {tr(PATH_WORDS.maybeShort)}</span> : null}
+    <span className={`share-path${v.hint ? ' maybe' : ''}${v.scope === 'local' ? ' local' : ''}${canOpen ? ' opens' : ''}${busy ? ' busy' : ''}`} translate="no" data-unc={v.unc ?? undefined}>
+      <span className="share-path-go" role={canOpen ? 'link' : 'button'} tabIndex={0} title={title}
+        onClick={(e) => { if (window.getSelection()?.toString()) return; e.stopPropagation(); act(false); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); act(false); } }}>
+        {text}
+      </span>
+      {canOpen && !v.folder && (
+        <button type="button" className="share-path-folder" title={tr(PATH_WORDS.openItsFolder)} aria-label={tr(PATH_WORDS.openItsFolder)} onClick={(e) => { e.stopPropagation(); act(true); }}>
+          <Icon name="drawer" size={12} />
+        </button>
+      )}
+      {v.hint ? <span className="sr-only"> {tr(PATH_WORDS.maybeShort)}</span> : null}
     </span>
   );
 }

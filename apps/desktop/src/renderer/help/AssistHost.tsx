@@ -34,10 +34,24 @@ export function helpCommands(): Array<{ id: string; label: string; icon: IconNam
 export function HelpMenuItems({ onDone }: { onDone: () => void }) {
   const staff = useHelp((s) => s.staff);
   const queue = useHelp((s) => s.queue.filter((t) => t.status === 'open').length);
+  // your own request still open (the newest), so the entry says where it stands and opens it
+  const mine = useHelp((s) => s.mine);
+  const open = useMemo(() => mine.filter((t) => t.status !== 'closed').sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null, [mine]);
   const it = isIt({ ...helpNow(), staff });
   return (
     <>
-      <button role="menuitem" onClick={() => { onDone(); openHelp({ view: 'me' }); }}><Icon name="info" size={16} />Help me…</button>
+      {/* Help is a service, not a setting: a framed cell of its own with the ring-buoy mark and a line
+          saying who answers, so it is found at a glance among the menu's plain rows */}
+      <button role="menuitem" className="help-entry" onClick={() => { onDone(); openHelp(open ? { view: 'ticket', id: open.id } : { view: 'me' }); }}
+        aria-label={open ? `Help me: your request ${ticketRef(open.number)} is ${open.session ? 'in session' : open.status === 'taken' ? 'with IT' : 'in the queue'}` : 'Help me: ask IT for help'}>
+        <span className="help-mark" aria-hidden="true"><Icon name="lifebuoy" size={18} /></span>
+        <span className="help-words">
+          <span className="help-title">Help me…</span>
+          <span className="help-sub">{open ? `${ticketRef(open.number)} · ${open.session ? 'In session' : open.status === 'taken' ? 'With IT' : 'In the queue'}` : 'Something not working? IT answers'}</span>
+        </span>
+        <span className={`help-tag mono${open?.session ? ' live' : ''}`} aria-hidden="true">IT</span>
+      </button>
+      {open && <button role="menuitem" className="help-new" onClick={() => { onDone(); openHelp({ view: 'me' }); }}><Icon name="plus" size={14} />Ask about something else</button>}
       {it && <button role="menuitem" onClick={() => { onDone(); openHelp({ view: 'desk' }); }}><Icon name="monitor" size={16} />Help desk{queue > 0 && <span className="badge">{queue}</span>}</button>}
     </>
   );

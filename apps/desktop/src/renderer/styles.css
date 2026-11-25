@@ -230,8 +230,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .me-btn { position: relative; border: 0; background: none; padding: 4px; border-radius: var(--radius-m); display: grid; }
 .me-btn:hover { background: var(--subtle); }
 .me-badge { position: absolute; top: -3px; left: -6px; min-width: 16px; height: 16px; font-size: 10px; line-height: 16px; padding: 0 4px; }
-/* a sheet (the Control room, Preferences, Search) covers the title bar from 8px down; the badge
-   sits above that edge and would show over the sheet's corner. Approvals in the Control room carry the count. */
+/* where a sheet (the Control room, Preferences, Search) still covers the title bar from 8px down (not on
+   Windows, see --wco-top) the badge would show over the sheet's corner. Approvals in the Control room carry the count. */
 .frame:has(.sheet-scrim) .me-badge { visibility: hidden; }
 .menu {
   position: absolute;
@@ -278,11 +278,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .lens-dock { display: none; }
 
+/* Windows draws its own minimise / maximise / close over the top right of our title bar (the title bar
+   overlay, --titlebar high, about 140px wide). Nothing of ours that can be clicked may sit under them, or
+   someone closing a sheet closes the app: on Windows every sheet, viewer and dialog starts below the
+   title bar band (--wco-top), so the window's buttons and ours are never in one line. Pop-out windows
+   have a normal frame and keep 0. */
+:root { --wco-top: 0px; }
+:root[data-platform='win32']:has(.frame) { --wco-top: var(--titlebar); }
+
 /* control sheets slide in from the right */
 .sheet-scrim { position: fixed; inset: 0; z-index: 15; background: rgba(8, 20, 22, .28); animation: fade var(--med) var(--ease); }
 .sheet {
   position: absolute;
-  top: 8px;
+  top: calc(var(--wco-top) + 8px);
   right: 8px;
   bottom: 8px;
   width: min(620px, calc(100vw - 16px));
@@ -1161,7 +1169,18 @@ select[multiple].input { height: auto; padding: 4px; }
 .tool-link:hover { border-color: var(--accent); }
 .tool-name { padding: 0 6px; border-radius: 4px; background: var(--accent-soft); font-size: 11px; font-weight: 600; }
 button.line-ref.find { border: 0; cursor: pointer; font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+/* a field inside a menu: the menu's rows are full-width buttons, so the field's own button is put back to its size */
 .menu-input { display: flex; gap: 6px; padding: 4px 6px; } .menu-input .input { flex: 1; min-width: 0; }
+.menu .menu-input button { width: auto; flex: none; }
+.menu-label-note { margin-left: 6px; font: 400 11px/1.3 var(--font-body); letter-spacing: 0; text-transform: none; color: var(--text-3); }
+.drawer-new { display: grid; gap: 6px; padding: 4px 6px 8px; margin: 2px 4px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: var(--radius-m); background: var(--accent-soft); }
+.drawer-new-row { display: flex; align-items: center; gap: 6px; color: var(--accent-ink); }
+.drawer-new .input { flex: 1; min-width: 0; height: 30px; font-size: 13px; color: var(--text); background: var(--layer-solid); }
+.drawer-new .input::placeholder { color: var(--text-3); }
+.menu .drawer-new .drawer-add { width: 30px; height: 30px; padding: 0; justify-content: center; border-radius: var(--radius-s); background: var(--accent); color: var(--accent-text); }
+.menu .drawer-new .drawer-add:hover { background: var(--accent-hover); }
+.menu .drawer-new .drawer-add:disabled { background: var(--subtle-2); color: var(--text-3); }
+.drawer-new-help { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--text-2); }
 
 /* multi-select */
 .select-bar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; margin: 0 12px 6px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent); font-size: 13px; flex-wrap: wrap; }
@@ -1444,3 +1463,32 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 22px; 
   .frame:has(> .conn-notice) { grid-template-rows: var(--titlebar) auto 1fr auto; }
   .frame:has(> .conn-notice):has(> .nb-banner) { grid-template-rows: var(--titlebar) auto auto 1fr auto; }
 }
+
+/* full-window viewers and centred dialogs keep the Windows title bar band clear (see --wco-top): their
+   bars hold Close, Download and the like, which would otherwise sit right under the window's own buttons */
+:root[data-platform='win32'] .lightbox, :root[data-platform='win32'] .coview, :root[data-platform='win32'] .rec-viewer,
+:root[data-platform='win32'] .recap-scrim, :root[data-platform='win32'] .dl-moment { top: var(--wco-top); }
+:root[data-platform='win32'] .scrim:not(.palette-scrim) { padding-top: var(--wco-top); }
+
+/* "Help me…" in your tile's menu: a service cell of its own (hairline teal frame, a teal rule down the
+   left edge, the ring-buoy mark in a tile, a line saying who answers and an IT tag), so it stands apart
+   from the plain rows around it. Amber stays for "needs you": a live session lights the tag only. */
+.menu button.help-entry {
+  position: relative; margin: 4px 0 2px; padding: 9px 10px 9px 12px; gap: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: var(--radius-m);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%), var(--layer-solid);
+  box-shadow: inset 3px 0 0 var(--accent);
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.menu button.help-entry:hover, .menu button.help-entry:focus-visible {
+  border-color: var(--accent); background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), var(--accent-soft)), var(--layer-solid);
+  box-shadow: inset 5px 0 0 var(--accent);
+}
+.help-mark { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: var(--accent-text); background: var(--accent); box-shadow: 0 1px 0 rgba(0, 0, 0, .12); }
+.help-words { display: grid; min-width: 0; gap: 1px; }
+.help-title { font: 600 14px/1.25 var(--font-display); color: var(--accent-ink); }
+.help-sub { font-size: 11.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.help-tag { margin-left: auto; flex: none; padding: 1px 5px; font-size: 10px; letter-spacing: .12em; color: var(--accent-ink); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 2px; }
+.help-tag.live { color: var(--amber-ink); border-color: var(--amber); background: var(--amber-soft); }
+.menu button.help-new { padding: 5px 10px 7px 53px; font-size: 12px; color: var(--text-2); gap: 6px; }
+.menu button.help-new:hover { color: var(--text); }

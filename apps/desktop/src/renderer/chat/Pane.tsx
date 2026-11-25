@@ -969,6 +969,53 @@ function seenOf(ctx: Ctx, m: AnyMessage, inTrack: boolean | undefined): { state:
   return { state, tag };
 }
 
+type Delivery = 'sending' | 'failed' | 'sent' | 'delivered' | 'seen-some' | 'seen';
+/**
+ * How far one of my messages has gone, for the transmittal mark at its end: sending, sent (the hub
+ * has it), delivered (on the others' devices), seen. Delivered says nothing about reading, so it shows
+ * even with read receipts off; seen needs them on both sides. In a group, delivered and seen mean
+ * everyone; part of the way shows as counts in the mark's words.
+ */
+function deliveryOf(ctx: Ctx, m: AnyMessage, inTrack: boolean | undefined): { state: Delivery; label: string } | null {
+  if (m.authorId !== ctx.meId || inTrack) return null;
+  if ('pending' in m) return (m as PendingMessage).failed ? { state: 'failed', label: 'Not sent' } : { state: 'sending', label: 'Sending' };
+  const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
+  if (!others.length) return { state: 'sent', label: 'Sent' };
+  const receipts = ctx.users.get(ctx.meId)?.readReceipts !== false;
+  const read = receipts ? others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id).length : 0;
+  const got = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id || (ctx.conv.delivered?.[u] ?? '') >= m.id).length;
+  const state: Delivery = read && read === others.length ? 'seen' : read ? 'seen-some' : got === others.length ? 'delivered' : 'sent';
+  if (others.length === 1) return { state, label: state === 'seen' ? 'Seen' : state === 'delivered' ? 'Delivered' : 'Sent' };
+  const n = others.length;
+  return { state, label: read ? `Seen by ${read} of ${n}` : got ? `Delivered to ${got} of ${n}` : 'Sent' };
+}
+
+/**
+ * The transmittal mark: a dimension line with architectural ticks, the drawing office's own way of
+ * saying how far a sheet has gone. One tick: sent. Two ticks: delivered. Inked in teal with its end
+ * dot: seen (the first tick alone for part of a group). A dashed line while sending; a revision
+ * triangle when it did not go.
+ */
+function DeliveryMark({ d }: { d: { state: Delivery; label: string } }) {
+  return (
+    <span className={`dlv dlv-${d.state}`} role="img" aria-label={d.label} title={d.label}>
+      <svg width="20" height="11" viewBox="0 0 20 11" aria-hidden="true">
+        {d.state === 'failed' ? (
+          <><path className="dlv-tri" d="M10 1.2 15.6 10H4.4z" /><path className="dlv-bang" d="M10 4.4v2.6M10 8.4v.1" /></>
+        ) : (
+          <>
+            <path className="dlv-line" d="M1 7.5h18" />
+            <path className="dlv-ext" d="M1 4.5v6" />
+            {d.state !== 'sending' && <path className="dlv-t1" d="M4.2 10.2 9.6 4.8" />}
+            {(d.state === 'delivered' || d.state === 'seen' || d.state === 'seen-some') && <path className="dlv-t2" d="M9.6 10.2 15 4.8" />}
+            {d.state === 'seen' && <circle className="dlv-end" cx="17.6" cy="7.5" r="1.5" />}
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
 /**
  * A message is drawn again only when something it shows changed: itself, the people, the layout,
  * picking, its side-track being open, or (for my own) who has read it. Presence, new messages and
@@ -989,7 +1036,9 @@ function sameMessage(a: ItemProps, b: ItemProps): boolean {
   if (b.m.authorId !== y.meId) return true;
   const s1 = seenOf(x, a.m, a.inTrack);
   const s2 = seenOf(y, b.m, b.inTrack);
-  return s1?.state === s2?.state && s1?.tag === s2?.tag;
+  const d1 = deliveryOf(x, a.m, a.inTrack);
+  const d2 = deliveryOf(y, b.m, b.inTrack);
+  return s1?.state === s2?.state && s1?.tag === s2?.tag && d1?.state === d2?.state && d1?.label === d2?.label;
 }
 
 const MessageItem = memo(MessageItemView, sameMessage);
@@ -1059,6 +1108,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
 
   // the amber notch on my own messages: hollow when sent, half when some have seen it, solid when all have
   const seen = seenOf(ctx, m, inTrack);
+  const delivery = deliveryOf(ctx, m, inTrack);
 
   return (
     <div data-mid={m.id} tabIndex={-1} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
@@ -1066,8 +1116,9 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
       {ctx.cards && !inTrack && <span className="card-time mono" aria-hidden="true">{clock(m.createdAt)}</span>}
-      {seen && <span className={`notch ${seen.state}`} role={seen.tag ? 'img' : undefined} aria-label={seen.tag || undefined} />}
-      {seen?.tag && <span className="seen-tag mono" aria-hidden="true">{seen.tag}</span>}
+      {seen && <span className={`notch ${seen.state}`} aria-hidden="true" />}
+      {delivery && <DeliveryMark d={delivery} />}
+      {delivery && <span className="seen-tag mono" aria-hidden="true">{delivery.label}</span>}
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
       {m.inReplyTo && !inTrack && (
         <button className="in-reply" onClick={() => onTrack?.(m.inReplyTo!.messageId)} title="Open the side-track">

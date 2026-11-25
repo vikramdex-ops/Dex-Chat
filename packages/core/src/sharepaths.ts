@@ -187,6 +187,48 @@ const PATH_RE = new RegExp(
   ].join('|'),
   'gu',
 );
+/**
+ * Names with spaces, unquoted. Engineering shares are full of them ("J123– DM-ACF PACKAGE- TECHNIMONT\2- Piping\…").
+ * The regex above stops at the first space; this carries the path on when what follows can only be
+ * more of it:
+ *  - words that run straight into the path's own separator and on into a next name are a folder's name
+ *    (`…\J123– DM-ACF PACKAGE\2- Piping\…`), wherever the path stands;
+ *  - words that end in a file's extension finish the last name, when it has none yet (`…\P12\Drawing list.xlsx`);
+ *  - a name left hanging on a dash or an ampersand takes the next word (`…\2- Piping`);
+ *  - a path written on a line of its own takes the rest of that line (`X:\Jobs\P-12 (Rev B)`).
+ * A word never holds a colon or a character Windows forbids, and the words stop at the end of the line.
+ */
+const WORDS_TO_SEP = { '\\': /^((?: +[^\s\\/<>"|?*`:]+)+)\\(?=$|\s|[^\s\\/<>"|?*`])/u, '/': /^((?: +[^\s\\/<>"|?*`:]+)+)\/(?=$|\s|[^\s\\/<>"|?*`])/u } as const;
+const MORE_NAMES = /^(?:[^\s\\/<>"|?*`]+[\\/]?)*/u;
+const EXT = /\.[A-Za-z][A-Za-z0-9]{0,7}$/;
+function extendPath(text: string, start: number, end: number): number {
+  let e = end;
+  for (let guard = 0; guard < 64 && text[e] === ' '; guard++) {
+    const sep = text.slice(start, e).includes('\\') || !text.slice(start, e).includes('/') ? '\\' : '/';
+    const rest = text.slice(e, text.indexOf('\n', e) < 0 ? e + 800 : Math.min(text.indexOf('\n', e), e + 800));
+    const m = WORDS_TO_SEP[sep].exec(rest);
+    if (m) { e += m[0].length; e += MORE_NAMES.exec(text.slice(e, e + 800))![0].length; continue; }
+    const last = text.slice(start, e).split(/[\\/]/).pop() ?? '';
+    const words = rest.split(' ').slice(1);
+    if (!last || EXT.test(trimEnd(last))) break;
+    // a name left hanging on a dash or an ampersand goes on with the next word: "2- Piping", "P&ID & GA"
+    if (/[-–—&+_(]$/.test(last) && words[0] && !/[\\/<>"|?*`:\t]/.test(words[0])) { e += 1 + words[0].length; continue; }
+    // the last name: up to six more words, the last of them ending in an extension
+    let taken = 0;
+    for (let i = 0; i < Math.min(words.length, 6); i++) {
+      const w = words[i];
+      if (!w || /[\\/<>"|?*`:\t]/.test(w)) break;
+      if (EXT.test(trimEnd(w))) { taken = i + 1; break; }
+    }
+    if (taken) { e += words.slice(0, taken).reduce((n, w) => n + 1 + w.length, 0); break; }
+    // a path alone on its line: the rest of the line is its last name
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+    if (!text.slice(lineStart, start).trim() && words.length <= 12 && words.every((w) => w && !/[\\/<>"|?*`:\t]/.test(w))) e += rest.length;
+    break;
+  }
+  return e;
+}
+
 // quoted: "…", “…”, ‘…’, «…» around a path that may have spaces
 const QUOTED_RE = /"([^"\n]{3,400})"|“([^”\n]{3,400})”|‘([^’\n]{3,400})’|«([^»\n]{3,400})»/g;
 /** Punctuation that ends a sentence, not a path (a file or folder name never ends in a full stop). */
@@ -226,8 +268,8 @@ export function findPaths(text: string, opts: { skipCode?: boolean } = {}): Path
     out.push({ start: m.index, end: m.index + m[0].length, raw: m[0], path: inner, quoted: true });
   }
   for (const m of text.matchAll(PATH_RE)) {
-    const raw = trimEnd(m[0]);
     const start = m.index;
+    const raw = trimEnd(/^file:/i.test(m[0]) ? m[0] : text.slice(start, extendPath(text, start, start + m[0].length)));
     const end = start + raw.length;
     if (taken(start, end) || inCode(start, end) || !parsePath(raw)) continue;
     out.push({ start, end, raw, path: raw, quoted: false });
@@ -251,7 +293,7 @@ export function pathAt(text: string, at: number): PathSpan | null {
   PATH_AT.lastIndex = at;
   const m = PATH_AT.exec(text);
   if (!m) return null;
-  const raw = trimEnd(m[0]);
+  const raw = trimEnd(/^file:/i.test(m[0]) ? m[0] : text.slice(at, extendPath(text, at, at + m[0].length)));
   return parsePath(raw) ? { start: at, end: at + raw.length, raw, path: raw, quoted: false } : null;
 }
 
