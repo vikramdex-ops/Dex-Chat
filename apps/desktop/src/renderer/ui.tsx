@@ -188,6 +188,13 @@ type TileArt = (id: string, size?: 'sm' | 'lg') => { colour: string; node: React
 let tileArt: TileArt = () => null;
 export function setTileArt(f: TileArt): void { tileArt = f; }
 
+/** The tile colour of a bot without a mark of its own (integrations, the system's account bot). */
+const BOT_TILE = '#2f4b50';
+/** Is this account a bot (office bots, integrations, Nib, member-made bots)? From the user given or the directory. */
+export function isBot(user: Pick<PublicUser, 'id'> & { role?: PublicUser['role'] }): boolean {
+  return (user.role ?? presenceSource.users.get(user.id)?.role) === 'bot';
+}
+
 /** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
 export function Avatar({ user, online, presence, size }: {
   user: Pick<PublicUser, 'id' | 'displayName'>;
@@ -197,10 +204,13 @@ export function Avatar({ user, online, presence, size }: {
 }) {
   const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
   const art = tileArt(user.id, size);
-  if (art) {
+  // a bot is never drawn like a person: a square tile with its own mark (or the instrument tag every
+  // office bot and integration carries), no beacon ring, and a bar under it like an instrument's tag
+  const bot = art || isBot(user);
+  if (bot) {
     return (
-      <span className={`avatar bot-tile${art.monogram ? ' mono' : ''}${size ? ` ${size}` : ''}`} style={{ background: art.colour }} translate="no" title={user.displayName}>
-        {art.node}
+      <span className={`avatar bot-tile is-bot${art?.monogram ? ' mono' : ''}${art ? '' : ' generic'}${size ? ` ${size}` : ''}`} style={{ background: art?.colour ?? BOT_TILE }} translate="no" title={`${user.displayName} · bot`}>
+        {art ? art.node : <Icon name="bot" size={size === 'lg' ? 30 : size === 'sm' ? 17 : 21} />}
       </span>
     );
   }

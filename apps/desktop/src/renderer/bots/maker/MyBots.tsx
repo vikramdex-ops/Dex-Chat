@@ -5,9 +5,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BotFlowInfo, BotMakerBot, BotStats, PublicUser, Session } from '@dex/core';
 import { hoursText } from '@dex/core/botflows';
-import { Icon, relativeTime, useToast } from '../../ui.tsx';
+import { Avatar, Icon, relativeTime, useToast } from '../../ui.tsx';
 import { confirmAction } from '../../confirm.tsx';
-import { chatState } from '../../chat/store.ts';
+import { addConversation, chatState } from '../../chat/store.ts';
+import { NIB_ACCOUNT } from '@dex/core/nib';
+import { useNib } from '../../nib/store.ts';
 import { BotMarkTile } from '../BotMark.tsx';
 import { openBotMaker } from './open.ts';
 import { openBotNetwork, openJobSheet } from '../net/open.ts';
@@ -58,9 +60,10 @@ export function MyBots({ session }: { session: Session }) {
   const others = usable.filter((f) => !mine?.some((m) => m.name === f.name));
   return (
     <div className="mybots">
+      <OfficeBots session={session} flows={usable} mine={mine ?? []} />
       <section className="desk-group">
         <div className="mybots-head">
-          <h3 className="label">Your bots{mine ? ` · ${mine.length}` : ''}</h3>
+          <h3 className="label">Bots you made{mine ? ` · ${mine.length}` : ''}</h3>
           <span className="mybots-tools">
             {!guest && !!mine?.length && <button className="btn ghost sm" onClick={() => openBotNetwork('mine')}><Icon name="branch" size={14} />Bot network</button>}
             {!guest && !!mine?.some((b) => b.definition.jobs?.length) && <button className="btn ghost sm" onClick={() => openJobSheet('mine')}><Icon name="schedule" size={14} />Job sheet</button>}
@@ -118,6 +121,77 @@ export function MyBots({ session }: { session: Session }) {
         </section>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ the office's own bots
+type Kind = 'companion' | 'system' | 'office' | 'colleague' | 'integration';
+const KIND_TAG: Record<Kind, string> = { companion: 'COMPANION', system: 'SYSTEM', office: 'OFFICE', colleague: 'MADE BY A COLLEAGUE', integration: 'INTEGRATION' };
+const kindOf = (u: PublicUser): Kind => u.account === NIB_ACCOUNT ? 'companion' : u.account === 'system\\dexterity-connect' ? 'system'
+  : u.account === 'system\\front-office' ? 'office' : u.account.startsWith('botmaker') ? 'colleague' : 'integration';
+const KIND_ORDER: Kind[] = ['companion', 'office', 'system', 'integration', 'colleague'];
+
+/**
+ * Every bot in the office, not only the ones you made: Nib, Front Office and its request bots, the
+ * system's account bot, integrations and colleagues' bots. A rack of instrument-tag plates (B-01…):
+ * the bot's tile, what it is, what it does and the ways in (write to it, start one of its flows).
+ * They are bots, and say so; none of them is a person.
+ */
+function OfficeBots({ session, flows, mine }: { session: Session; flows: BotFlowInfo[]; mine: BotMakerBot[] }) {
+  const toast = useToast();
+  const start = useStart();
+  const nibConv = useNib((st) => st.me?.convId ?? null);
+  const mineIds = new Set(mine.map((b) => b.botId));
+  const bots = session.users.filter((u) => u.role === 'bot' && !mineIds.has(u.id))
+    .sort((a, b) => KIND_ORDER.indexOf(kindOf(a)) - KIND_ORDER.indexOf(kindOf(b)) || a.displayName.localeCompare(b.displayName));
+  if (!bots.length) return null;
+  const write = async (u: PublicUser) => {
+    if (kindOf(u) === 'companion' && nibConv) { window.dispatchEvent(new CustomEvent('dex-open', { detail: nibConv })); return; }
+    const had = [...chatState().conversations.values()].find((c) => c.kind === 'direct' && c.members.length === 2 && c.members.includes(u.id) && c.members.includes(session.me.id));
+    if (had) { window.dispatchEvent(new CustomEvent('dex-open', { detail: had.id })); return; }
+    try {
+      const c = await window.dex.request('conv.create', { kind: 'direct', members: [u.id] });
+      addConversation(c);
+      window.dispatchEvent(new CustomEvent('dex-open', { detail: c.id }));
+    } catch (e) { toast((e as Error).message, true); }
+  };
+  const does = (u: PublicUser, own: BotFlowInfo[]): string => {
+    const k = kindOf(u);
+    if (k === 'companion') return 'Your day sheet, leave notes, reminders in plain words, who is in and where things are. Ctrl+Alt+N from anywhere.';
+    if (k === 'system') return 'Tells you about your own account: a device added or removed, a role changed, guest access ending. It does not read replies.';
+    if (own.length) return own.map((f) => f.title).slice(0, 4).join(' · ') + (own.length > 4 ? ` · ${own.length - 4} more` : '');
+    return k === 'integration' ? 'Brings notices and answers from an office tool into Dexterity Connect.' : 'A bot a colleague made and shared.';
+  };
+  return (
+    <section className="desk-group office-bots" aria-labelledby="office-bots-h">
+      <div className="mybots-head">
+        <h3 className="label" id="office-bots-h">Office bots · {bots.length}</h3>
+        <span className="faint ob-note">On for everyone. Bots, not people: what they say is automatic.</span>
+      </div>
+      <ul className="ob-rack">
+        {bots.map((u, i) => {
+          const k = kindOf(u);
+          const own = flows.filter((f) => f.botId === u.id);
+          const live = own.filter((f) => f.status === 'live' && f.openNow);
+          return (
+            <li key={u.id} className={`ob-plate k-${k}`}>
+              <div className="ob-tag" aria-hidden="true"><span className="ob-tag-letters mono">{k === 'companion' ? 'NIB' : u.displayName.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'B'}</span><span className="ob-tag-no mono">B-{pad(i + 1)}</span></div>
+              <Avatar user={u} />
+              <div className="ob-text">
+                <div className="ob-name"><b translate="no">{u.displayName}</b><span className="tag bot-tag">BOT</span><span className="bot-kind">{KIND_TAG[k]}</span></div>
+                <p className="ob-does" translate={own.length ? 'no' : undefined}>{does(u, own)}</p>
+                <div className="ob-meta mono">{k === 'companion' ? 'ALWAYS HERE' : k === 'system' ? 'WRITES TO YOU' : own.length ? `${own.length} ${own.length === 1 ? 'FLOW' : 'FLOWS'} · ${live.length} OPEN NOW` : 'NOTICES'}</div>
+              </div>
+              <div className="ob-actions">
+                {k !== 'system' && <button className="btn sm" onClick={() => void write(u)}><Icon name="chat" size={14} />{k === 'companion' ? 'Open Nib' : 'Write'}</button>}
+                {k === 'system' && <button className="btn ghost sm" onClick={() => void write(u)}><Icon name="chat" size={14} />Its messages</button>}
+                {live.slice(0, 2).map((f) => <button key={f.name} className="btn ghost sm" onClick={() => void start(f.name)} title={f.description ?? undefined}><Icon name="play" size={13} /><span translate="no">{f.title}</span></button>)}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

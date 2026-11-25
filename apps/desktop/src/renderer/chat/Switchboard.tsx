@@ -163,6 +163,12 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
       });
   }, [conversations, chip, query, users, meId, sort, only, focusId, nibId]);
   const archived = all.filter((c) => c.archived);
+  // a Direct conversation with one bot (an office bot, an integration, one a member made)
+  const botPeer = useCallback((c: Conversation) => {
+    if (c.kind !== 'direct') return null;
+    const others = c.members.filter((m) => m !== meId);
+    return others.length === 1 && users.get(others[0])?.role === 'bot' ? others[0] : null;
+  }, [users, meId]);
   const live = all.filter((c) => !c.archived);
   // kept on top first, then each person's own drawers, then projects, Spaces and people
   const groups = useMemo(() => {
@@ -170,19 +176,27 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     const drawers = new Map<string, Conversation[]>();
     for (const c of live) if (!c.pinnedAt && c.section) drawers.set(c.section, [...(drawers.get(c.section) ?? []), c]);
     const rest = live.filter((c) => !c.pinnedAt && !c.section);
-    const out: Array<{ title: string; items: Conversation[]; drawer?: boolean }> = [];
+    const out: Array<{ title: string; items: Conversation[]; drawer?: boolean; bots?: boolean }> = [];
     if (top.length) out.push({ title: 'Kept on top', items: top });
     for (const [title, items] of [...drawers].sort((a, b) => a[0].localeCompare(b[0]))) out.push({ title, items, drawer: true });
     if (chip === 'all') {
       const projects = rest.filter(isProject);
       const spaces = rest.filter((c) => c.kind === 'space' && !isProject(c));
-      const people = rest.filter((c) => c.kind === 'direct');
+      const people = rest.filter((c) => c.kind === 'direct' && !botPeer(c));
+      const bots = rest.filter((c) => c.kind === 'direct' && botPeer(c));
       if (projects.length) out.push({ title: 'Projects', items: projects });
       if (spaces.length) out.push({ title: 'Spaces', items: spaces });
       if (people.length) out.push({ title: 'People', items: people });
+      // bots are not people: their conversations sit under a heading of their own
+      if (bots.length) out.push({ title: 'Bots and services', items: bots, bots: true });
+    } else if (chip === 'people') {
+      const people = rest.filter((c) => !botPeer(c));
+      const bots = rest.filter((c) => botPeer(c));
+      if (people.length) out.push({ title: 'People', items: people });
+      if (bots.length) out.push({ title: 'Bots and services', items: bots, bots: true });
     } else if (rest.length) out.push({ title: CHIPS.find((x) => x.id === chip)!.label, items: rest });
     return out;
-  }, [live, chip]);
+  }, [live, chip, botPeer]);
   const myDrawers = useMemo(() => [...new Set([...conversations.values()].map((c) => c.section).filter((x): x is string => !!x))].sort(), [conversations]);
   const chipAttention = useMemo(() => {
     const out: Record<Chip, boolean> = { all: false, people: false, spaces: false, projects: false };
@@ -258,7 +272,9 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
           <div key={`${g.drawer ? 'd:' : ''}${g.title}`} className={`sb-group${g.drawer ? ' sb-drawer' : ''}`}>
             {g.drawer
               ? <div className="sb-group-title label" title="Your drawer: a group of your own. Only you see it. Change it from a conversation's arrow."><Icon name="drawer" size={11} /><span translate="no">{g.title}</span><span className="sb-drawer-tag mono">DRAWER</span></div>
-              : <div className="sb-group-title label">{g.title}</div>}
+              : g.bots
+                ? <div className="sb-group-title label sb-bots-title" title="Automated accounts: office bots, integrations and bots people made. Not people."><Icon name="bot" size={12} /><span>{g.title}</span></div>
+                : <div className="sb-group-title label">{g.title}</div>}
             <Rows items={g.items} row={row} />
           </div>
         ))}
@@ -289,7 +305,7 @@ function NibRow({ folded, focusId }: { folded: boolean; focusId: string | null |
     <div className="sb-group sb-nib-group">
       <button className={`sb-nib${c.id === focusId ? ' active' : ''}${c.unread ? ' unread' : ''}`} onClick={() => openInPane(c.id)} aria-current={c.id === focusId ? 'true' : undefined} title={folded ? 'Nib' : undefined}>
         <NibTile size={folded ? 32 : 30} ink={ink} />
-        {!folded && <span className="sb-main"><span className="sb-title"><span className="sb-name" translate="no">Nib</span><span className="chip">ALWAYS HERE</span></span><span className="sb-preview">{line}</span></span>}
+        {!folded && <span className="sb-main"><span className="sb-title"><span className="sb-name" translate="no">Nib</span><span className="tag bot-tag" title="Nib is the office's companion bot, not a person">BOT</span><span className="bot-kind">Always here</span></span><span className="sb-preview">{line}</span></span>}
         {c.unread > 0 && !folded && <span className="sb-nib-new mono">{c.unread}</span>}
       </button>
     </div>
@@ -317,11 +333,13 @@ const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu, menuO
 }) {
     const title = convTitle(c, users, meId);
     const last = c.lastMessage;
+    const others = c.kind === 'direct' ? c.members.filter((m) => m !== meId) : [];
+    const bot = others.length === 1 && users.get(others[0])?.role === 'bot';
     const who = last ? (last.authorId === meId ? 'You' : users.get(last.authorId)?.displayName.split(' ')[0] ?? '') : '';
     const preview = last ? `${c.kind === 'space' || c.members.length > 2 || last.authorId === meId ? `${who}: ` : ''}${last.body ? plainPreview(last.body, users) : 'Message deleted'}` : (c.topic ?? 'No messages yet');
     return (
       <RefDropRow convId={c.id} className={`sb-row-wrap${menuOpen ? ' menu-open' : ''}`}>
-        <button className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
+        <button className={`sb-row${state}${bot ? ' bot' : ''}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
           draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
           onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
           aria-current={state === ' active' ? 'true' : undefined}
@@ -331,6 +349,7 @@ const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu, menuO
           <span className="sb-main">
             <span className="sb-title">
               <span className="sb-name" translate="no">{title}</span>
+              {bot && <span className="tag bot-tag" title="A bot, not a person: its answers are automatic">BOT</span>}
               {c.private && c.kind === 'space' && <Icon name="lock" size={12} />}
               {c.muted && <Icon name="mute" size={12} />}
             </span>

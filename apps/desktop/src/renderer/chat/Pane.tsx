@@ -937,13 +937,13 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
   // only the height it had when it was first drawn here (a later measurement is not a change)
   const [room] = useState(size);
   return (
-    <div className={`run${mine ? ' mine' : ''}`} style={room ? { containIntrinsicSize: `auto ${Math.round(room)}px` } : undefined}>
+    <div className={`run${mine ? ' mine' : ''}${u?.role === 'bot' ? ' bot' : ''}`} style={room ? { containIntrinsicSize: `auto ${Math.round(room)}px` } : undefined}>
       <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? guestName ?? '?' }} presence={guestName ? undefined : presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
           <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? guestName ?? 'Former member'}</span>
           {guestName && <span className="tag mono guest-tag">GUEST</span>}
-          {u?.role === 'bot' && <span className="chip accent bot-chip">{isMadeBot(author) || author === nibBotId() ? 'Bot' : 'Integration'}</span>}
+          {u?.role === 'bot' && <><span className="tag bot-tag" title="A bot, not a person: what it says is automatic"><Icon name="bot" size={11} />BOT</span><span className="bot-kind">{author === nibBotId() ? 'Office companion' : isMadeBot(author) ? 'Made by a colleague' : 'Office service'}</span></>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
         {msgs.map((m) => <MessageItem key={m.clientId ?? m.id} ctx={ctx} m={m} onTrack={onTrack} activeTrack={activeTrack} />)}

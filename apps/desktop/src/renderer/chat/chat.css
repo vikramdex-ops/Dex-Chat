@@ -675,3 +675,17 @@ body.resizing { user-select: none; cursor: col-resize; }
   .layout-cards .spine-tools, .layout-cards .run.mine .spine-tools { left: auto; right: 4px; top: -30px; flex-direction: row; width: auto; padding: 0 2px; }
   .layout-cards .writing-line { padding-left: 46px; }
 }
+
+/* bots in the Switchboard: their own heading, a BOT tag, and a preview set like a printout */
+.sb-bots-title { display: flex; align-items: center; gap: 6px; }
+.sb-row.bot .sb-preview { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0; }
+.sb-row.bot .tag.bot-tag, .sb-nib .tag.bot-tag { flex: none; }
+.switchboard.folded .sb-row .tag.bot-tag { display: none; }
+/* a bot's run reads as printed, not written: its name in mono, its messages on a faint drafting grid
+   with a teal rule down their edge */
+.run.bot .run-name { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .02em; }
+.run.bot .run-head { gap: 6px; }
+.run.bot .run-body > .msg:not(.deleted) {
+  background-image: linear-gradient(var(--subtle) 1px, transparent 1px), linear-gradient(90deg, var(--subtle) 1px, transparent 1px);
+  background-size: 8px 8px; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}

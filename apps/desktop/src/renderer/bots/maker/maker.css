@@ -390,3 +390,23 @@ html:is([lang='hi'], [lang='ta']) .bm-template-stage { font-family: var(--font-b
 .js-next li { display: flex; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--stroke); border-right: 1px solid var(--stroke); font-size: 11.5px; }
 .js-people { display: flex; flex-wrap: wrap; gap: 4px; }
 .js-people .chip { display: inline-flex; align-items: center; gap: 2px; }
+
+/* Desk → Bots: the office's own bots as a rack of plates, each with an instrument tag (letters above the
+   bar, B-01 below) as on the bot network sheet, so the section is never an empty page */
+.office-bots .ob-note { font-size: 12px; }
+.ob-rack { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); border: 1px solid var(--stroke-strong); border-radius: var(--radius-s); background: var(--layer-solid); overflow: hidden; }
+.ob-plate { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: auto auto; gap: 8px 12px; align-items: start; padding: 14px 14px 12px; border-right: 1px solid var(--stroke); border-bottom: 1px solid var(--stroke); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 50%, transparent);
+  background-image: linear-gradient(var(--subtle) 1px, transparent 1px), linear-gradient(90deg, var(--subtle) 1px, transparent 1px); background-size: 12px 12px; }
+.ob-plate.k-companion { box-shadow: inset 3px 0 0 var(--accent); }
+.ob-tag { grid-row: span 2; display: grid; place-items: center; width: 42px; height: 42px; border: 1.5px solid var(--accent); border-radius: 50%; background: var(--layer-solid); color: var(--accent-ink); position: relative; }
+.ob-tag::before { content: ''; position: absolute; left: 4px; right: 4px; top: 50%; border-top: 1.5px solid var(--accent); }
+.ob-tag-letters { position: absolute; top: 7px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; }
+.ob-tag-no { position: absolute; bottom: 7px; font-size: 8.5px; letter-spacing: .04em; color: var(--text-2); }
+.ob-plate .avatar { grid-row: span 2; }
+.ob-text { min-width: 0; display: grid; gap: 4px; }
+.ob-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ob-name b { font: 600 14px/1.2 var(--font-display); }
+.ob-does { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+.ob-meta { font-size: 10px; letter-spacing: .08em; color: var(--text-3); }
+.ob-actions { grid-column: 3; display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 720px) { .ob-tag { display: none; } .ob-plate { grid-template-columns: auto minmax(0, 1fr); } .ob-actions { grid-column: 2; } }
