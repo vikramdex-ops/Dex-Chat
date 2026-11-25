@@ -202,5 +202,7 @@ test('speed: a long message with many paths is quick', () => {
   const t = performance.now();
   const out = shareableText(text, VIKRAM);
   findPaths(out);
-  assert.ok(performance.now() - t < 500, `took ${performance.now() - t} ms`);
+  // ~200 ms on an idle PC; the release build runs every test file at once, so allow for a busy CPU
+  // while still catching a pattern that goes quadratic (seconds)
+  assert.ok(performance.now() - t < 1500, `took ${performance.now() - t} ms`);
 });
