@@ -680,6 +680,13 @@ export interface RoomParticipant {
   recording?: boolean;
   /** Speaking now (lounges only: shown to the Space on the lounge's row). */
   speaking?: boolean;
+  /**
+   * On hold: the person keeps their seat but neither hears nor is heard, and no one connects to this
+   * device until it comes back (it may be answering another call meanwhile).
+   */
+  held?: boolean;
+  /** When they put the call on hold. */
+  heldAt?: number;
 }
 
 export interface RoomInfo {
@@ -714,6 +721,8 @@ export interface RoomInfo {
   settings?: MeetingSettings;
   /** A Room with a job of its own: a lounge people drop into, or an IT support session. */
   purpose?: RoomPurpose;
+  /** A screen shown in a conversation: people watch without voice or camera unless they turn them on. */
+  share?: boolean;
 }
 
 /** lounge: a standing audio space in a Space; support: a help-desk session between two people. */
@@ -1003,7 +1012,10 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'msg.pin': { req: { messageId: string; pinned: boolean; until?: number | null }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
   'typing': { req: { convId: string; parentId?: string }; res: { ok: true } };
-  'room.start': { req: { convId: string; video: boolean }; res: RoomInfo };
+  /** `share`: open it to show a screen (no voice or camera asked for; members are told calmly, not rung). */
+  'room.start': { req: { convId: string; video: boolean; share?: boolean }; res: RoomInfo };
+  /** Put this device's seat in a Room on hold, or take it off hold (any other Room it is active in goes on hold). */
+  'room.hold': { req: { roomId: string; on: boolean }; res: RoomInfo };
   'room.join': { req: { roomId: string }; res: RoomInfo };
   'room.leave': { req: { roomId: string }; res: { ok: true } };
   'room.decline': { req: { roomId: string }; res: { ok: true } };

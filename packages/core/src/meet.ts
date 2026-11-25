@@ -190,6 +190,8 @@ export interface GuestRoomView {
   hostAway?: string | null;
   /** Someone is using the presenter's mouse and keyboard (the guest may be that someone). */
   control?: { presenterDevice: string; controllerDevice: string; controllerName: string } | null;
+  /** People who put the meeting on hold: their seats are kept, but they are not connected (not in `seats`). */
+  held?: Array<{ deviceId: string; name: string }>;
 }
 
 /** From the hub to the browser guest. */

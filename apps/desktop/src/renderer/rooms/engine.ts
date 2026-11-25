@@ -47,7 +47,15 @@ export interface CallState {
   pinned: string | null;
   /** The ID of the meeting someone asked to join from outside the Room UI (a link, the Meet lens). */
   joining: string | null;
+  /**
+   * A call this PC has on hold (Hold, or Hold and answer): its seat is kept on the hub, nothing is
+   * sent or heard, and Resume brings it back (holding whatever call is live then).
+   */
+  held: HeldCall | null;
+  /** Everyone else in the live Room has put it on hold (a quiet tone plays meanwhile). */
+  heldByOthers: boolean;
 }
+export interface HeldCall { room: RoomInfo; camera: boolean; muted: boolean; at: number }
 export type Layout = 'gallery' | 'speaker' | 'presentation';
 
 const BG_KEY = 'dex.room.background';
@@ -65,6 +73,7 @@ const startBg = bgPref();
 let state: CallState = {
   room: null, incoming: null, local: null, screen: null, peers: new Map(), muted: false, camera: false, blur: startBg === 'blur', background: startBg,
   minimized: false, error: null, active: new Map(), lobby: null, unmuteAsk: null, notice: null, layout: layoutPref(), pinned: null, joining: null,
+  held: null, heldByOthers: false,
 };
 
 // ------------------------------------------------------------------ backgrounds (blur, office backgrounds, your own picture)
@@ -269,10 +278,58 @@ function startRing(outgoing: boolean): void {
 }
 function stopRing(): void { ring?.stop(); ring = null; }
 
+/** Tones made on this PC (no audio files): a few notes, repeated every `every` ms until stopped. */
+function tones(notes: Array<[number, number, number]>, every: number, level: number): { stop: () => void } | null {
+  try {
+    const ctx = new AudioContext();
+    const play = () => {
+      const t0 = ctx.currentTime;
+      for (const [freq, at, len] of notes) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, t0 + at);
+        gain.gain.linearRampToValueAtTime(level, t0 + at + 0.02);
+        gain.gain.linearRampToValueAtTime(0, t0 + at + len);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t0 + at);
+        osc.stop(t0 + at + len + 0.05);
+      }
+    };
+    play();
+    const timer = every > 0 ? setInterval(play, every) : null;
+    return { stop: () => { if (timer) clearInterval(timer); setTimeout(() => void ctx.close().catch(() => {}), 600); } };
+  } catch { return null; }
+}
+/** Call waiting: two short beeps every few seconds, quiet enough to talk over. */
+function startWaiting(): void { stopRing(); ring = tones([[620, 0, 0.12], [620, 0.22, 0.12]], 3500, 0.06); }
+/** A screen offered to watch: one soft tick, once. */
+function startTick(): void { stopRing(); ring = tones([[880, 0, 0.08], [1320, 0.1, 0.1]], 0, 0.05); }
+
+// on hold by everyone else: a calm two-note figure now and then, so silence does not read as a dropped call
+let holdTone: { stop: () => void } | null = null;
+let nameFor: (userId: string) => string = () => 'Someone';
+function heldNews(was: RoomInfo, now: RoomInfo, nameOf: (userId: string) => string): void {
+  for (const p of now.participants) {
+    if (p.deviceId === myDevice) continue;
+    const before = was.participants.find((x) => x.deviceId === p.deviceId);
+    if (before && !before.held && p.held) tell(`${nameOf(p.userId)} put the call on hold`);
+    else if (before?.held && !p.held) tell(`${nameOf(p.userId)} is back from hold`);
+  }
+  const others = now.participants.filter((p) => p.deviceId !== myDevice);
+  const byOthers = others.length > 0 && others.every((p) => p.held);
+  if (byOthers !== state.heldByOthers) set({ heldByOthers: byOthers });
+  if (byOthers && !holdTone) holdTone = tones([[392, 0, 0.35], [523, 0.4, 0.5]], 6000, 0.03);
+  else if (!byOthers && holdTone) { holdTone.stop(); holdTone = null; }
+}
+function stopHoldTone(): void { holdTone?.stop(); holdTone = null; if (state.heldByOthers) set({ heldByOthers: false }); }
+
 // ------------------------------------------------------------------ hub events
 let wired = false;
 export function startCalls(deviceId: string, notify: (title: string, body: string) => void, nameOf: (userId: string) => string): void {
   myDevice = deviceId;
+  nameFor = nameOf;
   if (wired) return;
   wired = true;
   // what this PC can do about remote control, told to the Room with its media
@@ -287,17 +344,24 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
   window.dex.onHubEvent((name, data) => {
     if (name === 'room.ring') {
       const d = data as { room: RoomInfo; from: string };
-      if (state.room) return; // already in a call: they will see "missed"
+      // already on this call (another device rang it back, or it is the call on hold): nothing to answer
+      if (state.room?.id === d.room.id || state.held?.room.id === d.room.id) return;
       set({ incoming: d, active: new Map(state.active).set(d.room.convId, d.room) });
-      startRing(false);
-      if (!document.hasFocus()) notify(`${nameOf(d.from)} is opening a Room`, `${d.room.video ? 'Video' : 'Voice'} Room · join with voice or video`);
+      // in a call: a short call-waiting tone, never the full ring over the people you are talking to;
+      // a shared screen is an invitation to watch, not a call: one soft tick
+      if (d.room.share) startTick(); else if (state.room) startWaiting(); else startRing(false);
+      if (!document.hasFocus()) notify(d.room.share ? `${nameOf(d.from)} is showing their screen` : `${nameOf(d.from)} is opening a Room`,
+        d.room.share ? 'Watch it: no microphone or camera needed' : state.room ? 'You are in a call: hold it and answer, or not now' : `${d.room.video ? 'Video' : 'Voice'} Room · join with voice or video`);
     } else if (name === 'room.updated') {
       const r = data as RoomInfo;
       const active = r.parentId || r.purpose ? state.active : new Map(state.active).set(r.convId, r);
+      if (state.held?.room.id === r.id) { set({ held: { ...state.held, room: r }, active }); return; }
       if (state.room?.id === r.id) {
-        // close links to devices that left
-        for (const [dev] of links) if (!r.participants.some((p) => p.deviceId === dev)) dropLink(dev);
-        relay?.keepOnly(new Set(r.participants.map((p) => p.deviceId)));
+        // close links to devices that left, or went on hold (they reach out again when they come back)
+        const live = new Set(r.participants.filter((p) => !p.held).map((p) => p.deviceId));
+        for (const [dev] of links) if (!live.has(dev)) dropLink(dev);
+        relay?.keepOnly(live);
+        heldNews(state.room, r, nameOf);
         if (r.participants.length > 1 || r.ringing.length === 0) stopRingIfOutgoing(r);
         // someone starts sharing a sheet: it takes the stage; when they stop, the layout comes back
         const wasSharing = state.room.participants.some((p) => p.screen && p.deviceId !== myDevice);
@@ -317,7 +381,10 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       const d = data as { roomId: string; convId: string; missed: boolean; startedBy: string; endedBy?: string };
       const active = new Map(state.active);
       if (active.get(d.convId)?.id === d.roomId || (state.room?.id === d.roomId && !state.room.purpose)) active.delete(d.convId);
-      if (state.incoming?.room.id === d.roomId) {
+      if (state.held?.room.id === d.roomId) {
+        set({ held: null, active });
+        tell(d.endedBy && d.endedBy !== selfUser() ? `${nameOf(d.endedBy)} ended the call you had on hold` : 'The call you had on hold has ended');
+      } else if (state.incoming?.room.id === d.roomId) {
         stopRing();
         if (d.missed && !document.hasFocus()) notify(`You missed ${nameOf(d.startedBy)}'s Room · ${clock(state.incoming.room.startedAt)}`, 'Open the conversation to ring back');
         set({ incoming: null, active });
@@ -349,6 +416,7 @@ export function startCalls(deviceId: string, notify: (title: string, body: strin
       if (state.room?.id === d.roomId && state.muted) set({ unmuteAsk: { by: d.by, at: Date.now() } });
     } else if (name === 'room.removed') {
       const d = data as { roomId: string; by: string };
+      if (state.held?.room.id === d.roomId) { set({ held: null }); tell(`${nameOf(d.by)} took you out of the call you had on hold`); return; }
       if (state.room?.id !== d.roomId) return;
       cleanup();
       tell(`${nameOf(d.by)} took you out of the meeting`);
@@ -447,9 +515,12 @@ function enter(room: RoomInfo, local: MediaStream): void {
   const muted = !!state.lobby && state.local === local && state.muted;
   local.getAudioTracks().forEach((t) => { t.enabled = !muted; });
   set({ room, local, incoming: null, lobby: null, joining: null, unmuteAsk: null, camera: local.getVideoTracks().length > 0, muted, minimized: false, error: null, peers: new Map(), pinned: null });
-  if (room.mode === 'relay') { startRelay(room); if (room.participants.length <= 1 && room.ringing.length) startRing(true); }
-  else if (room.participants.length > 1) connectAll(room); // the newcomer reaches out to everyone already there
-  else if (room.ringing.length) startRing(true);
+  const quiet = !!room.share;
+  if (room.mode === 'relay') { startRelay(room); if (room.participants.length <= 1 && room.ringing.length && !quiet) startRing(true); }
+  else if (room.participants.filter((p) => !p.held).length > 1) connectAll(room); // the newcomer reaches out to everyone already there
+  else if (room.ringing.length && !quiet) startRing(true);
+  if (room.share) set({ layout: 'presentation' });
+  heldNews(room, room, nameFor);
   void announceMedia();
 }
 /** Into another Room of the same meeting: the same microphone and camera, new connections. */
@@ -478,21 +549,131 @@ export async function startCall(convId: string, video: boolean): Promise<void> {
   } catch (err) { dropMedia(local); set({ error: (err as Error).message }); throw err; }
 }
 
-export async function answer(video: boolean): Promise<void> {
+export async function answer(video: boolean, how: 'hold' | 'end' = 'hold'): Promise<void> {
   const inc = state.incoming;
   if (!inc) return;
   stopRing();
-  await joinRoom(inc.room.id, video);
+  // in a call already: hold it (or end it) and answer; a lounge is simply left
+  if (state.room) {
+    if (how === 'end' || !holdable(state.room) || state.held) leave();
+    else await hold();
+  }
+  await joinRoom(inc.room.id, video, { watch: !!inc.room.share && !video });
 }
 
-export async function joinRoom(roomId: string, video: boolean): Promise<void> {
-  if (state.room) return;
-  // a Room held under a meeting is joined by the meeting's ID, so its lobby and lock apply
-  const known = [...state.active.values()].find((r) => r.id === roomId) ?? (state.incoming?.room.id === roomId ? state.incoming.room : undefined);
-  if (known?.meetingId) { set({ incoming: null }); await joinMeeting(known.meetingId, video); return; }
+// ------------------------------------------------------------------ hold
+/** Lounges are left, not held; a webinar's stage is left too. */
+export const holdable = (r: RoomInfo | null): boolean => !!r && r.purpose?.kind !== 'lounge' && r.meetingKind !== 'webinar';
+
+/** Take this PC out of the live Room's media, keeping its seat; returns what Resume needs. */
+function detach(): HeldCall | null {
+  const r = state.room;
+  if (!r) return null;
+  const held: HeldCall = { room: r, camera: state.camera, muted: state.muted, at: Date.now() };
+  stopRing();
+  stopHoldTone();
+  for (const dev of [...links.keys()]) dropLink(dev);
+  relay?.close();
+  relay = null;
+  if (state.local) stopCameraTracks(state.local);
+  state.local?.getTracks().forEach((t) => t.stop());
+  state.screen?.getTracks().forEach((t) => t.stop());
+  releaseNoise();
+  stopVoices();
+  set({ room: null, local: null, screen: null, peers: new Map(), camera: false, muted: false, minimized: false, unmuteAsk: null, pinned: null, layout: state.layout === 'presentation' ? layoutPref() : state.layout });
+  return held;
+}
+
+/**
+ * Put the live call on hold: the seat is kept, the microphone, camera and any shared screen stop,
+ * nothing is heard, and everyone else is shown "On hold". One call can be on hold at a time.
+ */
+export async function hold(): Promise<void> {
+  const r = state.room;
+  if (!r) return;
+  if (!holdable(r)) throw new Error(r.purpose?.kind === 'lounge' ? 'A lounge is not put on hold: leave it and drop in again later.' : 'A webinar stage is not put on hold.');
+  if (state.held) throw new Error('Another call is already on hold. End it or resume it first.');
+  const room = await window.dex.request('room.hold', { roomId: r.id, on: true });
+  // the Room may have changed while asking (left, ended)
+  if (state.room?.id !== r.id) return;
+  const held = detach();
+  if (held) set({ held: { ...held, room } });
+}
+
+/** Back from hold: media again, and whatever call is live now goes on hold in its place (a lounge is left). */
+export async function resume(): Promise<void> {
+  const h = state.held;
+  if (!h) return;
   let local: MediaStream | null = null;
   try {
-    local = await prepareMedia(video);
+    local = h.room.share && !h.camera && h.muted ? (await refreshIce(), new MediaStream()) : await prepareMedia(h.camera);
+    const live = state.room;
+    if (live && !holdable(live)) leave();
+    const room = await window.dex.request('room.hold', { roomId: h.room.id, on: false });
+    // the hub put the live call on hold in its place: move its media out and keep it as the held one
+    const swapped = state.room && state.room.id !== room.id ? detach() : null;
+    set({ held: swapped ? { ...swapped, room: { ...swapped.room, participants: swapped.room.participants.map((p) => (p.deviceId === myDevice ? { ...p, held: true } : p)) } } : null });
+    local.getAudioTracks().forEach((t) => { t.enabled = !h.muted; });
+    enter(room, local);
+    if (h.muted) { set({ muted: true }); void announceMedia(); }
+  } catch (err) { dropMedia(local); set({ error: (err as Error).message }); throw err; }
+}
+
+/** Hang up the call on hold (the live one carries on). */
+export function leaveHeld(): void {
+  const h = state.held;
+  if (!h) return;
+  set({ held: null });
+  void window.dex.request('room.leave', { roomId: h.room.id }).catch(() => {});
+}
+
+// ------------------------------------------------------------------ show my screen (no voice, no camera)
+/**
+ * Show a screen in a conversation: a Room that asks for no microphone or camera, opened straight on
+ * the presentation. Its members are told calmly ("is showing their screen · Watch"), not rung. If the
+ * screen is not shared after all (the picker was closed), the Room closes again.
+ */
+export async function startShare(convId: string, sourceId: string, withSound = false): Promise<void> {
+  if (state.room?.convId === convId) { if (!state.screen) await toggleScreen(sourceId, withSound); set({ minimized: false, layout: 'presentation' }); return; }
+  if (state.room) throw new Error('You are in a Room. Share your screen from its sheet, or leave it first.');
+  try {
+    await refreshIce();
+    const room = await window.dex.request('room.start', { convId, video: false, share: true });
+    enter(room, new MediaStream());
+    set({ muted: true, layout: 'presentation' });
+    await toggleScreen(sourceId, withSound);
+    if (!state.screen) { leave(); throw new Error('The screen could not be shared.'); }
+  } catch (err) { set({ error: (err as Error).message }); throw err; }
+}
+
+/** Your voice into a Room you came into without a microphone (watching a shared screen). */
+async function addVoice(): Promise<boolean> {
+  const local = state.local;
+  if (!local) return false;
+  try {
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    await suppressNoise(mic).catch(() => {});
+    const track = mic.getAudioTracks()[0];
+    if (!track) return false;
+    local.addTrack(track);
+    for (const l of links.values()) l.senders.push(l.pc.addTrack(track, local));
+    void relay?.add(track, 'mic').catch(() => {});
+    set({ local: new MediaStream(local.getTracks()) });
+    return true;
+  } catch { set({ error: 'The microphone could not be started.' }); return false; }
+}
+
+export async function joinRoom(roomId: string, video: boolean, opts: { watch?: boolean } = {}): Promise<void> {
+  if (state.room) return;
+  if (state.held?.room.id === roomId) { await resume(); return; }
+  // a Room held under a meeting is joined by the meeting's ID, so its lobby and lock apply
+  const known = [...state.active.values()].find((r) => r.id === roomId) ?? (state.incoming?.room.id === roomId ? state.incoming.room : undefined);
+  if (known?.meetingId && !known.share) { set({ incoming: null }); await joinMeeting(known.meetingId, video); return; }
+  // watching a shared screen asks for no microphone or camera (Mic on adds your voice later)
+  const watch = opts.watch ?? !!known?.share;
+  let local: MediaStream | null = null;
+  try {
+    local = watch ? (await refreshIce(), new MediaStream()) : await prepareMedia(video);
     const room = await window.dex.request('room.join', { roomId });
     enter(room, local);
   } catch (err) { dropMedia(local); set({ incoming: null, error: (err as Error).message }); throw err; }
@@ -578,6 +759,7 @@ export function leave(): void {
 
 function cleanup(): void {
   stopRing();
+  stopHoldTone();
   for (const dev of [...links.keys()]) dropLink(dev);
   relay?.close();
   relay = null;
@@ -591,6 +773,11 @@ function cleanup(): void {
 
 export function toggleMute(): void {
   const muted = !state.muted;
+  // came in to watch without a microphone: turning it on asks for one first
+  if (!muted && state.local && !state.local.getAudioTracks().length) {
+    void addVoice().then((ok) => { if (ok) { set({ muted: false, unmuteAsk: null }); void announceMedia(); } });
+    return;
+  }
   state.local?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
   set({ muted, unmuteAsk: muted ? state.unmuteAsk : null });
   void announceMedia();
@@ -726,7 +913,8 @@ function signal(toDevice: string, data: SignalData): void {
 }
 
 function connectAll(room: RoomInfo): void {
-  for (const p of room.participants) if (p.deviceId !== myDevice) ensureLink(p.deviceId, p.userId);
+  // a seat on hold is not dialled: it reaches out itself when it comes back
+  for (const p of room.participants) if (p.deviceId !== myDevice && !p.held) ensureLink(p.deviceId, p.userId);
 }
 
 function ensureLink(deviceId: string, userId: string): Link {

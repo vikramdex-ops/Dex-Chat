@@ -45,7 +45,8 @@ export class Breakouts {
   /** Move one device from one Room of the meeting to another, keeping it in the meeting. */
   move(from: Room, to: Room, deviceId: string): void {
     const p = from.participants.find((x) => x.deviceId === deviceId);
-    if (!p || from === to) return;
+    // a seat on hold stays where it is: its device is in another call and comes back to this room
+    if (!p || from === to || p.held) return;
     if (to.participants.length >= this.core.capacity(to)) throw new RoomError(`${to.breakoutName ?? 'The main Room'} is full (${this.core.capacity(to)} people).`);
     from.participants = from.participants.filter((x) => x.deviceId !== deviceId);
     from.handList = from.handList.filter((h) => h.deviceId !== deviceId);

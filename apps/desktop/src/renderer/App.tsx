@@ -29,7 +29,7 @@ import { convTitle } from './chat/Switchboard.tsx';
 import type { Chip } from './chat/Switchboard.tsx';
 import { closePane, focusPane, openInPane, panesNow } from './chat/panes.ts';
 import { CLOSE, LUNCH, endOfToday, hm, todayAt } from './chat/officeTime.ts';
-import { IncomingCall, RoomChip, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
+import { HeldCallBar, IncomingCall, RoomChip, RoomStage, RecordingReady } from './rooms/RoomUi.tsx';
 import { Desk, ReminderCards } from './views/Desk.tsx';
 import { startDesk, useDesk } from './desk/store.ts';
 import { startOrg } from './org/store.ts';
@@ -831,6 +831,7 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
       <RecapHost users={users} meId={session.me.id} jump={(c, mid) => jump(c, mid)} />
       <WebinarSeat />
       <IncomingCall users={users} title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
+      <HeldCallBar title={(id) => { const c = conversations.get(id); return c ? convTitle(c, users, session.me.id) : ''; }} />
       {ooo && <OutOfOffice session={session} onClose={() => setOoo(false)} />}
       <ReminderCards users={users} meId={session.me.id} jump={jump} />
       <MeetingCards users={users} meId={session.me.id} />

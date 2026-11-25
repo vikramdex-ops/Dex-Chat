@@ -689,3 +689,9 @@ body.resizing { user-select: none; cursor: col-resize; }
   background-image: linear-gradient(var(--subtle) 1px, transparent 1px), linear-gradient(90deg, var(--subtle) 1px, transparent 1px);
   background-size: 8px 8px; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
 }
+/* Show screen: teal, apart from the Room button (a screen shown is not a call: no amber, no ringing) */
+.room-open.share-only { margin-left: 6px; border-color: var(--accent); color: var(--accent-ink); }
+.room-open.share-only:hover:not(:disabled) { background: var(--accent-soft); }
+.room-open.live.share { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.room-menu { width: 230px; }
+@media (max-width: 1100px) { .room-open.share-only .share-only-label { display: none; } .room-open.share-only { padding: 0 9px; } }

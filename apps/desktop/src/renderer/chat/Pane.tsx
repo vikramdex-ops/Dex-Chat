@@ -19,7 +19,8 @@ import {
 } from './store.ts';
 import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, HushItems, convTitle } from './Switchboard.tsx';
-import { joinRoom, setMinimized, startCall, useCall } from '../rooms/engine.ts';
+import { callState, hold, holdable, joinRoom, setMinimized, startCall, startShare, useCall } from '../rooms/engine.ts';
+import { ScreenPicker } from '../rooms/RoomUi.tsx';
 import { FormBuilder, FormCard } from './forms.tsx';
 import { BotCard, isBotCard } from '../bots/BotCard.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
@@ -495,33 +496,56 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   );
 }
 
-/** One amber-outlined Room button: voice by default, video from its menu; Join or Back while a Room runs. */
+/**
+ * One amber-outlined Room button: voice by default, video from its menu; Join or Back while a Room runs.
+ * Beside it, Show screen: a screen shown in the conversation with no voice or camera (people Watch).
+ * In another call already, joining puts that call on hold first.
+ */
 function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const toast = useToast();
   const active = useCall((s) => s.active.get(convId));
   const inCall = useCall((s) => s.room);
+  const held = useCall((s) => s.held);
   const [menu, setMenu] = useState(false);
+  const [picking, setPicking] = useState(false);
   const caret = useRef<HTMLButtonElement>(null);
-  if (inCall?.convId === convId && !inCall.purpose) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
+  const canShare = !!window.dex.listScreens;
+  // another call is live: hold it (when it can be) before coming in here
+  const busy = !!inCall && !(holdable(inCall) && !held);
+  const busyNote = inCall ? (busy ? 'You are in another call: leave it first' : 'Your call goes on hold first') : '';
+  const holdFirst = async () => { const r = callState().room; if (r && r.convId !== convId) await hold(); };
+  const share = (id: string, sound: boolean) => { setPicking(false); void holdFirst().then(() => startShare(convId, id, sound)).catch((e: Error) => toast(e.message, true)); };
+  const picker = picking && <ScreenPicker onPick={share} onClose={() => setPicking(false)} />;
+  if (inCall?.convId === convId && !inCall.purpose) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name={inCall.share ? 'screenshare' : 'phone'} size={14} />{inCall.share ? 'Back to the screen' : 'Back to the Room'}</button>;
   if (active && active.participants.length) {
+    const watch = !!active.share;
     return (
-      <button className="room-open live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>
-        <Icon name="phone" size={14} />Join the Room <span className="mono">· {active.participants.length}</span>
+      <button className={`room-open live${watch ? ' share' : ''}`} disabled={!live || busy} title={busyNote || (watch ? 'Watch the screen: no microphone or camera needed' : undefined)}
+        onClick={() => void holdFirst().then(() => joinRoom(active.id, false, { watch })).catch((e: Error) => toast(e.message, true))}>
+        <Icon name={watch ? 'screenshare' : 'phone'} size={14} />{watch ? 'Watch the screen' : 'Join the Room'} <span className="mono">· {active.participants.length}</span>
       </button>
     );
   }
-  const open = (video: boolean) => { setMenu(false); void startCall(convId, video).catch((e: Error) => toast(e.message, true)); };
+  const open = (video: boolean) => { setMenu(false); void holdFirst().then(() => startCall(convId, video)).catch((e: Error) => toast(e.message, true)); };
   return (
     <span className="room-split">
-      <button className="room-open" disabled={!live || !!inCall} onClick={() => open(false)} title="Open a Room with voice">Open a Room</button>
-      <button ref={caret} className="room-open caret" disabled={!live || !!inCall} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
+      <button className="room-open" disabled={!live || busy} onClick={() => open(false)} title={busyNote || 'Open a Room with voice'}>Open a Room</button>
+      <button ref={caret} className="room-open caret" disabled={!live || busy} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
+      {canShare && (
+        <button className="room-open share-only" disabled={!live || busy} onClick={() => setPicking(true)}
+          title={busyNote || 'Show your screen here: no voice or camera. Everyone in the conversation can watch, point at it and talk later if they want.'} aria-label="Show my screen">
+          <Icon name="screenshare" size={14} /><span className="share-only-label">Show screen</span>
+        </button>
+      )}
       {menu && (
         <Popover anchor={caret.current} onClose={() => setMenu(false)} className="menu room-menu">
           <div className="menu-label label">Open a Room</div>
           <button role="menuitem" onClick={() => open(false)}><Icon name="mic" size={16} />With voice</button>
           <button role="menuitem" onClick={() => open(true)}><Icon name="video" size={16} />With video</button>
+          {canShare && <button role="menuitem" onClick={() => { setMenu(false); setPicking(true); }}><Icon name="screenshare" size={16} />Screen only<span className="menu-note mono">NO MIC · NO CAMERA</span></button>}
         </Popover>
       )}
+      {picker}
     </span>
   );
 }
