@@ -19,7 +19,7 @@ test('repeating meetings expand within a window', () => {
   assert.equal(expand({ ...base, recurrence: 'none' }, at(2026, 11, 13, 10, 30), at(2026, 11, 14)).length, 1);
   const t0 = Date.now();
   assert.equal(expand({ ...base, recurrence: 'daily' }, at(2036, 1, 1), at(2036, 1, 8)).length, 7);
-  assert.ok(Date.now() - t0 < 50);
+  assert.ok(Date.now() - t0 < 250); // room for a busy CPU when every test file runs at once
 });
 
 test('invites, replies, announcement in the Space, edits, cancelling and visibility', async () => {
