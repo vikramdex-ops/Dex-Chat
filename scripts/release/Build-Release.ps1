@@ -128,7 +128,9 @@ git checkout -- apps/desktop/package.json package-lock.json 2>$null
 $notes = Join-Path $env:TEMP "dexconnect-notes-$Version.md"
 $last = ''
 try { $last = (gh release list --repo $PublicRepo --limit 1 --json tagName -q '.[0].tagName' 2>$null) } catch { }
-if ($last) { git log --no-merges --format='- %s' "$last..HEAD" 2>$null | Select-Object -First 40 | Set-Content $notes -Encoding utf8 }
+# the tag lives in the public repository; use it only when this clone has it too (git's error on a missing
+# tag stops the script in Windows PowerShell 5.1), otherwise the last 30 changes below
+if ($last -and (git tag --list $last)) { git log --no-merges --format='- %s' "$last..HEAD" 2>$null | Select-Object -First 40 | Set-Content $notes -Encoding utf8 }
 if (-not (Test-Path $notes) -or -not (Get-Content $notes)) { git log --no-merges --format='- %s' -n 30 | Set-Content $notes -Encoding utf8 }
 
 Step 'Checksums and the update feed'
