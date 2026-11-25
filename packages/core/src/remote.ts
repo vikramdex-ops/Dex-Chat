@@ -237,16 +237,21 @@ export interface RemoteHubSocket extends HubSocket { remote: true; http(req: Tun
 
 class Queue<T> implements AsyncIterable<T> {
   private items: T[] = [];
-  private waiters: Array<(r: IteratorResult<T>) => void> = [];
+  private waiters: Array<{ resolve: (r: IteratorResult<T>) => void; reject: (e: Error) => void }> = [];
   private ended: Error | null | undefined;
-  push(v: T) { const w = this.waiters.shift(); if (w) w({ value: v, done: false }); else this.items.push(v); }
-  end(err?: Error) { this.ended = err ?? null; for (const w of this.waiters.splice(0)) w({ value: undefined as never, done: true }); }
+  push(v: T) { const w = this.waiters.shift(); if (w) w.resolve({ value: v, done: false }); else this.items.push(v); }
+  /** The end of the body; with an error, a reader waiting for more gets the error, not a short body. */
+  end(err?: Error) {
+    if (this.ended !== undefined) return;
+    this.ended = err ?? null;
+    for (const w of this.waiters.splice(0)) err ? w.reject(err) : w.resolve({ value: undefined as never, done: true });
+  }
   [Symbol.asyncIterator](): AsyncIterator<T> {
     return {
       next: () => {
         if (this.items.length) return Promise.resolve({ value: this.items.shift()!, done: false });
         if (this.ended !== undefined) return this.ended ? Promise.reject(this.ended) : Promise.resolve({ value: undefined as never, done: true });
-        return new Promise((r) => this.waiters.push(r));
+        return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
       },
     };
   }
@@ -263,12 +268,16 @@ export function openRemoteSocket(openRaw: OpenRaw, target: HubTarget & { remote:
   let nextReq = 1;
   const responses = new Map<number, { resolve: (r: TunnelResponse) => void; reject: (e: Error) => void; body: Queue<Uint8Array> | null }>();
   let pinger: ReturnType<typeof setInterval> | null = null;
+  /** Requests and downloads still in flight fail with the reason: nothing waits on a closed channel. */
+  const failAll = (reason: string) => {
+    for (const r of responses.values()) { r.reject(new Error(reason)); r.body?.end(new Error(reason)); }
+    responses.clear();
+  };
   const finish = (reason: string) => {
     if (closed) return;
     closed = true;
     if (pinger) clearInterval(pinger);
-    for (const r of responses.values()) { r.reject(new Error(reason)); r.body?.end(new Error(reason)); }
-    responses.clear();
+    failAll(reason);
     h.onClose(reason);
   };
   const sendSealed = async (type: number, body: Uint8Array) => {
@@ -317,18 +326,26 @@ export function openRemoteSocket(openRaw: OpenRaw, target: HubTarget & { remote:
   return {
     remote: true,
     send: (data) => { void sendSealed(F.TEXT, utf8(data)).catch(() => {}); },
-    close: () => { if (!closed) { closed = true; if (pinger) clearInterval(pinger); raw.close(); } },
+    close: () => { if (!closed) { closed = true; if (pinger) clearInterval(pinger); failAll('The connection to the hub was closed.'); raw.close(); } },
     http: async (req) => {
       const id = nextReq++;
       const p = new Promise<TunnelResponse>((resolve, reject) => responses.set(id, { resolve, reject, body: null }));
-      await sendSealed(F.REQ, concat(u32(id), utf8(JSON.stringify({ method: req.method, path: req.path, headers: req.headers ?? {} }))));
-      if (req.body) {
-        const parts: AsyncIterable<Uint8Array> | Uint8Array[] = req.body instanceof Uint8Array ? [req.body] : req.body;
-        for await (const part of parts) {
-          for (let o = 0; o < part.length; o += CHUNK) await sendSealed(F.REQ_BODY, concat(u32(id), part.subarray(o, o + CHUNK)));
+      // it can fail while the request is still being sent; the caller gets the error when it awaits
+      p.catch(() => {});
+      try {
+        await sendSealed(F.REQ, concat(u32(id), utf8(JSON.stringify({ method: req.method, path: req.path, headers: req.headers ?? {} }))));
+        if (req.body) {
+          const parts: AsyncIterable<Uint8Array> | Uint8Array[] = req.body instanceof Uint8Array ? [req.body] : req.body;
+          for await (const part of parts) {
+            for (let o = 0; o < part.length; o += CHUNK) await sendSealed(F.REQ_BODY, concat(u32(id), part.subarray(o, o + CHUNK)));
+          }
         }
+        await sendSealed(F.REQ_END, u32(id));
+      } catch (err) {
+        // never sent: drop the entry
+        responses.delete(id);
+        throw err;
       }
-      await sendSealed(F.REQ_END, u32(id));
       return p;
     },
   };

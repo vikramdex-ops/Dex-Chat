@@ -213,5 +213,9 @@ test('from outside the office: the update mirror through the gateway (feed, then
   assert.ok([403, 404].includes((await phone.c.http({ method: 'GET', path: '/updates/files/0.1.120/..%2F..%2Fhub.db' })).status));
   assert.equal((await phone.c.http({ method: 'GET', path: '/updates/files/0.1.119/DexterityConnect-0.1.119.apk' })).status, 404);
   assert.equal((await phone.c.http({ method: 'GET', path: '/notify/wait' })).status, 403);
+  // a download in flight when the app closes its connection fails at once; it never waits forever
+  const inFlight = phone.c.http({ method: 'GET', path: feed.assets[0].url });
+  phone.c.disconnect();
+  await assert.rejects(async () => { await read(await inFlight); });
   await owner.request('admin.remote.set', { enabled: false });
 });

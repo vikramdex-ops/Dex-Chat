@@ -79,6 +79,8 @@ test('a stream reaches a local RTMP listener: frames arrive, health is reported,
   const live = seen.find((s) => s.state === 'live' && s.frames > 30);
   assert.ok(live, `the stream went live (${seen.map((s) => s.state).join(', ')})`);
   assert.ok(live!.ffmpeg && /libx264|openh264|h264/.test(live!.ffmpeg));
+  // most of the 4 s recording sent before stopping: on a busy machine the encoder runs behind
+  while (!seen.some((s) => s.frames >= 90) && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
   stream.stop();
   // the listener received video: its own progress counts frames
   await new Promise<void>((r) => { sink.once('exit', () => r()); setTimeout(r, 8000); });
