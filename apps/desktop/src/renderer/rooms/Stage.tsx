@@ -10,7 +10,7 @@ import type { LobbyRule, PublicUser, RoomInfo, RoomParticipant } from '@dex/core
 import { LOBBY_RULES, lobbyLabel } from '../meet/lobby.ts';
 import { Avatar, Dialog, Icon, Popover, colorFor, presenceFor, useToast } from '../ui.tsx';
 import {
-  answerUnmute, callQuality, capName, clock, hold, holdable, leave, onReaction, raiseHand, react, setBackground, setLayout, setMinimized, setPinned, sheetColumns, startCall,
+  answerUnmute, callQuality, capName, clock, hold, holdable, screenStreamOf, leave, onReaction, raiseHand, react, setBackground, setLayout, setMinimized, setPinned, sheetColumns, startCall,
   toggleCamera, toggleMute, toggleScreen, useCall, zoneRef,
 } from './engine.ts';
 import type { Layout } from './engine.ts';
@@ -286,7 +286,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
 
   // the shared sheet: someone else's screen, or yours
   const shared = others.find((p) => p.screen);
-  const sharedStream = useCall((s) => (shared ? s.peers.get(shared.deviceId)?.streams.find((x, i) => i > 0 && x.getVideoTracks().length) ?? null : null));
+  const sharedStream = useCall((s) => (shared ? screenStreamOf(s.peers.get(shared.deviceId), shared) : null));
   const shareStream = sharedStream ?? screen;
   // a spotlight is for everyone: it takes the stage even in the gallery
   const layout: Layout = layoutPick === 'presentation' && !shareStream ? 'speaker' : layoutPick === 'gallery' && spotlight ? 'speaker' : layoutPick;

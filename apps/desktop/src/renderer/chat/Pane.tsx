@@ -1016,23 +1016,23 @@ function deliveryOf(ctx: Ctx, m: AnyMessage, inTrack: boolean | undefined): { st
 
 /**
  * The transmittal mark: a dimension line with architectural ticks, the drawing office's own way of
- * saying how far a sheet has gone. One tick: sent. Two ticks: delivered. Inked in teal with its end
- * dot: seen (the first tick alone for part of a group). A dashed line while sending; a revision
- * triangle when it did not go.
+ * saying how far a sheet has gone. A dashed construction line while sending; one tick: sent; two
+ * ticks: delivered; the dimension closed by its second extension line and inked in teal: seen (the
+ * first tick alone in teal for part of a group). A revision triangle when it did not go.
  */
 function DeliveryMark({ d }: { d: { state: Delivery; label: string } }) {
   return (
     <span className={`dlv dlv-${d.state}`} role="img" aria-label={d.label} title={d.label}>
-      <svg width="20" height="11" viewBox="0 0 20 11" aria-hidden="true">
+      <svg width="24" height="13" viewBox="0 0 24 13" aria-hidden="true">
         {d.state === 'failed' ? (
-          <><path className="dlv-tri" d="M10 1.2 15.6 10H4.4z" /><path className="dlv-bang" d="M10 4.4v2.6M10 8.4v.1" /></>
+          <><path className="dlv-tri" d="M12 1.5 18 11.5H6z" /><path className="dlv-bang" d="M12 5v3M12 9.9v.1" /></>
         ) : (
           <>
-            <path className="dlv-line" d="M1 7.5h18" />
-            <path className="dlv-ext" d="M1 4.5v6" />
-            {d.state !== 'sending' && <path className="dlv-t1" d="M4.2 10.2 9.6 4.8" />}
-            {(d.state === 'delivered' || d.state === 'seen' || d.state === 'seen-some') && <path className="dlv-t2" d="M9.6 10.2 15 4.8" />}
-            {d.state === 'seen' && <circle className="dlv-end" cx="17.6" cy="7.5" r="1.5" />}
+            <path className="dlv-line" d="M1.5 8.5h21" />
+            <path className="dlv-ext" d="M1.5 4v8" />
+            {d.state !== 'sending' && <path className="dlv-t1" d="M5.5 11.5 11 6" />}
+            {(d.state === 'delivered' || d.state === 'seen' || d.state === 'seen-some') && <path className="dlv-t2" d="M11 11.5 16.5 6" />}
+            {d.state === 'seen' && <path className="dlv-ext dlv-ext2" d="M22.5 4v8" />}
           </>
         )}
       </svg>

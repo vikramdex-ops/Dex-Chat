@@ -287,24 +287,23 @@ body.resizing { user-select: none; cursor: col-resize; }
 .msg:hover > .seen-tag { display: block; }
 /* the transmittal mark at the end of my messages (Pane.tsx DeliveryMark): a dimension line with
    architectural ticks. Grey ink while it travels, teal ink once seen; the words show beside it on hover. */
-.msg:has(> .dlv) { padding-right: 36px; }
+.msg:has(> .dlv) { padding-right: 40px; }
 .dlv { position: absolute; right: 9px; bottom: 5px; display: inline-flex; line-height: 0; pointer-events: auto; }
 .dlv svg { overflow: visible; fill: none; stroke-linecap: round; }
-.dlv-line, .dlv-ext { stroke: var(--text-3); stroke-width: 1; }
-.dlv-t1, .dlv-t2 { stroke: var(--text-2); stroke-width: 1.7; }
+.dlv-line, .dlv-ext { stroke: var(--text-3); stroke-width: 1.1; }
+.dlv-t1, .dlv-t2 { stroke: var(--text-2); stroke-width: 1.9; }
 .dlv-sending .dlv-line { stroke-dasharray: 2 2; animation: dlv-plot 1.1s linear infinite; }
 .dlv-delivered .dlv-line { stroke: var(--text-2); }
 .dlv-seen-some .dlv-t1 { stroke: var(--accent); }
-.dlv-seen .dlv-line, .dlv-seen .dlv-ext { stroke: var(--accent); stroke-width: 1.2; }
+.dlv-seen .dlv-line, .dlv-seen .dlv-ext { stroke: var(--accent); stroke-width: 1.4; }
 .dlv-seen .dlv-t1, .dlv-seen .dlv-t2 { stroke: var(--accent); }
-.dlv-end { fill: var(--accent); stroke: none; }
 .dlv-tri { stroke: var(--danger); stroke-width: 1.3; stroke-linejoin: round; fill: var(--danger-soft); }
 .dlv-bang { stroke: var(--danger); stroke-width: 1.5; }
-.dlv-seen svg .dlv-end { animation: dlv-ink 260ms var(--ease) both; }
+.dlv-seen svg .dlv-ext2 { animation: dlv-ink 260ms var(--ease) both; }
 @keyframes dlv-plot { to { stroke-dashoffset: -8; } }
-@keyframes dlv-ink { from { opacity: 0; transform: scale(.3); transform-origin: 17.6px 7.5px; } }
-@media (prefers-reduced-motion: reduce) { .dlv-sending .dlv-line, .dlv-seen svg .dlv-end { animation: none; } }
-.msg:has(> .dlv) > .seen-tag { right: 34px; bottom: 3px; border-color: var(--stroke-strong); color: var(--text-2); }
+@keyframes dlv-ink { from { opacity: 0; transform: scaleY(.2); transform-origin: 22.5px 8.5px; } }
+@media (prefers-reduced-motion: reduce) { .dlv-sending .dlv-line, .dlv-seen svg .dlv-ext2 { animation: none; } }
+.msg:has(> .dlv) > .seen-tag { right: 38px; bottom: 3px; border-color: var(--stroke-strong); color: var(--text-2); }
 .msg:has(> .dlv-seen, > .dlv-seen-some) > .seen-tag { border-color: var(--accent); color: var(--accent-ink); }
 
 /* kept on my Desk: a folded amber corner; pinned: a small pin */
@@ -655,8 +654,8 @@ body.resizing { user-select: none; cursor: col-resize; }
 .layout-cards .notch, .layout-cards .run-body > .msg:nth-child(2) > .notch { left: auto; right: -5.5px; top: 7px; }
 .layout-cards .notch.plain { left: auto; right: -3px; }
 .layout-cards .seen-tag { right: 6px; bottom: -9px; }
-.layout-cards .msg:has(> .dlv) { padding-right: 34px; }
-.layout-cards .msg:has(> .dlv) > .seen-tag { right: 30px; bottom: -9px; }
+.layout-cards .msg:has(> .dlv) { padding-right: 38px; }
+.layout-cards .msg:has(> .dlv) > .seen-tag { right: 34px; bottom: -9px; }
 .layout-cards .dlv { right: 8px; bottom: 6px; }
 .layout-cards .pin-flag { top: -8px; right: 10px; padding: 1px 2px; border-radius: 2px; background: var(--layer-solid); }
 .layout-cards .msg.kept .pin-flag { right: 22px; }

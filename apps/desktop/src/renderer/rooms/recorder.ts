@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react';
 import { RECORDING_CHUNK } from '@dex/core';
 import type { RecordingChapter, RecordingInfo } from '@dex/core';
-import { callState, capName, clock, sheetColumns, zoneRef } from './engine.ts';
+import { callState, capName, clock, screenStreamOf, sheetColumns, zoneRef } from './engine.ts';
 import { onVoiceTick } from './speech.ts';
 import { colorFor, initials } from '../ui.tsx';
 
@@ -161,7 +161,7 @@ export async function startRecording(nameOf: (userId: string) => string, meId: s
       tiles.push({ key: p.deviceId, id: p.userId, name: nameOf(p.userId), stream: peer.streams[0] ?? null, camera: p.camera });
     }
     // a shared screen is the sheet being discussed; people go in a column on the right
-    const sharer = st.screen ?? [...st.peers.values()].map((p) => p.streams.find((x, i) => i > 0 && x.getVideoTracks().length)).find(Boolean) ?? null;
+    const sharer = st.screen ?? [...st.peers.values()].map((p) => screenStreamOf(p, st.room?.participants.find((x) => x.deviceId === p.deviceId))).find(Boolean) ?? null;
     const field = { x: 0, y: 0, w: W, h: H - STRIP };
     let area = field;
     if (sharer) {

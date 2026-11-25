@@ -47,7 +47,7 @@ export function HelpMenuItems({ onDone }: { onDone: () => void }) {
         <span className="help-mark" aria-hidden="true"><Icon name="lifebuoy" size={18} /></span>
         <span className="help-words">
           <span className="help-title">Help me…</span>
-          <span className="help-sub">{open ? `${ticketRef(open.number)} · ${open.session ? 'In session' : open.status === 'taken' ? 'With IT' : 'In the queue'}` : 'Something not working? IT answers'}</span>
+          <span className="help-sub">{open ? `${ticketRef(open.number)} · ${open.session ? 'In session' : open.status === 'taken' ? 'With IT' : 'In the queue'}` : 'Ask IT · a person answers'}</span>
         </span>
         <span className={`help-tag mono${open?.session ? ' live' : ''}`} aria-hidden="true">IT</span>
       </button>

@@ -20,6 +20,18 @@ export interface RemotePeer {
   streams: MediaStream[]; // [camera+mic, screen?]
 }
 
+/**
+ * Someone's shared screen among their streams: the second one with a picture; or, when they share
+ * with no microphone and no camera (Show screen), the only one, which then comes first.
+ */
+export function screenStreamOf(peer: RemotePeer | undefined, p: { camera?: boolean; screen?: boolean } | null | undefined): MediaStream | null {
+  if (!peer) return null;
+  const second = peer.streams.find((x, i) => i > 0 && x.getVideoTracks().length);
+  if (second) return second;
+  if (p?.screen && !p.camera) return peer.streams.find((x) => x.getVideoTracks().length) ?? null;
+  return null;
+}
+
 export interface CallState {
   room: RoomInfo | null;
   incoming: { room: RoomInfo; from: string } | null;
@@ -511,8 +523,8 @@ async function prepareMedia(video: boolean): Promise<MediaStream> {
 /** In the Room: show it and connect to everyone already there. */
 function enter(room: RoomInfo, local: MediaStream): void {
   joinedAt = performance.now();
-  // a mic turned off while waiting in the lobby stays off
-  const muted = !!state.lobby && state.local === local && state.muted;
+  // a mic turned off while waiting in the lobby stays off; come in with no microphone (watching a screen) and it reads off
+  const muted = (!!state.lobby && state.local === local && state.muted) || !local.getAudioTracks().length;
   local.getAudioTracks().forEach((t) => { t.enabled = !muted; });
   set({ room, local, incoming: null, lobby: null, joining: null, unmuteAsk: null, camera: local.getVideoTracks().length > 0, muted, minimized: false, error: null, peers: new Map(), pinned: null });
   const quiet = !!room.share;
@@ -937,6 +949,11 @@ function ensureLink(deviceId: string, userId: string): Link {
   const local = state.local;
   if (local) for (const t of local.getTracks()) link.senders.push(pc.addTrack(t, local));
   if (state.screen) for (const t of state.screen.getTracks()) link.senders.push(pc.addTrack(t, state.screen));
+  // watching with nothing to send (Show screen): ask to receive voice and pictures from the first offer
+  // on, so a screen already shown arrives at once (a microphone added later takes the audio slot)
+  if (!local?.getTracks().length && !state.screen) {
+    try { pc.addTransceiver('audio', { direction: 'recvonly' }); pc.addTransceiver('video', { direction: 'recvonly' }); pc.addTransceiver('video', { direction: 'recvonly' }); } catch { /* older engines negotiate on the next offer */ }
+  }
 
   pc.onicecandidate = (e) => signal(deviceId, { candidate: e.candidate ? e.candidate.toJSON() : null });
   pc.onnegotiationneeded = async () => {
