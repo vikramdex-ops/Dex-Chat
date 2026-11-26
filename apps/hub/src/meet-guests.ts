@@ -388,7 +388,9 @@ export class MeetGuests {
     return {
       ...(hostAway ? { hostAway } : {}),
       roomId: r.id, meetingId: r.meetingId ? formatMeetingId(r.meetingId) : '', title: r.title || 'Meeting', startedAt: r.startedAt, locked: !!r.locked,
-      seats: r.participants.map((p) => ({
+      // people on hold keep their seat but are not connected: the page shows them apart, never dials them
+      ...(r.participants.some((p) => p.held) ? { held: r.participants.filter((p) => p.held).map((p) => ({ deviceId: p.deviceId, name: nameOf(p.userId) })) } : {}),
+      seats: r.participants.filter((p) => !p.held).map((p) => ({
         deviceId: p.deviceId, name: nameOf(p.userId), muted: p.muted, camera: p.camera, screen: p.screen,
         host: p.userId === r.hostId || (r.coHosts ?? []).includes(p.userId), guest: isWebGuest(p.userId), hand: hands.get(p.deviceId) ?? 0,
         ...(p.screen && !presenterRefusal(p) && r.meetingKind !== 'webinar' ? { controllable: true } : {}),

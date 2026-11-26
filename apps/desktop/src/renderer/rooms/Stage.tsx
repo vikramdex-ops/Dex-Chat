@@ -10,7 +10,7 @@ import type { LobbyRule, PublicUser, RoomInfo, RoomParticipant } from '@dex/core
 import { LOBBY_RULES, lobbyLabel } from '../meet/lobby.ts';
 import { Avatar, Dialog, Icon, Popover, colorFor, presenceFor, useToast } from '../ui.tsx';
 import {
-  answerUnmute, callQuality, capName, clock, leave, onReaction, raiseHand, react, setBackground, setLayout, setMinimized, setPinned, sheetColumns, startCall,
+  answerUnmute, callQuality, capName, clock, hold, holdable, screenStreamOf, leave, onReaction, raiseHand, react, setBackground, setLayout, setMinimized, setPinned, sheetColumns, startCall,
   toggleCamera, toggleMute, toggleScreen, useCall, zoneRef,
 } from './engine.ts';
 import type { Layout } from './engine.ts';
@@ -85,20 +85,23 @@ function Reactions({ deviceId }: { deviceId: string }) {
 interface TileProps {
   deviceId: string; userId: string; name: string; me: boolean; muted: boolean; camera: boolean; zone: string;
   hand: number; spotlit: boolean; pinned: boolean; onMenu: MenuOpen | null; className?: string;
+  /** This seat is on hold: kept, not connected. */
+  held?: boolean;
 }
 
-const Tile = memo(function Tile({ deviceId, userId, name, me, muted, camera, zone, hand, spotlit, pinned, onMenu, className }: TileProps) {
+const Tile = memo(function Tile({ deviceId, userId, name, me, muted, camera, zone, hand, spotlit, pinned, onMenu, className, held }: TileProps) {
   const stream = useCall((s) => (me ? s.local : s.peers.get(deviceId)?.streams[0] ?? null));
   // a camera turned on mid-call adds a track to the same stream: follow the track count too
   const tracks = useCall((s) => (me ? s.local : s.peers.get(deviceId)?.streams[0])?.getVideoTracks().length ?? 0);
   const speaking = useSpeaking(me ? `self:${deviceId}` : deviceId) && !muted;
-  const hasVideo = camera && tracks > 0 && !!stream;
+  const hasVideo = camera && tracks > 0 && !!stream && !held;
   const menuBtn = useRef<HTMLButtonElement>(null);
   return (
-    <div className={`room-tile${speaking ? ' speaking' : ''}${hasVideo ? ' has-video' : ''}${hand ? ' hand-up' : ''}${className ? ` ${className}` : ''}`} style={{ ['--tint' as string]: colorFor(userId) }}
-      data-device={deviceId} aria-label={`${zone} · ${me ? 'You' : name}${muted ? ' · mic off' : ''}${speaking ? ' · speaking' : ''}${hand ? ` · hand raised (${hand})` : ''}`}>
+    <div className={`room-tile${speaking && !held ? ' speaking' : ''}${hasVideo ? ' has-video' : ''}${hand ? ' hand-up' : ''}${held ? ' on-hold' : ''}${className ? ` ${className}` : ''}`} style={{ ['--tint' as string]: colorFor(userId) }}
+      data-device={deviceId} aria-label={`${zone} · ${me ? 'You' : name}${held ? ' · on hold' : ''}${muted ? ' · mic off' : ''}${speaking ? ' · speaking' : ''}${hand ? ` · hand raised (${hand})` : ''}`}>
       <div className="room-face">
         {hasVideo ? <Video stream={stream!} muted mirror={me} /> : <Avatar user={{ id: userId, displayName: name }} size="lg" />}
+        {held && <span className="room-hold-stamp" aria-hidden="true">ON HOLD</span>}
       </div>
       <span className="room-cap"><b>{zone}</b><span>{me ? 'YOU' : capName(name)}</span>{muted && <Icon name="mic-off" size={12} />}</span>
       {(hand > 0 || spotlit || pinned) && (
@@ -209,6 +212,8 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   const layoutPick = useCall((s) => s.layout);
   const pinned = useCall((s) => s.pinned);
   const unmuteAsk = useCall((s) => s.unmuteAsk);
+  const heldByOthers = useCall((s) => s.heldByOthers);
+  const otherHeld = useCall((s) => !!s.held);
   const policy = usePolicy();
   const recState = useRecorder();
   const myRec = !!recState?.recording;
@@ -281,7 +286,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
 
   // the shared sheet: someone else's screen, or yours
   const shared = others.find((p) => p.screen);
-  const sharedStream = useCall((s) => (shared ? s.peers.get(shared.deviceId)?.streams.find((x, i) => i > 0 && x.getVideoTracks().length) ?? null : null));
+  const sharedStream = useCall((s) => (shared ? screenStreamOf(s.peers.get(shared.deviceId), shared) : null));
   const shareStream = sharedStream ?? screen;
   // a spotlight is for everyone: it takes the stage even in the gallery
   const layout: Layout = layoutPick === 'presentation' && !shareStream ? 'speaker' : layoutPick === 'gallery' && spotlight ? 'speaker' : layoutPick;
@@ -313,7 +318,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   const tileFor = (s: Seat, className?: string) => (
     <Tile key={s.deviceId} deviceId={s.deviceId} userId={s.userId} name={nameOf(s.userId)} me={s.me} zone={zones.get(s.deviceId) ?? '··'}
       muted={s.me ? muted : !!s.p?.muted} camera={s.me ? camera : !!s.p?.camera} hand={handOrder.get(s.deviceId) ?? 0}
-      spotlit={spotlight === s.deviceId} pinned={pinned === s.deviceId} onMenu={openMenu} className={className} />
+      spotlit={spotlight === s.deviceId} pinned={pinned === s.deviceId} onMenu={openMenu} className={className} held={!s.me && !!s.p?.held} />
   );
 
   const run = (p: Promise<unknown>) => void p.catch((e: Error) => toast(e.message, true));
@@ -358,7 +363,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
 
   // a breakout room is named for itself; its meeting's name is on the banner
   const name = room.breakoutName ?? (room.title || title(room.convId));
-  const kind = room.parentId ? 'BREAKOUT' : room.meetingKind === 'webinar' ? 'WEBINAR STAGE' : room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
+  const kind = room.share ? 'SCREEN' : room.parentId ? 'BREAKOUT' : room.meetingKind === 'webinar' ? 'WEBINAR STAGE' : room.meetingKind === 'instant' ? 'INSTANT' : room.meetingKind === 'personal' ? 'PERSONAL' : room.meetingKind === 'event' ? 'SCHEDULED'
     : convKind === 'space' ? 'SPACE' : convMembers.length > 2 ? 'GROUP' : 'DIRECT';
   const canFloat = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
   const canRecord = recordSupported() && (policy.allowRecording || myRec);
@@ -381,6 +386,12 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
           {tab !== 'chat' && <ChatPeek onOpen={() => setTab('chat')} />}
           {room.occurrenceId && <MeetingAids room={room} meId={meId} meDevice={meDevice} users={users} onTab={(t) => setTab(t)} />}
           {room.meetingKind === 'webinar' && <Suspense fallback={null}><WebinarBar room={room} meId={meId} meDevice={meDevice} users={users} /></Suspense>}
+          {heldByOthers && (
+            <div className="room-held-by-others" role="status">
+              <Icon name="hold" size={16} />
+              <span>{others.length === 1 ? `${nameOf(others[0].userId)} put the call on hold.` : 'Everyone else put the call on hold.'} You can wait here, or leave: the call is still open.</span>
+            </div>
+          )}
           {unmuteAsk && muted && (
             <div className="room-ask" role="alertdialog" aria-label="Asked to unmute">
               <Icon name="mic" size={16} />
@@ -489,6 +500,12 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
               <button ref={addBtn} aria-expanded={adding} title="Ring someone into the Room" onClick={() => setAdding(!adding)}>
                 <Glyph name="ring" /><span>Ring someone</span>
               </button>
+              {holdable(room) && (
+                <button className="held-btn" disabled={otherHeld} onClick={() => run(hold())}
+                  title={otherHeld ? 'Another call is on hold: resume or end it first' : 'Put the call on hold: your seat is kept, your mic, camera and screen stop, and you hear nothing until you resume'}>
+                  <Icon name="hold" size={18} /><span>Hold</span>
+                </button>
+              )}
               {/* the sound menu: a small tab on the mic's cell (kept last, so the grid's cells stay as they are) */}
               <button className={`tb-sound${noiseOn ? ' on' : ''}`} aria-expanded={pop?.kind === 'sound'} aria-label={noiseOn ? 'Sound: noise suppression strong' : 'Sound: noise suppression off'}
                 title="Sound: strong noise suppression for your mic" onClick={(e) => setPop({ kind: 'sound', anchor: e.currentTarget })}>

@@ -549,6 +549,9 @@ function renderBanners(): void {
   if (r.note) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, `NOTE · ${clock(r.note.at)}`), h('span', {}, r.note.text)));
   // let in before the host came: they have been told and join from wherever they are
   if (r.hostAway) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, 'HOST · ON THE WAY'), h('span', {}, `${r.hostAway} let you in and has been told you are here. They join you shortly.`)));
+  // people who put the meeting on hold keep their seat; they are not connected until they come back
+  if (r.held?.length) out.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'mono' }, 'ON HOLD'),
+    h('span', {}, r.held.length === 1 ? `${r.held[0].name} put the meeting on hold and will be back.` : `${r.held.map((x) => x.name).join(', ')} put the meeting on hold and will be back.`)));
   if (state.askUnmute && !state.micOn) {
     out.push(h('div', { class: 'banner amber', role: 'alertdialog' }, h('span', {}, `${state.askUnmute} asks you to turn your mic on`),
       h('button', { class: 'btn sm primary', onclick: () => { state.micOn = true; state.askUnmute = ''; applyMic(); announce(); renderControls(); renderBanners(); } }, 'Turn mic on'),

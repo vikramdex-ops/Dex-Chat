@@ -545,3 +545,41 @@ body:has(.room-stage:not(.folded)) .scrim { z-index: 40; }
   .tb-foot { flex-wrap: wrap; row-gap: 6px; }
   .room-side, .room-block { min-width: 0; }
 }
+
+/* ------------------------------------------------------------------ call waiting, show my screen, hold */
+.room-banner-note { font-size: 12px; color: rgba(43, 26, 0, .8); }
+/* a screen offered to watch is an invitation, not a call: teal, no amber */
+.room-banner.share { background: var(--accent); color: var(--accent-text); }
+.room-banner.share .room-banner-text .mono, .room-banner.share .room-banner-note { color: color-mix(in srgb, var(--accent-text) 80%, transparent); }
+.room-banner.share .rb-btn { border-color: var(--accent-text); color: var(--accent-text); }
+.room-banner.share .rb-btn.solid { background: var(--accent-text); color: var(--accent); }
+.room-banner.share .avatar { box-shadow: 0 0 0 2px var(--accent), 0 0 0 3.5px var(--accent-text); }
+.room-banner.share::after { border-bottom-color: color-mix(in srgb, var(--accent-text) 45%, transparent); }
+
+/* the call on hold: a small title block in the corner, an amber rule down its edge (it waits for you) */
+.held-bar {
+  position: fixed; z-index: 44; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 12px; width: min(460px, calc(100vw - 32px));
+  padding: 10px 12px 10px 14px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); background: var(--layer-solid); color: var(--text);
+  box-shadow: inset 4px 0 0 var(--amber), var(--shadow-2); animation: enter var(--med) var(--ease);
+}
+.held-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 4px; color: var(--amber-ink);
+  background: repeating-linear-gradient(135deg, var(--amber-soft) 0 3px, transparent 3px 6px); border: 1px solid var(--amber); }
+.held-text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.held-label { font-size: 10px; letter-spacing: .12em; color: var(--amber-ink); }
+.held-text strong { font: 600 14px/1.25 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.held-sub { font-size: 11.5px; color: var(--text-2); }
+.held-bar .rb-btn { height: 30px; border-color: var(--stroke-strong); color: var(--text); }
+.held-bar .rb-btn:hover { background: var(--subtle); }
+.held-bar .rb-btn.solid { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.held-bar .rb-btn.solid:hover { background: var(--accent-hover); }
+.held-bar .rb-btn:focus-visible { box-shadow: 0 0 0 2px var(--layer-solid), 0 0 0 4px var(--accent); }
+
+/* a seat on hold in the Room: the face hatched like a section, an ON HOLD stamp across it */
+.room-tile.on-hold .room-face { background: repeating-linear-gradient(135deg, var(--subtle-2) 0 4px, transparent 4px 9px), var(--layer-2); }
+.room-tile.on-hold .room-face .avatar { opacity: .45; filter: grayscale(.6); }
+.room-hold-stamp { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-6deg); padding: 3px 9px; font: 700 12px/1 var(--font-mono); letter-spacing: .16em;
+  color: var(--amber-ink); border: 2px solid var(--amber); border-radius: 3px; background: color-mix(in srgb, var(--layer-solid) 85%, transparent); pointer-events: none; }
+/* everyone else put the call on hold: a quiet line across the sheet */
+.room-held-by-others { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 0 0 8px; border: 1px dashed var(--amber); border-radius: var(--radius-s); background: var(--amber-soft); color: var(--text); font-size: 13px; }
+.tb-controls button.held-btn { color: var(--amber-ink); }
+@media (max-width: 720px) { .held-bar { left: 8px; right: 8px; width: auto; bottom: calc(76px + env(safe-area-inset-bottom)); flex-wrap: wrap; } }

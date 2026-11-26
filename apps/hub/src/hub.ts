@@ -805,7 +805,8 @@ export class Hub {
       audit: (actor, action, detail) => this.store.audit(actor || null, action, null, detail),
       log: (level, msg, extra) => this.log(level, msg, extra),
     });
-    this.wss.on('connection', (ws, req) => this.accept(ws, req));
+    // while stopping, apps that reconnect are turned away: an open socket would hold the stop up
+    this.wss.on('connection', (ws, req) => { if (this.stopping) ws.terminate(); else this.accept(ws, req); });
   }
 
   /** Has an approved device and has not left the office: can use Dexterity Connect now. */
@@ -986,7 +987,9 @@ export class Hub {
     await this.backups.halt();
     await Promise.race([this.firstRunBackup.catch(() => null), new Promise((r) => setTimeout(r, 3000).unref())]);
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
-    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+    // close() waits for every open connection, and apps reconnecting while the hub stops keep
+    // opening new ones: drop them, or a stop (a restart, an update) can wait indefinitely
+    await new Promise<void>((resolve) => { this.server.close(() => resolve()); this.server.closeAllConnections(); });
     this.store.close();
     try { fs.rmSync(path.join(this.opts.dataDir, LOCK_FILE), { force: true }); } catch { /* gone */ }
   }

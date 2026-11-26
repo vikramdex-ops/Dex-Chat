@@ -114,6 +114,8 @@ export async function refreshConversations(): Promise<void> {
   try {
     const list = await window.dex.request('conv.list');
     state.conversations = new Map(list.map((c) => [c.id, c]));
+    // what arrived while this device was away is on it now: tell the writers it was delivered
+    for (const c of list) if (c.joined && c.lastMessage && c.lastMessage.authorId !== state.meId && (c.delivered?.[state.meId] ?? '') < c.lastMessage.id) ackDelivered(c.id, c.lastMessage.id);
     const first = !state.ready;
     state.ready = true;
     // conversations we had open may have missed messages while offline: reload them
@@ -146,11 +148,17 @@ function onEvent(name: string, data: unknown): void {
       if (c) { putConversation({ ...c, reads: { ...c.reads, [r.userId]: r.messageId } }); changed(); }
       break;
     }
+    case 'delivered': {
+      const r = data as { convId: string; userId: string; messageId: string };
+      const c = state.conversations.get(r.convId);
+      if (c && (c.delivered?.[r.userId] ?? '') < r.messageId) { putConversation({ ...c, delivered: { ...c.delivered, [r.userId]: r.messageId } }); changed(); }
+      break;
+    }
     case 'msg.new':
     case 'msg.updated': {
       const m = data as Message;
       upsertMessage(m);
-      if (name === 'msg.new') notifyIncoming(m);
+      if (name === 'msg.new') { notifyIncoming(m); if (m.authorId !== state.meId) ackDelivered(m.convId, m.id); }
       // a message from someone clears their typing indicator
       const writing = state.typing.get(tlKey(m.convId, m.parentId));
       if (writing?.has(m.authorId)) { const next = new Map(writing); next.delete(m.authorId); state.typing.set(tlKey(m.convId, m.parentId), next); }
@@ -289,6 +297,22 @@ export function notifyTyping(convId: string, parentId?: string | null): void {
   if (now - lastTypingSent < 3000) return;
   lastTypingSent = now;
   void window.dex.request('typing', { convId, parentId: parentId ?? undefined }).catch(() => {});
+}
+
+// delivery receipts: the newest message received per conversation, sent in one batch a moment later
+const deliveredOut = new Map<string, string>();
+let deliveredTimer: ReturnType<typeof setTimeout> | null = null;
+let deliveredOff = false;
+function ackDelivered(convId: string, messageId: string): void {
+  if (deliveredOff || (deliveredOut.get(convId) ?? '') >= messageId) return;
+  deliveredOut.set(convId, messageId);
+  deliveredTimer ??= setTimeout(() => {
+    deliveredTimer = null;
+    const items = [...deliveredOut].map(([c, m]) => ({ convId: c, messageId: m }));
+    deliveredOut.clear();
+    // an older hub does not know delivery receipts: stop asking until the app starts again
+    void window.dex.request('conv.delivered', { items }).catch((e: Error) => { if (/unknown|not supported|no such/i.test(e.message)) deliveredOff = true; });
+  }, 400);
 }
 
 export function markRead(convId: string): void {

@@ -129,6 +129,14 @@ const PATHS = {
   mail: 'M3.5 6h17v12h-17zM3.5 6.5l8.5 6.5 8.5-6.5',
   /** A meeting's recap: a sheet with its title block in the corner. */
   recap: 'M4 3.5h16v17H4zM11.5 14.5h8.5M11.5 14.5v6M15.5 14.5v6M7 7.5h10M7 10.5h6',
+  /** Help from IT: a ring buoy (an outer and an inner ring held by four bands). */
+  lifebuoy: 'M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17Zm0-5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM6 6l3.5 3.5M14.5 14.5 18 18M18 6l-3.5 3.5M9.5 14.5 6 18',
+  /** A bot: a square instrument tag with a stem and two read-outs (never a face). */
+  bot: 'M5 7.5h14v11H5zM12 7.5V4M10 4h4M8.5 12h2M13.5 12h2M8.5 15.5h7',
+  /** A shared screen only (no voice, no camera): a sheet on a stand with its rays. */
+  screenshare: 'M3.5 4.5h17v12h-17zM8.5 20h7M12 16.5V20M8 12.5l2.5-3 2 2 3.5-4',
+  /** On hold: two bars inside a frame. */
+  hold: 'M4 4.5h16v15H4zM10 9v6M14 9v6',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -180,6 +188,13 @@ type TileArt = (id: string, size?: 'sm' | 'lg') => { colour: string; node: React
 let tileArt: TileArt = () => null;
 export function setTileArt(f: TileArt): void { tileArt = f; }
 
+/** The tile colour of a bot without a mark of its own (integrations, the system's account bot). */
+const BOT_TILE = '#2f4b50';
+/** Is this account a bot (office bots, integrations, Nib, member-made bots)? From the user given or the directory. */
+export function isBot(user: Pick<PublicUser, 'id'> & { role?: PublicUser['role'] }): boolean {
+  return (user.role ?? presenceSource.users.get(user.id)?.role) === 'bot';
+}
+
 /** Rounded-square tile with initials; presence is a beacon ring around it, never a dot. */
 export function Avatar({ user, online, presence, size }: {
   user: Pick<PublicUser, 'id' | 'displayName'>;
@@ -189,10 +204,13 @@ export function Avatar({ user, online, presence, size }: {
 }) {
   const p: Presence | undefined = presence ?? (online === undefined ? undefined : online ? 'on' : 'off');
   const art = tileArt(user.id, size);
-  if (art) {
+  // a bot is never drawn like a person: a square tile with its own mark (or the instrument tag every
+  // office bot and integration carries), no beacon ring, and a bar under it like an instrument's tag
+  const bot = art || isBot(user);
+  if (bot) {
     return (
-      <span className={`avatar bot-tile${art.monogram ? ' mono' : ''}${size ? ` ${size}` : ''}`} style={{ background: art.colour }} translate="no" title={user.displayName}>
-        {art.node}
+      <span className={`avatar bot-tile is-bot${art?.monogram ? ' mono' : ''}${art ? '' : ' generic'}${size ? ` ${size}` : ''}`} style={{ background: art?.colour ?? BOT_TILE }} translate="no" title={`${user.displayName} · bot`}>
+        {art ? art.node : <Icon name="bot" size={size === 'lg' ? 30 : size === 'sm' ? 17 : 21} />}
       </span>
     );
   }

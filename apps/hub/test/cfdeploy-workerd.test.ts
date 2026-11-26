@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
-import { spawn, execFile } from 'node:child_process';
+import { spawn, spawnSync, execFile } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { CloudflareMock } from './cfmock.ts';
@@ -23,7 +23,9 @@ import type { CloudBundle } from '../src/cfdeploy.ts';
 import type { CfSetupView } from '@dex/core';
 
 const repo = path.resolve(import.meta.dirname, '../../..');
-const wrangler = path.join(repo, 'node_modules/.bin/wrangler');
+// wrangler's own script under this node: the .bin shim is a shell script that Windows cannot spawn
+const wrangler = path.join(repo, 'node_modules/wrangler/bin/wrangler.js');
+const win = process.platform === 'win32';
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'dexcf-workerd-'));
 const registry = path.join(work, 'registry');
 let mock: CloudflareMock;
@@ -41,14 +43,16 @@ async function freePort(): Promise<number> {
 
 /** `wrangler dev` on a generated config, in its own process group. */
 function dev(dir: string, port: number, inspector: number): ChildProcess {
-  const child = spawn(wrangler, ['dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(inspector), '--config', path.join(dir, 'wrangler.jsonc'), '--persist-to', path.join(work, `state-${path.basename(dir)}`), '--show-interactive-dev-session=false', '--log-level', 'info'],
-    { cwd: dir, detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1', WRANGLER_REGISTRY_PATH: registry }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(inspector), '--config', path.join(dir, 'wrangler.jsonc'), '--persist-to', path.join(work, `state-${path.basename(dir)}`), '--show-interactive-dev-session=false', '--log-level', 'info'],
+    { cwd: dir, detached: !win, windowsHide: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1', WRANGLER_REGISTRY_PATH: registry }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.on('error', () => { /* reported through 'exit' */ });
   const log = fs.createWriteStream(path.join(work, `${path.basename(dir)}.log`));
   child.stdout!.pipe(log); child.stderr!.pipe(log);
   children.push(child);
   return child;
 }
-const kill = (c: ChildProcess) => { try { process.kill(-c.pid!, 'SIGKILL'); } catch { /* gone */ } };
+// the whole tree (wrangler and its workerd): a process group here, taskkill /T on Windows
+const kill = (c: ChildProcess) => { try { if (win) spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-c.pid!, 'SIGKILL'); } catch { /* gone */ } };
 
 before(async () => {
   try {

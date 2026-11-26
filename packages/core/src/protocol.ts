@@ -325,6 +325,8 @@ export interface Conversation {
   muted: boolean;
   /** Each member's last read message id (read receipts). */
   reads: Record<string, string | null>;
+  /** Each member's newest message received on one of their devices (delivery receipts; missing on older hubs). */
+  delivered?: Record<string, string>;
   /** Viewer's own organisation: pinned to the top (when), their section name, muted until. */
   pinnedAt: number | null;
   section: string | null;
@@ -678,6 +680,13 @@ export interface RoomParticipant {
   recording?: boolean;
   /** Speaking now (lounges only: shown to the Space on the lounge's row). */
   speaking?: boolean;
+  /**
+   * On hold: the person keeps their seat but neither hears nor is heard, and no one connects to this
+   * device until it comes back (it may be answering another call meanwhile).
+   */
+  held?: boolean;
+  /** When they put the call on hold. */
+  heldAt?: number;
 }
 
 export interface RoomInfo {
@@ -712,6 +721,8 @@ export interface RoomInfo {
   settings?: MeetingSettings;
   /** A Room with a job of its own: a lounge people drop into, or an IT support session. */
   purpose?: RoomPurpose;
+  /** A screen shown in a conversation: people watch without voice or camera unless they turn them on. */
+  share?: boolean;
 }
 
 /** lounge: a standing audio space in a Space; support: a help-desk session between two people. */
@@ -966,6 +977,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'conv.addMembers': { req: { convId: string; userIds: string[] }; res: Conversation };
   'conv.update': { req: { convId: string; name?: string; topic?: string | null }; res: Conversation };
   'conv.read': { req: { convId: string; messageId: string }; res: Conversation };
+  /** This device received messages up to these (delivery receipts), several conversations at once. */
+  'conv.delivered': { req: { items: Array<{ convId: string; messageId: string }> }; res: { ok: true } };
   'conv.mute': { req: { convId: string; muted: boolean; /** mute until this time (then notifications come back) */ until?: number | null }; res: Conversation };
   /** The viewer's own sidebar: pin to the top, or file under a section of their own. */
   'conv.organise': { req: { convId: string; pinned?: boolean; section?: string | null }; res: Conversation };
@@ -999,7 +1012,10 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'msg.pin': { req: { messageId: string; pinned: boolean; until?: number | null }; res: Message };
   'msg.pins': { req: { convId: string }; res: Message[] };
   'typing': { req: { convId: string; parentId?: string }; res: { ok: true } };
-  'room.start': { req: { convId: string; video: boolean }; res: RoomInfo };
+  /** `share`: open it to show a screen (no voice or camera asked for; members are told calmly, not rung). */
+  'room.start': { req: { convId: string; video: boolean; share?: boolean }; res: RoomInfo };
+  /** Put this device's seat in a Room on hold, or take it off hold (any other Room it is active in goes on hold). */
+  'room.hold': { req: { roomId: string; on: boolean }; res: RoomInfo };
   'room.join': { req: { roomId: string }; res: RoomInfo };
   'room.leave': { req: { roomId: string }; res: { ok: true } };
   'room.decline': { req: { roomId: string }; res: { ok: true } };
@@ -1190,6 +1206,8 @@ export interface Events extends FlowEvents, BotEvents, NibEvents {
   'msg.removed': { convId: string; messageIds: string[] };
   'typing': { convId: string; userId: string; parentId: string | null };
   'read': { convId: string; userId: string; messageId: string };
+  /** To the writers of the messages it covers: someone's device received them. */
+  'delivered': { convId: string; userId: string; messageId: string };
   'room.ring': { room: RoomInfo; from: string };
   'room.updated': RoomInfo;
   'room.ended': { roomId: string; convId: string; missed: boolean; startedBy: string; durationMs: number; /** a host ended it for everyone */ endedBy?: string };

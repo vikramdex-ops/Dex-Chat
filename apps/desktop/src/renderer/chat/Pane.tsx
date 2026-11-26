@@ -19,7 +19,8 @@ import {
 } from './store.ts';
 import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, HushItems, convTitle } from './Switchboard.tsx';
-import { joinRoom, setMinimized, startCall, useCall } from '../rooms/engine.ts';
+import { callState, hold, holdable, joinRoom, setMinimized, startCall, startShare, useCall } from '../rooms/engine.ts';
+import { ScreenPicker } from '../rooms/RoomUi.tsx';
 import { FormBuilder, FormCard } from './forms.tsx';
 import { BotCard, isBotCard } from '../bots/BotCard.tsx';
 import { NoteEditor, NotesList } from './notes.tsx';
@@ -495,33 +496,56 @@ export function Pane({ convId, users, meId, isAdmin, online, live, onBack, sessi
   );
 }
 
-/** One amber-outlined Room button: voice by default, video from its menu; Join or Back while a Room runs. */
+/**
+ * One amber-outlined Room button: voice by default, video from its menu; Join or Back while a Room runs.
+ * Beside it, Show screen: a screen shown in the conversation with no voice or camera (people Watch).
+ * In another call already, joining puts that call on hold first.
+ */
 function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const toast = useToast();
   const active = useCall((s) => s.active.get(convId));
   const inCall = useCall((s) => s.room);
+  const held = useCall((s) => s.held);
   const [menu, setMenu] = useState(false);
+  const [picking, setPicking] = useState(false);
   const caret = useRef<HTMLButtonElement>(null);
-  if (inCall?.convId === convId && !inCall.purpose) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name="phone" size={14} />Back to the Room</button>;
+  const canShare = !!window.dex.listScreens;
+  // another call is live: hold it (when it can be) before coming in here
+  const busy = !!inCall && !(holdable(inCall) && !held);
+  const busyNote = inCall ? (busy ? 'You are in another call: leave it first' : 'Your call goes on hold first') : '';
+  const holdFirst = async () => { const r = callState().room; if (r && r.convId !== convId) await hold(); };
+  const share = (id: string, sound: boolean) => { setPicking(false); void holdFirst().then(() => startShare(convId, id, sound)).catch((e: Error) => toast(e.message, true)); };
+  const picker = picking && <ScreenPicker onPick={share} onClose={() => setPicking(false)} />;
+  if (inCall?.convId === convId && !inCall.purpose) return <button className="room-open live" onClick={() => setMinimized(false)}><Icon name={inCall.share ? 'screenshare' : 'phone'} size={14} />{inCall.share ? 'Back to the screen' : 'Back to the Room'}</button>;
   if (active && active.participants.length) {
+    const watch = !!active.share;
     return (
-      <button className="room-open live" disabled={!live || !!inCall} onClick={() => void joinRoom(active.id, false).catch((e: Error) => toast(e.message, true))}>
-        <Icon name="phone" size={14} />Join the Room <span className="mono">· {active.participants.length}</span>
+      <button className={`room-open live${watch ? ' share' : ''}`} disabled={!live || busy} title={busyNote || (watch ? 'Watch the screen: no microphone or camera needed' : undefined)}
+        onClick={() => void holdFirst().then(() => joinRoom(active.id, false, { watch })).catch((e: Error) => toast(e.message, true))}>
+        <Icon name={watch ? 'screenshare' : 'phone'} size={14} />{watch ? 'Watch the screen' : 'Join the Room'} <span className="mono">· {active.participants.length}</span>
       </button>
     );
   }
-  const open = (video: boolean) => { setMenu(false); void startCall(convId, video).catch((e: Error) => toast(e.message, true)); };
+  const open = (video: boolean) => { setMenu(false); void holdFirst().then(() => startCall(convId, video)).catch((e: Error) => toast(e.message, true)); };
   return (
     <span className="room-split">
-      <button className="room-open" disabled={!live || !!inCall} onClick={() => open(false)} title="Open a Room with voice">Open a Room</button>
-      <button ref={caret} className="room-open caret" disabled={!live || !!inCall} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
+      <button className="room-open" disabled={!live || busy} onClick={() => open(false)} title={busyNote || 'Open a Room with voice'}>Open a Room</button>
+      <button ref={caret} className="room-open caret" disabled={!live || busy} aria-label="More ways to open a Room" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="chevron" size={13} /></button>
+      {canShare && (
+        <button className="room-open share-only" disabled={!live || busy} onClick={() => setPicking(true)}
+          title={busyNote || 'Show your screen here: no voice or camera. Everyone in the conversation can watch, point at it and talk later if they want.'} aria-label="Show my screen">
+          <Icon name="screenshare" size={14} /><span className="share-only-label">Show screen</span>
+        </button>
+      )}
       {menu && (
         <Popover anchor={caret.current} onClose={() => setMenu(false)} className="menu room-menu">
           <div className="menu-label label">Open a Room</div>
           <button role="menuitem" onClick={() => open(false)}><Icon name="mic" size={16} />With voice</button>
           <button role="menuitem" onClick={() => open(true)}><Icon name="video" size={16} />With video</button>
+          {canShare && <button role="menuitem" onClick={() => { setMenu(false); setPicking(true); }}><Icon name="screenshare" size={16} />Screen only<span className="menu-note mono">NO MIC · NO CAMERA</span></button>}
         </Popover>
       )}
+      {picker}
     </span>
   );
 }
@@ -937,13 +961,13 @@ const Run = memo(function Run({ ctx, author, mine, msgs, onTrack, activeTrack, s
   // only the height it had when it was first drawn here (a later measurement is not a change)
   const [room] = useState(size);
   return (
-    <div className={`run${mine ? ' mine' : ''}`} style={room ? { containIntrinsicSize: `auto ${Math.round(room)}px` } : undefined}>
+    <div className={`run${mine ? ' mine' : ''}${u?.role === 'bot' ? ' bot' : ''}`} style={room ? { containIntrinsicSize: `auto ${Math.round(room)}px` } : undefined}>
       <div className="run-tile"><Avatar user={{ id: author, displayName: u?.displayName ?? guestName ?? '?' }} presence={guestName ? undefined : presenceFor(author)} /></div>
       <div className="run-body">
         <div className="run-head">
           <span className="run-name" style={mine ? undefined : { color: colorFor(author) }} translate={mine || !u ? undefined : 'no'} title={mine ? undefined : u?.displayName}>{mine ? 'You' : u?.displayName ?? guestName ?? 'Former member'}</span>
           {guestName && <span className="tag mono guest-tag">GUEST</span>}
-          {u?.role === 'bot' && <span className="chip accent bot-chip">{isMadeBot(author) || author === nibBotId() ? 'Bot' : 'Integration'}</span>}
+          {u?.role === 'bot' && <><span className="tag bot-tag" title="A bot, not a person: what it says is automatic"><Icon name="bot" size={11} />BOT</span><span className="bot-kind">{author === nibBotId() ? 'Office companion' : isMadeBot(author) ? 'Made by a colleague' : 'Office service'}</span></>}
           <span className="run-time">{clock(msgs[0].createdAt)}</span>
         </div>
         {msgs.map((m) => <MessageItem key={m.clientId ?? m.id} ctx={ctx} m={m} onTrack={onTrack} activeTrack={activeTrack} />)}
@@ -969,6 +993,53 @@ function seenOf(ctx: Ctx, m: AnyMessage, inTrack: boolean | undefined): { state:
   return { state, tag };
 }
 
+type Delivery = 'sending' | 'failed' | 'sent' | 'delivered' | 'seen-some' | 'seen';
+/**
+ * How far one of my messages has gone, for the transmittal mark at its end: sending, sent (the hub
+ * has it), delivered (on the others' devices), seen. Delivered says nothing about reading, so it shows
+ * even with read receipts off; seen needs them on both sides. In a group, delivered and seen mean
+ * everyone; part of the way shows as counts in the mark's words.
+ */
+function deliveryOf(ctx: Ctx, m: AnyMessage, inTrack: boolean | undefined): { state: Delivery; label: string } | null {
+  if (m.authorId !== ctx.meId || inTrack) return null;
+  if ('pending' in m) return (m as PendingMessage).failed ? { state: 'failed', label: 'Not sent' } : { state: 'sending', label: 'Sending' };
+  const others = ctx.conv.members.filter((u) => u !== ctx.meId && ctx.users.get(u)?.role !== 'bot');
+  if (!others.length) return { state: 'sent', label: 'Sent' };
+  const receipts = ctx.users.get(ctx.meId)?.readReceipts !== false;
+  const read = receipts ? others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id).length : 0;
+  const got = others.filter((u) => (ctx.conv.reads[u] ?? '') >= m.id || (ctx.conv.delivered?.[u] ?? '') >= m.id).length;
+  const state: Delivery = read && read === others.length ? 'seen' : read ? 'seen-some' : got === others.length ? 'delivered' : 'sent';
+  if (others.length === 1) return { state, label: state === 'seen' ? 'Seen' : state === 'delivered' ? 'Delivered' : 'Sent' };
+  const n = others.length;
+  return { state, label: read ? `Seen by ${read} of ${n}` : got ? `Delivered to ${got} of ${n}` : 'Sent' };
+}
+
+/**
+ * The transmittal mark: a dimension line with architectural ticks, the drawing office's own way of
+ * saying how far a sheet has gone. A dashed construction line while sending; one tick: sent; two
+ * ticks: delivered; the dimension closed by its second extension line and inked in teal: seen (the
+ * first tick alone in teal for part of a group). A revision triangle when it did not go.
+ */
+function DeliveryMark({ d }: { d: { state: Delivery; label: string } }) {
+  return (
+    <span className={`dlv dlv-${d.state}`} role="img" aria-label={d.label} title={d.label}>
+      <svg width="24" height="13" viewBox="0 0 24 13" aria-hidden="true">
+        {d.state === 'failed' ? (
+          <><path className="dlv-tri" d="M12 1.5 18 11.5H6z" /><path className="dlv-bang" d="M12 5v3M12 9.9v.1" /></>
+        ) : (
+          <>
+            <path className="dlv-line" d="M1.5 8.5h21" />
+            <path className="dlv-ext" d="M1.5 4v8" />
+            {d.state !== 'sending' && <path className="dlv-t1" d="M5.5 11.5 11 6" />}
+            {(d.state === 'delivered' || d.state === 'seen' || d.state === 'seen-some') && <path className="dlv-t2" d="M11 11.5 16.5 6" />}
+            {d.state === 'seen' && <path className="dlv-ext dlv-ext2" d="M22.5 4v8" />}
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
 /**
  * A message is drawn again only when something it shows changed: itself, the people, the layout,
  * picking, its side-track being open, or (for my own) who has read it. Presence, new messages and
@@ -989,7 +1060,9 @@ function sameMessage(a: ItemProps, b: ItemProps): boolean {
   if (b.m.authorId !== y.meId) return true;
   const s1 = seenOf(x, a.m, a.inTrack);
   const s2 = seenOf(y, b.m, b.inTrack);
-  return s1?.state === s2?.state && s1?.tag === s2?.tag;
+  const d1 = deliveryOf(x, a.m, a.inTrack);
+  const d2 = deliveryOf(y, b.m, b.inTrack);
+  return s1?.state === s2?.state && s1?.tag === s2?.tag && d1?.state === d2?.state && d1?.label === d2?.label;
 }
 
 const MessageItem = memo(MessageItemView, sameMessage);
@@ -1059,6 +1132,7 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
 
   // the amber notch on my own messages: hollow when sent, half when some have seen it, solid when all have
   const seen = seenOf(ctx, m, inTrack);
+  const delivery = deliveryOf(ctx, m, inTrack);
 
   return (
     <div data-mid={m.id} tabIndex={-1} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
@@ -1066,8 +1140,9 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
       onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
       {ctx.cards && !inTrack && <span className="card-time mono" aria-hidden="true">{clock(m.createdAt)}</span>}
-      {seen && <span className={`notch ${seen.state}`} role={seen.tag ? 'img' : undefined} aria-label={seen.tag || undefined} />}
-      {seen?.tag && <span className="seen-tag mono" aria-hidden="true">{seen.tag}</span>}
+      {seen && <span className={`notch ${seen.state}`} aria-hidden="true" />}
+      {delivery && <DeliveryMark d={delivery} />}
+      {delivery && <span className="seen-tag mono" aria-hidden="true">{delivery.label}</span>}
       {m.forwardedFrom && <ForwardedTag m={m} users={ctx.users} meId={ctx.meId} />}
       {m.inReplyTo && !inTrack && (
         <button className="in-reply" onClick={() => onTrack?.(m.inReplyTo!.messageId)} title="Open the side-track">

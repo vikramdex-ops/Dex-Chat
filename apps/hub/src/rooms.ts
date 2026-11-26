@@ -174,6 +174,7 @@ export class Rooms {
       ...(forHost ? { lobby: r.lobbyList.map((l) => ({ ...l })) } : {}),
       ...this.extras(r),
       ...(r.purpose ? { purpose: { ...r.purpose } } : {}),
+      ...(r.share ? { share: true } : {}),
       ...(this.control.view(r.id) ? { control: this.control.view(r.id) } : {}),
       ...(this.breakouts.main(r).occurrenceId ? { occurrenceId: this.breakouts.main(r).occurrenceId, noteTakerId: this.breakouts.main(r).noteTaker ?? null } : {}),
     };
@@ -284,9 +285,10 @@ export class Rooms {
   }
 
   /** Open a Room in a conversation (the caller is first in). */
-  private open(convId: string, me: PublicUser, deviceId: string, video: boolean, meeting: Meeting | null, ring: boolean, fromOutside: boolean, special?: { purpose: RoomPurpose; only?: string[] }): Room {
+  private open(convId: string, me: PublicUser, deviceId: string, video: boolean, meeting: Meeting | null, ring: boolean, fromOutside: boolean, special?: { purpose: RoomPurpose; only?: string[] }, share = false): Room {
     const members = this.host.members(convId);
-    this.leaveAll(deviceId);
+    // a call this device has on hold keeps its seat; any other Room it is in, it leaves
+    this.leaveAll(deviceId, true);
     const expected = Math.max(members.length, meeting && this.host.meetings ? this.host.meetings.expected(meeting) : 0);
     const hostId = meeting && meeting.kind !== 'conversation' ? meeting.hostId : me.id;
     const room: Room = {
@@ -301,6 +303,7 @@ export class Rooms {
       coHostSet: new Set(meeting && meeting.kind !== 'conversation' ? meeting.coHosts : []),
       chat: [],
       ...(special ? { purpose: special.purpose, ...(special.only ? { only: new Set(special.only) } : {}) } : {}),
+      ...(share ? { share: true } : {}),
     };
     // nobody runs it yet (the host is not here): the first member of the office in it does
     if (!this.isHost(room, me.id) && me.role !== 'guest') room.coHostSet.add(me.id);
@@ -322,7 +325,8 @@ export class Rooms {
       room.ringTimer = setTimeout(() => {
         room.ringTimer = null;
         room.ringing = [];
-        if (room.participants.length <= 1 && room.everJoined.size <= 1 && (!room.meeting || room.meeting.kind === 'conversation')) this.end(room);
+        // a shared screen stays up for whoever comes to watch, until its presenter stops
+        if (!room.share && room.participants.length <= 1 && room.everJoined.size <= 1 && (!room.meeting || room.meeting.kind === 'conversation')) this.end(room);
         else if (this.rooms.has(room.id)) this.publish(room);
       }, RING_TIMEOUT_MS);
       room.ringTimer.unref?.();
@@ -460,7 +464,7 @@ export class Rooms {
     if (r.participants.some((p) => p.deviceId === deviceId)) return this.view(r, this.isHost(r, me.id));
     if (r.participants.length >= this.capacity(r)) throw new RoomError(`This Room is full (${this.capacity(r)} people).`);
     if (r.mode === 'relay' && fromOutside) throw new RoomError('This Room is large, so it runs through the office hub: join it from the office network.');
-    this.leaveAll(deviceId);
+    this.leaveAll(deviceId, true);
     r.participants.push({ userId: me.id, deviceId, joinedAt: Date.now(), muted: false, camera: false, screen: false });
     r.ringing = r.ringing.filter((u) => u !== me.id);
     r.everJoined.add(me.id);
@@ -625,8 +629,37 @@ export class Rooms {
         if (meeting && !(meeting.hostId === me.id || meeting.coHosts.includes(me.id)) && meeting.kind !== 'conversation' && meeting.kind !== 'event' && !meeting.settings.joinBeforeHost) {
           throw new RoomError('This meeting starts when its host arrives.');
         }
-        const room = this.open(convId, me, deviceId, d.video === true, meeting, meeting?.kind !== 'personal', fromOutside);
+        const room = this.open(convId, me, deviceId, d.video === true && d.share !== true, meeting, meeting?.kind !== 'personal', fromOutside, undefined, d.share === true);
         return this.view(room, this.isHost(room, me.id));
+      }
+
+      case 'room.hold': {
+        const r = this.mine(d.roomId, me, deviceId);
+        const p = r.participants.find((x) => x.deviceId === deviceId)!;
+        const on = d.on === true;
+        if (on && r.purpose?.kind === 'lounge') throw new RoomError('A lounge is not put on hold: leave it and drop in again later.');
+        if (on && r.meeting?.kind === 'webinar') throw new RoomError('A webinar stage is not put on hold: leave the stage instead.');
+        if (on === !!p.held) return this.view(r, this.isHost(r, me.id));
+        if (on) {
+          // on hold: the seat is kept, the screen stops, the hand stays where it is in the line
+          p.held = true; p.heldAt = Date.now(); p.screen = false; p.speaking = false;
+          this.host.deviceLeft?.(r.id, deviceId);
+        } else {
+          // back: whatever else this device is active in goes on hold (a lounge is left), so it is live in one Room at a time
+          for (const other of [...this.rooms.values()]) {
+            if (other === r) continue;
+            const q = other.participants.find((x) => x.deviceId === deviceId && !x.held);
+            if (!q) continue;
+            if (other.purpose?.kind === 'lounge' || other.meeting?.kind === 'webinar') { this.removeDevice(other, deviceId); continue; }
+            q.held = true; q.heldAt = Date.now(); q.screen = false; q.speaking = false;
+            this.host.deviceLeft?.(other.id, deviceId);
+            this.publish(other);
+          }
+          delete p.held; delete p.heldAt;
+        }
+        this.host.audit?.(me.id, on ? 'room.held' : 'room.resumed', r.meeting?.id ?? r.id, { roomId: r.id });
+        this.publish(r);
+        return this.view(r, this.isHost(r, me.id));
       }
 
       case 'room.join': {
@@ -658,6 +691,8 @@ export class Rooms {
         const r = this.get(d.roomId, me);
         const to = String(d.toDevice ?? '');
         if (!r.participants.some((p) => p.deviceId === deviceId) || !r.participants.some((p) => p.deviceId === to)) throw new RoomError('Not in this call.');
+        // a seat on hold is not connected to: it reaches out again itself when it comes back
+        if (r.participants.some((p) => (p.deviceId === to || p.deviceId === deviceId) && p.held)) return { ok: true };
         const size = JSON.stringify(d.data ?? null).length;
         if (size > 64 * 1024) throw new RoomError('Signal too large.');
         this.host.deliverToDevice(to, 'room.signal', { roomId: r.id, fromDevice: deviceId, fromUser: me.id, data: d.data });
@@ -696,7 +731,7 @@ export class Rooms {
         const r = this.get(d.roomId, me);
         const p = r.participants.find((x) => x.deviceId === deviceId);
         if (!p) throw new RoomError('Not in this call.');
-        p.muted = d.muted === true; p.camera = d.camera === true; p.screen = d.screen === true;
+        p.muted = d.muted === true; p.camera = d.camera === true; p.screen = d.screen === true && !p.held;
         if (p.muted) p.speaking = false;
         // what this device can do about remote control: be controlled (Windows, Linux with xdotool), or control another's screen (the desktop app)
         p.controllable = d.controllable === true && !isWebGuest(me.id);
@@ -1077,9 +1112,15 @@ export class Rooms {
     for (const p of r.participants.filter((x) => x.userId === userId)) this.removeDevice(r, p.deviceId);
   }
 
-  /** A device can only be in one Room; also called when a device disconnects. */
-  leaveAll(deviceId: string): void {
+  /**
+   * A device is live in one Room at a time; also called when a device disconnects. `keepHeld`: a seat
+   * the device put on hold stays (it is answering another call), any other seat is left.
+   */
+  leaveAll(deviceId: string, keepHeld = false): void {
     this.dropWaiting(deviceId);
-    for (const r of [...this.rooms.values()]) this.removeDevice(r, deviceId);
+    for (const r of [...this.rooms.values()]) {
+      if (keepHeld && r.participants.some((p) => p.deviceId === deviceId && p.held)) continue;
+      this.removeDevice(r, deviceId);
+    }
   }
 }

@@ -126,6 +126,11 @@ export const PATH_WORDS = {
   maybeShort: '(may be mapped differently on your PC)',
   mine: 'Only on this PC',
   theirs: "Only on the writer's PC",
+  openFile: 'Open the file in its own program',
+  openFolder: 'Open the folder in Explorer',
+  openItsFolder: 'Open the folder it is in',
+  copy: 'Copy the path',
+  copied: 'Path copied: paste it into Explorer',
 };
 
 // ------------------------------------------------------------------ "no access", quietly

@@ -3,7 +3,7 @@
 // Unread = bold name + a teal tick on the left edge; only callouts to you get an (amber) count.
 import { isNibConv, useNib } from '../nib/store.ts';
 import { NibTile } from '../nib/NibMark.tsx';
-import { memo, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
 import type { Conversation, PublicUser } from '@dex/core';
 import { Avatar, Icon, Popover, colorFor, initials, presenceFor, useToast } from '../ui.tsx';
 import type { IconName } from '../ui.tsx';
@@ -146,6 +146,8 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
   const sortBtn = useRef<HTMLButtonElement>(null);
   const chooseSort = (v: Sort) => { setSort(v); setSortMenu(false); try { localStorage.setItem('dex-sb-sort', v); } catch { /* storage off */ } };
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  // the row's arrow opens its menu and closes it again (a second click on the same arrow)
+  const toggleMenu = useCallback((m: { id: string; anchor: HTMLElement }) => setMenu((was) => (was?.id === m.id && was.anchor === m.anchor ? null : m)), []);
 
   const all = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -161,6 +163,12 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
       });
   }, [conversations, chip, query, users, meId, sort, only, focusId, nibId]);
   const archived = all.filter((c) => c.archived);
+  // a Direct conversation with one bot (an office bot, an integration, one a member made)
+  const botPeer = useCallback((c: Conversation) => {
+    if (c.kind !== 'direct') return null;
+    const others = c.members.filter((m) => m !== meId);
+    return others.length === 1 && users.get(others[0])?.role === 'bot' ? others[0] : null;
+  }, [users, meId]);
   const live = all.filter((c) => !c.archived);
   // kept on top first, then each person's own drawers, then projects, Spaces and people
   const groups = useMemo(() => {
@@ -168,19 +176,27 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     const drawers = new Map<string, Conversation[]>();
     for (const c of live) if (!c.pinnedAt && c.section) drawers.set(c.section, [...(drawers.get(c.section) ?? []), c]);
     const rest = live.filter((c) => !c.pinnedAt && !c.section);
-    const out: Array<{ title: string; items: Conversation[] }> = [];
+    const out: Array<{ title: string; items: Conversation[]; drawer?: boolean; bots?: boolean }> = [];
     if (top.length) out.push({ title: 'Kept on top', items: top });
-    for (const [title, items] of [...drawers].sort((a, b) => a[0].localeCompare(b[0]))) out.push({ title, items });
+    for (const [title, items] of [...drawers].sort((a, b) => a[0].localeCompare(b[0]))) out.push({ title, items, drawer: true });
     if (chip === 'all') {
       const projects = rest.filter(isProject);
       const spaces = rest.filter((c) => c.kind === 'space' && !isProject(c));
-      const people = rest.filter((c) => c.kind === 'direct');
+      const people = rest.filter((c) => c.kind === 'direct' && !botPeer(c));
+      const bots = rest.filter((c) => c.kind === 'direct' && botPeer(c));
       if (projects.length) out.push({ title: 'Projects', items: projects });
       if (spaces.length) out.push({ title: 'Spaces', items: spaces });
       if (people.length) out.push({ title: 'People', items: people });
+      // bots are not people: their conversations sit under a heading of their own
+      if (bots.length) out.push({ title: 'Bots and services', items: bots, bots: true });
+    } else if (chip === 'people') {
+      const people = rest.filter((c) => !botPeer(c));
+      const bots = rest.filter((c) => botPeer(c));
+      if (people.length) out.push({ title: 'People', items: people });
+      if (bots.length) out.push({ title: 'Bots and services', items: bots, bots: true });
     } else if (rest.length) out.push({ title: CHIPS.find((x) => x.id === chip)!.label, items: rest });
     return out;
-  }, [live, chip]);
+  }, [live, chip, botPeer]);
   const myDrawers = useMemo(() => [...new Set([...conversations.values()].map((c) => c.section).filter((x): x is string => !!x))].sort(), [conversations]);
   const chipAttention = useMemo(() => {
     const out: Record<Chip, boolean> = { all: false, people: false, spaces: false, projects: false };
@@ -198,7 +214,7 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
     const state = c.id === focusId ? ' active' : at >= 0 ? ' open' : '';
     // a person's beacon ring is part of the row (the row is kept while nothing about it changes)
     const one = c.kind === 'direct' ? c.members.filter((m) => m !== meId) : [];
-    return <SbRow key={c.id} c={c} users={users} meId={meId} state={state} folded={folded} onMenu={setMenu} presence={one.length === 1 ? presenceFor(one[0]) : ''} clock={clock} />;
+    return <SbRow key={c.id} c={c} users={users} meId={meId} state={state} folded={folded} onMenu={toggleMenu} menuOpen={menu?.id === c.id} presence={one.length === 1 ? presenceFor(one[0]) : ''} clock={clock} />;
   };
 
   const label = CHIPS.find((x) => x.id === chip)!.label;
@@ -253,8 +269,12 @@ export function Switchboard({ chip, setChip, users, meId, folded, setFolded, onN
         )}
         {(chip === 'all' || chip === 'people') && !query.trim() && <NibRow folded={!!folded} focusId={focusId} />}
         {groups.map((g) => (
-          <div key={g.title} className="sb-group">
-            <div className="sb-group-title label">{g.title}</div>
+          <div key={`${g.drawer ? 'd:' : ''}${g.title}`} className={`sb-group${g.drawer ? ' sb-drawer' : ''}`}>
+            {g.drawer
+              ? <div className="sb-group-title label" title="Your drawer: a group of your own. Only you see it. Change it from a conversation's arrow."><Icon name="drawer" size={11} /><span translate="no">{g.title}</span><span className="sb-drawer-tag mono">DRAWER</span></div>
+              : g.bots
+                ? <div className="sb-group-title label sb-bots-title" title="Automated accounts: office bots, integrations and bots people made. Not people."><Icon name="bot" size={12} /><span>{g.title}</span></div>
+                : <div className="sb-group-title label">{g.title}</div>}
             <Rows items={g.items} row={row} />
           </div>
         ))}
@@ -285,7 +305,7 @@ function NibRow({ folded, focusId }: { folded: boolean; focusId: string | null |
     <div className="sb-group sb-nib-group">
       <button className={`sb-nib${c.id === focusId ? ' active' : ''}${c.unread ? ' unread' : ''}`} onClick={() => openInPane(c.id)} aria-current={c.id === focusId ? 'true' : undefined} title={folded ? 'Nib' : undefined}>
         <NibTile size={folded ? 32 : 30} ink={ink} />
-        {!folded && <span className="sb-main"><span className="sb-title"><span className="sb-name" translate="no">Nib</span><span className="chip">ALWAYS HERE</span></span><span className="sb-preview">{line}</span></span>}
+        {!folded && <span className="sb-main"><span className="sb-title"><span className="sb-name" translate="no">Nib</span><span className="tag bot-tag" title="Nib is the office's companion bot, not a person">BOT</span><span className="bot-kind">Always here</span></span><span className="sb-preview">{line}</span></span>}
         {c.unread > 0 && !folded && <span className="sb-nib-new mono">{c.unread}</span>}
       </button>
     </div>
@@ -301,9 +321,11 @@ function Rows({ items, row }: { items: Conversation[]; row: (c: Conversation) =>
  * One conversation in the list, drawn again only when it changes (its conversation, the people,
  * whether it is open), not for every change elsewhere in a list of hundreds.
  */
-const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu }: {
+const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu, menuOpen }: {
   c: Conversation; users: Map<string, PublicUser>; meId: string; state: string; folded: boolean;
   onMenu: (m: { id: string; anchor: HTMLElement }) => void;
+  /** Its menu is open: the arrow stays shown and points up. */
+  menuOpen: boolean;
   /** The other person's presence in a one-to-one (drawn by the tile; here so a change redraws the row). */
   presence: string;
   /** The time format (the row's time is drawn again when it changes). */
@@ -311,11 +333,13 @@ const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu }: {
 }) {
     const title = convTitle(c, users, meId);
     const last = c.lastMessage;
+    const others = c.kind === 'direct' ? c.members.filter((m) => m !== meId) : [];
+    const bot = others.length === 1 && users.get(others[0])?.role === 'bot';
     const who = last ? (last.authorId === meId ? 'You' : users.get(last.authorId)?.displayName.split(' ')[0] ?? '') : '';
     const preview = last ? `${c.kind === 'space' || c.members.length > 2 || last.authorId === meId ? `${who}: ` : ''}${last.body ? plainPreview(last.body, users) : 'Message deleted'}` : (c.topic ?? 'No messages yet');
     return (
-      <RefDropRow convId={c.id} className="sb-row-wrap">
-        <button className={`sb-row${state}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
+      <RefDropRow convId={c.id} className={`sb-row-wrap${menuOpen ? ' menu-open' : ''}`}>
+        <button className={`sb-row${state}${bot ? ' bot' : ''}${c.unread ? ' unread' : ''}${c.muted ? ' muted' : ''}${c.archived ? ' archived' : ''}`}
           draggable onDragStart={(e) => { e.dataTransfer.setData(CONV_DRAG, c.id); e.dataTransfer.effectAllowed = 'copy'; }}
           onClick={(e) => { if (e.ctrlKey || e.metaKey) openBeside(c.id); else openInPane(c.id); }}
           aria-current={state === ' active' ? 'true' : undefined}
@@ -325,6 +349,7 @@ const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu }: {
           <span className="sb-main">
             <span className="sb-title">
               <span className="sb-name" translate="no">{title}</span>
+              {bot && <span className="tag bot-tag" title="A bot, not a person: its answers are automatic">BOT</span>}
               {c.private && c.kind === 'space' && <Icon name="lock" size={12} />}
               {c.muted && <Icon name="mute" size={12} />}
             </span>
@@ -332,7 +357,10 @@ const SbRow = memo(function SbRow({ c, users, meId, state, folded, onMenu }: {
           </span>
           {c.mentions > 0 ? <span className="badge" aria-label={`${c.mentions} for you`}>{c.mentions}</span> : c.pinnedAt && !folded ? <Icon name="pin" size={11} className="sb-pin" /> : null}
         </button>
-        {!folded && <button className="sb-more" aria-label={`Options for ${title}`} title="Options" onClick={(e) => onMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="chevron" size={14} /></button>}
+        {!folded && (
+          <button className="sb-more" aria-label={`Options for ${title}: lay it beside, keep on top, drawer, hush`} title="Lay it beside, keep on top, put in a drawer, hush"
+            aria-haspopup="menu" aria-expanded={menuOpen} onClick={(e) => onMenu({ id: c.id, anchor: e.currentTarget })}><Icon name="chevron" size={14} /></button>
+        )}
       </RefDropRow>
     );
   });
@@ -346,14 +374,19 @@ function ConvMenu({ c, anchor, drawers, onClose }: { c: Conversation; anchor: HT
     <Popover anchor={anchor} onClose={onClose} className="menu conv-menu">
       <button role="menuitem" onClick={() => { onClose(); openBeside(c.id); }}><Icon name="beside" size={16} />Lay it beside<span className="kbd">Ctrl click</span></button>
       <button role="menuitem" onClick={() => organise({ pinned: !c.pinnedAt }, c.pinnedAt ? 'Taken off the top' : 'Kept on top')}><Icon name="pin" size={16} />{c.pinnedAt ? 'Take off the top' : 'Keep on top'}</button>
-      <div className="menu-label label">Drawer</div>
-      {drawers.filter((x) => x !== c.section).map((x) => <button key={x} role="menuitem" onClick={() => organise({ section: x }, `Put in ${x}`)}><Icon name="drawer" size={16} />{x}</button>)}
+      {/* a drawer is a group of your own in the Switchboard (Clients, Bids, P-12 site): only you see it */}
+      <div className="menu-label label conv-menu-drawer">Drawer<span className="menu-label-note">your own group in this list</span></div>
+      {drawers.filter((x) => x !== c.section).map((x) => <button key={x} role="menuitem" onClick={() => organise({ section: x }, `Put in your drawer ${x}`)}><Icon name="drawer" size={16} />{x}</button>)}
       {naming === null
         ? <button role="menuitem" onClick={() => setNaming('')}><Icon name="plus" size={16} />New drawer…</button>
         : (
-          <form className="menu-input" onSubmit={(e) => { e.preventDefault(); if (naming.trim()) organise({ section: naming.trim() }, `Put in ${naming.trim()}`); }}>
-            <input className="input" autoFocus maxLength={40} placeholder="Clients, Bids…" aria-label="Drawer name" value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setNaming(null); } }} />
-            <button className="btn primary sm" disabled={!naming.trim()}>Add</button>
+          <form className="menu-input drawer-new" onSubmit={(e) => { e.preventDefault(); if (naming.trim()) organise({ section: naming.trim() }, `Put in your drawer ${naming.trim()}`); }}>
+            <div className="drawer-new-row">
+              <Icon name="drawer" size={16} />
+              <input className="input" autoFocus maxLength={40} placeholder="Name it: Clients, Bids…" aria-label="New drawer's name" aria-describedby="drawer-new-help" value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setNaming(null); } }} />
+              <button className="icon-btn drawer-add" disabled={!naming.trim()} aria-label="Add the drawer" title="Add (Enter)"><Icon name="check" size={16} /></button>
+            </div>
+            <p id="drawer-new-help" className="drawer-new-help">A drawer gathers conversations under a heading of your own in the Switchboard. Only you see it; nobody is told.</p>
           </form>
         )}
       {c.section && <button role="menuitem" onClick={() => organise({ section: null }, `Taken out of ${c.section}`)}><Icon name="x" size={16} />Take out of {c.section}</button>}

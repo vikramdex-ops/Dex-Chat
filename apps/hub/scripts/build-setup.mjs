@@ -49,10 +49,12 @@ function findMakensis() {
     path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'NSIS', exe),
     path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'NSIS', exe),
   ];
-  const cache = path.join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache', 'nsis');
-  if (fs.existsSync(cache)) {
-    for (const d of fs.readdirSync(cache).sort().reverse()) {
-      candidates.push(path.join(cache, d, exe), path.join(cache, d, 'Bin', exe));
+  // electron-builder's cache: Cache\nsis\<dir>\ or Cache\nsis-<version>\nsis-<version>-<id>\, Bin\ inside either
+  const cache = path.join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache');
+  const dirs = (d) => { try { return fs.readdirSync(d).sort().reverse(); } catch { return []; } };
+  for (const top of dirs(cache).filter((n) => /^nsis(-[\d.]+)?$/i.test(n))) {
+    for (const d of dirs(path.join(cache, top))) {
+      candidates.push(path.join(cache, top, d, exe), path.join(cache, top, d, 'Bin', exe));
     }
   }
   return candidates.find((c) => fs.existsSync(c)) ?? null;

@@ -270,6 +270,20 @@ function pathNote(v: PathView, access: string | null, writer: string): string | 
   return null;
 }
 
+/** The closest folder above a path that this PC can reach (a renamed job folder, a file moved on), or null. */
+async function nearestFolder(path: string): Promise<string | null> {
+  const p = parsePath(path);
+  if (!p || !window.dex.checkPath) return null;
+  const segs = p.path.split('\\');
+  // a UNC path keeps \\server\share at least; a drive path its X:\
+  const floor = p.kind === 'unc' ? 4 : 1;
+  for (let n = segs.length - 1; n >= floor; n--) {
+    const up = segs.slice(0, n).join('\\') + (p.kind === 'drive' && n === 1 ? '\\' : '');
+    if (await window.dex.checkPath(up).catch(() => 'unknown') === 'ok') return up;
+  }
+  return null;
+}
+
 /**
  * A card for a share or drive path, made on this device: the hub never reads paths, and the
  * card is the reader's own (their drive letter, whether they can reach it). Copy path copies the
@@ -327,6 +341,16 @@ function PathSlot({ url, discuss, onRemove, authorId, meId }: { url: string; dis
             {reachable && (
               <button className="lbtn opener" aria-label="Open folder" disabled={!!busy} onClick={() => run('folder', () => window.dex.openFolder!(folderOf(v.open!, v.folder)))}>
                 {busy === 'folder' ? <span className="spinner" /> : <Icon name="drawer" size={13} />}<span className="lbtn-label">Open folder</span>
+              </button>
+            )}
+            {canOpen && access === 'missing' && v.scope !== 'local' && (
+              <button className="lbtn opener" aria-label="Open the nearest folder" title="The path is not there from this PC: open the closest folder above it that is" disabled={!!busy}
+                onClick={() => run('near', async () => {
+                  const near = await nearestFolder(v.open!);
+                  if (!near) throw new Error('No folder on this path can be reached from this PC.');
+                  await window.dex.openFolder!(near);
+                })}>
+                {busy === 'near' ? <span className="spinner" /> : <Icon name="drawer" size={13} />}<span className="lbtn-label">Open nearest folder</span>
               </button>
             )}
             <span className="lbtn-split">

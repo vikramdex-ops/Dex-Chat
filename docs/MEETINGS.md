@@ -552,6 +552,45 @@ meeting; the organiser told when someone joins without them, and not once they a
 (the notification calls are recorded in the main process; the background is a minimised, unfocused
 window).
 
+### Hold, call waiting and Show screen, delivered (November 2026)
+
+**Hold.** Anyone in a call or meeting can put it on hold (**Hold** in the Room's title block). Their
+seat is kept on the hub (`RoomParticipant.held`), their microphone, camera and any shared screen stop,
+and they hear nothing; nobody connects to a seat on hold (the hub drops signals to and from it) and
+it reaches out to everyone again when it comes back. The others see the tile hatched with an ON HOLD
+stamp and a toast; when everyone else has put the call on hold, a line says so and a quiet tone
+plays now and then so silence does not read as a dropped call. Browser guests see an ON HOLD
+banner with the names (the guest view leaves held seats out of `seats`, so the page never dials
+them). The call on hold waits in a small title block in the corner with how long it has waited,
+**Resume** (or **Swap to it** while another call is live) and **End**.
+
+**Call waiting.** A call that comes in while you are in one plays a short waiting tone instead of
+the ring and offers **Hold and answer** (the live call keeps your seat, on hold) or **End and
+answer**; Join on a conversation's Room button does the same. A device is live in one Room at a
+time: resuming a held call holds the live one in its place.
+
+**Edge cases.** One call on hold at a time (with one already held, answering ends the live call); a
+lounge or a webinar stage is left, never held; a one-to-one ends when the other person hangs up,
+held or not, and the device is told ("The call you had on hold has ended"); a host taking someone
+out, or ending the meeting, reaches the held call too; breakouts leave a held seat where it is; a
+device that disconnects loses its held seats with the rest; hold is refused to anyone not in the
+Room (`room.hold`).
+
+**Show screen.** A conversation's header has **Show screen** beside the Room button (also *Screen
+only* in its menu): pick a screen or window and a Room opens with `share` set, asking for no
+microphone or camera, straight into the presentation. Its members get a calm teal card (*is showing
+you their screen*, one soft tick, no ringing) with **Watch**; watchers join with nothing captured
+(their microphone shows off; **Mic on** asks for it then), and the pointers, markers and Give control
+work as in any Room. Nobody watching does not close it: it stays until the presenter stops.
+
+**Code.** `apps/hub/src/rooms.ts` (`room.hold`, `share`, `leaveAll(…, keepHeld)`), `breakouts.ts`,
+`meet-guests.ts`; `apps/desktop/src/renderer/rooms/engine.ts` (`hold`, `resume`, `leaveHeld`,
+`answer(video, 'hold' | 'end')`, `startShare`, `screenStreamOf`), `RoomUi.tsx` (`IncomingCall`,
+`HeldCallBar`), `Stage.tsx`; `chat/Pane.tsx` (`RoomButton`); `apps/gateway/meet/room.ts`.
+**Tests.** `apps/hub/test/hold.test.ts`; end to end `apps/desktop/e2e/nine.mts` (two apps: hold,
+the other side's ON HOLD, call waiting with Hold and answer, swap, end; Show screen watched with no
+microphone).
+
 ## Meeting threads, action points and recaps
 
 *Delivered (November 2026): designed first, described here as built.* After any meeting, everyone

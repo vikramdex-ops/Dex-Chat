@@ -6,7 +6,7 @@
 // straight to viewers outside) and to the live stream. A worker's timer drives the frames, so the
 // picture keeps moving while the window is in the background.
 import type { WebinarQuestion } from '@dex/core';
-import { callState, capName, zoneRef } from '../../rooms/engine.ts';
+import { callState, capName, screenStreamOf, zoneRef } from '../../rooms/engine.ts';
 import { onVoiceTick } from '../../rooms/speech.ts';
 import { colorFor, initials } from '../../ui.tsx';
 
@@ -160,7 +160,7 @@ export function startCompositor(scene: () => StageScene, nameOf: (userId: string
         tiles.push({ key: p.deviceId, userId: p.userId, name: nameOf(p.userId), stream: peer?.streams[0] ?? null, camera: p.camera, muted: p.muted });
       }
     }
-    const sharerStream = st.screen ?? [...st.peers.values()].map((p) => p.streams.find((x, i) => i > 0 && x.getVideoTracks().length)).find(Boolean) ?? null;
+    const sharerStream = st.screen ?? [...st.peers.values()].map((p) => screenStreamOf(p, st.room?.participants.find((x) => x.deviceId === p.deviceId))).find(Boolean) ?? null;
     // a question shown on the stage takes the top of the sheet; the people move down beneath it
     const q = sc.question;
     ctx.font = `600 26px ${DISPLAY}`;

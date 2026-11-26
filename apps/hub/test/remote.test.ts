@@ -7,7 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createIdentity } from '@dex/core';
 import { HubClient } from '@dex/core/client';
 import type { Message } from '@dex/core';
@@ -19,11 +19,15 @@ let skip: string | false = false;
 before(async () => {
   // the real gateway Worker, in Cloudflare's local runtime, as its own process group we can stop
   const root = path.resolve(import.meta.dirname, '../../gateway');
-  const bin = path.resolve(import.meta.dirname, '../../../node_modules/.bin/wrangler');
+  // wrangler's own script under this node: the .bin shim is a shell script that Windows cannot spawn
+  const bin = path.resolve(import.meta.dirname, '../../../node_modules/wrangler/bin/wrangler.js');
+  const win = process.platform === 'win32';
   const port = await deadPort();
-  const child = spawn(bin, ['dev', '--ip', '127.0.0.1', '--port', String(port), '--config', path.join(root, 'wrangler.jsonc'), '--show-interactive-dev-session=false', '--log-level', 'info'],
-    { cwd: root, detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  const stop = async () => { try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* gone */ } };
+  const child = spawn(process.execPath, [bin, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(await deadPort()), '--config', path.join(root, 'wrangler.jsonc'), '--show-interactive-dev-session=false', '--log-level', 'info'],
+    { cwd: root, detached: !win, windowsHide: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.on('error', () => { /* reported through 'exit' */ });
+  // the whole tree (wrangler and its workerd): a process group here, taskkill /T on Windows
+  const stop = async () => { try { if (win) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-child.pid!, 'SIGKILL'); } catch { /* gone */ } };
   try {
     await new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('wrangler did not start in 60 s')), 60_000);
@@ -209,5 +213,9 @@ test('from outside the office: the update mirror through the gateway (feed, then
   assert.ok([403, 404].includes((await phone.c.http({ method: 'GET', path: '/updates/files/0.1.120/..%2F..%2Fhub.db' })).status));
   assert.equal((await phone.c.http({ method: 'GET', path: '/updates/files/0.1.119/DexterityConnect-0.1.119.apk' })).status, 404);
   assert.equal((await phone.c.http({ method: 'GET', path: '/notify/wait' })).status, 403);
+  // a download in flight when the app closes its connection fails at once; it never waits forever
+  const inFlight = phone.c.http({ method: 'GET', path: feed.assets[0].url });
+  phone.c.disconnect();
+  await assert.rejects(async () => { await read(await inFlight); });
   await owner.request('admin.remote.set', { enabled: false });
 });

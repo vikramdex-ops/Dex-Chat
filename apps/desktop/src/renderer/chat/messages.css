@@ -95,6 +95,13 @@
 .menu.path-copy [role=menuitem] > span { min-width: 0; display: grid; gap: 1px; text-align: left; }
 .menu.path-copy .mono { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-path { font-family: var(--font-mono); font-size: .92em; overflow-wrap: anywhere; color: var(--accent-ink); }
+/* a path is a way in: it underlines like a link under the pointer; a file has its folder beside it */
+.share-path-go { cursor: pointer; border-radius: 2px; text-decoration: underline solid color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.share-path-go:hover { text-decoration-color: currentColor; background: var(--accent-soft); }
+.share-path-go:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.share-path.busy .share-path-go { cursor: progress; opacity: .7; }
+.share-path-folder { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 4px; padding: 0; vertical-align: -3px; border: 1px solid var(--stroke-strong); border-radius: 3px; background: var(--layer-solid); color: var(--accent-ink); cursor: pointer; }
+.share-path-folder:hover { border-color: var(--accent); background: var(--accent-soft); }
 .share-path.maybe { text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; }
 .share-path.local { color: inherit; }
 
