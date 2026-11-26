@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { ticketRef } from '@dex/core';
 import type { HelpTicket, OfficePolicy, SupportSession } from '@dex/core';
 import { CLIP_MAX, DROP_MAX_FILES, decodeClip, safeRelativePath } from '@dex/core/assist';
-import { callState, enterSpecial, leave, onRoomData, selfDevice, sendRoomData, toggleMute, toggleScreen } from '../rooms/engine.ts';
+import { callState, enterSpecial, leave, onRoomData, selfDevice, sendRoomData, toggleScreen, watchCall } from '../rooms/engine.ts';
 import { policyNow } from '../policy.ts';
 
 export interface HelpState {
@@ -91,12 +91,17 @@ export async function startHelp(me: string): Promise<void> {
       else void endSession();
     });
     caps = window.dex.assist ? window.dex.assist.caps().then((c) => set({ control: { available: c.control, reason: c.reason } })).catch(() => {}) : Promise.resolve();
+    // both people coming into the Room is when an automatic share may start
+    watchCall(() => void maybeShare());
   }
   try {
     const [staff, mine] = await Promise.all([window.dex.request('help.staff'), window.dex.request('help.mine')]);
     set({ staff, mine });
     await refreshQueue();
   } catch { /* offline: kept as they were */ }
+  // this app says whether it can be controlled: unattended access only ever chooses a PC that can
+  await caps;
+  if (window.dex.assist) void window.dex.request('help.device', { control: state.control.available }).catch(() => {});
   // back online (or the app started): rejoin a session that is waiting for us
   try {
     const policy = await window.dex.request('policy.get');
@@ -129,27 +134,21 @@ function onSession(s: SupportSession): void {
     if (inSessionRoom(s)) leave();
     return;
   }
-  if (s.pausedAt !== null) {
-    // the connection dropped: this PC stops sharing at once; what was shared is remembered to share again
-    if (meId === s.requesterId && state.session?.id === s.id) { void applyLocal(false, false); set({ shared: null }); }
-    if (inSessionRoom(s)) leave();
-    set({ session: state.session?.id === s.id ? s : state.session });
-    void rejoin(s, policyNow());
-    return;
+  // the hub took something back (the connection dropped, an administrator turned unattended access
+  // off, a stop from another path): this PC stops it too, at once
+  const before = state.session?.id === s.id ? state.session.consent : null;
+  if (meId === s.requesterId && before) {
+    if (before.control && !s.consent.control) { if (resume && s.pausedAt === null) resume = { ...resume, control: false }; void applyLocal(!!state.shared && s.consent.screen, false); }
+    if (before.screen && !s.consent.screen && state.shared) { if (s.pausedAt === null) resume = null; void stopScreenHere(); }
   }
   if (meId === s.requesterId && !inSessionRoom(s)) {
     set({ invite: s, session: state.session?.id === s.id ? s : state.session });
-    if (s.unattended && policyNow().assistUnattended === true && onMyDevice(s)) void rejoin(s, policyNow());
+    if ((s.unattended || s.pausedAt !== null) && onMyDevice(s)) void rejoin(s, policyNow());
     return;
   }
-  // the hub took something back (an administrator turned unattended access off, a stop from
-  // another path): this PC stops it too, at once, and does not give it again by itself
-  const before = state.session?.id === s.id ? state.session.consent : null;
-  if (meId === s.requesterId && before) {
-    if (before.control && !s.consent.control) { if (resume) resume = { ...resume, control: false }; void applyLocal(!!state.shared && s.consent.screen, false); }
-    if (before.screen && !s.consent.screen && state.shared) { resume = null; void stopScreenHere(); }
-  }
   set({ session: s, invite: state.invite?.id === s.id ? null : state.invite });
+  if (s.pausedAt !== null && !inSessionRoom(s)) void rejoin(s, policyNow());
+  else void maybeShare();
 }
 
 /** This PC stops sharing (the frame, the bar, the capture) without telling the hub again. */
@@ -163,53 +162,81 @@ async function stopScreenHere(): Promise<void> {
 /** What the requester shared before the connection dropped, to share again when it is back (same app run only). */
 let resume: { sessionId: string; sourceId: string; scope: 'screen' | 'window'; control: boolean } | null = null;
 let joining: string | null = null;
-/** Counts the person's own stops: one during an automatic rejoin cancels what is left of it. */
+let sharing = false;
+/** Counts the person's own stops: one during an automatic share cancels what is left of it. */
 let stops = 0;
 
 /**
- * Join a session without a click: an unattended one (IT connected without asking, policy
+ * Join a session without a click (only join: what is shared is decided by maybeShare once both
+ * people are in the Room): an unattended one (IT connected without asking, policy
  * assistUnattended) or one that waits for its dropped connection (policy assistReconnect).
- * Unattended: this PC shares its main screen and gives control by itself, with the microphone off,
- * and says so (the banner, the share bar, a notification); the person can stop it as always.
+ * Unattended: this PC comes in with no microphone at all.
  */
 async function rejoin(s: SupportSession, policy: OfficePolicy): Promise<void> {
   const requester = meId === s.requesterId;
   if (!onMyDevice(s)) return;
-  // after the person stopped it, an unattended session is never given again by itself
   const unattended = requester && s.unattended && !s.stopped && policy.assistUnattended === true && !!window.dex.assist;
   if (!unattended && policy.assistReconnect !== true) return;
   if (joining === s.id || inSessionRoom(s)) return;
   // someone in another Room or meeting is not pulled out of it: the invite card stays
   if (callState().room) return;
   joining = s.id;
-  const at = stops;
-  const stopped = () => stops !== at || state.session?.id !== s.id;
   try {
     await caps;
-    await joinSession(s.ticketId);
-    if (!requester) return;
-    if (unattended) {
-      if (!callState().muted) toggleMute();
-      const source = await window.dex.assist!.primaryScreen();
-      if (!source) throw new Error('No screen to share.');
-      if (stopped()) return;
-      await shareScreen(source, 'screen');
-      if (stopped()) { await stopScreen(); return; }
-      if (state.control.available) await allowControl();
-      if (stopped()) { await stopControl(); return; }
-      window.dex.notify(`${techNameOf(s.techId)} from IT connected to this PC`, 'Unattended access: they see your screen and can use your mouse and keyboard. Press Shift+Esc to stop control.', 'dexconnect://help');
-    } else if (resume?.sessionId === s.id && !s.stopped) {
-      const r = resume;
-      await shareScreen(r.sourceId, r.scope);
-      if (stopped()) { await stopScreen(); return; }
-      if (r.control && state.control.available && r.scope === 'screen') await allowControl();
-      if (stopped()) { await stopControl(); return; }
-      window.dex.notify(`Reconnected with ${techNameOf(s.techId)}`, r.control ? 'Your screen is shared again and IT has control again. Press Shift+Esc to stop control.' : 'Your screen is shared again.', 'dexconnect://help');
-    }
+    await joinSession(s.ticketId, { noMic: unattended });
   } catch (e) {
     console.warn('support session: could not join by itself', (e as Error).message);
   } finally {
     joining = null;
+  }
+  void maybeShare();
+}
+
+/**
+ * The requester's PC shares by itself only when: the session is running (not waiting for anyone),
+ * both people are in the Room, the person has not stopped anything in it, and either it is
+ * unattended (with the policy on, checked again before each step) or it is coming back from a
+ * dropped connection in this run of the app (what was shared before, shared again).
+ */
+async function maybeShare(): Promise<void> {
+  const s = state.session;
+  if (!s || meId !== s.requesterId || sharing || s.pausedAt !== null || s.stopped || !onMyDevice(s) || !inSessionRoom(s)) return;
+  if (!callState().room?.participants.some((p) => p.userId === s.techId)) return;
+  const auto = () => { const x = state.session; return !!x && x.id === s.id && x.unattended && !x.stopped && x.pausedAt === null && policyNow().assistUnattended === true; };
+  const back = resume?.sessionId === s.id ? resume : null;
+  if (!(auto() && window.dex.assist) && !back) return;
+  if (state.shared) {
+    // already sharing: only control may be missing
+    if (!(auto() && state.control.available && !s.consent.control && s.consent.scope === 'screen')) return;
+  }
+  sharing = true;
+  const at = stops;
+  const stopped = () => stops !== at || state.session?.id !== s.id || !!state.session?.stopped || state.session?.pausedAt !== null;
+  try {
+    if (auto()) {
+      if (!state.shared) {
+        const source = await window.dex.assist!.primaryScreen();
+        if (!source || stopped() || !auto()) return;
+        await shareScreen(source, 'screen');
+        if (stopped() || !auto()) { await stopScreen(); return; }
+      }
+      if (state.control.available && !state.session?.consent.control) {
+        if (stopped() || !auto()) return;
+        await allowControl();
+        if (stopped() || !auto()) { await stopControl(); return; }
+      }
+      window.dex.notify(`${techNameOf(s.techId)} from IT connected to this PC`, 'Unattended access: they see your screen and can use your mouse and keyboard. Press Shift+Esc to stop control.', 'dexconnect://help');
+    } else if (back && !state.shared) {
+      await shareScreen(back.sourceId, back.scope);
+      if (stopped()) { await stopScreen(); return; }
+      if (back.control && state.control.available && back.scope === 'screen') await allowControl();
+      if (stopped()) { await stopControl(); return; }
+      window.dex.notify(`Reconnected with ${techNameOf(s.techId)}`, back.control ? 'Your screen is shared again and IT has control again. Press Shift+Esc to stop control.' : 'Your screen is shared again.', 'dexconnect://help');
+    }
+  } catch (e) {
+    console.warn('support session: could not share by itself', (e as Error).message);
+  } finally {
+    sharing = false;
   }
 }
 
@@ -293,24 +320,17 @@ export async function sendDropped(ticketId: string, drop: { items: DropItem[]; f
   if (!window.dex.uploadFile) throw new Error('Dropping files works from the desktop app.');
   if (policyNow().assistFiles !== true) throw new Error('Dropping files into a session is off for this office. Use Send a file.');
   const total = drop.items.length;
-  let done = 0;
-  let batch: Array<{ fileId: string; path: string; size: number }> = [];
-  const flush = async () => {
-    if (!batch.length) return;
-    await window.dex.request('help.drop', { id: ticketId, files: batch.map((b) => ({ fileId: b.fileId, path: b.path })), folder: drop.folder });
-    batch = [];
-  };
+  const files: Array<{ fileId: string; path: string }> = [];
+  // every file uploaded first, then the drop handed over in one go: all of it or none, one line on the ticket
   for (const it of drop.items) {
-    onProgress(done, total, it.path);
+    onProgress(files.length, total, it.path);
     const path = window.dex.pathForFile?.(it.file);
-    const info = await window.dex.uploadFile(`help-drop-${Date.now().toString(36)}-${done}`, path ? { path, name: it.file.name, mime: it.file.type || undefined } : { data: await it.file.arrayBuffer(), name: it.file.name, mime: it.file.type || undefined });
-    batch.push({ fileId: info.id, path: it.path, size: it.file.size });
-    done++;
-    if (batch.length >= 50) await flush();
+    const info = await window.dex.uploadFile(`help-drop-${Date.now().toString(36)}-${files.length}`, path ? { path, name: it.file.name, mime: it.file.type || undefined } : { data: await it.file.arrayBuffer(), name: it.file.name, mime: it.file.type || undefined });
+    files.push({ fileId: info.id, path: it.path });
   }
-  await flush();
-  onProgress(done, total, '');
-  return done;
+  await window.dex.request('help.drop', { id: ticketId, files, folder: drop.folder });
+  onProgress(total, total, '');
+  return total;
 }
 
 export const clearDropped = () => set({ dropped: null });
@@ -348,12 +368,12 @@ export async function connectNow(target: { id: string } | { userId: string }): P
 }
 
 /** The requester (or the technician coming back) joins the session's Room. */
-export async function joinSession(ticketId: string): Promise<void> {
+export async function joinSession(ticketId: string, opts: { noMic?: boolean } = {}): Promise<void> {
   await enterSpecial(async () => {
     const r = await window.dex.request('help.session.join', { id: ticketId, controlAvailable: state.control.available });
     set({ session: r.session, invite: null });
     return r.room;
-  });
+  }, opts);
 }
 
 export async function endSession(): Promise<void> {

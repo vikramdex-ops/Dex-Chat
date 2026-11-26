@@ -224,11 +224,12 @@ export const sharedSource = () => (state.screen ? screenSource : null);
  * Come into a lounge or support session: audio only (a microphone is not required: without one you
  * listen), then the hub's answer is the Room to enter.
  */
-export async function enterSpecial(open: () => Promise<RoomInfo>): Promise<RoomInfo> {
+export async function enterSpecial(open: () => Promise<RoomInfo>, opts: { noMic?: boolean } = {}): Promise<RoomInfo> {
   if (state.room) throw new Error('You are in another Room. Leave it first.');
   let local: MediaStream | null = null;
   try {
-    const [media] = await Promise.all([getMedia(false).catch(() => new MediaStream()), refreshIce()]);
+    // noMic: come in with no microphone at all (unattended support: nothing from the desk is heard; turning it on asks)
+    const [media] = await Promise.all([opts.noMic ? Promise.resolve(new MediaStream()) : getMedia(false).catch(() => new MediaStream()), refreshIce()]);
     local = media;
     const room = await open();
     enter(room, local);

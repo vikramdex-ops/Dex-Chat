@@ -1166,6 +1166,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'help.session.end': { req: { id: string }; res: { ok: true } };
   /** IT connects to a person's PC without them accepting (policy assistUnattended): on a ticket, or a new one for that person. */
   'help.connect': { req: { id?: string; userId?: string }; res: { session: SupportSession; room: RoomInfo } };
+  /** This desktop app can be controlled (Windows, Linux): unattended access may choose it. */
+  'help.device': { req: { control: boolean }; res: { ok: true } };
   /** Support sessions running now that you are part of (to rejoin after a dropped connection or a restart). */
   'help.live': { req: void; res: SupportSession[] };
   /** Office PCs with the IT Support service (IT staff). */

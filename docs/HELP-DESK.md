@@ -149,17 +149,21 @@ without the person accepting: **Connect now** on a ticket, or *Connect to someon
 of the Help desk (which opens a ticket for that person, held by the technician). The hub
 (`help.connect`) refuses it unless the policy is on and the caller is IT staff; the session is
 marked `unattended`. The person's app, if the policy is on, joins by itself (not when they are in
-another Room or meeting: then the invite card stays), with **its microphone off**, shares its main
-screen and gives control. It says so everywhere: a notification, the dock (*"Ravi connected without
+another Room or meeting: then the invite card stays) **with no microphone at all** (turning it on
+asks), and once the technician is in the Room too, shares its main screen and gives control
+(the policy is checked again before each step). It says so everywhere: a notification, the dock (*"Ravi connected without
 asking"*), the amber banner (*"… connected without asking (unattended access is on for this
 office)"*), the amber frame and the share bar (*IT CONNECTED WITHOUT ASKING*). **The person can
 always stop it** exactly as in an attended session: Stop control, Stop sharing, End, Shift+Esc or
 Ctrl+Alt+Shift+S. Nothing is given again by itself after they stop it (the hub remembers it for the
 session, `stopped`), unless IT presses Connect now again. The hub chooses the **one PC** of theirs
-that IT reaches (the device already in the session, or their device in use, connected on the office
-network); their other devices never join or act on it. It needs the app running and someone signed
-in to Windows. An administrator turning the policy off takes control back at once in running
-unattended sessions (they go on as ordinary sessions the person decides in). Recorded: `help.unattended.started` / `help.unattended.ended`,
+that IT reaches: only a desktop app that said it can be controlled (`help.device`; never a phone or
+the web app), the one already in the session, or else the one in use, on the office network; their
+other devices never join or act on it. Everything Connect now needs is checked before anything is
+written, so a refused connect leaves no ticket behind. It needs the app running and someone signed
+in to Windows. An administrator turning the policy off stops control and the screen the app shared
+by itself at once in running unattended sessions (they go on as ordinary sessions the person decides
+in). Recorded: `help.unattended.started` / `help.unattended.ended`,
 `unattended: true` on `help.session.started`, `help.consent.granted` and `help.session.ended`, and
 *"connected without asking"* on the ticket.
 
@@ -172,7 +176,8 @@ side takes it only from the other person's device in the session.
 **Files and folders** (`assistFiles`). Drop files, or a whole folder (up to 500 files at a time), on
 the technician's picture or on the requester's dock. Each is uploaded to the hub's file store and
 kept on the ticket (`help.drop`: every file checked first and attached in one transaction, one
-timeline line per drop, audit `help.files.dropped`; up to 2,000 dropped files a ticket, which do not
+timeline line per drop (every file is uploaded first, then one `help.drop`), audit
+`help.files.dropped`; up to 2,000 dropped files a ticket, which do not
 count toward its 40 attachments and are not in its list of files; only `help.drop` can attach them).
 The hub tells the other side (`help.dropped`), whose device in the session saves them one at a
 time under **Downloads\Dexterity IT\T-0042\** at their place in the folder; paths are
@@ -180,9 +185,11 @@ cleaned (`safeRelativePath`: no drive, no "..", no reserved names, on the hub an
 and nothing is overwritten (`COPYFILE_EXCL`, the next free name).
 **Send a file** still works without the policy.
 
-**Reconnect** (`assistReconnect`). When a session's Room ends without anyone ending the session
-(a network drop, a PC restarting), the hub pauses it instead of ending it: sharing and control stop
-at once (`help.session.paused`), and it waits **10 minutes** (`reconnectGraceMs`). Each app joins
+**Reconnect** (`assistReconnect`). Once both people have been in the session's Room, either of them
+dropping out (a network drop, a PC restarting) pauses the session instead of ending it: sharing and
+control stop at once (`help.session.paused`), nothing can be shared while one side is away, and it
+waits **10 minutes** (`reconnectGraceMs`) for **both** to be back; one side returning alone does not
+end the wait. (Without the policy, either person leaving stops what was shared.) Each app joins
 it again when it is back online or starts (`help.live`), and the session resumes
 (`help.session.resumed`, with how long it was paused). After a network drop, the requester's app
 shares the same screen again and, if they had given control, gives it again (it tells them); after
