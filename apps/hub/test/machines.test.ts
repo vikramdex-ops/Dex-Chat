@@ -148,3 +148,51 @@ test('the PC restarting: with reconnect on, the session waits and goes on when t
   assert.match(String((await again.next('rejected')).reason), /removed/);
   assert.deepEqual(await ravi.request('machine.list'), []);
 });
+
+test('review fixes: leaving the IT desk or the policy turned off ends a live session; a fast reconnect starts it again', async () => {
+  const { hub, owner, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistElevated: true });
+  const k = machineKey();
+  const m = await service(hub, k.key, k.pub);
+  await m.next('m.ok');
+
+  // removed from the IT desk: the session ends at once, the PC is told, input is refused
+  const s1 = await ravi.request('machine.connect', { machineId: m.id });
+  await m.next('m.start');
+  const ended1 = nextEvent<ElevatedSession>(ravi, 'machine.session', (x) => x.id === s1.id && !!x.endedAt);
+  await owner.request('admin.help.staff', { userId: me(ravi), on: false });
+  assert.equal((await ended1).why, 'The technician is no longer on the IT desk.');
+  assert.equal((await m.next('m.stop')).s, s1.id);
+  await assert.rejects(ravi.request('machine.sas', { s: s1.id }), /ended|IT desk/);
+
+  // the policy turned off: the session ends at once, even if the technician only watches
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  const s2 = await ravi.request('machine.connect', { machineId: m.id });
+  await m.next('m.start');
+  const ended2 = nextEvent<ElevatedSession>(ravi, 'machine.session', (x) => x.id === s2.id && !!x.endedAt);
+  await owner.request('admin.policy.set', { assistElevated: false });
+  assert.equal((await ended2).why, 'An administrator turned elevated control off.');
+
+  // the PC comes back before the hub noticed its old link went away: the session starts again on the new link
+  await owner.request('admin.policy.set', { assistElevated: true });
+  const s3 = await ravi.request('machine.connect', { machineId: m.id });
+  await m.next('m.start');
+  const again = await service(hub, k.key, k.pub);
+  await again.next('m.ok');
+  assert.equal((await again.next('m.start')).s, s3.id);
+  await again.close();
+});
+
+test('review fixes: a flood of new machines is refused', async () => {
+  const { hub } = await office();
+  let refused = 0;
+  for (let i = 0; i < 32; i++) {
+    const k = machineKey();
+    const m = await service(hub, k.key, k.pub, `PC-${i}`);
+    const r = await Promise.race([m.next('m.ok').then(() => 'ok'), m.next('rejected').then((x) => String(x.reason))]);
+    if (r !== 'ok') { refused++; assert.match(r, /Too many new PCs/); }
+    m.ws.close();
+  }
+  assert.equal(refused, 2, 'thirty new PCs an hour are taken in, the rest refused');
+});

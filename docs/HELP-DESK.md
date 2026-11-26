@@ -204,17 +204,23 @@ service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
 
 - **Control room ▸ Policies ▸ Remote support ▸ Install on this PC** (on that PC, signed in to the
   office hub over the office network). Windows asks for administrator approval; the app never runs
-  anything elevated without that prompt.
+  anything elevated without that prompt. It is offered only when the app is installed for everyone
+  (Program Files): a copy installed for one person lives in their own folder, where anything running
+  as them could swap `DexSupport.exe` before the administrator approves, so the app refuses and
+  points to the setup switch below. A declined prompt is reported as declined, never as installed.
 - **For many PCs at once**: run the setup as an administrator (GPO, PsExec, Intune):
   `DexterityConnect-Setup-x.y.z.exe /S /SUPPORTHUB=hub-host:47900 /SUPPORTFP=AA:BB:…` (the hub's
   certificate fingerprint, shown in the hub's admin console).
 - Either way `DexSupport.exe --install --hub HOST:PORT --fingerprint FP` copies itself to
   `%ProgramFiles%\Dexterity Connect Support\` (only administrators can change it, so nobody can swap
   the program a SYSTEM service runs), writes `%ProgramData%\Dexterity Connect Support\config.json`
-  (SYSTEM and Administrators only), creates the PC's **P-256 key in the machine key store** (never
+  (owner Administrators, SYSTEM and Administrators only; a folder of that name someone else made
+  first, or a link, is removed and made again, and the service refuses a config.json an
+  administrator does not own), creates the PC's **P-256 key in the machine key store** (never
   exported), sets `SoftwareSASGeneration` so services may send Ctrl+Alt+Del, and registers the
   automatic LocalSystem service `DexConnectSupport` (restarted on failure). `--uninstall` removes it
-  all, as does **Remove from this PC**. Removing the app leaves the service in place.
+  all, puts `SoftwareSASGeneration` back as it was, and deletes the key; **Remove from this PC** does
+  the same. Removing the app leaves the service in place.
 - The service is built with the C# compiler of .NET Framework 4.8, which is part of Windows 10 and 11
   (`npm run support:build -w @dex/desktop`; Build-Release and CI do it before packaging). No SDK,
   no third-party code. It connects on the office network only, not through the internet gateway.
@@ -222,8 +228,10 @@ service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
 **On the hub** (`apps/hub/src/machines.ts`) the service is a **machine device**: it signs the same
 authentication payload as people's devices with its P-256 key (`machineIdFor`,
 `verifyMachineSignature` in `packages/core/src/machine.ts`; the hub's certificate is pinned by its
-fingerprint) and is **accepted without approval** (`machine.added` in the audit log). Control room
-lists every PC with the service; **Remove** blocks that key for good (`machine.removed`; reinstalling
+fingerprint) and is **accepted without approval** (`machine.added` in the audit log), on the office
+network only (a machine connecting through the internet gateway is refused) and at most 30 new PCs
+an hour (2,000 in all). Control room lists every PC with the service; **Remove** blocks that key for
+good (`machine.removed`; to add the PC again, remove the service from it and install it again, which
 makes a new key).
 
 **Connecting.** The Help desk lists the office PCs with the service (online, who is signed in, locked
@@ -236,7 +244,10 @@ two in flight: the technician's app acknowledges each one it draws), the same mo
 surface as a support session, **Ctrl+Alt+Del** (the real secure attention sequence, `SendSAS`,
 audited as `help.elevated.sas`) and **End**. Input goes through the hub's **InputGate** (120 events a
 second, the blocked chords, held keys released) and reaches the PC as virtual-key codes; the PC
-limits the rate again.
+limits the rate again. Every picture, input and Ctrl+Alt+Del checks again that the technician is still on the IT
+desk and the policy is still on; taking someone off the IT desk or turning the policy off ends their
+sessions at once (*"The technician is no longer on the IT desk."*, *"An administrator turned elevated
+control off."*).
 
 **On the PC.** The service (session 0) starts a worker (`DexSupport.exe --worker`) in the active
 console session with its own SYSTEM token; a pipe only SYSTEM can open joins them. The worker follows
@@ -250,6 +261,11 @@ top of whatever desktop is showing (theirs, the lock or sign-in screen, a UAC pr
 Kumar from IT is connected to this PC with administrator rights"*, with **Stop** and
 **Ctrl+Alt+Shift+S**. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
 ticket). With nobody signed in IT may still connect; the strip is on the sign-in screen.
+
+**Restarts.** The service stopping (a restart, an update) closes its link without ending the session,
+so with `assistReconnect` the session waits and goes on when the PC is back; if the PC returns before
+the hub noticed it left, the session starts again on the new link. A session the person stopped is
+remembered by the service and never taken up again, even if the hub did not hear the stop.
 
 **Recorded:** `help.elevated.started` (PC, who was signed in, locked), `help.elevated.sas`,
 `help.elevated.ended` (duration, pictures sent, why), `help.session.paused` / `resumed` when the PC

@@ -109,6 +109,12 @@ namespace DexSupport {
     public string Hub;
     public string Fingerprint;
     public static Config Load() {
+      if (Paths.ConfigOverride == null) {
+        // the service trusts this file for its hub: only when an administrator (or SYSTEM) owns it
+        var owner = File.GetAccessControl(Paths.Config, AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        if (owner == null || !(owner.Equals(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)) || owner.Equals(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null))))
+          throw new InvalidDataException("config.json is not owned by an administrator; reinstall the service");
+      }
       var d = Json.Parse(File.ReadAllText(Paths.Config, Encoding.UTF8));
       var c = new Config();
       c.Hub = Json.Str(d, "hub");
@@ -221,23 +227,24 @@ namespace DexSupport {
       Directory.CreateDirectory(Paths.Dir);
       string self = Process.GetCurrentProcess().MainModule.FileName;
       if (!string.Equals(Path.GetFullPath(self), Path.GetFullPath(Paths.Exe), StringComparison.OrdinalIgnoreCase)) File.Copy(self, Paths.Exe, true);
-      Directory.CreateDirectory(Paths.Data);
-      var acl = new DirectorySecurity();
-      acl.SetAccessRuleProtection(true, false);
-      acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
-      acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
-      Directory.SetAccessControl(Paths.Data, acl);
+      SecureDataFolder();
       var cfg = new Dictionary<string, object>();
       cfg["hub"] = hub.Trim();
       cfg["fingerprint"] = fingerprint.Trim().ToUpperInvariant();
+      if (File.Exists(Paths.Config)) File.Delete(Paths.Config);
       File.WriteAllText(Paths.Config, Json.Write(cfg), new UTF8Encoding(false));
+      File.SetAccessControl(Paths.Config, AdminOnlyFile());
       // the machine's key, created by an administrator in the machine key store
       var id = Keys.Load(true);
       // software may send Ctrl+Alt+Del: services (1), keeping what ease-of-access already had (2 -> 3)
       using (var k = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System")) {
         object v = k.GetValue("SoftwareSASGeneration");
         int cur = v is int ? (int)v : 0;
-        if ((cur & 1) == 0) k.SetValue("SoftwareSASGeneration", cur | 1, RegistryValueKind.DWord);
+        if ((cur & 1) == 0) {
+          k.SetValue("SoftwareSASGeneration", cur | 1, RegistryValueKind.DWord);
+          // what it was, for --uninstall to put back (-1: it was not set)
+          using (var mine = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Dexterity Connect Support")) mine.SetValue("PreviousSAS", v is int ? cur : -1, RegistryValueKind.DWord);
+        }
       }
       IntPtr scm = OpenSCManager(null, null, 0xF003F);
       if (scm == IntPtr.Zero) throw new Exception("OpenSCManager failed: " + Marshal.GetLastWin32Error());
@@ -265,6 +272,42 @@ namespace DexSupport {
       return 0;
     }
 
+    static readonly SecurityIdentifier SystemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+    static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+
+    /**
+     * %ProgramData%\Dexterity Connect Support, which the SYSTEM service trusts for its hub: anyone may
+     * create folders in ProgramData, so one that exists already is only kept when it is a real folder
+     * owned by SYSTEM or Administrators; otherwise it is removed and made again. Owner Administrators,
+     * only SYSTEM and Administrators in its access list, nothing inherited from ProgramData.
+     */
+    static void SecureDataFolder() {
+      if (Directory.Exists(Paths.Data)) {
+        bool reparse = (File.GetAttributes(Paths.Data) & FileAttributes.ReparsePoint) != 0;
+        var owner = reparse ? null : Directory.GetAccessControl(Paths.Data, AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        if (reparse || owner == null || !(owner.Equals(SystemSid) || owner.Equals(AdminsSid))) {
+          Log.Write("the data folder was not made by an administrator: made again");
+          if (reparse) Directory.Delete(Paths.Data); else Directory.Delete(Paths.Data, true);
+        }
+      }
+      var acl = new DirectorySecurity();
+      acl.SetOwner(AdminsSid);
+      acl.SetAccessRuleProtection(true, false);
+      acl.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+      acl.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+      if (!Directory.Exists(Paths.Data)) Directory.CreateDirectory(Paths.Data, acl);
+      Directory.SetAccessControl(Paths.Data, acl);
+    }
+
+    static FileSecurity AdminOnlyFile() {
+      var f = new FileSecurity();
+      f.SetOwner(AdminsSid);
+      f.SetAccessRuleProtection(true, false);
+      f.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, AccessControlType.Allow));
+      f.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, AccessControlType.Allow));
+      return f;
+    }
+
     static void StopService() {
       try {
         using (var sc = new ServiceController(Program.ServiceName)) {
@@ -284,6 +327,16 @@ namespace DexSupport {
       }
       try { if (CngKey.Exists("DexterityConnectSupport", CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey)) CngKey.Open("DexterityConnectSupport", CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey).Delete(); } catch { }
       try { Directory.Delete(Paths.Data, true); } catch { }
+      // Ctrl+Alt+Del from software back to what it was before the install
+      try {
+        using (var mine = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Dexterity Connect Support")) {
+          object prev = mine == null ? null : mine.GetValue("PreviousSAS");
+          if (prev is int) using (var k = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System")) {
+            if ((int)prev < 0) k.DeleteValue("SoftwareSASGeneration", false); else k.SetValue("SoftwareSASGeneration", (int)prev, RegistryValueKind.DWord);
+          }
+        }
+        Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\Dexterity Connect Support", false);
+      } catch { }
       // the exe may be the one running this: removed at the next restart if so
       try { File.Delete(Paths.Exe); Directory.Delete(Paths.Dir); } catch { MoveFileEx(Paths.Exe, null, 4); }
       Console.WriteLine("{\"installed\":false}");
@@ -413,8 +466,9 @@ namespace DexSupport {
     Process worker;
     NamedPipeServerStream pipe;
     uint workerSession = uint.MaxValue;
-    // the session with IT
+    // the session with IT, and the ones the person at the PC stopped (never taken up again)
     volatile string session;
+    readonly HashSet<string> stoppedHere = new HashSet<string>();
     string tech;
     int credits;
     long seq;
@@ -437,7 +491,11 @@ namespace DexSupport {
     }
 
     public void Stop() {
-      EndSession("The IT Support service stopped.", true);
+      // a restart or the service stopping is the PC going away for a while, not the person's Stop:
+      // the hub pauses the session (with reconnect on) and it goes on when the service is back
+      Tell('X', "");
+      var c = ws;
+      if (c != null) { try { c.CloseOutputAsync(WebSocketCloseStatus.EndpointUnavailable, "restarting", CancellationToken.None).Wait(2000); } catch { } }
       stop.Cancel();
       lock (workerGate) { KillWorker(); }
     }
@@ -536,6 +594,14 @@ namespace DexSupport {
       string t = Json.Str(m, "t");
       string s = Json.Str(m, "s");
       if (t == "m.start" && s != null) {
+        bool refused;
+        lock (stoppedHere) refused = stoppedHere.Contains(s);
+        if (refused) {
+          // the person stopped it here; the hub may not have heard (a dropped link): tell it again
+          var d = new Dictionary<string, object>(); d["t"] = "m.ended"; d["s"] = s; d["why"] = "The person at the PC pressed Stop.";
+          Post(Json.Write(d));
+          return;
+        }
         session = s; tech = Json.Str(m, "tech") ?? "IT"; credits = 2;
         Log.Write("IT connected: " + tech + " (" + s + ")");
         Tell('S', tech);
@@ -561,6 +627,7 @@ namespace DexSupport {
     void EndSession(string why, bool now) {
       string s = session;
       if (s == null) return;
+      lock (stoppedHere) stoppedHere.Add(s);
       session = null;
       Tell('X', "");
       var d = new Dictionary<string, object>();
@@ -681,7 +748,8 @@ namespace DexSupport {
     static int credits;
     static string deskName = "";
     static IntPtr desk = IntPtr.Zero;
-    static readonly HashSet<int> heldKeys = new HashSet<int>();
+    /** Keys IT holds down, with their extended flag (right Ctrl and Alt differ from the left ones only by it). */
+    static readonly Dictionary<int, bool> heldKeys = new Dictionary<int, bool>();
     static readonly HashSet<string> heldButtons = new HashSet<string>();
     static readonly Queue<DateTime> recent = new Queue<DateTime>();
     static Banner banner;
@@ -795,14 +863,18 @@ namespace DexSupport {
         }
         SelectObject(mem, old);
         using (var full = Image.FromHbitmap(bmp)) {
-          double scale = Math.Min(1.0, 1920.0 / w);
+          double scale = Math.Min(1.0, Math.Min(1920.0 / w, 1920.0 / h));
           outW = Math.Max(1, (int)(w * scale)); outH = Math.Max(1, (int)(h * scale));
           using (var small = new Bitmap(outW, outH, PixelFormat.Format24bppRgb)) {
             using (var g = Graphics.FromImage(small)) { g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(full, 0, 0, outW, outH); }
             if (jpegCodec == null) foreach (var codec in ImageCodecInfo.GetImageEncoders()) if (codec.MimeType == "image/jpeg") jpegCodec = codec;
-            var ep = new EncoderParameters(1);
-            ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 60L);
-            using (var ms = new MemoryStream()) { small.Save(ms, jpegCodec, ep); jpeg = ms.ToArray(); }
+            // a busy screen at 60 can be too big for the hub (900,000 base64 characters): try lower
+            foreach (long q in new long[] { 60L, 40L, 25L }) {
+              var ep = new EncoderParameters(1);
+              ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, q);
+              using (var ms = new MemoryStream()) { small.Save(ms, jpegCodec, ep); jpeg = ms.ToArray(); }
+              if (jpeg.Length < 650000) break;
+            }
           }
         }
         // the hub relays up to 900,000 base64 characters a picture
@@ -858,15 +930,15 @@ namespace DexSupport {
       } else if (t == "key") {
         int vk = (int)Json.Num(c, "vk");
         if (vk <= 0 || vk > 254) return;
-        bool down = Json.Bool(c, "down");
-        if (down) heldKeys.Add(vk); else if (!heldKeys.Remove(vk)) return;
-        Key(vk, Json.Bool(c, "ext"), down);
+        bool down = Json.Bool(c, "down"), ext = Json.Bool(c, "ext");
+        if (down) heldKeys[vk] = ext; else if (!heldKeys.Remove(vk)) return;
+        Key(vk, ext, down);
       }
     }
 
     /** Let go of everything IT was holding (the session ended or was stopped). */
     static void Release() {
-      foreach (var vk in heldKeys) Key(vk, false, false);
+      foreach (var k in heldKeys) Key(k.Key, k.Value, false);
       foreach (var b in heldButtons) Mouse(0, 0, 0, b == "right" ? 0x0010u : b == "middle" ? 0x0040u : 0x0004u);
       heldKeys.Clear(); heldButtons.Clear();
     }
@@ -898,6 +970,7 @@ namespace DexSupport {
   class Banner {
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenDesktop(string name, uint flags, bool inherit, uint access);
     [DllImport("user32.dll", SetLastError = true)] static extern bool SetThreadDesktop(IntPtr desk);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool CloseDesktop(IntPtr desk);
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hwnd, int id, uint mods, uint vk);
 
     readonly object gate = new object();
@@ -909,30 +982,47 @@ namespace DexSupport {
 
     public void Show(string tech, Action stop) { lock (gate) { who = tech; onStop = stop; Restart(); } }
     public void Hide() { lock (gate) { who = null; Close(); } }
-    public void MoveTo(string desktopName) { lock (gate) { desktop = desktopName; if (who != null) Restart(); } }
+    public void MoveTo(string desktopName) { lock (gate) { if (desktopName == desktop && form != null) return; desktop = desktopName; if (who != null) Restart(); } }
 
+    // called with the gate held; the banner thread never takes it, so waiting here cannot deadlock
     void Close() {
       var f = form;
+      var t = thread;
       form = null;
-      if (f != null) { try { f.BeginInvoke(new Action(delegate { f.Close(); Application.ExitThread(); })); } catch { } }
-      if (thread != null) thread.Join(2000);
       thread = null;
+      if (f != null) { try { f.BeginInvoke(new Action(delegate { f.Close(); })); } catch { } }
+      if (t != null && !t.Join(3000)) Log.Write("banner: a strip did not close in time");
     }
 
     void Restart() {
       Close();
       string text = who, name = desktop;
       Action stop = onStop;
-      thread = new Thread(delegate() {
+      var ready = new ManualResetEventSlim(false);
+      Form made = null;
+      var t = new Thread(delegate() {
         IntPtr d = OpenDesktop(name, 0, false, 0x10000000);
-        if (d != IntPtr.Zero) SetThreadDesktop(d);
-        var f = new StripForm(text, stop);
-        form = f;
-        Application.Run(f);
+        try {
+          if (d != IntPtr.Zero) SetThreadDesktop(d);
+          var f = new StripForm(text, stop);
+          made = f;
+          // the window exists before anyone may close it
+          f.HandleCreated += delegate { ready.Set(); };
+          f.FormClosed += delegate { Application.ExitThread(); };
+          Application.Run(f);
+        } catch (Exception e) {
+          Log.Write("banner: " + e.Message);
+        } finally {
+          ready.Set();
+          if (d != IntPtr.Zero) CloseDesktop(d);
+        }
       });
-      thread.SetApartmentState(ApartmentState.STA);
-      thread.IsBackground = true;
-      thread.Start();
+      t.SetApartmentState(ApartmentState.STA);
+      t.IsBackground = true;
+      t.Start();
+      ready.Wait(3000);
+      form = made;
+      thread = t;
     }
 
     class StripForm : Form {

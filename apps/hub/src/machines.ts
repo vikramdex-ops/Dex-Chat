@@ -69,6 +69,10 @@ interface Live extends ElevatedSession {
 
 interface Online { conn: MachineConn; consoleUser: string | null; locked: boolean }
 
+/** New machines the hub takes in an hour, and in all (a flood of keys from one place is not an office). */
+const NEW_PER_HOUR = 30;
+const MAX_MACHINES = 2000;
+
 const oneLine = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '');
 
 export class Machines {
@@ -90,14 +94,20 @@ export class Machines {
 
   // ------------------------------------------------------------ the service's side
   /** The service's hello on a fresh websocket. Returns the machine id when it is accepted. */
-  hello(conn: MachineConn, nonce: string, f: MachineHello): string | null {
+  hello(conn: MachineConn, nonce: string, f: MachineHello, remote = false): string | null {
     const reject = (reason: string) => { conn.send({ t: 'rejected', reason }); conn.close(); return null; };
+    // the service is for the office network: never through the internet gateway
+    if (remote) return reject('The IT Support service connects on the office network only.');
     if (typeof f.publicKey !== 'string' || typeof f.sig !== 'string' || typeof f.id !== 'string') return reject('Malformed hello.');
     const id = machineIdFor(f.publicKey);
     if (id !== f.id) return reject('The id does not match the key.');
     if (!verifyMachineSignature(f.publicKey, authPayload(nonce, this.host.fingerprint, id), f.sig)) return reject('This PC could not prove its identity.');
     const row = this.db.prepare('SELECT public_key, removed_at FROM machines WHERE id = ?').get(id) as { public_key: string; removed_at: number | null } | undefined;
-    if (row?.removed_at) return reject('An administrator removed this PC from the office. Reinstall the IT Support service to add it again.');
+    if (row?.removed_at) return reject('An administrator removed this PC from the office. To add it again, remove the IT Support service from the PC and install it again (that makes a new key).');
+    if (!row) {
+      const n = this.db.prepare('SELECT COUNT(*) AS all_n, SUM(CASE WHEN first_seen > ? THEN 1 ELSE 0 END) AS recent FROM machines').get(Date.now() - 3600_000) as { all_n: number; recent: number | null };
+      if ((n.recent ?? 0) >= NEW_PER_HOUR || n.all_n >= MAX_MACHINES) { this.host.log('warn', 'a new PC was refused: too many new PCs', { recent: n.recent ?? 0, all: n.all_n }); return reject('Too many new PCs joined the office just now. Try again in an hour.'); }
+    }
     const hostname = oneLine(f.hostname, 63) || 'PC';
     const version = oneLine(f.version, 32);
     const now = Date.now();
@@ -110,8 +120,13 @@ export class Machines {
     this.online.set(id, { conn, consoleUser: oneLine(f.consoleUser, 120) || null, locked: f.locked === true });
     conn.send({ t: 'm.ok', id });
     this.host.log('info', 'IT support service connected', { machine: id.slice(0, 12), hostname });
-    // a session waiting for this PC (it restarted) goes on
-    for (const s of this.live.values()) if (s.machineId === id && s.pausedAt !== null) this.resume(s);
+    // a session waiting for this PC (it restarted) goes on; one whose old link has not timed out yet
+    // (the PC came back faster than the hub noticed) is started again on the new link
+    for (const s of this.live.values()) {
+      if (s.machineId !== id) continue;
+      if (s.pausedAt !== null) this.resume(s);
+      else { s.inFlight = 0; conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT' }); }
+    }
     this.changed();
     return id;
   }
@@ -130,6 +145,8 @@ export class Machines {
         const fr = decodeFrame(f);
         const s = fr ? this.live.get(fr.s) : null;
         if (!fr || !s || s.machineId !== machineId || s.pausedAt !== null) return;
+        // the technician may have left the IT desk, or an administrator turned elevated control off
+        if (!this.stillAllowed(s)) return;
         s.inFlight++;
         s.frames++;
         this.host.toDevice(s.techDevice, 'machine.frame', fr);
@@ -188,7 +205,6 @@ export class Machines {
       case 'machine.input': {
         const s = this.mine(me, d.s);
         if (s.pausedAt !== null) return { ok: true };
-        if (this.host.policy().assistElevated !== true) { this.end(s, null, 'An administrator turned elevated control off.'); throw new MachineError('Elevated control was turned off.'); }
         const now = Date.now();
         const ok = decodeInputBatch(d.msg).flatMap((ev) => { const r = s.gate.accept(ev, now); return r.ok ? [r.ev] : []; });
         if (ok.length) this.online.get(s.machineId)?.conn.send({ t: 'm.input', s: s.id, e: machineInputs(ok) });
@@ -196,6 +212,7 @@ export class Machines {
       }
       case 'machine.sas': {
         const s = this.mine(me, d.s);
+        if (s.pausedAt !== null) throw new MachineError('The PC is not connected right now.');
         this.online.get(s.machineId)?.conn.send({ t: 'm.sas', s: s.id });
         this.host.store.audit(me.id, 'help.elevated.sas', s.ticketId, { session: s.id, machine: s.hostname });
         return { ok: true };
@@ -253,7 +270,20 @@ export class Machines {
   private mine(me: PublicUser, id: unknown): Live {
     const s = typeof id === 'string' ? this.live.get(id) : undefined;
     if (!s || s.techId !== me.id) throw new MachineError('That session has ended.');
+    if (!this.stillAllowed(s)) throw new MachineError('That session has ended.');
     return s;
+  }
+
+  /** Still on the IT desk, and the office still allows it; otherwise the session ends now. */
+  private stillAllowed(s: Live): boolean {
+    if (this.host.policy().assistElevated !== true) { this.end(s, null, 'An administrator turned elevated control off.'); return false; }
+    if (!this.host.helpdesk.isIt(s.techId)) { this.end(s, null, 'The technician is no longer on the IT desk.'); return false; }
+    return true;
+  }
+
+  /** An administrator changed the policies or the IT desk: sessions no longer allowed end at once. */
+  recheck(): void {
+    for (const s of [...this.live.values()]) this.stillAllowed(s);
   }
 
   private view(s: Live): ElevatedSession {

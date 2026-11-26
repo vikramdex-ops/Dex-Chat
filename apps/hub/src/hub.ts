@@ -307,6 +307,7 @@ export class Hub {
       this.emit('policy.updated', p);
       // remote support turned off takes effect in sessions already running
       (this.helpdesk as HelpDesk | undefined)?.policyChanged(p);
+      (this.machines as Machines | undefined)?.recheck();
       // a narrower list of outside networks applies at once
       for (const c of [...this.conns]) {
         if (c.remote && !this.outsideAllowed(c)) { this.send(c, { t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }); c.ws.close(); }
@@ -463,7 +464,10 @@ export class Hub {
     });
     this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
     const deliverNow = (userIds: string[], name: string, data: unknown) => this.deliver(userIds, name, () => data);
-    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data), policy: () => this.policies.get(),
+    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow,
+      // someone leaving the IT desk loses an elevated session at once
+      broadcast: (name, data) => { this.emit(name, data); if (name === 'help.staff') (this.machines as Machines | undefined)?.recheck(); },
+      policy: () => this.policies.get(),
       devicesOf: (userId) => [...this.conns].filter((c) => c.ready && c.userId === userId && c.deviceId).map((c) => ({ deviceId: c.deviceId!, idle: c.idle, remote: c.remote })) });
     this.machines = new Machines({
       store: this.store, helpdesk: this.helpdesk, fingerprint: this.fingerprint, policy: () => this.policies.get(),
@@ -1292,7 +1296,8 @@ export class Hub {
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
     if (conn.machineId && conn.machine) { this.machines.closed(conn.machineId, conn.machine); return; }
-    if (conn.deviceId && conn.ready) this.machines.deviceGone(conn.deviceId);
+    // the technician's app went away (not only an old link of a device that is still connected)
+    if (conn.deviceId && conn.ready && ![...this.conns].some((c) => c.ready && c.deviceId === conn.deviceId)) this.machines.deviceGone(conn.deviceId);
     if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.pointers.dropDevice(conn.deviceId); this.webinars.leaveDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
@@ -1317,7 +1322,7 @@ export class Hub {
     if ((frame as { t: string }).t === 'machine') {
       if (conn.ready || conn.deviceId) return;
       conn.machine = { deviceId: null, send: (f) => { if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(JSON.stringify(f)); }, close: () => conn.ws.close() };
-      const id = this.machines.hello(conn.machine, conn.nonce, frame as unknown as MachineHello);
+      const id = this.machines.hello(conn.machine, conn.nonce, frame as unknown as MachineHello, conn.remote);
       if (id) conn.machineId = id;
       return;
     }

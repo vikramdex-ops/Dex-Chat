@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { app, ipcMain } from 'electron';
 import { powershellPath } from './windows.ts';
+import { trustedExe } from './trust.ts';
 
 export interface SupportServiceDeps {
   /** The office hub this app is connected to on the office network (null through the internet gateway). */
@@ -36,11 +37,13 @@ export async function serviceStatus(): Promise<{ available: boolean; installed: 
 
 /** Run DexSupport.exe with these arguments as administrator (Windows asks); resolves with its exit code. */
 async function elevated(args: string[]): Promise<{ ok: boolean; error: string | null }> {
+  if (!trustedExe(supportExe(), process.env, app.isPackaged)) return { ok: false, error: 'Dexterity Connect is installed for one person on this PC, so its files can be changed without administrator rights. Install the IT Support service with the setup run as an administrator instead: DexterityConnect-Setup.exe /S /SUPPORTHUB=hub:port /SUPPORTFP=fingerprint (Control room shows both).' };
   const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
-  const script = `$p = Start-Process -FilePath ${quote(supportExe())} -ArgumentList ${quote(args.map((a) => `"${a}"`).join(' '))} -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode`;
+  // a declined prompt (or a missing file) is an error from Start-Process, never "success"
+  const script = `try { $p = Start-Process -FilePath ${quote(supportExe())} -ArgumentList ${quote(args.map((a) => `"${a}"`).join(' '))} -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop } catch { if ($_.Exception.Message -match 'cancel') { exit 1223 }; [Console]::Error.WriteLine($_.Exception.Message); exit 1 }; if ($null -eq $p) { exit 1 }; exit $p.ExitCode`;
   const r = await run(powershellPath(), ['-NoProfile', '-NonInteractive', '-Command', script]);
   if (r.code === 0) return { ok: true, error: null };
-  if (/canceled by the user|cancelled by the user/i.test(r.out)) return { ok: false, error: 'Windows did not get administrator approval, so nothing was changed.' };
+  if (r.code === 1223) return { ok: false, error: 'Windows did not get administrator approval, so nothing was changed.' };
   if (r.code === 5) return { ok: false, error: 'This needs an administrator account on this PC.' };
   return { ok: false, error: `The IT Support service setup stopped (${r.code}). ${r.out.split(/\r?\n/).slice(-2).join(' ')}`.trim() };
 }

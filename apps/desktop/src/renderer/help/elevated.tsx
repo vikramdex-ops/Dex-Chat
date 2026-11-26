@@ -94,21 +94,24 @@ function Viewer({ s }: { s: ElevatedSession }) {
   const [controlling, setControlling] = useState(true);
   const ticket = useHelp(() => ticketById(s.ticketId));
   useEffect(() => {
-    let lastUrl: string | null = null;
+    // every picture is acknowledged as it arrives (the PC sends at most two ahead), whether it is
+    // drawn, fails to decode, or is replaced by the next one before it is drawn; each picture's
+    // URL is let go when the next one takes its place
+    let shown: string | null = null;
     const on = (f: MachineFrame) => {
-      if (f.s !== s.id || !img.current) return;
+      if (f.s !== s.id) return;
+      void window.dex.request('machine.ack', { s: s.id, seq: f.seq }).catch(() => {});
+      const el = img.current;
+      if (!el) return;
       const bytes = Uint8Array.from(atob(f.d), (c) => c.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
-      img.current.onload = () => {
-        if (lastUrl) URL.revokeObjectURL(lastUrl);
-        lastUrl = url;
-        void window.dex.request('machine.ack', { s: s.id, seq: f.seq }).catch(() => {});
-      };
-      img.current.src = url;
+      el.src = url;
+      if (shown) URL.revokeObjectURL(shown);
+      shown = url;
       setSize((cur) => (cur?.w === f.w && cur.h === f.h ? cur : { w: f.w, h: f.h }));
     };
     frameSubs.add(on);
-    return () => { frameSubs.delete(on); if (lastUrl) URL.revokeObjectURL(lastUrl); };
+    return () => { frameSubs.delete(on); if (shown) URL.revokeObjectURL(shown); };
   }, [s.id]);
   const run = (p: Promise<unknown>, ok?: string) => void p.then(() => { if (ok) toast(ok); }).catch((e: Error) => toast(e.message, true));
   const end = () => run(window.dex.request('machine.end', { s: s.id }).then(() => setCurrent(null)));
