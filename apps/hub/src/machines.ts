@@ -110,20 +110,20 @@ export class Machines {
       const n = this.db.prepare('SELECT SUM(CASE WHEN removed_at IS NULL THEN 1 ELSE 0 END) AS all_n, SUM(CASE WHEN first_seen > ? THEN 1 ELSE 0 END) AS recent FROM machines').get(Date.now() - 3600_000) as { all_n: number | null; recent: number | null };
       if ((n.recent ?? 0) >= NEW_PER_HOUR || (n.all_n ?? 0) >= MAX_MACHINES) { this.host.log('warn', 'a new PC was refused: too many new PCs', { recent: n.recent ?? 0, all: n.all_n }); return reject('Too many new PCs joined the office just now. Try again in an hour.'); }
     }
-    // a Windows computer name, ASCII letters, digits and hyphens: nothing invisible or look-alike
+    // a Windows computer name, ASCII letters, digits, hyphens and underscores: nothing invisible or look-alike
     const hostname = typeof f.hostname === 'string' ? f.hostname.trim() : '';
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/.test(hostname)) return reject('This PC\'s name is not a plain Windows computer name.');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(hostname)) return reject('This PC\'s name is not a plain Windows computer name.');
     const version = oneLine(f.version, 32);
     const now = Date.now();
-    const twin = this.online.get(id);
-    if (row && twin) {
+    if (row) {
       const was = (this.db.prepare('SELECT hostname FROM machines WHERE id = ?').get(id) as { hostname: string }).hostname;
       if (was.toLowerCase() !== hostname.toLowerCase()) {
+        // a copied disk image, or the PC was renamed: either way its key now names another PC
         this.host.store.audit(null, 'machine.cloned', id, { hostname: was, other: hostname });
-        return reject(`${was} already uses this PC's key (a copied disk image?). Remove the IT Support service from this PC and install it again.`);
+        return reject(`This PC's key belongs to ${was} (a copied disk image, or the PC was renamed). Remove the IT Support service from this PC and install it again; an administrator can then remove ${was} from the list.`);
       }
     }
-    if (row) this.db.prepare('UPDATE machines SET hostname = ?, version = ?, last_seen = ? WHERE id = ?').run(hostname, version, now, id);
+    if (row) this.db.prepare('UPDATE machines SET version = ?, last_seen = ? WHERE id = ?').run(version, now, id);
     else {
       this.db.prepare('INSERT INTO machines (id, public_key, hostname, version, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)').run(id, f.publicKey, hostname, version, now, now);
       this.host.store.audit(null, 'machine.added', id, { hostname, version });
@@ -137,7 +137,7 @@ export class Machines {
     for (const s of this.live.values()) {
       if (s.machineId !== id) continue;
       if (s.pausedAt !== null) this.resume(s);
-      else { s.inFlight = 0; conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT', ticket: this.host.helpdesk.refOf(s.ticketId) }); }
+      else { s.inFlight = 0; this.start(s); }
     }
     this.changed();
     return id;
@@ -168,6 +168,12 @@ export class Machines {
         this.host.toDevice(s.techDevice, 'machine.frame', fr);
         return;
       }
+      case 'm.privacy': {
+        // the PC could not keep the privacy screen out of IT's picture: it is off, and IT is told
+        const s = typeof f.s === 'string' ? this.live.get(f.s) : null;
+        if (s && s.machineId === machineId && f.ok === false) this.setPrivacy(s, false, null, 'The privacy screen cannot be shown on this PC (it needs Windows 10 version 2004 or later).');
+        return;
+      }
       case 'm.ended': {
         const s = typeof f.s === 'string' ? this.live.get(f.s) : null;
         if (s && s.machineId === machineId) this.end(s, null, oneLine(f.why, 200) || 'The person at the PC stopped it.');
@@ -190,8 +196,12 @@ export class Machines {
     // using an office PC with administrator rights is for the office network only, never through the internet gateway
     if (fromOutside && op !== 'machine.list' && op !== 'machine.end' && op !== 'machine.mine' && op !== 'admin.machine.remove') throw new MachineError('Elevated control works only on the office network.');
     switch (op) {
-      case 'machine.mine':
-        return [...this.live.values()].filter((x) => x.techId === me.id && x.techDevice === deviceId).map((x) => this.view(x));
+      case 'machine.mine': {
+        const mine = [...this.live.values()].filter((x) => x.techId === me.id && x.techDevice === deviceId);
+        // the window reloaded: pictures it never acknowledged are forgotten and the PC starts again
+        for (const x of mine) if (x.pausedAt === null) { x.inFlight = 0; this.start(x); }
+        return mine.map((x) => this.view(x));
+      }
       case 'machine.list':
         // IT staff, and administrators (Control room lists the PCs to remove one)
         if (me.role !== 'owner' && me.role !== 'admin') this.requireIt(me);
@@ -199,6 +209,8 @@ export class Machines {
       case 'machine.connect': {
         this.requireIt(me);
         if (this.host.policy().assistElevated !== true) throw new MachineError('Elevated control is off for this office. An administrator turns it on in Control room ▸ Policies ▸ Remote support.');
+        const privacy = d.privacy === true;
+        if (privacy && this.host.policy().assistPrivacy !== true) throw new MachineError('The privacy screen is off for this office. An administrator turns it on in Control room ▸ Policies ▸ Remote support.');
         const id = typeof d.machineId === 'string' ? d.machineId : '';
         const on = this.online.get(id);
         const m = this.machine(id);
@@ -210,15 +222,16 @@ export class Machines {
         const ticketId = this.host.helpdesk.openForIt(me, requester, `Elevated support on ${m.hostname} from ${me.displayName}`, { elevated: true, machine: m.hostname });
         const s: Live = {
           id: ulid(), machineId: id, hostname: m.hostname, techId: me.id, ticketId, startedAt: Date.now(), endedAt: null, pausedAt: null, why: null,
-          techDevice: deviceId, gate: new InputGate(), timer: null, inFlight: 0, frames: 0,
+          techDevice: deviceId, gate: new InputGate(), timer: null, inFlight: 0, frames: 0, privacy,
         };
         s.gate.set(true);
         this.live.set(s.id, s);
         this.db.prepare('INSERT INTO machine_sessions (id, machine_id, tech_id, ticket_id, started_at) VALUES (?, ?, ?, ?, ?)').run(s.id, id, me.id, ticketId, s.startedAt);
         const detail = { session: s.id, machine: m.hostname, consoleUser: on.consoleUser, locked: on.locked };
         this.host.helpdesk.record(ticketId, me.id, 'session.started', `Connected to ${m.hostname} with administrator rights (elevated control)${on.consoleUser ? `, ${on.consoleUser} signed in` : ', nobody signed in'}.`, { ...detail, elevated: true });
-        this.host.store.audit(me.id, 'help.elevated.started', ticketId, detail);
-        on.conn.send({ t: 'm.start', s: s.id, tech: me.displayName, ticket: this.host.helpdesk.refOf(ticketId) });
+        this.host.store.audit(me.id, 'help.elevated.started', ticketId, { ...detail, privacy });
+        if (privacy) this.host.helpdesk.record(ticketId, me.id, 'note', 'IT turned the privacy screen on: the person sees that IT is working, not what IT does.', { session: s.id, privacy: true });
+        this.start(s);
         this.changed();
         return this.view(s);
       }
@@ -229,6 +242,13 @@ export class Machines {
         const ok = decodeInputBatch(d.msg).flatMap((ev) => { const r = s.gate.accept(ev, now); return r.ok ? [r.ev] : []; });
         if (ok.length) this.online.get(s.machineId)?.conn.send({ t: 'm.input', s: s.id, e: machineInputs(ok) });
         return { ok: true };
+      }
+      case 'machine.privacy': {
+        const s = this.mine(me, d.s);
+        const on = d.on === true;
+        if (on && this.host.policy().assistPrivacy !== true) throw new MachineError('The privacy screen is off for this office.');
+        this.setPrivacy(s, on, me.id, null);
+        return this.view(s);
       }
       case 'machine.sas': {
         const s = this.mine(me, d.s);
@@ -273,11 +293,12 @@ export class Machines {
   list(): MachineInfo[] {
     const rows = this.db.prepare('SELECT id, hostname, version, first_seen, last_seen FROM machines WHERE removed_at IS NULL ORDER BY hostname').all() as Array<{ id: string; hostname: string; version: string; first_seen: number; last_seen: number }>;
     const names = new Map<string, number>();
-    for (const r of this.db.prepare('SELECT hostname FROM machines').all() as Array<{ hostname: string }>) names.set(r.hostname.toLowerCase(), (names.get(r.hostname.toLowerCase()) ?? 0) + 1);
+    for (const r of rows) names.set(r.hostname.toLowerCase(), (names.get(r.hostname.toLowerCase()) ?? 0) + 1);
+    const removed = new Set((this.db.prepare('SELECT hostname FROM machines WHERE removed_at IS NOT NULL').all() as Array<{ hostname: string }>).map((r) => r.hostname.toLowerCase()));
     return rows.map((r) => {
       const on = this.online.get(r.id);
       const s = [...this.live.values()].find((x) => x.machineId === r.id) ?? null;
-      return { id: r.id, hostname: r.hostname, version: r.version, firstSeen: r.first_seen, lastSeen: on ? Date.now() : r.last_seen, online: !!on, consoleUser: on?.consoleUser ?? null, locked: on?.locked ?? true, session: s ? this.view(s) : null, sameName: (names.get(r.hostname.toLowerCase()) ?? 0) > 1 };
+      return { id: r.id, hostname: r.hostname, version: r.version, firstSeen: r.first_seen, lastSeen: on ? Date.now() : r.last_seen, online: !!on, consoleUser: on?.consoleUser ?? null, locked: on?.locked ?? true, session: s ? this.view(s) : null, sameName: (names.get(r.hostname.toLowerCase()) ?? 0) > 1, nameReused: removed.has(r.hostname.toLowerCase()) };
     });
   }
 
@@ -305,13 +326,30 @@ export class Machines {
     return true;
   }
 
+  /** Tell the PC to (re)start this session: who, the ticket, since when, and whether the privacy screen is on. */
+  private start(s: Live): void {
+    this.online.get(s.machineId)?.conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT', ticket: this.host.helpdesk.refOf(s.ticketId), since: s.startedAt, privacy: s.privacy });
+  }
+
+  private setPrivacy(s: Live, on: boolean, actor: string | null, why: string | null): void {
+    if (s.privacy === on) return;
+    s.privacy = on;
+    this.online.get(s.machineId)?.conn.send({ t: 'm.privacy', s: s.id, on });
+    this.host.helpdesk.record(s.ticketId, actor, 'note', why ?? (on ? 'IT turned the privacy screen on: the person sees that IT is working, not what IT does.' : 'IT turned the privacy screen off.'), { session: s.id, privacy: on });
+    this.host.store.audit(actor, 'help.privacy', s.ticketId, { session: s.id, machine: s.hostname, on, why });
+    this.tell(s);
+  }
+
   /** An administrator changed the policies or the IT desk: sessions no longer allowed end at once. */
   recheck(): void {
-    for (const s of [...this.live.values()]) this.stillAllowed(s);
+    for (const s of [...this.live.values()]) {
+      if (!this.stillAllowed(s)) continue;
+      if (s.privacy && this.host.policy().assistPrivacy !== true) this.setPrivacy(s, false, null, 'The privacy screen was turned off by an administrator.');
+    }
   }
 
   private view(s: Live): ElevatedSession {
-    return { id: s.id, machineId: s.machineId, hostname: s.hostname, techId: s.techId, ticketId: s.ticketId, startedAt: s.startedAt, endedAt: s.endedAt, pausedAt: s.pausedAt, why: s.why };
+    return { id: s.id, machineId: s.machineId, hostname: s.hostname, techId: s.techId, ticketId: s.ticketId, startedAt: s.startedAt, endedAt: s.endedAt, pausedAt: s.pausedAt, why: s.why, privacy: s.privacy };
   }
 
   private tell(s: Live): void {
@@ -341,7 +379,7 @@ export class Machines {
     const on = this.online.get(s.machineId);
     this.host.helpdesk.record(s.ticketId, null, 'session.resumed', `${s.hostname} is back.`, { session: s.id, pausedMs, elevated: true });
     this.host.store.audit(null, 'help.session.resumed', s.ticketId, { session: s.id, machine: s.hostname, pausedMs, elevated: true });
-    on?.conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT', ticket: this.host.helpdesk.refOf(s.ticketId) });
+    this.start(s);
     this.tell(s);
   }
 

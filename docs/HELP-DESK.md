@@ -257,7 +257,8 @@ service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
   exported), sets `SoftwareSASGeneration` so services may send Ctrl+Alt+Del, and registers the
   automatic LocalSystem service `DexConnectSupport` (restarted on failure). `--uninstall` removes it
   all, puts `SoftwareSASGeneration` back as it was, and deletes the key; **Remove from this PC** does
-  the same. Removing the app leaves the service in place.
+  the same. Removing the app leaves the service in place. An uninstall only leaves for the next
+  restart what it could not delete, and an install cancels any such delete of its own files.
 - The service is built with the C# compiler of .NET Framework 4.8, which is part of Windows 10 and 11
   (`npm run support:build -w @dex/desktop`; Build-Release and CI do it before packaging). No SDK,
   no third-party code. It connects on the office network only, not through the internet gateway.
@@ -270,16 +271,17 @@ network only (a machine connecting through the internet gateway is refused, and 
 trying to connect, type or send Ctrl+Alt+Del through it; a technician whose app leaves the office
 network loses the session at the next picture, and can still press End from anywhere) and at most 30 new PCs
 an hour (2,000 PCs still in the office). A PC's name must be a plain Windows computer name (letters,
-digits, hyphens): nothing invisible or look-alike. The same key from a second PC with another name
-(a copied disk image) is refused while the first is online (`machine.cloned`): reinstall the service
-on PCs made from an image. Control room lists every PC with the service; **Remove** blocks that key for
+digits, hyphens, underscores): nothing invisible or look-alike. A key keeps the name it first came
+with: the same key with another name (a copied disk image, or the PC was renamed) is refused
+whether or not the first PC is online (`machine.cloned`); reinstall the service on PCs made from an
+image or renamed, then remove the old entry. Control room lists every PC with the service; **Remove** blocks that key for
 good (`machine.removed`; to add the PC again, remove the service from it and install it again, which
 makes a new key).
 
 **Connecting.** The Help desk lists the office PCs with the service (online, who is signed in, locked
 or at the sign-in screen), each with a short ID (the start of its key's fingerprint). Names are what
-each PC says about itself: two PCs with one name (counting PCs removed before) are both marked
-**SAME NAME**, and connecting to
+each PC says about itself: two PCs in the office with one name are both marked **SAME NAME**
+(a name a removed PC had is shown quietly as *name used before*), and connecting to
 either asks the technician to check the ID and when it was first seen (a pretend PC could show a
 fake sign-in or UAC screen to collect a password). **Connect** (`machine.connect`) is refused unless the caller is on the IT
 desk and the policy is on; one technician per PC at a time. The hub opens a ticket held by the
@@ -307,18 +309,30 @@ lock or sign-in screen, a UAC prompt), in the Dexterity look (deep teal, amber, 
 
 - **Arrival screen** when a session starts: full screen on the main monitor (the others dim and point
   to it): *"Ravi Kumar from IT is connecting to this PC"*, with administrator rights, the ticket, what
-  IT can do, **OK, carry on** and **Stop now**. A line runs down for 12 seconds and hands over to the
-  panel (Enter or Escape is OK). Shown once per session, not again when the desktop changes.
+  IT can do, **OK, carry on** and **Stop now** (clicked; it never takes the keyboard). A line runs
+  down for 12 seconds and hands over to the panel. **IT's mouse and keyboard wait until it has gone**,
+  so IT cannot dismiss it. It is shown once per session, on the person's own desktop: a session that
+  starts at the sign-in screen or a UAC prompt shows it when their desktop appears, never over the
+  password box.
 - **An amber frame** around every monitor while IT is connected, breathing slowly; clicks pass through.
-- **A floating panel** at the top: the Di mark, a live dot, who, the ticket and for how long, the stop
-  keys and a big **Stop**. It never takes the keyboard, and can be dragged out of the way.
+- **A floating panel** at the top: the Di mark, a live dot, who, the ticket and for how long (since the
+  session began, across reconnects), the stop keys and a big **Stop**. It never takes the keyboard,
+  and can be dragged out of the way but never off the screen.
+- **Fail closed**: IT's capture and input only run while the notice is on screen. If it cannot be
+  shown at all, the session stops (*"The notice could not be shown on this PC"*). If another program
+  holds Ctrl+Alt+Shift+S, the service log says so and Stop on the panel still works.
+- **Privacy screen** (policy `assistPrivacy`): IT can tick *Connect with the privacy screen*, or turn
+  it on and off in the viewer. Every monitor is covered by *"Ravi Kumar from IT is working on this
+  PC"*, kept out of IT's picture (`SetWindowDisplayAffinity`, exclude from capture) and click-through,
+  with the panel (Stop) and frame above it. Where Windows cannot keep it out of the picture (before
+  Windows 10 version 2004) it is not shown and IT is told. On the ticket and in the audit log.
 
 Sizes follow the screen's scaling. `DexSupport.exe --preview-notice "Name" T-0042 20` shows it on the
 current desktop without the service. **Stop** (or **Ctrl+Alt+Shift+S**) ends the session. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
 ticket). With nobody signed in IT may still connect; the strip is on the sign-in screen.
 
-If the technician's window reloads or crashes, it picks the session up again (`machine.mine`), so
-End is always there. A PC's 20-second status only reaches the IT desk when something changed.
+If the technician's window reloads or crashes, it picks the session up again (`machine.mine`) and the
+PC starts sending pictures again, so the viewer and End are always there. A PC's 20-second status only reaches the IT desk when something changed.
 
 **Restarts.** The service stopping (a restart, an update) closes its link without ending the session,
 so with `assistReconnect` the session waits and goes on when the PC is back; if the PC returns before

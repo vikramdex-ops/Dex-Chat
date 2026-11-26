@@ -234,10 +234,11 @@ test('third review: plain computer names only; removed and clashing names are fl
   await m2.next('m.ok');
   const list: MachineInfo[] = await ravi.request('machine.list');
   assert.equal(list.length, 1);
-  assert.equal(list[0].sameName, true, 'the removed PC had that name');
+  assert.equal(list[0].sameName, false, 'no other PC in the office has the name');
+  assert.equal(list[0].nameReused, true, 'a removed PC had that name (shown quietly)');
   // the same key from a second PC with another name (a copied disk image): refused while the first is online
   const twin = await service(hub, b.key, b.pub, 'FINANCE-02');
-  assert.match(String((await twin.next('rejected')).reason), /already uses this PC's key/);
+  assert.match(String((await twin.next('rejected')).reason), /key belongs to finance-01/);
   // the technician's app leaves the office network: the session ends at the next picture
   const s = await ravi.request('machine.connect', { machineId: m2.id });
   await m2.next('m.start');
@@ -249,4 +250,43 @@ test('third review: plain computer names only; removed and clashing names are fl
   // after a reload the technician's window finds its sessions (none now)
   assert.deepEqual(await ravi.request('machine.mine'), []);
   await m2.close();
+});
+
+test('fourth review: underscore names; a key never renames its PC; reload restarts pictures; privacy screen on the PC', async () => {
+  const { hub, owner, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistElevated: true });
+  const k = machineKey();
+  const m = await service(hub, k.key, k.pub, 'CAD_WS01');
+  await m.next('m.ok');
+  await m.close();
+  // the same key later from a PC with another name, while the first is offline: refused, the name stays
+  const again = await service(hub, k.key, k.pub, 'CAD_WS02');
+  assert.match(String((await again.next('rejected')).reason), /belongs to CAD_WS01/);
+  const back = await service(hub, k.key, k.pub, 'CAD_WS01');
+  await back.next('m.ok');
+  assert.equal(((await ravi.request('machine.list')) as MachineInfo[])[0].hostname, 'CAD_WS01');
+
+  // the privacy screen needs its policy; the PC is told, and a PC that cannot keep it out of IT's picture turns it off
+  await assert.rejects(ravi.request('machine.connect', { machineId: back.id, privacy: true }), /privacy screen is off/);
+  await owner.request('admin.policy.set', { assistPrivacy: true });
+  const s = await ravi.request('machine.connect', { machineId: back.id, privacy: true });
+  const start = await back.next('m.start');
+  assert.equal(start.privacy, true);
+  assert.equal(start.since, s.startedAt);
+  const off = nextEvent<ElevatedSession>(ravi, 'machine.session', (x) => x.id === s.id && !x.privacy);
+  back.send({ t: 'm.privacy', s: s.id, ok: false });
+  await off;
+  const on = await ravi.request('machine.privacy', { s: s.id, on: true });
+  assert.equal(on.privacy, true);
+  assert.equal((await back.next('m.privacy')).on, false, 'first the PC hears it went off');
+  assert.equal((await back.next('m.privacy')).on, true);
+
+  // the technician's window reloads: the PC is asked to start again (its two pictures in flight are forgotten)
+  const mine = await ravi.request('machine.mine');
+  assert.equal(mine[0].id, s.id);
+  assert.equal((await back.next('m.start')).s, s.id);
+  const audit = (await owner.request('admin.audit', { limit: 30 })).map((a) => a.action);
+  assert.ok(audit.includes('machine.cloned') && audit.includes('help.privacy'));
+  await back.close();
 });

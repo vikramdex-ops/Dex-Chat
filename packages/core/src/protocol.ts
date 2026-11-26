@@ -1180,7 +1180,9 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   /** Office PCs with the IT Support service (IT staff). */
   'machine.list': { req: void; res: MachineInfo[] };
   /** Connect to a PC through its service (IT staff, policy assistElevated); pictures come as machine.frame events. */
-  'machine.connect': { req: { machineId: string }; res: ElevatedSession };
+  'machine.connect': { req: { machineId: string; privacy?: boolean }; res: ElevatedSession };
+  /** The privacy screen on the PC on or off (policy assistPrivacy). */
+  'machine.privacy': { req: { s: string; on: boolean }; res: ElevatedSession };
   /** Pointer and keys for the PC ({ k: 'in', e }), checked by the hub's gate. */
   'machine.input': { req: { s: string; msg: unknown }; res: { ok: true } };
   /** Ctrl+Alt+Del on the PC (the secure attention sequence, sent by the service). */

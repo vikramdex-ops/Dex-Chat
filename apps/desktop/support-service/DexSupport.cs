@@ -59,7 +59,7 @@ namespace DexSupport {
         if (mode == "--console") { Paths.ConfigOverride = Program.Arg(args, "--config"); var a = new Agent(true); a.Start(); Console.WriteLine("Running. Press Enter to stop."); Console.ReadLine(); a.Stop(); return 0; }
         // --check-file FILE: is that file only in the hands of SYSTEM and Administrators (what the service asks of config.json)?
         if (mode == "--check-file") { using (var fs = new FileStream(args[1], FileMode.Open, FileAccess.Read, FileShare.Read)) Console.WriteLine(Trusted.File(fs) ? "trusted" : "not trusted"); return 0; }
-        if (mode == "--preview-notice") return Worker.Preview(args.Length > 1 ? args[1] : "Ravi Kumar", args.Length > 2 ? args[2] : "T-0042", args.Length > 3 ? int.Parse(args[3]) : 20);
+        if (mode == "--preview-notice") return Worker.Preview(args.Length > 1 ? args[1] : "Ravi Kumar", args.Length > 2 ? args[2] : "T-0042", args.Length > 3 ? int.Parse(args[3]) : 20, args.Length > 4 && args[4] == "privacy");
         if (mode == "--drop-dev-key") { if (CngKey.Exists("DexterityConnectSupport-dev")) CngKey.Open("DexterityConnectSupport-dev").Delete(); return 0; }
         if (Environment.UserInteractive && mode != "--service") {
           Console.WriteLine("Dexterity Connect IT Support " + Version);
@@ -274,6 +274,8 @@ namespace DexSupport {
       }
       // stop an older copy before replacing it
       StopService();
+      // an uninstall before this may have left these to be deleted at the next restart: not any more
+      ForgetPendingDeletes(Paths.Exe, Paths.Dir);
       // the service runs from Program Files (only administrators can change it), never from a user's folder
       Directory.CreateDirectory(Paths.Dir);
       string self = Process.GetCurrentProcess().MainModule.FileName;
@@ -359,6 +361,25 @@ namespace DexSupport {
       return f;
     }
 
+    /** Remove our own paths from the deletes Windows does at the next restart (PendingFileRenameOperations). */
+    static void ForgetPendingDeletes(params string[] paths) {
+      try {
+        using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager", true)) {
+          var ops = k == null ? null : k.GetValue("PendingFileRenameOperations") as string[];
+          if (ops == null) return;
+          var keep = new List<string>();
+          for (int i = 0; i + 1 < ops.Length; i += 2) {
+            string from = ops[i].StartsWith(@"\??\") ? ops[i].Substring(4) : ops[i];
+            bool ours = ops[i + 1].Length == 0 && Array.Exists(paths, delegate(string x) { return string.Equals(from, x, StringComparison.OrdinalIgnoreCase); });
+            if (!ours) { keep.Add(ops[i]); keep.Add(ops[i + 1]); }
+          }
+          if (keep.Count == ops.Length) return;
+          if (keep.Count == 0) k.DeleteValue("PendingFileRenameOperations", false);
+          else k.SetValue("PendingFileRenameOperations", keep.ToArray(), RegistryValueKind.MultiString);
+        }
+      } catch (Exception e) { Console.Error.WriteLine("Could not check pending deletes: " + e.Message); }
+    }
+
     static void StopService() {
       try {
         using (var sc = new ServiceController(Program.ServiceName)) {
@@ -391,7 +412,10 @@ namespace DexSupport {
         Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\Dexterity Connect Support", false);
       } catch { }
       // the exe may be the one running this: removed at the next restart if so
-      try { File.Delete(Paths.Exe); Directory.Delete(Paths.Dir); } catch { MoveFileEx(Paths.Exe, null, 4); MoveFileEx(Paths.Dir, null, 4); }
+      try { File.Delete(Paths.Exe); } catch { }
+      // only what is still there is left for the next restart to remove
+      if (File.Exists(Paths.Exe)) MoveFileEx(Paths.Exe, null, 4);
+      try { Directory.Delete(Paths.Dir); } catch { if (Directory.Exists(Paths.Dir) && Directory.GetFileSystemEntries(Paths.Dir).Length == 0) MoveFileEx(Paths.Dir, null, 4); }
       Console.WriteLine("{\"installed\":false}");
       return 0;
     }
@@ -680,7 +704,9 @@ namespace DexSupport {
           Post(Json.Write(d));
           return;
         }
-        session = s; tech = (Json.Str(m, "tech") ?? "IT").Replace('\t', ' ') + "\t" + (Json.Str(m, "ticket") ?? "").Replace('\t', ' ') + "\t" + s; credits = 2;
+        session = s; credits = 2;
+        tech = (Json.Str(m, "tech") ?? "IT").Replace('\t', ' ') + "\t" + (Json.Str(m, "ticket") ?? "").Replace('\t', ' ') + "\t" + s
+          + "\t" + ((long)Json.Num(m, "since")).ToString(System.Globalization.CultureInfo.InvariantCulture) + "\t" + (Json.Bool(m, "privacy") ? "1" : "0");
         Log.Write("IT connected: " + tech + " (" + s + ")");
         Tell('S', tech);
       } else if (s == null || s != session) {
@@ -694,6 +720,8 @@ namespace DexSupport {
       } else if (t == "m.sas") {
         Log.Write("Ctrl+Alt+Del from " + tech);
         try { Native.SendSAS(false); } catch (Exception ex) { Log.Write("SendSAS: " + ex.Message); }
+      } else if (t == "m.privacy") {
+        Tell('P', Json.Bool(m, "on") ? "1" : "0");
       } else if (t == "m.stop") {
         Log.Write("IT session ended: " + Json.Str(m, "why"));
         session = null;
@@ -784,6 +812,9 @@ namespace DexSupport {
         } else if (type == 'D') {
           desktop = Encoding.UTF8.GetString(data);
           SendState();
+        } else if (type == 'R') {
+          string s = session;
+          if (s != null) { var d = new Dictionary<string, object>(); d["t"] = "m.privacy"; d["s"] = s; d["ok"] = false; Post(Json.Write(d)); }
         } else if (type == 'L') {
           Log.Write("worker: " + Encoding.UTF8.GetString(data));
         }
@@ -848,6 +879,9 @@ namespace DexSupport {
       p.Connect(10000);
       pipe = p;
       banner = new Banner();
+      Banner.Note = Say;
+      banner.Failed = delegate { tech = null; inputs.Enqueue(null); Send('E', Encoding.UTF8.GetBytes("The notice could not be shown on this PC, so the session stopped.")); };
+      banner.PrivacyFailed = delegate { Send('R', Encoding.UTF8.GetBytes("0")); };
       new Thread(ReadLoop) { IsBackground = true, Name = "pipe" }.Start();
       // a fresh thread with no windows (the STA main thread has COM's hidden one), so it can change desktops
       var desk = new Thread(DeskLoop) { Name = "desk" };
@@ -866,6 +900,7 @@ namespace DexSupport {
       while (Wire.Read(pipe, out type, out data)) {
         string text = Encoding.UTF8.GetString(data);
         if (type == 'S') { tech = text; Interlocked.Exchange(ref credits, 2); banner.Show(text, StopPressed); }
+        else if (type == 'P') banner.SetPrivacy(text == "1");
         else if (type == 'X') { tech = null; banner.Hide(); inputs.Enqueue(null); }
         else if (type == 'A') Interlocked.Increment(ref credits);
         else if (type == 'I') {
@@ -905,8 +940,9 @@ namespace DexSupport {
       while (true) {
         FollowDesktop();
         Dictionary<string, object> c;
-        while (inputs.TryDequeue(out c)) { if (c == null) Release(); else if (tech != null) Inject(c); }
-        if (tech != null && credits > 0 && DateTime.UtcNow >= next) {
+        // IT's input reaches the PC only while the notice is up and the arrival screen has been seen
+        while (inputs.TryDequeue(out c)) { if (c == null) Release(); else if (tech != null && banner.Up && !Banner.Arriving) Inject(c); }
+        if (tech != null && banner.Up && credits > 0 && DateTime.UtcNow >= next) {
           next = DateTime.UtcNow.AddMilliseconds(110);
           try {
             byte[] jpeg; int w, h;
@@ -1026,11 +1062,12 @@ namespace DexSupport {
     }
 
     /** What the person sees while IT is connected, on this desktop for a while, without the service or the hub. */
-    public static int Preview(string tech, string ticket, int seconds) {
+    public static int Preview(string tech, string ticket, int seconds, bool privacy) {
       Dpi();
       var b = new Banner();
       var done = new ManualResetEventSlim(false);
-      b.Show(tech + "\t" + ticket + "\tpreview", delegate { Console.WriteLine("Stop pressed"); done.Set(); });
+      b.PrivacyFailed = delegate { Console.WriteLine("privacy screen: not kept out of capture on this PC"); };
+      b.Show(tech + "\t" + ticket + "\tpreview\t0\t" + (privacy ? "1" : "0"), delegate { Console.WriteLine("Stop pressed"); done.Set(); });
       done.Wait(seconds * 1000);
       b.Hide();
       return 0;
@@ -1079,33 +1116,46 @@ namespace DexSupport {
     /** Sessions whose arrival screen was shown in this worker (it is shown once per session). */
     readonly HashSet<string> welcomed = new HashSet<string>();
 
-    public class Visit { public string Tech; public string Ticket; public string Session; public DateTime Since; public Action Stop; public bool Arrive; }
+    public class Visit { public string Tech; public string Ticket; public string Session; public DateTime Since; public Action Stop; public bool Arrive; public bool Privacy; }
 
-    /** "tech\tticket\tsession" from the service. */
+    /** The notice is on screen (the panel was shown): only then may IT's capture and input run. */
+    public volatile bool Up;
+    /** The arrival screen is open: IT's input waits until the person has seen it. */
+    public static volatile bool Arriving;
+    /** The notice could not be shown at all: the session must stop. */
+    public Action Failed;
+    /** The privacy screen could not be kept out of IT's picture on this PC. */
+    public Action PrivacyFailed;
+    /** Lines for the service's log. */
+    public static Action<string> Note = delegate { };
+
+    /** "tech\tticket\tsession\tsince (ms since 1970, UTC)\tprivacy (1/0)" from the service. */
     public void Show(string payload, Action stop) {
       var p = (payload ?? "").Split('\t');
       lock (gate) {
         string session = p.Length > 2 ? p[2] : "";
-        bool same = visit != null && visit.Session == session;
+        long ms;
+        DateTime since = p.Length > 3 && long.TryParse(p[3], out ms) && ms > 0 ? new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(ms).ToLocalTime() : DateTime.Now;
         visit = new Visit {
           Tech = p[0].Length > 0 ? p[0] : "IT", Ticket = p.Length > 1 ? p[1] : "", Session = session,
-          Since = same ? visit.Since : DateTime.Now, Stop = stop, Arrive = !welcomed.Contains(session),
+          Since = since, Stop = stop, Arrive = !welcomed.Contains(session), Privacy = p.Length > 4 && p[4] == "1",
         };
-        welcomed.Add(session);
         Restart();
       }
     }
+    public void SetPrivacy(bool on) { lock (gate) { if (visit == null || visit.Privacy == on) return; visit.Privacy = on; Restart(); } }
     public void Hide() { lock (gate) { visit = null; Close(); } }
     public void MoveTo(string desktopName) {
       lock (gate) {
         if (desktopName == desktop && form != null) return;
         desktop = desktopName;
-        if (visit != null) { visit.Arrive = false; Restart(); }
+        if (visit != null) Restart();
       }
     }
 
     // called with the gate held; the UI thread never takes it, so waiting here cannot deadlock
     void Close() {
+      Up = false;
       var f = form;
       var t = thread;
       form = null;
@@ -1118,22 +1168,32 @@ namespace DexSupport {
       Close();
       var v = visit;
       string name = desktop;
+      // the arrival screen only on the person's own desktop: never over the sign-in screen or a UAC
+      // prompt (it would take what is typed there); it waits until their desktop shows
+      bool arrive = v.Arrive && string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase);
+      if (arrive) { welcomed.Add(v.Session); v.Arrive = false; }
       var ready = new ManualResetEventSlim(false);
+      bool shown = false;
       Form made = null;
+      Action privacyFailed = PrivacyFailed;
       var t = new Thread(delegate() {
         IntPtr d = OpenDesktop(name, 0, false, 0x10000000);
         try {
           if (d != IntPtr.Zero) SetThreadDesktop(d);
+          // the privacy screen first, not owned by the panel: the panel (Stop), frame and arrival stay above it
+          var covers = new List<PrivacyForm>();
+          if (v.Privacy) foreach (var screen in Screen.AllScreens) { var c = new PrivacyForm(screen.Bounds, v.Tech); c.Show(); covers.Add(c); if (!c.OutOfCapture) { foreach (var x in covers) x.Close(); covers.Clear(); if (privacyFailed != null) privacyFailed(); break; } }
           var panel = new PanelForm(v);
           made = panel;
-          panel.HandleCreated += delegate { ready.Set(); };
-          panel.FormClosed += delegate { Application.ExitThread(); };
+          panel.Shown += delegate { shown = true; ready.Set(); };
+          panel.FormClosed += delegate { foreach (var c in covers) c.Close(); Application.ExitThread(); };
           // the frame around every monitor, owned by the panel: they close together
           foreach (var screen in Screen.AllScreens) new FrameForm(screen.Bounds).Show(panel);
-          if (v.Arrive) panel.Shown += delegate { new ArrivalForm(v, panel).Show(panel); };
+          if (arrive) panel.Shown += delegate { new ArrivalForm(v, panel).Show(panel); };
           Application.Run(panel);
         } catch (Exception e) {
           Log.Write("banner: " + e.Message);
+          Note("the notice could not be shown: " + e.Message);
         } finally {
           ready.Set();
           if (d != IntPtr.Zero) CloseDesktop(d);
@@ -1142,9 +1202,12 @@ namespace DexSupport {
       t.SetApartmentState(ApartmentState.STA);
       t.IsBackground = true;
       t.Start();
-      ready.Wait(3000);
+      ready.Wait(5000);
       form = made;
       thread = t;
+      Up = shown;
+      // the person must be able to see that IT is there: if the notice cannot be shown, IT stops
+      if (!shown && Failed != null) Failed();
     }
 
     // ---------------------------------------------------------------- look
@@ -1273,7 +1336,8 @@ namespace DexSupport {
 
       protected override void OnHandleCreated(EventArgs e) {
         base.OnHandleCreated(e);
-        RegisterHotKey(Handle, 1, 0x0001 | 0x0002 | 0x0004 | 0x4000 /* Alt Ctrl Shift NoRepeat */, 0x53 /* S */);
+        if (!RegisterHotKey(Handle, 1, 0x0001 | 0x0002 | 0x0004 | 0x4000 /* Alt Ctrl Shift NoRepeat */, 0x53 /* S */))
+          Note("Ctrl+Alt+Shift+S is taken by another program on this desktop; Stop on the panel still works");
       }
       protected override void WndProc(ref Message m) {
         if (m.Msg == 0x0312 /* WM_HOTKEY */) Fire();
@@ -1284,7 +1348,12 @@ namespace DexSupport {
       protected override void OnMouseMove(MouseEventArgs e) {
         bool h = stopRect.Contains(L(e));
         if (h != hover) { hover = h; Cursor = h ? Cursors.Hand : Cursors.SizeAll; Invalidate(); }
-        if (dragging) { Left += e.X - drag.X; Top += e.Y - drag.Y; }
+        if (dragging) {
+          // moved out of the way, never off the screen: the panel and its Stop stay in view
+          var b = Screen.FromPoint(Cursor.Position).Bounds;
+          Left = Math.Max(b.Left, Math.Min(b.Right - Width, Left + e.X - drag.X));
+          Top = Math.Max(b.Top, Math.Min(b.Bottom - Height, Top + e.Y - drag.Y));
+        }
       }
       protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); }
       protected override void OnMouseDown(MouseEventArgs e) {
@@ -1328,6 +1397,48 @@ namespace DexSupport {
           var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
           g.DrawString("\u25a0  Stop", button, b, r, sf);
         }
+      }
+    }
+
+    // ---------------------------------------------------------------- the privacy screen
+    /**
+     * Over a whole monitor while IT works privately: the person sees "IT is working on this PC", IT's
+     * picture shows what is underneath (the window is kept out of screen capture). Clicks pass
+     * through, so IT's input reaches the apps. Shown only where Windows can keep it out of capture.
+     */
+    class PrivacyForm : QuietForm {
+      [DllImport("user32.dll", SetLastError = true)] static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+      readonly string tech;
+      readonly Font tag = Look.Mono(10f), head = Look.Light(30f), body = Look.Body(13f, false);
+      public bool OutOfCapture;
+      public PrivacyForm(Rectangle bounds, string tech) {
+        this.tech = tech;
+        ClickThrough = true;
+        Bounds = bounds; BackColor = Look.Ink; Opacity = 0.97;
+      }
+      protected override void OnHandleCreated(EventArgs e) {
+        base.OnHandleCreated(e);
+        // WDA_EXCLUDEFROMCAPTURE (Windows 10 2004 and later): never in IT's picture
+        OutOfCapture = SetWindowDisplayAffinity(Handle, 0x11);
+      }
+      protected override void OnPaint(PaintEventArgs e) {
+        var g = e.Graphics;
+        Look.Smooth(g);
+        g.ScaleTransform(Look.K, Look.K);
+        float lw = Width / Look.K, lh = Height / Look.K;
+        using (var pen = new Pen(Color.FromArgb(18, Look.Mist), 1)) {
+          for (int x = 0; x < lw; x += 48) g.DrawLine(pen, x, 0, x, lh);
+          for (int y = 0; y < lh; y += 48) g.DrawLine(pen, 0, y, lw, y);
+        }
+        float cw = Math.Min(720, lw - 80), x0 = (lw - cw) / 2, y0 = lh / 2 - 130;
+        using (var path = Look.Round(new RectangleF(x0 - 48, y0 - 44, cw + 96, 300), 22)) {
+          using (var b = new SolidBrush(Look.Deep)) g.FillPath(b, path);
+          using (var pen = new Pen(Color.FromArgb(140, Look.Amber), 1.5f)) g.DrawPath(pen, path);
+        }
+        using (var b = new SolidBrush(Look.Amber)) g.DrawString("DEXTERITY CONNECT  \u00b7  IT SUPPORT  \u00b7  PRIVACY SCREEN", tag, b, x0, y0);
+        using (var b = new SolidBrush(Look.Paper)) g.DrawString(tech + " from IT is working on this PC", head, b, new RectangleF(x0, y0 + 28, cw, 100));
+        using (var b = new SolidBrush(Look.Mist))
+          g.DrawString("They asked for the screen to be covered while they work, so this is what you see. Please carry on with something else; your screen comes back when they finish. You can stop it at any time: Stop on the panel at the top, or Ctrl+Alt+Shift+S.", body, b, new RectangleF(x0, y0 + 136, cw, 110));
       }
     }
 
@@ -1388,9 +1499,9 @@ namespace DexSupport {
       }
 
       // this one may take the keyboard: Enter is OK, Escape is OK too (Stop needs a deliberate click)
-      protected override bool ShowWithoutActivation { get { return false; } }
-      protected override void OnShown(EventArgs e) { base.OnShown(e); Activate(); }
-      protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == System.Windows.Forms.Keys.Enter || e.KeyCode == System.Windows.Forms.Keys.Escape) Close(); }
+      // it never takes the keyboard (what the person or IT types stays where it was): OK and Stop are clicked
+      protected override void OnShown(EventArgs e) { base.OnShown(e); Arriving = true; }
+      protected override void OnFormClosed(FormClosedEventArgs e) { Arriving = false; base.OnFormClosed(e); }
       static Point L(MouseEventArgs e) { return new Point((int)(e.X / Look.K), (int)(e.Y / Look.K)); }
       protected override void OnMouseMove(MouseEventArgs e) {
         int h = ok.Contains(L(e)) ? 1 : stop.Contains(L(e)) ? 2 : 0;

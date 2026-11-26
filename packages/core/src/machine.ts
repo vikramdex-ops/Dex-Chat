@@ -30,6 +30,8 @@ export interface MachineInfo {
    * when it was first seen before connecting.
    */
   sameName: boolean;
+  /** A PC that was removed from the office had this name (shown quietly, not as a warning). */
+  nameReused: boolean;
 }
 
 export interface ElevatedSession {
@@ -44,6 +46,8 @@ export interface ElevatedSession {
   pausedAt: number | null;
   /** Why it ended (the person at the PC stopped it, the PC went away…). */
   why: string | null;
+  /** The privacy screen is on: the person sees that IT is working, not what IT does (policy assistPrivacy). */
+  privacy: boolean;
 }
 
 /** A picture of the PC's screen, relayed to the technician. */

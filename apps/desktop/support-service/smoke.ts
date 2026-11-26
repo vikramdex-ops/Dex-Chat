@@ -61,9 +61,11 @@ try {
   assert.equal(jpeg[0], 0xff); assert.equal(jpeg[1], 0xd8);
   console.log(`pictures: ${frames.length}, ${frames[0].w}x${frames[0].h}, ${jpeg.length} bytes`);
 
-  await ravi.request('machine.input', { s: s.id, msg: { k: 'in', e: [{ t: 'move', x: 0.5, y: 0.5 }] } });
+  // IT's input waits while the arrival screen is up (12 s): keep sending until it reaches the pointer
+  const nudge = setInterval(() => void ravi.request('machine.input', { s: s.id, msg: { k: 'in', e: [{ t: 'move', x: 0.5, y: 0.5 }] } }).catch(() => {}), 1000);
   const vs = execFileSync('powershell.exe', ['-NoProfile', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; $v=[System.Windows.Forms.SystemInformation]::VirtualScreen; "$($v.X),$($v.Y),$($v.Width),$($v.Height)"'], { encoding: 'utf8' }).trim().split(',').map(Number);
-  await wait(() => { const [x, y] = pointer().split(',').map(Number); return Math.abs(x - (vs[0] + vs[2] / 2)) <= 2 && Math.abs(y - (vs[1] + vs[3] / 2)) <= 2; }, 'the pointer moves to the middle of the screen', 8000);
+  await wait(() => { const [x, y] = pointer().split(',').map(Number); return Math.abs(x - (vs[0] + vs[2] / 2)) <= 2 && Math.abs(y - (vs[1] + vs[3] / 2)) <= 2; }, 'the pointer moves to the middle of the screen', 25000);
+  clearInterval(nudge);
   console.log('input: the pointer moved to the middle of the virtual screen');
 
   await ravi.request('machine.end', { s: s.id });

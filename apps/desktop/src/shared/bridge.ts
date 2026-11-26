@@ -340,7 +340,7 @@ export interface DexBridge {
   assist?: AssistBridge;
   /** The IT Support service on this PC (Windows): elevated control for IT, installed by an administrator. */
   supportService?: {
-    status(): Promise<{ available: boolean; installed: boolean; running: boolean }>;
+    status(): Promise<{ available: boolean; installed: boolean; running: boolean; unknown?: boolean }>;
     /** Install it for the office hub this app is connected to; Windows asks for administrator approval. */
     install(): Promise<{ ok: boolean; error: string | null }>;
     uninstall(): Promise<{ ok: boolean; error: string | null }>;

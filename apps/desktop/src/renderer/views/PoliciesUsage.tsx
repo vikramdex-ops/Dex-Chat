@@ -123,7 +123,7 @@ export function PoliciesAdmin() {
 /** The IT Support service: on this PC (install or remove, with Windows' administrator prompt), and every PC that has it. */
 function SupportServiceAdmin() {
   const toast = useToast();
-  const [st, setSt] = useState<{ available: boolean; installed: boolean; running: boolean } | null>(null);
+  const [st, setSt] = useState<{ available: boolean; installed: boolean; running: boolean; unknown?: boolean } | null>(null);
   const [pcs, setPcs] = useState<MachineInfo[]>([]);
   const [busy, setBusy] = useState(false);
   const refresh = () => {
@@ -142,9 +142,9 @@ function SupportServiceAdmin() {
   return (
     <div className="setting" style={{ display: 'block' }}>
       <div className="txt"><div>IT Support service</div>
-        <div className="faint">On this PC: {!st ? '…' : !st.available ? 'not available (Windows only)' : st.installed ? (st.running ? 'installed and running' : 'installed, not running') : 'not installed'}. Installing asks Windows for administrator approval and ties the service to this office hub. To put it on many PCs at once, run the setup with <span className="mono">/SUPPORTHUB=host:port /SUPPORTFP=fingerprint</span> as an administrator.</div>
+        <div className="faint">On this PC: {!st ? '…' : !st.available ? 'not available (Windows only)' : st.unknown ? 'cannot be checked here (Windows is not in C:\\Windows); use the setup switch' : st.installed ? (st.running ? 'installed and running' : 'installed, not running') : 'not installed'}. Installing asks Windows for administrator approval and ties the service to this office hub. To put it on many PCs at once, run the setup with <span className="mono">/SUPPORTHUB=host:port /SUPPORTFP=fingerprint</span> as an administrator.</div>
       </div>
-      {svc && st?.available && (
+      {svc && st?.available && !st.unknown && (
         <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
           <button className="btn sm primary" disabled={busy} onClick={() => act(() => svc.install(), 'The IT Support service is installed on this PC')}>{st.installed ? 'Reinstall on this PC' : 'Install on this PC'}</button>
           {st.installed && <button className="btn sm" disabled={busy} onClick={() => act(() => svc.uninstall(), 'The IT Support service is removed from this PC')}>Remove from this PC</button>}

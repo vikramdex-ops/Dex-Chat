@@ -43,10 +43,11 @@ const run = (file: string, args: string[], timeout = 120_000, env?: NodeJS.Proce
   });
 });
 
-export async function serviceStatus(): Promise<{ available: boolean; installed: boolean; running: boolean }> {
+export async function serviceStatus(): Promise<{ available: boolean; installed: boolean; running: boolean; unknown?: boolean }> {
   if (process.platform !== 'win32') return { available: false, installed: false, running: false };
   const win = windowsDir();
-  if (!win) return { available: true, installed: false, running: false };
+  // Windows is not where it should be (or the app was started with it changed): say so, never "not installed"
+  if (!win) return { available: true, installed: false, running: false, unknown: true };
   const r = await run(path.win32.join(win, 'System32', 'sc.exe'), ['query', NAME], 10_000, cleanEnv(win));
   return { available: true, installed: r.code === 0, running: r.code === 0 && /RUNNING/.test(r.out) };
 }

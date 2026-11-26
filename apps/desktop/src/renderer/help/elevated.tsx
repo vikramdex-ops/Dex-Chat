@@ -33,9 +33,9 @@ function listen(): void {
   });
 }
 
-export async function connectPc(machineId: string): Promise<void> {
+export async function connectPc(machineId: string, privacy = false): Promise<void> {
   listen();
-  setCurrent(await window.dex.request('machine.connect', { machineId }));
+  setCurrent(await window.dex.request('machine.connect', { machineId, privacy }));
 }
 
 // ------------------------------------------------------------------ the Help desk's list of PCs
@@ -44,6 +44,8 @@ export function OfficePcs() {
   const on = usePolicy().assistElevated === true;
   const [pcs, setPcs] = useState<MachineInfo[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [privacy, setPrivacy] = useState(false);
+  const privacyOn = usePolicy().assistPrivacy === true;
   const live = useElevated();
   useEffect(() => {
     if (!on) return;
@@ -57,16 +59,21 @@ export function OfficePcs() {
     // two PCs with one name: one may be pretending (names are what PCs say about themselves)
     if (m.sameName && !window.confirm(`Another PC is also called ${m.hostname}. This one is ID ${m.id.slice(1, 9).toUpperCase()}, first seen ${new Date(m.firstSeen).toLocaleDateString()}. Connect only if that is the PC you expect: never type a password into a PC you are not sure of.`)) return;
     setBusy(m.id);
-    void connectPc(m.id).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(null));
+    void connectPc(m.id, privacy && privacyOn).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(null));
   };
   return (
     <section className="hd-pcs" aria-label="Office PCs">
       <div className="label hd-sec">Office PCs with the IT Support service · {pcs.filter((p) => p.online).length} online</div>
+      {privacyOn && (
+        <label className="hd-privacy" title="Their screen shows 'IT is working on this PC' instead of what you do. They can still stop it, and it is recorded.">
+          <input type="checkbox" checked={privacy} onChange={(e) => setPrivacy(e.target.checked)} /> Connect with the privacy screen
+        </label>
+      )}
       {!pcs.length && <p className="faint">No PC has the IT Support service yet. An administrator installs it from Control room ▸ Policies ▸ Remote support, on each PC.</p>}
       <table className="hd-table"><tbody>
         {pcs.map((m) => (
           <tr key={m.id} className={m.online ? '' : 'faint'}>
-            <td className="mono" translate="no" title={`ID ${m.id.slice(1, 9).toUpperCase()} · first seen ${new Date(m.firstSeen).toLocaleDateString()}`}>{m.hostname} <span className="faint">{m.id.slice(1, 9).toUpperCase()}</span>{m.sameName && <span className="role-tag" title="Another PC has the same name: check the ID before connecting">SAME NAME</span>}</td>
+            <td className="mono" translate="no" title={`ID ${m.id.slice(1, 9).toUpperCase()} · first seen ${new Date(m.firstSeen).toLocaleDateString()}`}>{m.hostname} <span className="faint">{m.id.slice(1, 9).toUpperCase()}</span>{m.sameName && <span className="role-tag" title="Another PC has the same name: check the ID before connecting">SAME NAME</span>}{!m.sameName && m.nameReused && <span className="faint" title="A PC removed from the office had this name"> · name used before</span>}</td>
             <td>{!m.online ? `Offline · seen ${relativeTime(m.lastSeen)}` : m.consoleUser ? `${m.consoleUser}${m.locked ? ' · locked' : ''}` : 'Sign-in screen'}</td>
             <td style={{ textAlign: 'right' }}>
               {m.session ? <span className="mono">IN USE BY IT</span>
@@ -147,6 +154,12 @@ function Viewer({ s }: { s: ElevatedSession }) {
         </div>
         <div className="sup-tools">
           <button className={controlling ? 'on' : ''} aria-pressed={controlling} onClick={() => setControlling(!controlling)}><Icon name="monitor" size={17} /><span>{controlling ? 'Let go' : 'Use mouse and keyboard'}</span></button>
+          {usePolicy().assistPrivacy === true && (
+            <button className={s.privacy ? 'on' : ''} aria-pressed={s.privacy} title={s.privacy ? 'They see "IT is working on this PC", not what you do' : 'Cover their screen while you work'}
+              onClick={() => run(window.dex.request('machine.privacy', { s: s.id, on: !s.privacy }).then((x) => setCurrent(x)))}>
+              <Icon name="lock" size={17} /><span>{s.privacy ? 'Privacy on' : 'Privacy screen'}</span>
+            </button>
+          )}
           <button onClick={() => run(window.dex.request('machine.sas', { s: s.id }), 'Sent Ctrl+Alt+Del')} disabled={!!s.pausedAt} title="The real Ctrl+Alt+Del (Windows security screen)"><Icon name="lock" size={17} /><span>Ctrl+Alt+Del</span></button>
           <button className="end" onClick={end}><Icon name="phone-off" size={17} /><span>End</span></button>
         </div>
