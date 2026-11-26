@@ -199,6 +199,8 @@ export interface AssistBridge {
    * meeting only from the device `from`.
    */
   consent(c: { screen: boolean; sourceId?: string | null; scope?: 'screen' | 'window'; control: boolean; peer: string; context?: AssistContext; from?: string | null; unattended?: boolean }): Promise<{ screen: boolean; control: boolean; error: string | null }>;
+  /** The privacy screen over every display while the whole screen is shared with IT (out of screen capture). */
+  privacy(state: { on: boolean; peer?: string }): Promise<{ ok: boolean; error: string | null }>;
   /** The source id of the main screen (what an unattended session shares). */
   primaryScreen(): Promise<string | null>;
   /** This PC's clipboard text; with `text`, put that on it first (clipboard sync, policy assistClipboard). */

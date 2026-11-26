@@ -141,11 +141,13 @@ let saves: Promise<void> = Promise.resolve();
 
 function onSession(s: SupportSession): void {
   if (s.endedAt) {
-    const wasMine = state.session?.id === s.id || state.invite?.id === s.id;
     if (resume?.sessionId === s.id) resume = null;
-    if (!wasMine) return;
+    // an invite that ends (another session, not joined) only goes away: the session the person is
+    // in keeps its frame, bar, stop keys and dock
+    if (state.invite?.id === s.id && state.session?.id !== s.id) { set({ invite: null }); return; }
+    if (state.session?.id !== s.id) return;
     if (meId === s.requesterId) { void applyLocal(false, false); set({ rate: s.ticketId }); }
-    set({ session: null, invite: null, ask: null, shared: null, dropped: null });
+    set({ session: null, invite: state.invite?.id === s.id ? null : state.invite, ask: null, shared: null, dropped: null });
     if (inSessionRoom(s)) leave();
     return;
   }
@@ -160,6 +162,24 @@ function onSession(s: SupportSession): void {
   set({ session: s, invite: state.invite?.id === s.id ? null : state.invite });
   if (s.pausedAt !== null && !inSessionRoom(s) && mayRejoin(s)) void rejoin(s, policyNow());
   else void maybeShare();
+  void syncPrivacy();
+}
+
+/**
+ * The privacy screen follows the session: on while IT asked for it and the whole screen is shared,
+ * off otherwise. If this PC cannot show it, the hub is told (IT then sees that the person sees all).
+ */
+let privacyShown = false;
+async function syncPrivacy(): Promise<void> {
+  const s = state.session;
+  const want = !!s && meId === s.requesterId && s.privacy && s.consent.screen && s.consent.scope === 'screen' && !!state.shared && onMyDevice(s);
+  if (!window.dex.assist || want === privacyShown) return;
+  privacyShown = want;
+  const r = await window.dex.assist.privacy({ on: want, peer: s ? techNameOf(s.techId) : 'IT' }).catch((e: Error) => ({ ok: false, error: e.message }));
+  if (want && !r.ok) {
+    privacyShown = false;
+    if (s) void window.dex.request('help.privacy', { id: s.ticketId, on: false, unavailable: true }).catch(() => {});
+  }
 }
 
 /**
@@ -177,6 +197,7 @@ function takeBack(s: SupportSession): void {
 /** This PC stops sharing (the frame, the bar, the capture) without telling the hub again. */
 async function stopScreenHere(): Promise<void> {
   await applyLocal(false, false);
+  privacyShown = false;
   if (callState().screen && callState().room?.purpose?.kind === 'support') await toggleScreen();
   set({ shared: null });
 }
@@ -206,7 +227,8 @@ async function rejoin(s: SupportSession, policy: OfficePolicy): Promise<void> {
   joining = s.id;
   try {
     await caps;
-    await joinSession(s.ticketId, { noMic: unattended });
+    // never a live microphone the person did not turn on: every join made by itself has none
+    await joinSession(s.ticketId, { noMic: true });
   } catch (e) {
     console.warn('support session: could not join by itself', (e as Error).message);
   } finally {
@@ -382,9 +404,9 @@ export async function startSession(ticketId: string): Promise<void> {
 }
 
 /** IT connects to a person's PC without them accepting (policy assistUnattended): on a ticket, or a new one for them. */
-export async function connectNow(target: { id: string } | { userId: string }): Promise<void> {
+export async function connectNow(target: { id: string } | { userId: string }, privacy = false): Promise<void> {
   await enterSpecial(async () => {
-    const r = await window.dex.request('help.connect', target);
+    const r = await window.dex.request('help.connect', { ...target, privacy });
     set({ session: r.session });
     return r.room;
   });
@@ -433,6 +455,7 @@ export async function shareScreen(sourceId: string, scope: 'screen' | 'window'):
   set({ shared: { sourceId, scope } });
   resume = { sessionId: s.id, sourceId, scope, control: false };
   await applyLocal(true, false);
+  void syncPrivacy();
   try { set({ session: await window.dex.request('help.consent', { id: s.ticketId, kind: 'screen', on: true, scope }) }); } catch (e) { await stopScreen(); throw e; }
 }
 

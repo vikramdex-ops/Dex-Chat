@@ -331,3 +331,4 @@ body:has(.sup-dock) .scrim, body:has(.sup-stage) .scrim { z-index: 40; }
 /* elevated control: the PC's picture from its IT Support service */
 .sup-screen .sup-frame { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
 .hd-pcs { margin-top: 12px; }
+.hd-privacy { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }

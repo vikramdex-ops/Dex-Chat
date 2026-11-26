@@ -21,8 +21,36 @@ function topmost(w: BrowserWindow, clickThrough: boolean): void {
   w.setMenuBarVisibility(false);
 }
 
+/** The privacy screen's page: still, calm, in the brand's teal and amber (no script). */
+function privacyPage(who: string): string {
+  const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  return `<!doctype html><meta charset="utf-8"><title>${encodeURIComponent(TITLE)}</title><style>
+html,body{margin:0;height:100%;background:#132b2e;color:#f6fafa;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;cursor:default}
+body{display:grid;place-items:center;background-image:linear-gradient(rgba(207,230,232,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(207,230,232,.06) 1px,transparent 1px);background-size:48px 48px}
+.card{max-width:720px;padding:48px 56px;border:1.5px solid rgba(247,175,68,.55);border-radius:22px;background:linear-gradient(135deg,#143f45,#132b2e)}
+.tag{font:12px Consolas,monospace;letter-spacing:.12em;color:#f7af44}
+h1{font-weight:300;font-size:38px;line-height:1.2;margin:18px 0 14px}
+p{font-size:17px;line-height:1.5;color:#cfe6e8;margin:0 0 12px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#f7af44;margin-right:10px;animation:b 2.4s ease-in-out infinite}
+@keyframes b{50%{box-shadow:0 0 0 10px rgba(247,175,68,.15)}}
+.keys{font:12px Consolas,monospace;color:#cfe6e8;opacity:.8;margin-top:22px}
+</style><div class="card"><div class="tag"><span class="dot"></span>DEXTERITY CONNECT · IT SUPPORT · PRIVACY SCREEN</div>
+<h1>${esc(who)} from IT is working on this PC</h1>
+<p>They asked for the screen to be covered while they work, so this is what you see. Please carry on with something else; your screen comes back when they finish.</p>
+<p>You can stop it at any time: Stop on the bar at the top, or the keys below.</p>
+<div class="keys">STOP: SHIFT+ESC · CTRL+ALT+SHIFT+S</div></div>`;
+}
+
+/** Windows 10 version 2004 (build 19041) and later keep a window out of screen capture; older ones would black it out for IT. */
+export function privacySupported(release: string, platform = process.platform): boolean {
+  if (platform !== 'win32') return false;
+  const build = Number(release.split('.')[2] ?? 0);
+  return build >= 19041;
+}
+
 export class Overlays {
   private strips: BrowserWindow[] = [];
+  private privacyWins: BrowserWindow[] = [];
   private bar: BrowserWindow | null = null;
   private barState: ShareBarState | null = null;
   private pointerWin: BrowserWindow | null = null;
@@ -97,6 +125,8 @@ export class Overlays {
   }
 
   hideShare(): void {
+    // the privacy screen never outlives the share it covers
+    this.hidePrivacy();
     this.hideFrame();
     if (this.bar && !this.bar.isDestroyed()) this.bar.destroy();
     this.bar = null;
@@ -180,5 +210,40 @@ export class Overlays {
   /** The pointer window, for a look at what it draws (tests and screenshots). */
   get pointerWindow(): BrowserWindow | null { return this.pointerWin && !this.pointerWin.isDestroyed() ? this.pointerWin : null; }
 
-  closeAll(): void { this.hideShare(); this.hidePointers(); }
+  /**
+   * The privacy screen: one window over every display, which the person sees and screen capture
+   * does not (so IT sees the real screen). Clicks pass through (IT's injected input reaches the
+   * apps underneath); the share bar stays above it with Stop.
+   */
+  showPrivacy(who: string): void {
+    this.hidePrivacy();
+    for (const d of screen.getAllDisplays()) {
+      const b = d.bounds;
+      const w = new BrowserWindow({
+        x: b.x, y: b.y, width: b.width, height: b.height, show: false, frame: false, resizable: false, movable: false, minimizable: false,
+        maximizable: false, fullscreenable: false, focusable: false, skipTaskbar: true, hasShadow: false, backgroundColor: '#132b2e', title: TITLE,
+        enableLargerThanScreen: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+      });
+      // out of screen capture: the person sees it, IT's picture shows what is underneath
+      w.setContentProtection(true);
+      topmost(w, true);
+      w.setOpacity(0.97);
+      void w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(privacyPage(who))}`);
+      w.setBounds(b);
+      w.showInactive();
+      this.privacyWins.push(w);
+    }
+    // the bar (Stop) and the frame stay above it
+    if (this.bar && !this.bar.isDestroyed()) this.bar.moveTop();
+    for (const s of this.strips) if (!s.isDestroyed()) s.moveTop();
+  }
+
+  hidePrivacy(): void {
+    for (const w of this.privacyWins) if (!w.isDestroyed()) w.destroy();
+    this.privacyWins = [];
+  }
+
+  get privacyOn(): boolean { return this.privacyWins.length > 0; }
+
+  closeAll(): void { this.hidePrivacy(); this.hideShare(); this.hidePointers(); }
 }

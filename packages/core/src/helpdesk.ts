@@ -73,6 +73,8 @@ export interface SupportSession {
   techDevice: string | null;
   /** In an unattended session the person stopped sharing or control: nothing is given again by itself. */
   stopped: boolean;
+  /** The privacy screen is on: the person sees that IT is working, not what IT does (policy assistPrivacy). */
+  privacy: boolean;
 }
 
 export interface HelpTicket {

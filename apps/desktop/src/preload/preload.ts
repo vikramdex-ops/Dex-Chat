@@ -73,6 +73,7 @@ const bridge: DexBridge = {
     consent: (c) => ipcRenderer.invoke('assist:consent', c),
     input: (msg, from) => ipcRenderer.send('assist:input', msg, from),
     primaryScreen: () => ipcRenderer.invoke('assist:primary'),
+    privacy: (state) => ipcRenderer.invoke('assist:privacy', state),
     clipboard: (text) => ipcRenderer.invoke('assist:clipboard', text),
     saveDropped: (fileId, ref, path) => unwrap(ipcRenderer.invoke('assist:save-file', fileId, ref, path)),
     openDropped: (ref) => ipcRenderer.invoke('assist:open-folder', ref),

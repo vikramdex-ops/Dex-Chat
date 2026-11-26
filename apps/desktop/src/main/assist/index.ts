@@ -16,7 +16,7 @@ import type { InputSink } from './control.ts';
 import { WindowsHelper } from './windows.ts';
 import { Xdotool, xdotoolAvailable } from './linux.ts';
 import { collectDiagnostics } from './diagnostics.ts';
-import { Overlays } from './overlay.ts';
+import { Overlays, privacySupported } from './overlay.ts';
 
 export interface AssistDeps {
   win: () => BrowserWindow | null;
@@ -178,6 +178,17 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
     if (share.shown) overlays.updateBar(share.state);
     else { overlays.showShare(display, share.state); share.shown = true; }
     return { screen: true, control: true, error: null };
+  });
+
+  // the privacy screen, while the whole screen is shared with IT in a support session (policy assistPrivacy)
+  ipcMain.handle('assist:privacy', (e, raw: { on?: unknown; peer?: unknown }) => {
+    if (!fromMain(e)) return { ok: false, error: 'Not allowed from this window.' };
+    if (raw?.on !== true) { overlays.hidePrivacy(); return { ok: true, error: null }; }
+    if (!privacySupported(os.release())) return { ok: false, error: 'The privacy screen needs Windows 10 version 2004 or later.' };
+    if (!share || share.state.context !== 'support' || share.state.scope !== 'screen') return { ok: false, error: 'The privacy screen covers a whole shared screen.' };
+    const who = typeof raw.peer === 'string' ? raw.peer.slice(0, 80) : 'IT';
+    if (!overlays.privacyOn) { overlays.showPrivacy(who); log('info', 'privacy screen on', {}); }
+    return { ok: true, error: null };
   });
 
   ipcMain.on('assist:input', (e, msg: unknown, from: unknown) => { if (fromMain(e)) control?.input(msg, Date.now(), typeof from === 'string' ? from : null); });

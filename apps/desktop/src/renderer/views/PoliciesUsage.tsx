@@ -104,6 +104,10 @@ export function PoliciesAdmin() {
           <Toggle label="IT can use office PCs with administrator rights" checked={p.assistElevated === true} onChange={(v) => save({ assistElevated: v })} />
         </div>
         <SupportServiceAdmin />
+        <div className="setting">
+          <div className="txt"><div>IT may cover the screen while they work (privacy screen)</div><div className="faint">When IT connects without asking they can tick Privacy screen: the person sees "IT is working on this PC" instead of what IT does (typing administrator passwords, settings), while IT sees the real screen. Stop stays on top, and every use is on the ticket and in the Audit log. Needs Windows 10 version 2004 or later.</div></div>
+          <Toggle label="IT may cover the screen while they work" checked={p.assistPrivacy === true} onChange={(v) => save({ assistPrivacy: v })} />
+        </div>
       </section>
       <section className="card">
         <div className="eyebrow">Personal devices</div>
