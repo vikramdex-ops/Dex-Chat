@@ -54,6 +54,7 @@ test('unattended access: only IT staff, only with the policy on, recorded on the
   await assert.rejects(priya.request('help.connect', { userId: me(ravi) }), /IT desk/);
   await assert.rejects(ravi.request('help.connect', { userId: me(ravi) }), /your own PC/);
 
+  await priya.request('help.device', { control: true });
   const invited = nextEvent<SupportSession>(priya, 'help.session', (s) => s.unattended);
   const r = await ravi.request('help.connect', { userId: me(priya) });
   assert.equal(r.session.unattended, true);
@@ -87,6 +88,7 @@ test('unattended access on an existing ticket takes it and turns a running sessi
   await owner.request('admin.help.staff', { userId: me(ravi), on: true });
   await owner.request('admin.policy.set', { assistUnattended: true });
   const t = await priya.request('help.create', { summary: 'Plotter offline', category: 'printing' });
+  await priya.request('help.device', { control: true });
   const r = await ravi.request('help.connect', { id: t.id });
   assert.equal(r.session.ticketId, t.id);
   assert.equal(r.session.unattended, true);
@@ -126,8 +128,12 @@ test('reconnect: with the policy on, a dropped session waits, then resumes; with
   assert.equal(p.consent.screen, false, 'sharing stops while the connection is down');
   assert.equal((await priya.request('help.live')).length, 1);
   const back = await priya.request('help.session.join', { id: b.t.id, controlAvailable: true });
-  assert.equal(back.session.pausedAt, null);
+  // one side back is not enough: the session waits for both, and nothing can be shared meanwhile
+  assert.notEqual(back.session.pausedAt, null);
+  await assert.rejects(priya.request('help.consent', { id: b.t.id, kind: 'screen', on: true, scope: 'screen' }), /not connected right now/);
+  const resumedEv = nextEvent<SupportSession>(priya, 'help.session', (x) => x.id === back.session.id && x.pausedAt === null);
   await ravi.request('help.session.join', { id: b.t.id });
+  await resumedEv;
   const { timeline } = await priya.request('help.get', { id: b.t.id });
   assert.ok(timeline.some((e) => e.kind === 'session.paused'));
   assert.ok(timeline.some((e) => e.kind === 'session.resumed'));
@@ -209,6 +215,7 @@ test('unattended: the hub picks one PC of the person; their stop is remembered; 
   const { owner, priya, ravi } = await office();
   await owner.request('admin.help.staff', { userId: me(ravi), on: true });
   await owner.request('admin.policy.set', { assistUnattended: true });
+  await priya.request('help.device', { control: true });
   const r = await ravi.request('help.connect', { userId: me(priya) });
   assert.equal(r.session.requesterDevice, priya.session!.deviceId, 'the PC IT reaches is chosen by the hub, not the first to join');
   const id = r.session.ticketId;
@@ -222,11 +229,11 @@ test('unattended: the hub picks one PC of the person; their stop is remembered; 
   assert.equal(again.session.stopped, false);
   await priya.request('help.consent', { id, kind: 'control', on: true });
   // the administrator turns unattended access off: control is taken back at once
-  const back = nextEvent<SupportSession>(priya, 'help.session', (s) => !s.consent.control);
+  const back = nextEvent<SupportSession>(priya, 'help.session', (s) => !s.consent.control && !s.consent.screen && !s.unattended);
   await owner.request('admin.policy.set', { assistUnattended: false });
   const s = await back;
   assert.equal(s.unattended, false);
-  assert.equal(s.consent.screen, true, 'what she shares herself stays hers to stop');
+  assert.equal(s.consent.screen, false, 'the screen the app shared by itself stops too');
   const audit = (await owner.request('admin.audit', { limit: 20 })).filter((a) => a.action === 'help.unattended.ended');
   assert.ok(audit.some((a) => (a.detail as { why?: string }).why === 'policy turned off'));
 });
@@ -236,7 +243,45 @@ test('unattended needs the person online', async () => {
   await owner.request('admin.help.staff', { userId: me(ravi), on: true });
   await owner.request('admin.policy.set', { assistUnattended: true });
   const priyaId = me(priya);
+  // a device that cannot be controlled (a phone, the web app) is never chosen
+  await assert.rejects(ravi.request('help.connect', { userId: priyaId }), /not online/);
   priya.disconnect();
   await new Promise((r) => setTimeout(r, 300));
   await assert.rejects(ravi.request('help.connect', { userId: priyaId }), /not online/);
+  // a failed Connect now leaves nothing behind: no ticket opened for her
+  const queue = await ravi.request('help.queue', { status: 'all' });
+  assert.equal(queue.filter((t) => t.requesterId === priyaId).length, 0);
+});
+
+test('reconnect: one side back alone does not end the wait; the wait still runs out', async () => {
+  const { owner, priya, ravi, hub } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistReconnect: true });
+  hub.helpdesk.reconnectGraceMs = 300;
+  const t = await priya.request('help.create', { summary: 'Laptop dock', category: 'hardware' });
+  await ravi.request('help.take', { id: t.id });
+  await ravi.request('help.session.start', { id: t.id });
+  const j = await priya.request('help.session.join', { id: t.id });
+  // Ravi's app goes away: the session pauses although Priya is still in the Room
+  const paused = nextEvent<SupportSession>(priya, 'help.session', (x) => x.pausedAt !== null);
+  await ravi.request('room.leave', { roomId: j.room.id });
+  await paused;
+  // and it ends when he is not back in time, with Priya still there
+  const ended = nextEvent<SupportSession>(priya, 'help.session', (x) => !!x.endedAt);
+  assert.ok((await ended).endedAt);
+});
+
+test('a dropped file attached afterwards shows on the ticket', async () => {
+  const { owner, priya, ravi, hub } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistFiles: true });
+  const t = await priya.request('help.create', { summary: 'Log file', category: 'software' });
+  await ravi.request('help.take', { id: t.id });
+  await ravi.request('help.session.start', { id: t.id });
+  await priya.request('help.session.join', { id: t.id });
+  const f = await upload(hub, priya, 'app.log', 'log');
+  await priya.request('help.drop', { id: t.id, files: [{ fileId: f.id, path: 'app.log' }] });
+  assert.equal((await priya.request('help.get', { id: t.id })).ticket.files.length, 0);
+  const after = await priya.request('help.attach', { id: t.id, fileId: f.id, kind: 'file' });
+  assert.equal(after.files.length, 1);
 });
