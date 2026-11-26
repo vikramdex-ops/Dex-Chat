@@ -36,7 +36,16 @@ export interface HubInfo {
   protocol: number;
   /** The internet gateway devices use outside the office, when the administrator has turned it on. */
   remote?: { url: string } | null;
+  /** What this hub can do that older hubs could not; apps offer these only when listed (an older hub lists none). */
+  features?: HubFeature[];
 }
+
+/**
+ * Hub features an app checks before offering them, so an app newer than its hub never shows a button
+ * the hub would refuse ("Unknown operation"). Add one whenever a new operation backs a visible control.
+ */
+export type HubFeature = 'room.hold' | 'room.share';
+export const HUB_FEATURES: readonly HubFeature[] = ['room.hold', 'room.share'];
 
 export interface PublicUser {
   id: string;

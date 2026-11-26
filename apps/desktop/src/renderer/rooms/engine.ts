@@ -10,7 +10,7 @@ import type { BackgroundId } from './backgrounds.ts';
 import { stopVoices } from './speech.ts';
 import { isProcessed, processMic, rawMic, releaseNoise, setNoisePref, suppressNoise } from './noise.ts';
 import { useSyncExternalStore } from 'react';
-import type { ControlOff, MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
+import type { ControlOff, HubFeature, MeetingInfo, RelayProducer, RoomInfo } from '@dex/core';
 import { formatTime } from '../time.ts';
 import { policyNow } from '../policy.ts';
 
@@ -66,6 +66,8 @@ export interface CallState {
   held: HeldCall | null;
   /** Everyone else in the live Room has put it on hold (a quiet tone plays meanwhile). */
   heldByOthers: boolean;
+  /** What the hub said it can do (Session.hub.features): Hold and Show screen are offered only when it lists them. */
+  hubFeatures: readonly HubFeature[];
 }
 export interface HeldCall { room: RoomInfo; camera: boolean; muted: boolean; at: number }
 export type Layout = 'gallery' | 'speaker' | 'presentation';
@@ -85,7 +87,7 @@ const startBg = bgPref();
 let state: CallState = {
   room: null, incoming: null, local: null, screen: null, peers: new Map(), muted: false, camera: false, blur: startBg === 'blur', background: startBg,
   minimized: false, error: null, active: new Map(), lobby: null, unmuteAsk: null, notice: null, layout: layoutPref(), pinned: null, joining: null,
-  held: null, heldByOthers: false,
+  held: null, heldByOthers: false, hubFeatures: [],
 };
 
 // ------------------------------------------------------------------ backgrounds (blur, office backgrounds, your own picture)
@@ -574,8 +576,16 @@ export async function answer(video: boolean, how: 'hold' | 'end' = 'hold'): Prom
 }
 
 // ------------------------------------------------------------------ hold
-/** Lounges are left, not held; a webinar's stage is left too. */
-export const holdable = (r: RoomInfo | null): boolean => !!r && r.purpose?.kind !== 'lounge' && r.meetingKind !== 'webinar';
+/** The features of the hub this app is signed in to; called on every sign-in, so a hub updated overnight is picked up. */
+export function setHubFeatures(features: readonly HubFeature[] | undefined): void {
+  const next = [...(features ?? [])].sort();
+  if (next.join() !== state.hubFeatures.join()) set({ hubFeatures: next });
+}
+/** The hub can do this (an older hub refuses what it does not list with "Unknown operation"). */
+export const hubHas = (f: HubFeature, s: CallState = state): boolean => s.hubFeatures.includes(f);
+
+/** Lounges are left, not held; a webinar's stage is left too; and the hub must know Hold. */
+export const holdable = (r: RoomInfo | null): boolean => !!r && hubHas('room.hold') && r.purpose?.kind !== 'lounge' && r.meetingKind !== 'webinar';
 
 /** Take this PC out of the live Room's media, keeping its seat; returns what Resume needs. */
 function detach(): HeldCall | null {
@@ -648,6 +658,8 @@ export function leaveHeld(): void {
 export async function startShare(convId: string, sourceId: string, withSound = false): Promise<void> {
   if (state.room?.convId === convId) { if (!state.screen) await toggleScreen(sourceId, withSound); set({ minimized: false, layout: 'presentation' }); return; }
   if (state.room) throw new Error('You are in a Room. Share your screen from its sheet, or leave it first.');
+  // an older hub would open an ordinary Room and ring everyone
+  if (!hubHas('room.share')) throw new Error('Showing a screen needs the office hub to be updated first.');
   try {
     await refreshIce();
     const room = await window.dex.request('room.start', { convId, video: false, share: true });

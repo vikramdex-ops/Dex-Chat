@@ -7,6 +7,12 @@ import { office, nextEvent, me } from './office.ts';
 
 const seat = (r: RoomInfo, userId: string) => r.participants.find((p) => p.userId === userId);
 
+test('the hub tells every app it can hold calls and show screens (an older hub says nothing, and apps hide both)', async () => {
+  const { hub, owner } = await office();
+  assert.deepEqual(hub.info.features, ['room.hold', 'room.share']);
+  assert.deepEqual(owner.session!.hub.features, ['room.hold', 'room.share']);
+});
+
 test('hold: the seat stays, no one connects to it, the others are told; back again it is live', async () => {
   const { owner, priya, ravi } = await office();
   const group = await owner.request('conv.create', { kind: 'space', name: 'Piping desk', members: [me(priya), me(ravi)] });

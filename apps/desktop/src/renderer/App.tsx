@@ -44,7 +44,7 @@ import { requestOpen } from './chat/deeplinks.ts';
 import { SearchView, type SearchInit } from './views/Search.tsx';
 import type { ShareRequest } from './views/ShareDialog.tsx';
 import { CalendarView, MeetingCards } from './calendar/CalendarView.tsx';
-import { setMinimized, setSelfUser, startCalls } from './rooms/engine.ts';
+import { setHubFeatures, setMinimized, setSelfUser, startCalls } from './rooms/engine.ts';
 import { startMeetLive } from './meet/live.ts';
 import { openKnocks, startKnocks } from './meet/knocks.ts';
 import { KnockCards, LobbyBell } from './meet/LobbyBell.tsx';
@@ -454,6 +454,9 @@ function Shell({ state, session }: { state: AppState; session: Session }) {
     if (session.me.role !== 'guest' && session.me.role !== 'bot') startNotices();
     return desk;
   }, [state.phase, session.me.id, session.deviceId]);
+  // what the hub can do, again after each sign-in (an office hub updates itself overnight)
+  const hubFeatures = (session.hub.features ?? []).join();
+  useEffect(() => { setHubFeatures(session.hub.features); }, [hubFeatures]);
 
   // the lens and chip now, for handlers kept from an earlier render (links, events)
   const now = useRef({ lens, chip });
