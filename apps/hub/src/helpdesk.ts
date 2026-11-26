@@ -440,14 +440,7 @@ export class HelpDesk {
           const target = typeof d.userId === 'string' ? this.host.store.userById(d.userId) : null;
           if (!target || target.role === 'bot' || target.role === 'guest') throw new HelpError('Choose someone in the office.');
           if (target.id === me.id) throw new HelpError('Someone else on the IT desk connects to your own PC.');
-          const id = ulid();
-          const now = Date.now();
-          const number = ((this.db.prepare('SELECT MAX(number) AS n FROM help_tickets').get() as { n: number | null }).n ?? 0) + 1;
-          this.db.prepare(`INSERT INTO help_tickets (id, number, requester_id, summary, detail, category, status, tech_id, created_at, updated_at, taken_at)
-            VALUES (?, ?, ?, ?, '', 'other', 'taken', ?, ?, ?, ?)`).run(id, number, target.id, oneLine(`Remote support from ${me.displayName}`, MAX_SUMMARY), me.id, now, now, now);
-          this.entry(id, me.id, 'opened', 'Opened by IT to connect to this PC.', { category: 'other', byIt: true });
-          this.host.store.audit(me.id, 'help.opened', id, { number: ticketRef(number), category: 'other', for: target.id, unattended: true });
-          r = this.row(id)!;
+          r = this.row(this.openForIt(me, target.id, `Remote support from ${me.displayName}`, { unattended: true }))!;
         }
         const requester = this.host.store.userById(r.requester_id);
         if (!requester) throw new HelpError('The person who asked has left the office.');
@@ -539,6 +532,26 @@ export class HelpDesk {
       }
     }
     return undefined;
+  }
+
+  /** A ticket IT opens itself for work it starts (unattended or elevated access), held by the technician. Returns its id. */
+  openForIt(me: PublicUser, requesterId: string, summary: string, detail: Record<string, unknown>): string {
+    const id = ulid();
+    const now = Date.now();
+    const number = ((this.db.prepare('SELECT MAX(number) AS n FROM help_tickets').get() as { n: number | null }).n ?? 0) + 1;
+    this.db.prepare(`INSERT INTO help_tickets (id, number, requester_id, summary, detail, category, status, tech_id, created_at, updated_at, taken_at)
+      VALUES (?, ?, ?, ?, '', 'other', 'taken', ?, ?, ?, ?)`).run(id, number, requesterId, oneLine(summary, MAX_SUMMARY), me.id, now, now, now);
+    this.entry(id, me.id, 'opened', 'Opened by IT to connect to this PC.', { category: 'other', byIt: true });
+    this.host.store.audit(me.id, 'help.opened', id, { number: ticketRef(number), category: 'other', for: requesterId, ...detail });
+    this.publish(id);
+    return id;
+  }
+
+  /** A line on a ticket's timeline from elsewhere in the hub (elevated sessions), told to its audience. */
+  record(ticketId: string, actor: string | null, kind: HelpEntryKind, text: string | null, detail: Record<string, unknown>): void {
+    if (!this.row(ticketId)) return;
+    this.entry(ticketId, actor, kind, text, detail);
+    this.publish(ticketId);
   }
 
   /** A new session on a ticket the technician holds; unattended when IT connected without asking. */

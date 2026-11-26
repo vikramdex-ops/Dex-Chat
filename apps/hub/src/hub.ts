@@ -56,6 +56,9 @@ import { Recordings, RecordingError } from './recordings.ts';
 import { Webinars, WebinarError } from './webinars.ts';
 import { MEET_ORG_DEFAULT, isWebGuest, isWebGuestDevice, normalizeSlug, siteBase, siteUrlProblem } from '@dex/core';
 import { HelpDesk, HelpError } from './helpdesk.ts';
+import { MachineError, Machines } from './machines.ts';
+import type { MachineConn } from './machines.ts';
+import type { MachineHello } from '@dex/core/machine';
 import { LoungeError, Lounges } from './lounges.ts';
 import { PointerError, Pointers } from './pointers.ts';
 import type { MirrorOptions } from './update-mirror.ts';
@@ -148,6 +151,9 @@ interface Conn {
   idle: boolean;
   /** The iPhone web app is in the background (push.active false): pushes stand in for this connection. */
   background?: boolean;
+  /** An office PC's IT Support service (a machine device, no person), and how the machines reach it. */
+  machineId?: string;
+  machine?: MachineConn;
 }
 
 const isAdminRole = (r: Role) => r === 'owner' || r === 'admin';
@@ -221,6 +227,7 @@ export class Hub {
   readonly botflows: BotFlows;
   readonly miniapps: MiniApps;
   readonly helpdesk: HelpDesk;
+  readonly machines: Machines;
   readonly lounges: Lounges;
   readonly pointers: Pointers;
   readonly decisions: Decisions;
@@ -455,6 +462,12 @@ export class Hub {
     this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
     const deliverNow = (userIds: string[], name: string, data: unknown) => this.deliver(userIds, name, () => data);
     this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data), policy: () => this.policies.get() });
+    this.machines = new Machines({
+      store: this.store, helpdesk: this.helpdesk, fingerprint: this.fingerprint, policy: () => this.policies.get(),
+      toDevice: (deviceId, name, data) => this.toDevice(deviceId, name, data),
+      tellIt: (name, data) => this.deliver(this.helpdesk.staff(), name, () => data),
+      log: (level, msg, extra) => this.log(level, msg, extra),
+    });
     this.lounges = new Lounges({
       db: this.store.db, messaging: this.messaging, rooms: this.rooms, deliver: deliverNow,
       // Space members see the lounge's name; everyone else only that the person is in a lounge
@@ -1275,6 +1288,8 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
+    if (conn.machineId && conn.machine) { this.machines.closed(conn.machineId, conn.machine); return; }
+    if (conn.deviceId && conn.ready) this.machines.deviceGone(conn.deviceId);
     if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.pointers.dropDevice(conn.deviceId); this.webinars.leaveDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }
@@ -1295,6 +1310,14 @@ export class Hub {
   }
 
   private async onFrame(conn: Conn, frame: ClientFrame): Promise<void> {
+    if (conn.machineId) { this.machines.frame(conn.machineId, frame as unknown as Record<string, unknown>); return; }
+    if ((frame as { t: string }).t === 'machine') {
+      if (conn.ready || conn.deviceId) return;
+      conn.machine = { deviceId: null, send: (f) => { if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(JSON.stringify(f)); }, close: () => conn.ws.close() };
+      const id = this.machines.hello(conn.machine, conn.nonce, frame as unknown as MachineHello);
+      if (id) conn.machineId = id;
+      return;
+    }
     if (frame.t === 'auth') return this.onAuth(conn, frame);
     if (frame.t === 'register') return this.onRegister(conn, frame);
     if (frame.t === 'req') return this.onRequest(conn, frame);
@@ -1981,6 +2004,16 @@ export class Hub {
             if (result !== undefined) return result;
           } catch (err) {
             if (err instanceof RoomError) throw new OpError(err.message);
+            throw err;
+          }
+        }
+        if (typeof op === 'string' && /^(machine\.|admin\.machine\.)/.test(op)) {
+          const me = this.store.userById(conn.userId!)!;
+          try {
+            const result = this.machines.handle(op, me, conn.deviceId!, d);
+            if (result !== undefined) return result;
+          } catch (err) {
+            if (err instanceof MachineError || err instanceof HelpError) throw new OpError(err.message);
             throw err;
           }
         }

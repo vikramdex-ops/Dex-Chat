@@ -7,6 +7,7 @@ import type { BotEvents, BotOps, BotFlowCard, MiniAppView } from './bots.ts';
 import type { NibCardRef, NibEvents, NibOps } from './nib.ts';
 
 import type { HelpCategory, HelpEntry, HelpFileKind, HelpTicket, SupportSession } from './helpdesk.ts';
+import type { ElevatedSession, MachineFrame, MachineInfo } from './machine.ts';
 
 export const PROTOCOL_VERSION = 1;
 export const APP_ID = 'dexconnect';
@@ -227,6 +228,11 @@ export interface OfficePolicy {
   assistFiles?: boolean;
   /** a support session survives a network drop or a reboot for a few minutes and resumes by itself. */
   assistReconnect?: boolean;
+  /**
+   * IT staff may use office PCs through the Dexterity Connect IT Support service (installed by an
+   * administrator): administrator windows, UAC prompts, Ctrl+Alt+Del, the lock and sign-in screens.
+   */
+  assistElevated?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -1162,6 +1168,19 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'help.connect': { req: { id?: string; userId?: string }; res: { session: SupportSession; room: RoomInfo } };
   /** Support sessions running now that you are part of (to rejoin after a dropped connection or a restart). */
   'help.live': { req: void; res: SupportSession[] };
+  /** Office PCs with the IT Support service (IT staff). */
+  'machine.list': { req: void; res: MachineInfo[] };
+  /** Connect to a PC through its service (IT staff, policy assistElevated); pictures come as machine.frame events. */
+  'machine.connect': { req: { machineId: string }; res: ElevatedSession };
+  /** Pointer and keys for the PC ({ k: 'in', e }), checked by the hub's gate. */
+  'machine.input': { req: { s: string; msg: unknown }; res: { ok: true } };
+  /** Ctrl+Alt+Del on the PC (the secure attention sequence, sent by the service). */
+  'machine.sas': { req: { s: string }; res: { ok: true } };
+  /** The technician drew a picture: the PC may send the next. */
+  'machine.ack': { req: { s: string; seq: number }; res: { ok: true } };
+  'machine.end': { req: { s: string }; res: { ok: true } };
+  /** Remove a PC's service from the office (it can no longer connect with that key). */
+  'admin.machine.remove': { req: { machineId: string }; res: { ok: true } };
   /** Files dropped into a running support session (policy assistFiles), up to 100 a call; the other side saves them. */
   'help.drop': { req: { id: string; fileIds: string[]; folder?: string | null }; res: { ok: true; count: number } };
   /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
@@ -1281,6 +1300,9 @@ export interface Events extends FlowEvents, BotEvents, NibEvents {
   /** To the requester: the technician asks for screen, control or diagnostics. */
   'help.ask': { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string };
   'help.staff': string[];
+  'machine.frame': MachineFrame;
+  'machine.session': ElevatedSession;
+  'machine.list': MachineInfo[];
   'lounge.updated': Lounge;
   /** Someone came into or left a lounge (name is null for Spaces you are not in). */
   'lounge.where': { userId: string; loungeId: string | null; name: string | null };
