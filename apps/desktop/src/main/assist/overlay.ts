@@ -36,8 +36,8 @@ p{font-size:17px;line-height:1.5;color:#cfe6e8;margin:0 0 12px}
 .keys{font:12px Consolas,monospace;color:#cfe6e8;opacity:.8;margin-top:22px}
 </style><div class="card"><div class="tag"><span class="dot"></span>DEXTERITY CONNECT · IT SUPPORT · PRIVACY SCREEN</div>
 <h1>${esc(who)} from IT is working on this PC</h1>
-<p>They asked for the screen to be covered while they work, so this is what you see. Please carry on with something else; your screen comes back when they finish.</p>
-<p>You can stop it at any time: Stop on the bar at the top, or the keys below.</p>
+<p>They asked for the screen to be covered while they work, so this is what you see. Please leave the mouse and keyboard alone until it goes: anything you type or click reaches what IT is working on.</p>
+<p>You can end it at any time: Stop on the bar at the top, or the keys below.</p>
 <div class="keys">STOP: SHIFT+ESC · CTRL+ALT+SHIFT+S</div></div>`;
 }
 

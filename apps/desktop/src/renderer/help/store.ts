@@ -178,7 +178,7 @@ async function syncPrivacy(): Promise<void> {
   const r = await window.dex.assist.privacy({ on: want, peer: s ? techNameOf(s.techId) : 'IT' }).catch((e: Error) => ({ ok: false, error: e.message }));
   if (want && !r.ok) {
     privacyShown = false;
-    if (s) void window.dex.request('help.privacy', { id: s.ticketId, on: false, unavailable: true }).catch(() => {});
+    if (s) void window.dex.request('help.privacy', { id: s.ticketId, on: false, unavailable: true, reason: r.error ?? 'it could not be shown' }).catch(() => {});
   }
 }
 

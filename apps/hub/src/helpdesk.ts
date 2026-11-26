@@ -500,7 +500,6 @@ export class HelpDesk {
         s.requesterDevice = target;
         // IT connecting again is a new request: what the person stopped before may be given again
         s.stopped = false;
-        if (privacy !== s.privacy) this.setPrivacy(s, privacy, me.id, null);
         this.lockDevice(s, me, deviceId);
         let room: RoomInfo;
         try { room = this.enter(s, me, deviceId, fromOutside); } catch (e) {
@@ -523,6 +522,7 @@ export class HelpDesk {
           }
           throw e;
         }
+        if (privacy !== s.privacy) this.setPrivacy(s, privacy, me.id, null);
         this.pushSession(s);
         this.publish(r.id);
         return { session: this.publicSession(s), room };
@@ -536,7 +536,8 @@ export class HelpDesk {
         if (me.id === s.requesterId) {
           // the person's app turns it off only when it cannot show it (older Windows)
           if (on || d.unavailable !== true) throw new HelpError('Only IT turns the privacy screen on or off. Press Stop to end the session.');
-          this.setPrivacy(s, false, me.id, 'It cannot be shown on this PC (it needs Windows 10 version 2004 or later).');
+          const reason = oneLine(d.reason, 200) || 'it cannot be shown on this PC';
+          this.setPrivacy(s, false, me.id, `The person's app turned the privacy screen off: ${reason}.`);
           return this.publicSession(s);
         }
         if (me.id !== s.techId) throw new HelpError('Only the technician in the session can do that.');
