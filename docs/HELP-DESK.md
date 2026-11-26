@@ -224,16 +224,20 @@ service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
   as them could swap `DexSupport.exe` before the administrator approves, so the app refuses and
   points to the setup switch below (Program Files is read from HKLM, not from environment variables).
   A declined prompt is reported as declined (Windows error 1223, in any language), never as installed.
+  Before Windows asks, the app shows the administrator the hub the service will obey (name, address,
+  certificate fingerprint) and installs only when they confirm it is their office's. The programs it
+  starts for this (PowerShell, reg.exe, sc.exe) come from C:\Windows, never from the SystemRoot the
+  app was started with, and run with a clean environment.
 - **For many PCs at once**: run the setup as an administrator (GPO, PsExec, Intune):
   `DexterityConnect-Setup-x.y.z.exe /S /SUPPORTHUB=hub-host:47900 /SUPPORTFP=AA:BB:…` (the hub's
   certificate fingerprint, shown in the hub's admin console).
 - Either way `DexSupport.exe --install --hub HOST:PORT --fingerprint FP` copies itself to
   `%ProgramFiles%\Dexterity Connect Support\` (only administrators can change it, so nobody can swap
-  the program a SYSTEM service runs), writes `%ProgramData%\Dexterity Connect Support\config.json`
-  (owner Administrators, SYSTEM and Administrators only). A folder of that name someone else made
-  first, or a link, is moved aside (renamed, never deleted recursively, which as administrator could
-  be steered through a link inside it); the new folder is checked to really be ours, and the install
-  stops if someone made one in between. The installer logs only to the console, never into that
+  the program a SYSTEM service runs), writes `%ProgramFiles%\Dexterity Connect Support\data\config.json`
+  (owner Administrators, SYSTEM and Administrators only). The data folder is inside the program's own
+  Program Files folder, where only administrators can create anything, so nobody can take its name
+  first; one that is not ours is still moved aside (never deleted recursively) and the new one is
+  checked to really be ours. The installer logs only to the console, never into that
   folder. The service reads `config.json` from one open handle and only when its folder and the file
   can be changed by SYSTEM and Administrators alone, with no other name for the file (no hard link).
   It creates the PC's **P-256 key in the machine key store** (never
@@ -250,14 +254,19 @@ authentication payload as people's devices with its P-256 key (`machineIdFor`,
 `verifyMachineSignature` in `packages/core/src/machine.ts`; the hub's certificate is pinned by its
 fingerprint) and is **accepted without approval** (`machine.added` in the audit log), on the office
 network only (a machine connecting through the internet gateway is refused, and so is a technician
-trying to connect, type or send Ctrl+Alt+Del through it) and at most 30 new PCs
-an hour (2,000 in all). Control room lists every PC with the service; **Remove** blocks that key for
+trying to connect, type or send Ctrl+Alt+Del through it; a technician whose app leaves the office
+network loses the session at the next picture, and can still press End from anywhere) and at most 30 new PCs
+an hour (2,000 PCs still in the office). A PC's name must be a plain Windows computer name (letters,
+digits, hyphens): nothing invisible or look-alike. The same key from a second PC with another name
+(a copied disk image) is refused while the first is online (`machine.cloned`): reinstall the service
+on PCs made from an image. Control room lists every PC with the service; **Remove** blocks that key for
 good (`machine.removed`; to add the PC again, remove the service from it and install it again, which
 makes a new key).
 
 **Connecting.** The Help desk lists the office PCs with the service (online, who is signed in, locked
 or at the sign-in screen), each with a short ID (the start of its key's fingerprint). Names are what
-each PC says about itself: two PCs with one name are both marked **SAME NAME**, and connecting to
+each PC says about itself: two PCs with one name (counting PCs removed before) are both marked
+**SAME NAME**, and connecting to
 either asks the technician to check the ID and when it was first seen (a pretend PC could show a
 fake sign-in or UAC screen to collect a password). **Connect** (`machine.connect`) is refused unless the caller is on the IT
 desk and the policy is on; one technician per PC at a time. The hub opens a ticket held by the
@@ -295,6 +304,9 @@ Sizes follow the screen's scaling. `DexSupport.exe --preview-notice "Name" T-004
 current desktop without the service. **Stop** (or **Ctrl+Alt+Shift+S**) ends the session. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
 ticket). With nobody signed in IT may still connect; the strip is on the sign-in screen.
 
+If the technician's window reloads or crashes, it picks the session up again (`machine.mine`), so
+End is always there. A PC's 20-second status only reaches the IT desk when something changed.
+
 **Restarts.** The service stopping (a restart, an update) closes its link without ending the session,
 so with `assistReconnect` the session waits and goes on when the PC is back; if the PC returns before
 the hub noticed it left, the session starts again on the new link. A session the person stopped is
@@ -305,7 +317,7 @@ never taken up again, even if the hub did not hear the stop.
 `help.elevated.ended` (duration, pictures sent, why), `help.session.paused` / `resumed` when the PC
 restarts or drops off (with `assistReconnect` the session waits 10 minutes and goes on when the
 service is back; otherwise it ends), `machine.added`, `machine.removed`, and the same lines on the
-ticket. The service logs to `%ProgramData%\Dexterity Connect Support\service.log`.
+ticket. The service logs to `%ProgramFiles%\Dexterity Connect Support\data\service.log`.
 
 **Not covered:** Remote Desktop sessions (the service follows the console only); PCs reached only
 through the internet gateway; macOS and Linux.

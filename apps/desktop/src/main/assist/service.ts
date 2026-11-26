@@ -4,13 +4,14 @@
 // app never runs anything elevated without that prompt.
 import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { app, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { powershellPath } from './windows.ts';
-import { trustedExe } from './trust.ts';
+import { trustedExe, windowsDir } from './trust.ts';
 
 export interface SupportServiceDeps {
   /** The office hub this app is connected to on the office network (null through the internet gateway). */
-  endpoint(): { host: string; port: number; fp: string } | null;
+  endpoint(): { host: string; port: number; fp: string; name: string | null } | null;
+  win(): BrowserWindow | null;
   fromMain(e: Electron.IpcMainInvokeEvent): boolean;
   log(level: 'info' | 'warn', msg: string, extra?: Record<string, unknown>): void;
 }
@@ -22,16 +23,21 @@ export function supportExe(): string {
   return app.isPackaged ? path.join(process.resourcesPath, 'support', 'DexSupport.exe') : path.join(app.getAppPath(), 'build', 'support', 'DexSupport.exe');
 }
 
+/** A clean environment for the programs started here. */
+const cleanEnv = (win: string) => ({ SystemRoot: win, windir: win, PATH: `${win}\\System32;${win}` });
+
 /** Program Files as HKLM records it (an environment variable could be set by anyone running as the user). */
 async function programFiles(): Promise<string[]> {
-  const reg = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe');
-  const r = await run(reg, ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion', '/v', 'ProgramFilesDir'], 10_000);
+  const win = windowsDir();
+  if (!win) return [];
+  const reg = path.win32.join(win, 'System32', 'reg.exe');
+  const r = await run(reg, ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion', '/v', 'ProgramFilesDir'], 10_000, cleanEnv(win));
   const m = r.out.match(/ProgramFilesDir\s+REG_SZ\s+(.+)/);
   return m ? [m[1].trim()] : [];
 }
 
-const run = (file: string, args: string[], timeout = 120_000) => new Promise<{ code: number; out: string }>((resolve) => {
-  execFile(file, args, { windowsHide: true, timeout }, (err, stdout, stderr) => {
+const run = (file: string, args: string[], timeout = 120_000, env?: NodeJS.ProcessEnv) => new Promise<{ code: number; out: string }>((resolve) => {
+  execFile(file, args, { windowsHide: true, timeout, ...(env ? { env } : {}) }, (err, stdout, stderr) => {
     const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0;
     resolve({ code, out: `${stdout}${stderr}`.trim() });
   });
@@ -39,7 +45,9 @@ const run = (file: string, args: string[], timeout = 120_000) => new Promise<{ c
 
 export async function serviceStatus(): Promise<{ available: boolean; installed: boolean; running: boolean }> {
   if (process.platform !== 'win32') return { available: false, installed: false, running: false };
-  const r = await run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'sc.exe'), ['query', NAME], 10_000);
+  const win = windowsDir();
+  if (!win) return { available: true, installed: false, running: false };
+  const r = await run(path.win32.join(win, 'System32', 'sc.exe'), ['query', NAME], 10_000, cleanEnv(win));
   return { available: true, installed: r.code === 0, running: r.code === 0 && /RUNNING/.test(r.out) };
 }
 
@@ -51,7 +59,9 @@ async function elevated(args: string[]): Promise<{ ok: boolean; error: string | 
   // declined: Win32 error 1223 (ERROR_CANCELLED) in any language of Windows
   const script = `try { $p = Start-Process -FilePath ${quote(supportExe())} -ArgumentList ${quote(args.map((a) => `"${a}"`).join(' '))} -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop } catch { $e = $_.Exception; while ($e) { if ($e.NativeErrorCode -eq 1223) { exit 1223 }; $e = $e.InnerException }; [Console]::Error.WriteLine($_.Exception.Message); exit 1 }; if ($null -eq $p) { exit 1 }; exit $p.ExitCode`;
   // no time limit: an administrator may take a while at the prompt, and the install then runs
-  const r = await run(powershellPath(), ['-NoProfile', '-NonInteractive', '-Command', script], 0);
+  const win = windowsDir();
+  if (!win) return { ok: false, error: 'This PC\'s Windows folder is not where it should be, or the app was started with it changed. Install the IT Support service with the setup run as an administrator instead.' };
+  const r = await run(powershellPath({ SystemRoot: win }), ['-NoProfile', '-NonInteractive', '-Command', script], 0, cleanEnv(win));
   if (r.code === 0) return { ok: true, error: null };
   if (r.code === 1223) return { ok: false, error: 'Windows did not get administrator approval, so nothing was changed.' };
   if (r.code === 5) return { ok: false, error: 'This needs an administrator account on this PC.' };
@@ -65,6 +75,19 @@ export function wireSupportService(deps: SupportServiceDeps): void {
     if (process.platform !== 'win32') return { ok: false, error: 'The IT Support service is for Windows PCs.' };
     const ep = deps.endpoint();
     if (!ep) return { ok: false, error: 'Install it while this PC is on the office network (connected to the hub directly, not through the internet gateway).' };
+    const w = deps.win();
+    const ask = {
+      type: 'warning' as const,
+      title: 'Install the IT Support service',
+      message: `Give ${ep.name ?? 'this office hub'} administrator control of this PC?`,
+      detail: `The service runs as SYSTEM and lets IT staff of this hub use this PC with administrator rights, also at the sign-in screen.\n\nHub: ${ep.name ?? '(no name)'}\nAddress: ${ep.host}:${ep.port}\nCertificate fingerprint: ${ep.fp}\n\nCheck the address and fingerprint against your office hub (its admin console shows both) before you continue. If they are not your office's, cancel.`,
+      buttons: ['Cancel', 'Install for this hub'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    };
+    const answer = w ? await dialog.showMessageBox(w, ask) : await dialog.showMessageBox(ask);
+    if (answer.response !== 1) return { ok: false, error: 'Not installed.' };
     deps.log('info', 'installing the IT Support service', { hub: `${ep.host}:${ep.port}` });
     const r = await elevated(['--install', '--hub', `${ep.host}:${ep.port}`, '--fingerprint', ep.fp]);
     deps.log(r.ok ? 'info' : 'warn', r.ok ? 'IT Support service installed' : 'IT Support service not installed', r.error ? { error: r.error } : undefined);

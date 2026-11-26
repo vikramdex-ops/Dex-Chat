@@ -474,6 +474,7 @@ export class Hub {
       toDevice: (deviceId, name, data) => this.toDevice(deviceId, name, data),
       tellIt: (name, data) => this.deliver(this.helpdesk.staff(), name, () => data),
       log: (level, msg, extra) => this.log(level, msg, extra),
+      onOfficeNetwork: (deviceId) => [...this.conns].some((c) => c.ready && c.deviceId === deviceId && !c.remote),
     });
     this.lounges = new Lounges({
       db: this.store.db, messaging: this.messaging, rooms: this.rooms, deliver: deliverNow,

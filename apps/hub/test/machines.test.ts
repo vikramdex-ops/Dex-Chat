@@ -215,3 +215,38 @@ test('review fixes, second round: no elevated control through the internet gatew
   assert.throws(() => hub.machines.handle('machine.connect', tech, ravi.session!.deviceId, { machineId: m1.id }, true), /office network/);
   await m1.close(); await m2.close();
 });
+
+test('third review: plain computer names only; removed and clashing names are flagged; a copied key is refused; a technician off the office network loses the session', async () => {
+  const { hub, owner, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistElevated: true });
+  // a name with an invisible character is refused outright
+  const z = machineKey();
+  const fake = await service(hub, z.key, z.pub, 'ACCOUNTS-PC\u200b');
+  assert.match(String((await fake.next('rejected')).reason), /plain Windows computer name/);
+  // a removed PC's name still counts: a newcomer with it is flagged
+  const a = machineKey();
+  const m1 = await service(hub, a.key, a.pub, 'FINANCE-01');
+  await m1.next('m.ok');
+  await owner.request('admin.machine.remove', { machineId: m1.id });
+  const b = machineKey();
+  const m2 = await service(hub, b.key, b.pub, 'finance-01');
+  await m2.next('m.ok');
+  const list: MachineInfo[] = await ravi.request('machine.list');
+  assert.equal(list.length, 1);
+  assert.equal(list[0].sameName, true, 'the removed PC had that name');
+  // the same key from a second PC with another name (a copied disk image): refused while the first is online
+  const twin = await service(hub, b.key, b.pub, 'FINANCE-02');
+  assert.match(String((await twin.next('rejected')).reason), /already uses this PC's key/);
+  // the technician's app leaves the office network: the session ends at the next picture
+  const s = await ravi.request('machine.connect', { machineId: m2.id });
+  await m2.next('m.start');
+  const ended = nextEvent<ElevatedSession>(ravi, 'machine.session', (x) => x.id === s.id && !!x.endedAt);
+  const conns = (hub as unknown as { conns: Set<{ deviceId: string | null; remote: boolean }> }).conns;
+  for (const c of conns) if (c.deviceId === ravi.session!.deviceId) c.remote = true;
+  m2.send({ t: 'm.frame', s: s.id, w: 10, h: 10, seq: 1, d: Buffer.from('x').toString('base64') });
+  assert.equal((await ended).why, 'The technician left the office network.');
+  // after a reload the technician's window finds its sessions (none now)
+  assert.deepEqual(await ravi.request('machine.mine'), []);
+  await m2.close();
+});

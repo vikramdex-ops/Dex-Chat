@@ -84,6 +84,8 @@ export function ElevatedHost() {
   const toast = useToast();
   useEffect(() => {
     listen();
+    // the window reloaded (or crashed) mid-session: pick the viewer up again, so End is always there
+    void window.dex.request('machine.mine').then((l) => { if (l.length && !current) setCurrent(l[0]); }).catch(() => {});
     const ended = (e: Event) => toast(`Elevated session ended: ${(e as CustomEvent).detail as string}`);
     window.addEventListener('dex-elevated-ended', ended);
     return () => window.removeEventListener('dex-elevated-ended', ended);

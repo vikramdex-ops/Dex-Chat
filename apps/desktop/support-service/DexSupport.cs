@@ -88,7 +88,9 @@ namespace DexSupport {
   static class Paths {
     public static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Dexterity Connect Support"); } }
     public static string Exe { get { return Path.Combine(Dir, "DexSupport.exe"); } }
-    public static string Data { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Dexterity Connect Support"); } }
+    // config, log and state beside the program, in Program Files: only administrators can create or
+    // change anything there, so no one can make this folder first (ProgramData lets anyone)
+    public static string Data { get { return Path.Combine(Dir, "data"); } }
     /** --console --config FILE: run as this user against a config of one's own (tests, troubleshooting). */
     public static string ConfigOverride;
     public static string Config { get { return ConfigOverride ?? Path.Combine(Data, "config.json"); } }
@@ -97,7 +99,7 @@ namespace DexSupport {
 
   static class Log {
     static readonly object Gate = new object();
-    /** --install / --uninstall: lines go to the console only, never into ProgramData (not secured yet, or being removed). */
+    /** --install / --uninstall: lines go to the console only, never into the data folder (not secured yet, or being removed). */
     public static bool ConsoleOnly;
     public static void Write(string line) {
       if (ConsoleOnly) { Console.Error.WriteLine(line); return; }
@@ -325,10 +327,10 @@ namespace DexSupport {
     static readonly SecurityIdentifier AdminsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
 
     /**
-     * %ProgramData%\Dexterity Connect Support, which the SYSTEM service trusts for its hub: anyone may
-     * create folders in ProgramData, so one that exists already is only kept when it is a real folder
-     * owned by SYSTEM or Administrators; otherwise it is removed and made again. Owner Administrators,
-     * only SYSTEM and Administrators in its access list, nothing inherited from ProgramData.
+     * The service's data folder (Program Files\Dexterity Connect Support\data), which it trusts for its
+     * hub: one that exists already is only kept when it is a real folder only SYSTEM and Administrators
+     * can change; otherwise it is moved aside and made again. Owner Administrators, only SYSTEM and
+     * Administrators in its access list, nothing inherited.
      */
     static void SecureDataFolder() {
       if (Directory.Exists(Paths.Data) && !Trusted.Folder(Paths.Data)) {
@@ -389,7 +391,7 @@ namespace DexSupport {
         Registry.LocalMachine.DeleteSubKeyTree(@"SOFTWARE\Dexterity Connect Support", false);
       } catch { }
       // the exe may be the one running this: removed at the next restart if so
-      try { File.Delete(Paths.Exe); Directory.Delete(Paths.Dir); } catch { MoveFileEx(Paths.Exe, null, 4); }
+      try { File.Delete(Paths.Exe); Directory.Delete(Paths.Dir); } catch { MoveFileEx(Paths.Exe, null, 4); MoveFileEx(Paths.Dir, null, 4); }
       Console.WriteLine("{\"installed\":false}");
       return 0;
     }
@@ -729,9 +731,9 @@ namespace DexSupport {
 
     void WorkerLoop() {
       while (!stop.IsCancellationRequested) {
+        NamedPipeServerStream p = null;
         try {
           uint console = Native.WTSGetActiveConsoleSessionId();
-          NamedPipeServerStream p = null;
           lock (workerGate) {
             if (console != 0xFFFFFFFF && (worker == null || worker.HasExited || workerSession != console)) {
               KillWorker();
@@ -749,13 +751,18 @@ namespace DexSupport {
           }
           if (p != null) {
             var wait = p.WaitForConnectionAsync();
-            if (!wait.Wait(15000)) { Log.Write("the worker did not connect"); lock (workerGate) { KillWorker(); } continue; }
-            pipe = p;
-            if (session != null) Tell('S', tech);
-            ReadWorker(p);
+            if (!wait.Wait(15000)) { Log.Write("the worker did not connect"); lock (workerGate) { KillWorker(); } }
+            else {
+              pipe = p;
+              if (session != null) Tell('S', tech);
+              ReadWorker(p);
+            }
           }
         } catch (Exception e) {
           Log.Write("worker: " + e.Message);
+        } finally {
+          // a pipe no worker took is never left open (one per failed start would pile up)
+          if (p != null && !ReferenceEquals(p, pipe)) { try { p.Dispose(); } catch { } }
         }
         stop.Token.WaitHandle.WaitOne(1500);
       }

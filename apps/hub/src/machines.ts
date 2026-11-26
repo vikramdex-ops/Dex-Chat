@@ -56,6 +56,8 @@ export interface MachineHost {
   /** Tell the IT desk the list of PCs changed. */
   tellIt(name: string, data: unknown): void;
   log(level: 'info' | 'warn', msg: string, extra?: Record<string, unknown>): void;
+  /** Is this device connected on the office network now (not only through the internet gateway)? */
+  onOfficeNetwork(deviceId: string): boolean;
 }
 
 interface Live extends ElevatedSession {
@@ -105,12 +107,22 @@ export class Machines {
     const row = this.db.prepare('SELECT public_key, removed_at FROM machines WHERE id = ?').get(id) as { public_key: string; removed_at: number | null } | undefined;
     if (row?.removed_at) return reject('An administrator removed this PC from the office. To add it again, remove the IT Support service from the PC and install it again (that makes a new key).');
     if (!row) {
-      const n = this.db.prepare('SELECT COUNT(*) AS all_n, SUM(CASE WHEN first_seen > ? THEN 1 ELSE 0 END) AS recent FROM machines').get(Date.now() - 3600_000) as { all_n: number; recent: number | null };
-      if ((n.recent ?? 0) >= NEW_PER_HOUR || n.all_n >= MAX_MACHINES) { this.host.log('warn', 'a new PC was refused: too many new PCs', { recent: n.recent ?? 0, all: n.all_n }); return reject('Too many new PCs joined the office just now. Try again in an hour.'); }
+      const n = this.db.prepare('SELECT SUM(CASE WHEN removed_at IS NULL THEN 1 ELSE 0 END) AS all_n, SUM(CASE WHEN first_seen > ? THEN 1 ELSE 0 END) AS recent FROM machines').get(Date.now() - 3600_000) as { all_n: number | null; recent: number | null };
+      if ((n.recent ?? 0) >= NEW_PER_HOUR || (n.all_n ?? 0) >= MAX_MACHINES) { this.host.log('warn', 'a new PC was refused: too many new PCs', { recent: n.recent ?? 0, all: n.all_n }); return reject('Too many new PCs joined the office just now. Try again in an hour.'); }
     }
-    const hostname = oneLine(f.hostname, 63) || 'PC';
+    // a Windows computer name, ASCII letters, digits and hyphens: nothing invisible or look-alike
+    const hostname = typeof f.hostname === 'string' ? f.hostname.trim() : '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/.test(hostname)) return reject('This PC\'s name is not a plain Windows computer name.');
     const version = oneLine(f.version, 32);
     const now = Date.now();
+    const twin = this.online.get(id);
+    if (row && twin) {
+      const was = (this.db.prepare('SELECT hostname FROM machines WHERE id = ?').get(id) as { hostname: string }).hostname;
+      if (was.toLowerCase() !== hostname.toLowerCase()) {
+        this.host.store.audit(null, 'machine.cloned', id, { hostname: was, other: hostname });
+        return reject(`${was} already uses this PC's key (a copied disk image?). Remove the IT Support service from this PC and install it again.`);
+      }
+    }
     if (row) this.db.prepare('UPDATE machines SET hostname = ?, version = ?, last_seen = ? WHERE id = ?').run(hostname, version, now, id);
     else {
       this.db.prepare('INSERT INTO machines (id, public_key, hostname, version, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)').run(id, f.publicKey, hostname, version, now, now);
@@ -136,11 +148,15 @@ export class Machines {
     const on = this.online.get(machineId);
     if (!on) return;
     switch (f.t) {
-      case 'm.state':
-        on.consoleUser = oneLine(f.consoleUser, 120) || null;
-        on.locked = f.locked === true;
+      case 'm.state': {
+        const user = oneLine(f.consoleUser, 120) || null;
+        const locked = f.locked === true;
+        if (user === on.consoleUser && locked === on.locked) return;
+        on.consoleUser = user;
+        on.locked = locked;
         this.changed();
         return;
+      }
       case 'm.frame': {
         const fr = decodeFrame(f);
         const s = fr ? this.live.get(fr.s) : null;
@@ -172,8 +188,10 @@ export class Machines {
   // ------------------------------------------------------------ people's side
   handle(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>, fromOutside = false): unknown {
     // using an office PC with administrator rights is for the office network only, never through the internet gateway
-    if (fromOutside && op !== 'machine.list' && op !== 'admin.machine.remove') throw new MachineError('Elevated control works only on the office network.');
+    if (fromOutside && op !== 'machine.list' && op !== 'machine.end' && op !== 'machine.mine' && op !== 'admin.machine.remove') throw new MachineError('Elevated control works only on the office network.');
     switch (op) {
+      case 'machine.mine':
+        return [...this.live.values()].filter((x) => x.techId === me.id && x.techDevice === deviceId).map((x) => this.view(x));
       case 'machine.list':
         // IT staff, and administrators (Control room lists the PCs to remove one)
         if (me.role !== 'owner' && me.role !== 'admin') this.requireIt(me);
@@ -255,7 +273,7 @@ export class Machines {
   list(): MachineInfo[] {
     const rows = this.db.prepare('SELECT id, hostname, version, first_seen, last_seen FROM machines WHERE removed_at IS NULL ORDER BY hostname').all() as Array<{ id: string; hostname: string; version: string; first_seen: number; last_seen: number }>;
     const names = new Map<string, number>();
-    for (const r of rows) names.set(r.hostname.toLowerCase(), (names.get(r.hostname.toLowerCase()) ?? 0) + 1);
+    for (const r of this.db.prepare('SELECT hostname FROM machines').all() as Array<{ hostname: string }>) names.set(r.hostname.toLowerCase(), (names.get(r.hostname.toLowerCase()) ?? 0) + 1);
     return rows.map((r) => {
       const on = this.online.get(r.id);
       const s = [...this.live.values()].find((x) => x.machineId === r.id) ?? null;
@@ -282,6 +300,8 @@ export class Machines {
   private stillAllowed(s: Live): boolean {
     if (this.host.policy().assistElevated !== true) { this.end(s, null, 'An administrator turned elevated control off.'); return false; }
     if (!this.host.helpdesk.isIt(s.techId)) { this.end(s, null, 'The technician is no longer on the IT desk.'); return false; }
+    // the PC's screen never goes out through the internet gateway
+    if (!this.host.onOfficeNetwork(s.techDevice)) { this.end(s, null, 'The technician left the office network.'); return false; }
     return true;
   }
 

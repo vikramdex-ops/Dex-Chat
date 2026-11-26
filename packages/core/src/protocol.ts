@@ -1181,6 +1181,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   /** The technician drew a picture: the PC may send the next. */
   'machine.ack': { req: { s: string; seq: number }; res: { ok: true } };
   'machine.end': { req: { s: string }; res: { ok: true } };
+  /** Your elevated sessions running now from this device (to pick the viewer up again after a reload). */
+  'machine.mine': { req: void; res: ElevatedSession[] };
   /** Remove a PC's service from the office (it can no longer connect with that key). */
   'admin.machine.remove': { req: { machineId: string }; res: { ok: true } };
   /** Files dropped into a running support session (policy assistFiles), up to 100 a call; the other side is told (help.dropped) and saves them. */

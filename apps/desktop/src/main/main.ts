@@ -536,7 +536,8 @@ void app.whenReady().then(async () => {
     iceUrls: async () => (await controller!.request('room.ice')).iceServers.flatMap((x) => [x.urls].flat()),
   });
   wireSupportService({
-    endpoint: () => (controller?.viaGateway ? null : controller?.hubEndpoint() ?? null),
+    endpoint: () => { const ep = controller?.viaGateway ? null : controller?.hubEndpoint() ?? null; return ep ? { ...ep, name: controller?.state().hub?.name ?? null } : null; },
+    win: () => win,
     fromMain: (e) => !!win && e.sender.id === win.webContents.id,
     log: (level, msg, extra) => appLog.write(level, 'assist', msg, extra),
   });
