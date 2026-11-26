@@ -641,7 +641,7 @@ export class HelpDesk {
     return undefined;
   }
 
-  /** A ticket IT opens itself for work it starts (unattended access), held by the technician. Returns its id. */
+  /** A ticket IT opens itself for work it starts (unattended or elevated access), held by the technician. Returns its id. */
   openForIt(me: PublicUser, requesterId: string, summary: string, detail: Record<string, unknown>): string {
     const id = ulid();
     const now = Date.now();
@@ -652,6 +652,19 @@ export class HelpDesk {
     this.host.store.audit(me.id, 'help.opened', id, { number: ticketRef(number), category: 'other', for: requesterId, ...detail });
     this.publish(id);
     return id;
+  }
+
+  /** A ticket's reference as people see it (T-0042), or '' when there is none. */
+  refOf(ticketId: string): string {
+    const r = this.row(ticketId);
+    return r ? ticketRef(r.number) : '';
+  }
+
+  /** A line on a ticket's timeline from elsewhere in the hub (elevated sessions), told to its audience. */
+  record(ticketId: string, actor: string | null, kind: HelpEntryKind, text: string | null, detail: Record<string, unknown>): void {
+    if (!this.row(ticketId)) return;
+    this.entry(ticketId, actor, kind, text, detail);
+    this.publish(ticketId);
   }
 
   /** A new session on a ticket the technician holds; unattended when IT connected without asking. */

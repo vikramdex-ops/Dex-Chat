@@ -104,6 +104,9 @@ jobs:
         shell: bash
         run: npm version "$VERSION" --no-git-tag-version -w @dex/desktop
       - run: npm run build -w @dex/desktop
+      - name: Build the IT Support service (Windows installer only)
+        if: matrix.name == 'windows'
+        run: npm run support:build -w @dex/desktop
       - name: Package installer
         working-directory: apps/desktop
         run: npx electron-builder ${{ matrix.args }} --publish never
@@ -290,6 +293,8 @@ jobs:
       - run: npm ci
       - name: Compile the helper, move the pointer and read it back
         run: node apps/desktop/scripts/assist-helper-smoke.ts
+      - name: Build the IT Support service and run it against a hub (pictures, pointer)
+        run: node apps/desktop/support-service/smoke.ts
 
   publish:
     name: publish (${{ needs.prepare.outputs.channel }})

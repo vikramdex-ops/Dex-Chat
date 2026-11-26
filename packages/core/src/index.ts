@@ -1,5 +1,6 @@
 export * from './protocol.ts';
 export * from './helpdesk.ts';
+export type { ElevatedSession, MachineFrame, MachineInfo } from './machine.ts';
 export * from './ids.ts';
 export * from './identity.ts';
 export * from './csv.ts';

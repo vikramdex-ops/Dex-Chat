@@ -75,10 +75,12 @@ export function ControlSurface({ label, tag, action, onAction, send }: {
     return () => { clearInterval(t); letGo(); const m = batch.current.take(); if (m) sendRef.current(m); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const at = (e: { clientX: number; clientY: number }) => {
-    const v = surface.current?.parentElement?.querySelector('video');
+    // the shared screen's <video>, or the picture of a PC through its IT Support service
+    const v = surface.current?.parentElement?.querySelector<HTMLVideoElement | HTMLImageElement>('video, img.sup-frame');
     if (!v) return null;
     const r = v.getBoundingClientRect();
-    return fromPicture(e.clientX, e.clientY, { x: r.left, y: r.top, width: r.width, height: r.height }, v.videoWidth, v.videoHeight);
+    const [w, h] = v instanceof HTMLVideoElement ? [v.videoWidth, v.videoHeight] : [v.naturalWidth, v.naturalHeight];
+    return fromPicture(e.clientX, e.clientY, { x: r.left, y: r.top, width: r.width, height: r.height }, w, h);
   };
   const push = (ev: InputEvent) => batch.current.push(ev);
   const letGo = () => {

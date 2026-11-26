@@ -11,6 +11,7 @@ import { loadConfig, loadEncKeys, loadIdentity, saveConfig } from './persist.ts'
 import { Updater } from './updater.ts';
 import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, saveSupportFile, supportFolder, uploadFile, useEncryption } from './files.ts';
 import { safeRelativePath } from '@dex/core/assist';
+import { wireSupportService } from './assist/service.ts';
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
@@ -533,6 +534,12 @@ void app.whenReady().then(async () => {
     },
     ping: async () => { await controller!.request('ping'); },
     iceUrls: async () => (await controller!.request('room.ice')).iceServers.flatMap((x) => [x.urls].flat()),
+  });
+  wireSupportService({
+    endpoint: () => { const ep = controller?.viaGateway ? null : controller?.hubEndpoint() ?? null; return ep ? { ...ep, name: controller?.state().hub?.name ?? null } : null; },
+    win: () => win,
+    fromMain: (e) => !!win && e.sender.id === win.webContents.id,
+    log: (level, msg, extra) => appLog.write(level, 'assist', msg, extra),
   });
   // Ctrl+Alt+D from anywhere in Windows brings Dexterity Connect forward (or hides it again)
   try {
