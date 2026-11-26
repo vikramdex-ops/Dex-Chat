@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
-  APP_ID, DEFAULT_HUB_PORT, DISCOVERY_PORT, PROTOCOL_VERSION,
+  APP_ID, DEFAULT_HUB_PORT, DISCOVERY_PORT, HUB_FEATURES, PROTOCOL_VERSION,
   accountKey, authPayload, deviceIdFor, verifySignature,
 } from '@dex/core';
 import type { ClientFrame, DeviceRecord, HubInfo, IceConfig, IceServer, OpName, RemoteConfig, RemoteView, Ops, PublicUser, Role, ServerFrame, Session, WindowsAccount } from '@dex/core';
@@ -268,7 +268,7 @@ export class Hub {
     this.store = new Store(opts.dataDir);
     const id = this.store.meta('hub_id', () => crypto.randomBytes(8).toString('hex'));
     const name = opts.name ?? this.store.meta('hub_name', () => 'Dexterity Office Hub');
-    this.info = { id, name, version: HUB_VERSION, protocol: PROTOCOL_VERSION };
+    this.info = { id, name, version: HUB_VERSION, protocol: PROTOCOL_VERSION, features: [...HUB_FEATURES] };
     const tls = loadOrCreateCertificate(opts.dataDir, `Dexterity Connect Hub ${id}`);
     this.fingerprint = tls.fingerprint;
 

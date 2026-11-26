@@ -19,7 +19,7 @@ import {
 } from './store.ts';
 import type { AnyMessage, PendingMessage } from './store.ts';
 import { ConvTile, HushItems, convTitle } from './Switchboard.tsx';
-import { callState, hold, holdable, joinRoom, setMinimized, startCall, startShare, useCall } from '../rooms/engine.ts';
+import { callState, hold, holdable, hubHas, joinRoom, setMinimized, startCall, startShare, useCall } from '../rooms/engine.ts';
 import { ScreenPicker } from '../rooms/RoomUi.tsx';
 import { FormBuilder, FormCard } from './forms.tsx';
 import { BotCard, isBotCard } from '../bots/BotCard.tsx';
@@ -509,7 +509,9 @@ function RoomButton({ convId, live }: { convId: string; live: boolean }) {
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
   const caret = useRef<HTMLButtonElement>(null);
-  const canShare = !!window.dex.listScreens;
+  // Show screen needs a hub that knows it (an older one would ring everyone into an ordinary Room)
+  const hubShares = useCall((s) => hubHas('room.share', s));
+  const canShare = !!window.dex.listScreens && hubShares;
   // another call is live: hold it (when it can be) before coming in here
   const busy = !!inCall && !(holdable(inCall) && !held);
   const busyNote = inCall ? (busy ? 'You are in another call: leave it first' : 'Your call goes on hold first') : '';
@@ -1137,6 +1139,8 @@ function MessageItemView({ ctx, m, onTrack, activeTrack, inTrack }: ItemProps) {
   return (
     <div data-mid={m.id} tabIndex={-1} onClickCapture={(e) => { if (ctx.selected && !pending && !inTrack) { e.preventDefault(); e.stopPropagation(); ctx.select(m.id); } }}
       onPointerDown={refPayload && !ctx.selected && !editing ? (e) => startHoldDrag(e, refPayload, ctx.users) : undefined}
+      // right-click (or a long press on a phone) opens the message's menu: Delete, Edit, Forward…, as on a conversation
+      onContextMenu={!pending && !editing && !ctx.selected ? (e) => { if ((e.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return; e.preventDefault(); setStamp(null); setKeep(false); setPinFor(false); setMore(true); } : undefined}
       onFocus={inTrack ? undefined : toolsFit}
       className={`${ctx.selected && !inTrack ? `selectable-msg${ctx.selected.has(m.id) ? ' chosen' : ''} ` : ''}msg${sticker ? ' sticker-msg' : ''}${pending ? ' pending' : ''}${failed ? ' failed' : ''}${mentioned ? ' mentioned' : ''}${activeTrack === m.id ? ' tracked' : ''}${m.pinned ? ' pinned' : ''}${saved ? ' kept' : ''}`}>
       {ctx.cards && !inTrack && <span className="card-time mono" aria-hidden="true">{clock(m.createdAt)}</span>}

@@ -214,6 +214,7 @@ function RoomSheet({ users: officeUsers, title, onOpenConversation, meDevice, me
   const unmuteAsk = useCall((s) => s.unmuteAsk);
   const heldByOthers = useCall((s) => s.heldByOthers);
   const otherHeld = useCall((s) => !!s.held);
+  useCall((s) => s.hubFeatures); // the Hold button follows what the hub can do
   const policy = usePolicy();
   const recState = useRecorder();
   const myRec = !!recState?.recording;

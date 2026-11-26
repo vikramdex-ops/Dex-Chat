@@ -86,7 +86,8 @@ const PATHS = {
   calendar: 'M4.5 6h15v14h-15zM4.5 10.5h15M8.5 3.5v4M15.5 3.5v4',
   desk: 'M3.5 9h17M5 9v10.5M19 9v10.5M5 14h6M8 4.5h8L18 9H6z',
   unread: 'M4.5 6.5h15v11h-15zM4.5 7l7.5 6 7.5-6',
-  more: 'M6 12h.01M12 12h.01M18 12h.01',
+  // three solid dots (small rings closed by the stroke): zero-length strokes drew them about a pixel wide
+  more: 'M4.5 12a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10.5 12a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M16.5 12a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0',
   schedule: 'M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm0-12v4.5l3 2M3.5 20.5l3-3',
   pause: 'M8.5 5.5v13M15.5 5.5v13',
   repeat: 'M5 10a6 6 0 0 1 10.5-4L18 8.5M18 4.5v4h-4M19 14a6 6 0 0 1-10.5 4L6 15.5M6 19.5v-4h4',

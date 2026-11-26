@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createIdentity, signWith } from '@dex/core';
 import { createEncKeys, isSealed } from '@dex/core/e2e';
 import { E2EClient } from '@dex/core/e2e-client';
-import type { FileInfo, Message } from '@dex/core';
+import type { Conversation, FileInfo, Message } from '@dex/core';
 import https from 'node:https';
 import { HubClient } from '@dex/core/client';
 import { office, until, me, cleanups } from './office.ts';
@@ -72,6 +72,28 @@ test('Direct messages are sealed end to end; the hub never sees the text; new de
   assert.equal(fwd[0].body, 'Tender price is 4.1 crore');
   await assert.rejects(a.c.request('msg.forward', { messageId: sent.id, convIds: [space.id] }), /only be forwarded from the app/);
   lc.disconnect();
+});
+
+test('a deleted encrypted Direct message leaves no text in the conversation list, on any device that read it', async () => {
+  const { hub, owner } = await office();
+  const a = await person(hub, owner, 'asha');
+  const b = await person(hub, owner, 'bala');
+  const dm = await a.c.request('conv.create', { kind: 'direct', members: [me(b.c)] });
+  await a.e2e.ready(me(a.c), []);
+  const sent = await a.req('msg.send', { convId: dm.id, body: 'Wrong file, ignore', clientId: 'd1' }) as Message;
+  // Bala reads it, so his device knows its text, and his list shows it
+  await b.req('msg.list', { convId: dm.id });
+  const shown = (await b.req('conv.list') as Conversation[]).find((c) => c.id === dm.id)!.lastMessage!;
+  assert.equal(shown.body, 'Wrong file, ignore');
+  // Asha deletes it: the list says nothing of what it said, for both of them
+  await a.req('msg.delete', { messageId: sent.id });
+  for (const who of [a, b]) {
+    const last = (await who.req('conv.list') as Conversation[]).find((c) => c.id === dm.id)!.lastMessage!;
+    assert.equal(last.id, sent.id);
+    assert.equal(last.body, '', 'an empty preview reads "Message deleted"');
+  }
+  const list = await b.req('msg.list', { convId: dm.id }) as { messages: Message[] };
+  assert.equal(list.messages[0].deleted, true);
 });
 
 test('a Direct conversation with someone on an old app stays readable (not sealed)', async () => {

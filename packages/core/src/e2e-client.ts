@@ -367,11 +367,14 @@ export class E2EClient {
     if (typeof o.id === 'string' && (o.kind === 'direct' || o.kind === 'space') && Array.isArray(o.members)) {
       this.convs.set(o.id, { kind: o.kind, members: o.members as string[] });
       const last = o.lastMessage as { id?: string; body?: string } | null;
-      if (last && typeof last.id === 'string' && this.plain.has(last.id)) out = { ...o, lastMessage: { ...last, body: this.plain.get(last.id)!.slice(0, 280) } };
+      // an empty preview is a deleted message: never bring its text back from what this device decrypted
+      if (last && typeof last.id === 'string' && last.body && this.plain.has(last.id)) out ={ ...o, lastMessage: { ...last, body: this.plain.get(last.id)!.slice(0, 280) } };
     }
     // messages (and scheduled messages, which carry convId and body too)
     if (typeof o.id === 'string' && typeof o.convId === 'string' && typeof o.body === 'string') {
       if ('sendAt' in o) this.schedConv.set(o.id, o.convId); else this.msgConv.set(o.id, o.convId);
+      // deleted: forget what it said
+      if (o.deleted === true) this.plain.delete(o.id);
       // opening registers the keys of encrypted attachments, which the walk below then names
       if (isSealed(o.body)) out = { ...(out ?? o), ...(await this.openOne(o as unknown as Message)) };
     }

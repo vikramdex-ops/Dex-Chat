@@ -104,7 +104,7 @@ export function Home({ state, session, pendingCount, go, open, onPerson }: {
                   <ConvTile c={c} users={users} meId={session.me.id} online={online} />
                   <span className="sb-main">
                     <span className="sb-title"><span className="sb-name" translate="no" title={convTitle(c, users, session.me.id)}>{convTitle(c, users, session.me.id)}</span></span>
-                    <span className="sb-preview" translate="no">{last ? `${who}: ${plainPreview(last.body, users)}` : ''}</span>
+                    <span className="sb-preview" translate="no">{last ? `${who}: ${last.body ? plainPreview(last.body, users) : 'Message deleted'}` : ''}</span>
                   </span>
                   <span className="sb-meta">
                     <span className="sb-time">{last ? shortTime(last.createdAt) : ''}</span>

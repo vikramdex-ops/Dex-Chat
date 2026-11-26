@@ -106,6 +106,7 @@ export function IncomingCall({ users, title }: { users: Map<string, PublicUser>;
   const incoming = useCall((s) => s.incoming);
   const live = useCall((s) => s.room);
   const held = useCall((s) => s.held);
+  useCall((s) => s.hubFeatures); // Hold and answer follows what the hub can do
   const toast = useToast();
   if (!incoming) return null;
   const from = users.get(incoming.from);
