@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import { KEYS } from './assist.ts';
 import type { InputEvent } from './assist.ts';
 
-/** What the hub knows of a machine (Control room ▸ Devices, the Help desk's list of PCs). */
+/** What the hub knows of a machine (Control room ▸ Policies ▸ Remote support, the Help desk's list of PCs). */
 export interface MachineInfo {
   id: string;
   hostname: string;

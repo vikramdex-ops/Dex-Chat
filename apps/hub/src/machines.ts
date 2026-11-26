@@ -1,6 +1,6 @@
 // Office PCs with the Dexterity Connect IT Support service (docs/HELP-DESK.md, "Elevated control"):
 // the service connects as a machine device, proven by its own P-256 key, and is accepted without
-// approval (an administrator installed it; Control room ▸ Devices can remove it). With the policy
+// approval (an administrator installed it; Control room ▸ Policies ▸ Remote support can remove it). With the policy
 // assistElevated on, IT staff connect to a PC through it: the hub opens a ticket held by the
 // technician (for the person signed in to the PC when the hub knows them), relays the PC's screen
 // pictures to the technician's device and the technician's input to the PC through the same input
@@ -156,7 +156,8 @@ export class Machines {
   handle(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>): unknown {
     switch (op) {
       case 'machine.list':
-        this.requireIt(me);
+        // IT staff, and administrators (Control room lists the PCs to remove one)
+        if (me.role !== 'owner' && me.role !== 'admin') this.requireIt(me);
         return this.list();
       case 'machine.connect': {
         this.requireIt(me);

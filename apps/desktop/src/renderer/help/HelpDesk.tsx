@@ -9,6 +9,7 @@ import { clock, useCall } from '../rooms/engine.ts';
 import { Files, StatusStamp, Timeline, categoryLabel, platformLabel } from './parts.tsx';
 import { connectNow, joinSession, startSession, useHelp } from './store.ts';
 import { usePolicy } from '../policy.ts';
+import { OfficePcs } from './elevated.tsx';
 
 export function TicketView({ id, users, meId, onBack }: { id: string; users: Map<string, PublicUser>; meId: string; onBack?: () => void }) {
   const toast = useToast();
@@ -166,6 +167,7 @@ export function HelpDesk({ users, meId, focus }: { users: Map<string, PublicUser
           <h1>Help desk</h1>
           <p className="muted">Requests from the office. Take one, then open a support session from it: they decide what you see and touch.</p>
           <ConnectToPc users={users} meId={meId} />
+          <OfficePcs />
         </div>
         <dl className="hd-counts">
           <div><dt>In the queue</dt><dd className="mono">{counts.open}</dd></div>

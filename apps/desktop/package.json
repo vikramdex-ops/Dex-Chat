@@ -12,7 +12,8 @@
     "dev": "node scripts/build.mjs && electron .",
     "start": "electron .",
     "dist": "npm run build && electron-builder --publish never",
-    "dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "dist:win": "npm run build && npm run support:build && electron-builder --win nsis --publish never",
+    "support:build": "powershell -NoProfile -ExecutionPolicy Bypass -File support-service/build.ps1",
     "dist:mac": "npm run build && electron-builder --mac dmg --publish never"
   },
   "devDependencies": {
@@ -84,7 +85,13 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "DexterityConnect-Setup-${version}.${ext}"
+      "artifactName": "DexterityConnect-Setup-${version}.${ext}",
+      "extraResources": [
+        {
+          "from": "build/support/DexSupport.exe",
+          "to": "support/DexSupport.exe"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

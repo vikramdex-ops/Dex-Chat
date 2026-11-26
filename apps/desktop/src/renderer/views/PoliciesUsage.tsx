@@ -2,7 +2,7 @@
 // ▸ Usage (activity per day, busiest Spaces and people, storage, calls).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmojiImg, StickerImg, useCustomEmoji, useStickers } from '../emoji.tsx';
-import type { OfficeLine, OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
+import type { MachineInfo, OfficeLine, OfficePolicy, PublicUser, ReportItem, UsageReport } from '@dex/core';
 import { DLP_DETECTORS, validCidr } from '@dex/core/dlp';
 import type { DlpDetector, DlpRule } from '@dex/core/dlp';
 import { useChat } from '../chat/store.ts';
@@ -99,6 +99,11 @@ export function PoliciesAdmin() {
           <div className="txt"><div>Support sessions reconnect by themselves</div><div className="faint">After a network drop or a restart of either PC, the session waits up to 10 minutes and both apps join it again. After a network drop, what the person was sharing is shared again; after a restart they choose again, unless the session is unattended. They see it and can stop it.</div></div>
           <Toggle label="Support sessions reconnect by themselves" checked={p.assistReconnect === true} onChange={(v) => save({ assistReconnect: v })} />
         </div>
+        <div className="setting">
+          <div className="txt"><div>IT can use office PCs with administrator rights (elevated control)</div><div className="faint">Through the Dexterity Connect IT Support service, which an administrator installs on each PC (below). IT sees and uses the whole PC: administrator windows, UAC prompts, Ctrl+Alt+Del, the lock and sign-in screens, also when nobody is signed in and across a restart (with reconnect on). The PC shows a banner with Stop while IT is connected. Off: the service stays connected but nobody can use it.</div></div>
+          <Toggle label="IT can use office PCs with administrator rights" checked={p.assistElevated === true} onChange={(v) => save({ assistElevated: v })} />
+        </div>
+        <SupportServiceAdmin />
       </section>
       <section className="card">
         <div className="eyebrow">Personal devices</div>
@@ -107,6 +112,51 @@ export function PoliciesAdmin() {
           <Toggle label="People can add their own phones and laptops" checked={p.personalDevices !== false} onChange={(v) => save({ personalDevices: v })} />
         </div>
       </section>
+    </div>
+  );
+}
+
+/** The IT Support service: on this PC (install or remove, with Windows' administrator prompt), and every PC that has it. */
+function SupportServiceAdmin() {
+  const toast = useToast();
+  const [st, setSt] = useState<{ available: boolean; installed: boolean; running: boolean } | null>(null);
+  const [pcs, setPcs] = useState<MachineInfo[]>([]);
+  const [busy, setBusy] = useState(false);
+  const refresh = () => {
+    void window.dex.supportService?.status().then(setSt).catch(() => {});
+    void window.dex.request('machine.list').then(setPcs).catch(() => {});
+  };
+  useEffect(() => {
+    refresh();
+    return window.dex.onHubEvent((name, d) => { if (name === 'machine.list') setPcs(d as MachineInfo[]); });
+  }, []);
+  const act = (f: () => Promise<{ ok: boolean; error: string | null }>, ok: string) => {
+    setBusy(true);
+    void f().then((r) => { if (r.ok) toast(ok); else toast(r.error ?? 'It did not work.', true); }).catch((e: Error) => toast(e.message, true)).finally(() => { setBusy(false); refresh(); });
+  };
+  const svc = window.dex.supportService;
+  return (
+    <div className="setting" style={{ display: 'block' }}>
+      <div className="txt"><div>IT Support service</div>
+        <div className="faint">On this PC: {!st ? '…' : !st.available ? 'not available (Windows only)' : st.installed ? (st.running ? 'installed and running' : 'installed, not running') : 'not installed'}. Installing asks Windows for administrator approval and ties the service to this office hub. To put it on many PCs at once, run the setup with <span className="mono">/SUPPORTHUB=host:port /SUPPORTFP=fingerprint</span> as an administrator.</div>
+      </div>
+      {svc && st?.available && (
+        <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
+          <button className="btn sm primary" disabled={busy} onClick={() => act(() => svc.install(), 'The IT Support service is installed on this PC')}>{st.installed ? 'Reinstall on this PC' : 'Install on this PC'}</button>
+          {st.installed && <button className="btn sm" disabled={busy} onClick={() => act(() => svc.uninstall(), 'The IT Support service is removed from this PC')}>Remove from this PC</button>}
+        </div>
+      )}
+      {pcs.length > 0 && (
+        <table className="hd-table" aria-label="PCs with the IT Support service"><tbody>
+          {pcs.map((m) => (
+            <tr key={m.id}>
+              <td className="mono" translate="no">{m.hostname}</td>
+              <td className="faint">{m.online ? 'Online' : `Offline · seen ${relativeTime(m.lastSeen)}`} · v{m.version}</td>
+              <td style={{ textAlign: 'right' }}><button className="btn sm ghost" onClick={() => void window.dex.request('admin.machine.remove', { machineId: m.id }).then(() => toast(`${m.hostname} removed`)).catch((e: Error) => toast(e.message, true))}>Remove</button></td>
+            </tr>
+          ))}
+        </tbody></table>
+      )}
     </div>
   );
 }

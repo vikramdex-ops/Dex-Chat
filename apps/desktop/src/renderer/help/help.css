@@ -327,3 +327,7 @@ body:has(.sup-dock) .scrim, body:has(.sup-stage) .scrim { z-index: 40; }
 .sup-field { position: relative; }
 .sup-dropzone { position: absolute; inset: 12px; display: grid; place-items: center; z-index: 5; pointer-events: none; background: color-mix(in srgb, var(--layer-solid, #fff) 70%, transparent); font-weight: 600; }
 .sup-dropped { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; font-size: 13px; }
+
+/* elevated control: the PC's picture from its IT Support service */
+.sup-screen .sup-frame { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.hd-pcs { margin-top: 12px; }

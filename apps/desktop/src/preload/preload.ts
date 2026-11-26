@@ -63,6 +63,11 @@ const bridge: DexBridge = {
   checkPath: (p) => unwrap(ipcRenderer.invoke('drives:check', p)),
   listScreens: () => ipcRenderer.invoke('screen:list'),
   chooseScreen: (id) => ipcRenderer.invoke('screen:choose', id),
+  supportService: {
+    status: () => ipcRenderer.invoke('support:status'),
+    install: () => ipcRenderer.invoke('support:install'),
+    uninstall: () => ipcRenderer.invoke('support:uninstall'),
+  },
   assist: {
     caps: () => ipcRenderer.invoke('assist:caps'),
     consent: (c) => ipcRenderer.invoke('assist:consent', c),

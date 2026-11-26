@@ -86,6 +86,8 @@ if (-not $SkipTests) {
 Step 'Windows app (installer)'
 Run npm @('version', $Version, '--no-git-tag-version', '-w', '@dex/desktop', '--allow-same-version')
 Run npm @('run', 'build', '-w', '@dex/desktop')
+# the IT Support service (elevated control), shipped in resources/support
+Run npm @('run', 'support:build', '-w', '@dex/desktop')
 Push-Location apps/desktop
 $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 $env:GH_TOKEN = ''

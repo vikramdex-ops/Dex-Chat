@@ -14,6 +14,7 @@ import { LookHost } from '../pointers/surfaces.tsx';
 import { HelpMe } from './HelpMe.tsx';
 import { HelpDesk, TicketView } from './HelpDesk.tsx';
 import { RateSheet } from './Consent.tsx';
+import { ElevatedHost } from './elevated.tsx';
 import { clearRate, declineInvite, helpNow, isIt, joinSession, setNames, startHelp, ticketById, useHelp } from './store.ts';
 import './help.css';
 
@@ -142,6 +143,7 @@ export function AssistHost({ session, users, live }: { session: Session; users: 
       )}
       {rated && rate && <RateSheet ticket={rated} tech={rated.techId ? techName(rated.techId) : 'IT'} onClose={clearRate} />}
       <LookHost users={users} meId={meId} />
+      <ElevatedHost />
     </>
   );
 }

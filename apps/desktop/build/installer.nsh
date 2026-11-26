@@ -3,9 +3,25 @@
 ; needs Windows Firewall to let other office PCs reach the app on private and domain networks.
 ; This succeeds when the installer runs as administrator; otherwise Windows asks the first
 ; time the app is used in that mode.
+!include "FileFunc.nsh"
 !macro customInstall
   nsExec::Exec 'netsh advfirewall firewall delete rule name="Dexterity Connect (office network)"'
   nsExec::Exec 'netsh advfirewall firewall add rule name="Dexterity Connect (office network)" dir=in action=allow program="$INSTDIR\${APP_EXECUTABLE_FILENAME}" enable=yes profile=private,domain'
+  ; IT pushing the app to office PCs can install the IT Support service in the same go (elevated
+  ; control, docs/HELP-DESK.md): setup /S /SUPPORTHUB=host:port /SUPPORTFP=AA:BB:..., run as an
+  ; administrator. The service copies itself to Program Files; removing the app leaves it in place.
+  ${GetParameters} $R4
+  ClearErrors
+  ${GetOptions} $R4 "/SUPPORTHUB=" $R5
+  ${ifNot} ${Errors}
+    ClearErrors
+    ${GetOptions} $R4 "/SUPPORTFP=" $R6
+    ${ifNot} ${Errors}
+      nsExec::ExecToLog '"$INSTDIR\resources\support\DexSupport.exe" --install --hub "$R5" --fingerprint "$R6"'
+      Pop $R7
+      DetailPrint "IT Support service setup finished with code $R7"
+    ${endif}
+  ${endif}
 !macroend
 
 !macro customUnInstall
@@ -20,7 +36,6 @@
 ; them, or the person said no, say what to do in plain words (even in a silent update: someone is
 ; waiting for it), and open the app again so nobody is
 ; left without it. Tested by apps/desktop/build/update-test.ps1.
-!include "FileFunc.nsh"
 !macro dexUninstallCheck
   ${if} $R0 != 0
     DetailPrint "The old version's uninstaller stopped with code $R0."

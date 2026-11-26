@@ -119,8 +119,8 @@ How it works:
   elevated, so Windows itself keeps its input out of an elevated (administrator) window and off
   the secure desktop of a UAC prompt or Ctrl+Alt+Del: the person in control sees such a prompt
   but cannot answer it; the person whose PC it is answers it. The app makes no attempt to get
-  around this, in support sessions or in meetings. (Elevated control through a Windows service,
-  installed by an administrator and behind its own policy, is planned as a separate stage.)
+  around this, in support sessions or in meetings. For that, an office uses **elevated control**
+  through the IT Support service, installed by an administrator and behind its own policy (below).
 - **Linux (X11):** `xdotool`, kept running and fed one command per line. Without it, or on Wayland,
   control is not offered and the requester is told why.
 - **macOS:** view only. Control would need Accessibility permission, which the app does not ask
@@ -138,10 +138,11 @@ only while someone has control, since the meeting's own sheet shows the share.
 
 ## Remote support (Control room ▸ Policies ▸ Remote support)
 
-Four policies, **each off until an administrator turns it on** (`OfficePolicy.assistUnattended`,
-`assistClipboard`, `assistFiles`, `assistReconnect`; stored by `apps/hub/src/policies.ts`, changes
-audited as `policy.set`). They work in the signed-in desktop app; what needs a Windows service
-(administrator windows, UAC prompts, Ctrl+Alt+Del, the sign-in screen) is a later stage.
+Five policies, **each off until an administrator turns it on** (`OfficePolicy.assistUnattended`,
+`assistClipboard`, `assistFiles`, `assistReconnect`, `assistElevated`; stored by
+`apps/hub/src/policies.ts`, changes audited as `policy.set`). The first four work in the signed-in
+desktop app; elevated control (administrator windows, UAC prompts, Ctrl+Alt+Del, the sign-in
+screen, across a restart) works through the IT Support service: see "Elevated control" below.
 
 **Unattended access** (`assistUnattended`). Anyone on the IT desk may connect to any office PC
 without the person accepting: **Connect now** on a ticket, or *Connect to someone's PC…* at the top
@@ -182,6 +183,74 @@ a restart it remembers nothing, so they choose again, unless the session is unat
 connection that does not come back in time ends the session (*"The connection did not come back in
 time."*). Without the policy a dropped Room ends the session, as before.
 
+## Elevated control (the IT Support service)
+
+With **`assistElevated`** on, anyone on the IT desk can use an office PC **with administrator
+rights**, whatever is on its screen: the person's desktop, administrator windows, UAC prompts, the
+Windows security screen (Ctrl+Alt+Del), the lock and sign-in screens, also when nobody is signed in,
+and across a restart (with `assistReconnect`). It goes through the **Dexterity Connect IT Support
+service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
+
+**Installing it** needs administrator rights on the PC, once:
+
+- **Control room ▸ Policies ▸ Remote support ▸ Install on this PC** (on that PC, signed in to the
+  office hub over the office network). Windows asks for administrator approval; the app never runs
+  anything elevated without that prompt.
+- **For many PCs at once**: run the setup as an administrator (GPO, PsExec, Intune):
+  `DexterityConnect-Setup-x.y.z.exe /S /SUPPORTHUB=hub-host:47900 /SUPPORTFP=AA:BB:…` (the hub's
+  certificate fingerprint, shown in the hub's admin console).
+- Either way `DexSupport.exe --install --hub HOST:PORT --fingerprint FP` copies itself to
+  `%ProgramFiles%\Dexterity Connect Support\` (only administrators can change it, so nobody can swap
+  the program a SYSTEM service runs), writes `%ProgramData%\Dexterity Connect Support\config.json`
+  (SYSTEM and Administrators only), creates the PC's **P-256 key in the machine key store** (never
+  exported), sets `SoftwareSASGeneration` so services may send Ctrl+Alt+Del, and registers the
+  automatic LocalSystem service `DexConnectSupport` (restarted on failure). `--uninstall` removes it
+  all, as does **Remove from this PC**. Removing the app leaves the service in place.
+- The service is built with the C# compiler of .NET Framework 4.8, which is part of Windows 10 and 11
+  (`npm run support:build -w @dex/desktop`; Build-Release and CI do it before packaging). No SDK,
+  no third-party code. It connects on the office network only, not through the internet gateway.
+
+**On the hub** (`apps/hub/src/machines.ts`) the service is a **machine device**: it signs the same
+authentication payload as people's devices with its P-256 key (`machineIdFor`,
+`verifyMachineSignature` in `packages/core/src/machine.ts`; the hub's certificate is pinned by its
+fingerprint) and is **accepted without approval** (`machine.added` in the audit log). Control room
+lists every PC with the service; **Remove** blocks that key for good (`machine.removed`; reinstalling
+makes a new key).
+
+**Connecting.** The Help desk lists the office PCs with the service (online, who is signed in, locked
+or at the sign-in screen). **Connect** (`machine.connect`) is refused unless the caller is on the IT
+desk and the policy is on; one technician per PC at a time. The hub opens a ticket held by the
+technician for the person signed in to the PC (matched by Windows account; the technician's own when
+nobody is signed in or the account is unknown) and records *"Connected to DDS-PC-07 with
+administrator rights"*. The viewer shows the PC's pictures (JPEG, up to 1920 wide, about 9 a second,
+two in flight: the technician's app acknowledges each one it draws), the same mouse-and-keyboard
+surface as a support session, **Ctrl+Alt+Del** (the real secure attention sequence, `SendSAS`,
+audited as `help.elevated.sas`) and **End**. Input goes through the hub's **InputGate** (120 events a
+second, the blocked chords, held keys released) and reaches the PC as virtual-key codes; the PC
+limits the rate again.
+
+**On the PC.** The service (session 0) starts a worker (`DexSupport.exe --worker`) in the active
+console session with its own SYSTEM token; a pipe only SYSTEM can open joins them. The worker follows
+the **input desktop** (Default, Winlogon, the UAC prompt's) with `OpenInputDesktop` and
+`SetThreadDesktop`, captures every monitor with GDI (`BitBlt`, the pointer drawn in), injects with
+`SendInput`, and lets go of every held key and button when a session stops. A sign-in, sign-out or
+switch of user moves the worker to the new console session.
+
+**The person at the PC always sees it and can stop it.** While IT is connected, an amber strip at the
+top of whatever desktop is showing (theirs, the lock or sign-in screen, a UAC prompt) says *"Ravi
+Kumar from IT is connected to this PC with administrator rights"*, with **Stop** and
+**Ctrl+Alt+Shift+S**. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
+ticket). With nobody signed in IT may still connect; the strip is on the sign-in screen.
+
+**Recorded:** `help.elevated.started` (PC, who was signed in, locked), `help.elevated.sas`,
+`help.elevated.ended` (duration, pictures sent, why), `help.session.paused` / `resumed` when the PC
+restarts or drops off (with `assistReconnect` the session waits 10 minutes and goes on when the
+service is back; otherwise it ends), `machine.added`, `machine.removed`, and the same lines on the
+ticket. The service logs to `%ProgramData%\Dexterity Connect Support\service.log`.
+
+**Not covered:** Remote Desktop sessions (the service follows the console only); PCs reached only
+through the internet gateway; macOS and Linux.
+
 ## What is recorded
 
 - **The ticket's timeline:** opened, taken (and from whom), notes, files, diagnostics, session
@@ -217,6 +286,14 @@ and **Solved: close it** or **It still needs work** (which keeps or reopens the 
   admin-only, unattended access for IT staff only and its audit trail, pause and resume after a
   dropped Room, the grace period running out, dropped files) and
   `packages/core/test/assist-transfer.test.ts` (clipboard messages, cleaned paths for dropped files).
+- Elevated control: `apps/hub/test/machines.test.ts` (a fake service in Node with a P-256 key over
+  the hub's websocket: joining without approval, wrong keys refused, IT staff and policy only, input
+  through the gate as virtual-key codes, Ctrl+Alt+Del, the person's stop, restart pause and resume,
+  removal), `packages/core/test/machine.test.ts`, and on Windows
+  `node apps/desktop/support-service/smoke.ts` (builds the real exe, runs it as the current user
+  against an in-process hub: online, pictures, the pointer moved; also a CI step on windows-latest).
+  SYSTEM, the secure desktop, the sign-in screen and Ctrl+Alt+Del need the installed service and are
+  checked by hand on a PC (an administrator approves the install).
 - End to end: `apps/desktop/e2e/unattended.mts` (Connect now from the Help desk, the person's app
   joining muted and sharing and giving control by itself, the notices, dropped files landing in
   Downloads\Dexterity IT\T-0001, rejoining by itself after a reload, the person stopping control,

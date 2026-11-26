@@ -10,3 +10,4 @@ dist-renderer/
 apps/desktop/release/
 hub-data/
 *.tsbuildinfo
+apps/desktop/build/support/

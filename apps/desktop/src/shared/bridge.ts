@@ -336,6 +336,13 @@ export interface DexBridge {
   chooseScreen?(id: string): Promise<void>;
   /** Help desk sessions (desktop): screen consent, control, diagnostics, screenshots, the pointer overlay. */
   assist?: AssistBridge;
+  /** The IT Support service on this PC (Windows): elevated control for IT, installed by an administrator. */
+  supportService?: {
+    status(): Promise<{ available: boolean; installed: boolean; running: boolean }>;
+    /** Install it for the office hub this app is connected to; Windows asks for administrator approval. */
+    install(): Promise<{ ok: boolean; error: string | null }>;
+    uninstall(): Promise<{ ok: boolean; error: string | null }>;
+  };
   overlay?: OverlayBridge;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
