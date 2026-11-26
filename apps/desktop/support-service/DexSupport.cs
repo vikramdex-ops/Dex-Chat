@@ -50,6 +50,7 @@ namespace DexSupport {
     static int Main(string[] args) {
       try {
         string mode = args.Length > 0 ? args[0] : "";
+        if (mode == "--install" || mode == "--uninstall") Log.ConsoleOnly = true;
         if (mode == "--install") return Setup.Install(Arg(args, "--hub"), Arg(args, "--fingerprint"));
         if (mode == "--uninstall") return Setup.Uninstall();
         if (mode == "--status") { Console.WriteLine(Setup.Status()); return 0; }
@@ -93,10 +94,16 @@ namespace DexSupport {
 
   static class Log {
     static readonly object Gate = new object();
+    /** --install / --uninstall: lines go to the console only, never into ProgramData (not secured yet, or being removed). */
+    public static bool ConsoleOnly;
     public static void Write(string line) {
+      if (ConsoleOnly) { Console.Error.WriteLine(line); return; }
       try {
         lock (Gate) {
-          Directory.CreateDirectory(Path.GetDirectoryName(Paths.LogFile));
+          string dir = Path.GetDirectoryName(Paths.LogFile);
+          // never through a link someone else put there
+          if (Directory.Exists(dir) && (File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0) return;
+          Directory.CreateDirectory(dir);
           var f = new FileInfo(Paths.LogFile);
           if (f.Exists && f.Length > 2 * 1024 * 1024) { File.Delete(Paths.LogFile + ".1"); File.Move(Paths.LogFile, Paths.LogFile + ".1"); }
           File.AppendAllText(Paths.LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss ") + line + Environment.NewLine, Encoding.UTF8);
@@ -109,18 +116,56 @@ namespace DexSupport {
     public string Hub;
     public string Fingerprint;
     public static Config Load() {
-      if (Paths.ConfigOverride == null) {
-        // the service trusts this file for its hub: only when an administrator (or SYSTEM) owns it
-        var owner = File.GetAccessControl(Paths.Config, AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
-        if (owner == null || !(owner.Equals(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)) || owner.Equals(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null))))
-          throw new InvalidDataException("config.json is not owned by an administrator; reinstall the service");
+      string text;
+      if (Paths.ConfigOverride != null) text = File.ReadAllText(Paths.Config, Encoding.UTF8);
+      else {
+        // the service trusts this file for its hub: its folder must be ours, and the file, as opened
+        // (no other names for it, only SYSTEM and Administrators may change it), too
+        if (!Trusted.Folder(Paths.Data)) throw new InvalidDataException("The data folder is not an administrator's; reinstall the service.");
+        using (var fs = new FileStream(Paths.Config, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+          if (!Trusted.File(fs)) throw new InvalidDataException("config.json could be changed by someone who is not an administrator; reinstall the service.");
+          using (var r = new StreamReader(fs, Encoding.UTF8)) text = r.ReadToEnd();
+        }
       }
-      var d = Json.Parse(File.ReadAllText(Paths.Config, Encoding.UTF8));
+      var d = Json.Parse(text);
       var c = new Config();
       c.Hub = Json.Str(d, "hub");
       c.Fingerprint = Json.Str(d, "fingerprint");
       if (string.IsNullOrEmpty(c.Hub) || string.IsNullOrEmpty(c.Fingerprint)) throw new InvalidDataException("config.json needs hub and fingerprint");
       return c;
+    }
+  }
+
+  /** Is a folder or an open file only in the hands of SYSTEM and Administrators? */
+  static class Trusted {
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);
+    [StructLayout(LayoutKind.Sequential)]
+    struct BY_HANDLE_FILE_INFORMATION { public uint attrs; public long created, accessed, written; public uint volume, sizeHigh, sizeLow, links, indexHigh, indexLow; }
+
+    static readonly SecurityIdentifier Sys = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+    static readonly SecurityIdentifier Admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+    const FileSystemRights Changes = FileSystemRights.WriteData | FileSystemRights.AppendData | FileSystemRights.WriteExtendedAttributes
+      | FileSystemRights.WriteAttributes | FileSystemRights.Delete | FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+
+    static bool Ours(SecurityIdentifier sid) { return sid != null && (sid.Equals(Sys) || sid.Equals(Admins)); }
+
+    static bool OnlyOurs(FileSystemSecurity sec) {
+      if (!Ours(sec.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier)) return false;
+      foreach (FileSystemAccessRule r in sec.GetAccessRules(true, true, typeof(SecurityIdentifier))) {
+        if (r.AccessControlType == AccessControlType.Allow && (r.FileSystemRights & Changes) != 0 && !Ours(r.IdentityReference as SecurityIdentifier)) return false;
+      }
+      return true;
+    }
+
+    public static bool Folder(string path) {
+      if ((System.IO.File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) return false;
+      return OnlyOurs(Directory.GetAccessControl(path, AccessControlSections.Owner | AccessControlSections.Access));
+    }
+
+    public static bool File(FileStream fs) {
+      BY_HANDLE_FILE_INFORMATION info;
+      if (!GetFileInformationByHandle(fs.SafeFileHandle, out info) || info.links != 1 || (info.attrs & 0x400) != 0) return false;
+      return OnlyOurs(fs.GetAccessControl());
     }
   }
 
@@ -282,13 +327,11 @@ namespace DexSupport {
      * only SYSTEM and Administrators in its access list, nothing inherited from ProgramData.
      */
     static void SecureDataFolder() {
-      if (Directory.Exists(Paths.Data)) {
-        bool reparse = (File.GetAttributes(Paths.Data) & FileAttributes.ReparsePoint) != 0;
-        var owner = reparse ? null : Directory.GetAccessControl(Paths.Data, AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
-        if (reparse || owner == null || !(owner.Equals(SystemSid) || owner.Equals(AdminsSid))) {
-          Log.Write("the data folder was not made by an administrator: made again");
-          if (reparse) Directory.Delete(Paths.Data); else Directory.Delete(Paths.Data, true);
-        }
+      if (Directory.Exists(Paths.Data) && !Trusted.Folder(Paths.Data)) {
+        // moving renames the folder (or the link) itself: nothing inside it is followed or touched
+        string aside = Paths.Data + ".untrusted-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+        Directory.Move(Paths.Data, aside);
+        Console.Error.WriteLine("A folder of that name not made by an administrator was moved aside: " + aside);
       }
       var acl = new DirectorySecurity();
       acl.SetOwner(AdminsSid);
@@ -296,6 +339,8 @@ namespace DexSupport {
       acl.AddAccessRule(new FileSystemAccessRule(SystemSid, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
       acl.AddAccessRule(new FileSystemAccessRule(AdminsSid, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
       if (!Directory.Exists(Paths.Data)) Directory.CreateDirectory(Paths.Data, acl);
+      // someone may have made it again in the moment between: then it is not ours, and the install stops
+      if (!Trusted.Folder(Paths.Data)) throw new UnauthorizedAccessException("Someone else created " + Paths.Data + " during the install. Run the install again.");
       Directory.SetAccessControl(Paths.Data, acl);
     }
 
@@ -326,7 +371,9 @@ namespace DexSupport {
         CloseServiceHandle(scm);
       }
       try { if (CngKey.Exists("DexterityConnectSupport", CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey)) CngKey.Open("DexterityConnectSupport", CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey).Delete(); } catch { }
-      try { Directory.Delete(Paths.Data, true); } catch { }
+      // only our own folder is deleted (one someone else made is left alone: a recursive delete as
+      // administrator could be steered through a link inside it)
+      try { if (Directory.Exists(Paths.Data) && Trusted.Folder(Paths.Data)) Directory.Delete(Paths.Data, true); } catch { }
       // Ctrl+Alt+Del from software back to what it was before the install
       try {
         using (var mine = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Dexterity Connect Support")) {
@@ -476,9 +523,34 @@ namespace DexSupport {
 
     public Agent(bool dev) { this.dev = dev; }
 
+    string StoppedFile { get { return Path.Combine(Path.GetDirectoryName(Paths.LogFile), "stopped.txt"); } }
+
+    /** Sessions the person stopped, kept a day so a restart of the PC never takes one up again. */
+    void LoadStopped() {
+      try {
+        if (!dev && !Trusted.Folder(Paths.Data)) return;
+        foreach (var line in File.ReadAllLines(StoppedFile)) {
+          var parts = line.Split(' ');
+          long at;
+          if (parts.Length == 2 && long.TryParse(parts[1], out at) && DateTime.UtcNow.Ticks - at < TimeSpan.TicksPerDay) stoppedHere.Add(parts[0]);
+        }
+      } catch { }
+    }
+
+    readonly Dictionary<string, long> stoppedAt = new Dictionary<string, long>();
+    void SaveStopped() {
+      try {
+        foreach (var s in stoppedHere) if (!stoppedAt.ContainsKey(s)) stoppedAt[s] = DateTime.UtcNow.Ticks;
+        var lines = new List<string>();
+        foreach (var kv in stoppedAt) if (DateTime.UtcNow.Ticks - kv.Value < TimeSpan.TicksPerDay) lines.Add(kv.Key + " " + kv.Value);
+        File.WriteAllLines(StoppedFile, lines);
+      } catch (Exception e) { Log.Write("could not save a stopped session: " + e.Message); }
+    }
+
     public void Start() {
       cfg = Config.Load();
       id = Keys.Load(!dev);
+      LoadStopped();
       ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
       // the hub's certificate is self-signed: pinned by its SHA-256 fingerprint, nothing else is trusted
       ServicePointManager.ServerCertificateValidationCallback = delegate(object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors errors) {
@@ -627,7 +699,7 @@ namespace DexSupport {
     void EndSession(string why, bool now) {
       string s = session;
       if (s == null) return;
-      lock (stoppedHere) stoppedHere.Add(s);
+      lock (stoppedHere) { stoppedHere.Add(s); SaveStopped(); }
       session = null;
       Tell('X', "");
       var d = new Dictionary<string, object>();
@@ -794,12 +866,11 @@ namespace DexSupport {
     }
 
     static void StopPressed() {
-      string who = null;
-      try { who = Environment.UserName; } catch { }
-      tech = null;
-      banner.Hide();
-      inputs.Enqueue(null);
+      // the service (and the hub) hear it first; the strip goes after
       Send('E', Encoding.UTF8.GetBytes("The person at the PC pressed Stop."));
+      tech = null;
+      inputs.Enqueue(null);
+      ThreadPool.QueueUserWorkItem(delegate { banner.Hide(); });
     }
 
     /** Follow the input desktop (Default, Winlogon, the UAC prompt's): this thread captures and injects on it. */
@@ -991,7 +1062,7 @@ namespace DexSupport {
       form = null;
       thread = null;
       if (f != null) { try { f.BeginInvoke(new Action(delegate { f.Close(); })); } catch { } }
-      if (t != null && !t.Join(3000)) Log.Write("banner: a strip did not close in time");
+      if (t != null && t != Thread.CurrentThread && !t.Join(3000)) Log.Write("banner: a strip did not close in time");
     }
 
     void Restart() {

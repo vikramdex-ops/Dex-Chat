@@ -5,10 +5,11 @@
 // become a SYSTEM service. No Electron imports, so the unit tests can load it.
 import path from 'node:path';
 
-export function trustedExe(exe: string, env: NodeJS.ProcessEnv, packaged: boolean): boolean {
+/** `roots`: the Program Files folders as Windows records them (HKLM, not environment variables a user can set). */
+export function trustedExe(exe: string, roots: string[], packaged: boolean): boolean {
   // a development build (not packaged) is the developer's own
   if (!packaged) return true;
-  const roots = [env.ProgramFiles, env.ProgramW6432].filter((x): x is string => !!x).map((x) => `${path.win32.resolve(x).toLowerCase()}\\`);
+  const dirs = roots.filter((x) => !!x).map((x) => `${path.win32.resolve(x).toLowerCase()}\\`);
   const full = path.win32.resolve(exe).toLowerCase();
-  return roots.some((r) => full.startsWith(r));
+  return dirs.some((r) => full.startsWith(r));
 }

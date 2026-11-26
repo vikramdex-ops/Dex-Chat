@@ -22,6 +22,14 @@ export function supportExe(): string {
   return app.isPackaged ? path.join(process.resourcesPath, 'support', 'DexSupport.exe') : path.join(app.getAppPath(), 'build', 'support', 'DexSupport.exe');
 }
 
+/** Program Files as HKLM records it (an environment variable could be set by anyone running as the user). */
+async function programFiles(): Promise<string[]> {
+  const reg = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe');
+  const r = await run(reg, ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion', '/v', 'ProgramFilesDir'], 10_000);
+  const m = r.out.match(/ProgramFilesDir\s+REG_SZ\s+(.+)/);
+  return m ? [m[1].trim()] : [];
+}
+
 const run = (file: string, args: string[], timeout = 120_000) => new Promise<{ code: number; out: string }>((resolve) => {
   execFile(file, args, { windowsHide: true, timeout }, (err, stdout, stderr) => {
     const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0;
@@ -37,11 +45,13 @@ export async function serviceStatus(): Promise<{ available: boolean; installed: 
 
 /** Run DexSupport.exe with these arguments as administrator (Windows asks); resolves with its exit code. */
 async function elevated(args: string[]): Promise<{ ok: boolean; error: string | null }> {
-  if (!trustedExe(supportExe(), process.env, app.isPackaged)) return { ok: false, error: 'Dexterity Connect is installed for one person on this PC, so its files can be changed without administrator rights. Install the IT Support service with the setup run as an administrator instead: DexterityConnect-Setup.exe /S /SUPPORTHUB=hub:port /SUPPORTFP=fingerprint (Control room shows both).' };
+  if (!trustedExe(supportExe(), await programFiles(), app.isPackaged)) return { ok: false, error: 'Dexterity Connect is installed for one person on this PC, so its files can be changed without administrator rights. Install the IT Support service with the setup run as an administrator instead: DexterityConnect-Setup.exe /S /SUPPORTHUB=hub:port /SUPPORTFP=fingerprint (Control room shows both).' };
   const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
   // a declined prompt (or a missing file) is an error from Start-Process, never "success"
-  const script = `try { $p = Start-Process -FilePath ${quote(supportExe())} -ArgumentList ${quote(args.map((a) => `"${a}"`).join(' '))} -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop } catch { if ($_.Exception.Message -match 'cancel') { exit 1223 }; [Console]::Error.WriteLine($_.Exception.Message); exit 1 }; if ($null -eq $p) { exit 1 }; exit $p.ExitCode`;
-  const r = await run(powershellPath(), ['-NoProfile', '-NonInteractive', '-Command', script]);
+  // declined: Win32 error 1223 (ERROR_CANCELLED) in any language of Windows
+  const script = `try { $p = Start-Process -FilePath ${quote(supportExe())} -ArgumentList ${quote(args.map((a) => `"${a}"`).join(' '))} -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop } catch { $e = $_.Exception; while ($e) { if ($e.NativeErrorCode -eq 1223) { exit 1223 }; $e = $e.InnerException }; [Console]::Error.WriteLine($_.Exception.Message); exit 1 }; if ($null -eq $p) { exit 1 }; exit $p.ExitCode`;
+  // no time limit: an administrator may take a while at the prompt, and the install then runs
+  const r = await run(powershellPath(), ['-NoProfile', '-NonInteractive', '-Command', script], 0);
   if (r.code === 0) return { ok: true, error: null };
   if (r.code === 1223) return { ok: false, error: 'Windows did not get administrator approval, so nothing was changed.' };
   if (r.code === 5) return { ok: false, error: 'This needs an administrator account on this PC.' };

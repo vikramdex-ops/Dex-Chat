@@ -53,7 +53,12 @@ export function OfficePcs() {
     return () => { alive = false; off(); };
   }, [on]);
   if (!on) return null;
-  const connect = (m: MachineInfo) => { setBusy(m.id); void connectPc(m.id).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(null)); };
+  const connect = (m: MachineInfo) => {
+    // two PCs with one name: one may be pretending (names are what PCs say about themselves)
+    if (m.sameName && !window.confirm(`Another PC is also called ${m.hostname}. This one is ID ${m.id.slice(1, 9).toUpperCase()}, first seen ${new Date(m.firstSeen).toLocaleDateString()}. Connect only if that is the PC you expect: never type a password into a PC you are not sure of.`)) return;
+    setBusy(m.id);
+    void connectPc(m.id).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(null));
+  };
   return (
     <section className="hd-pcs" aria-label="Office PCs">
       <div className="label hd-sec">Office PCs with the IT Support service · {pcs.filter((p) => p.online).length} online</div>
@@ -61,7 +66,7 @@ export function OfficePcs() {
       <table className="hd-table"><tbody>
         {pcs.map((m) => (
           <tr key={m.id} className={m.online ? '' : 'faint'}>
-            <td className="mono" translate="no">{m.hostname}</td>
+            <td className="mono" translate="no" title={`ID ${m.id.slice(1, 9).toUpperCase()} · first seen ${new Date(m.firstSeen).toLocaleDateString()}`}>{m.hostname} <span className="faint">{m.id.slice(1, 9).toUpperCase()}</span>{m.sameName && <span className="role-tag" title="Another PC has the same name: check the ID before connecting">SAME NAME</span>}</td>
             <td>{!m.online ? `Offline · seen ${relativeTime(m.lastSeen)}` : m.consoleUser ? `${m.consoleUser}${m.locked ? ' · locked' : ''}` : 'Sign-in screen'}</td>
             <td style={{ textAlign: 'right' }}>
               {m.session ? <span className="mono">IN USE BY IT</span>

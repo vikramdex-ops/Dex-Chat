@@ -170,7 +170,9 @@ export class Machines {
   }
 
   // ------------------------------------------------------------ people's side
-  handle(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>): unknown {
+  handle(op: string, me: PublicUser, deviceId: string, d: Record<string, unknown>, fromOutside = false): unknown {
+    // using an office PC with administrator rights is for the office network only, never through the internet gateway
+    if (fromOutside && op !== 'machine.list' && op !== 'admin.machine.remove') throw new MachineError('Elevated control works only on the office network.');
     switch (op) {
       case 'machine.list':
         // IT staff, and administrators (Control room lists the PCs to remove one)
@@ -252,10 +254,12 @@ export class Machines {
 
   list(): MachineInfo[] {
     const rows = this.db.prepare('SELECT id, hostname, version, first_seen, last_seen FROM machines WHERE removed_at IS NULL ORDER BY hostname').all() as Array<{ id: string; hostname: string; version: string; first_seen: number; last_seen: number }>;
+    const names = new Map<string, number>();
+    for (const r of rows) names.set(r.hostname.toLowerCase(), (names.get(r.hostname.toLowerCase()) ?? 0) + 1);
     return rows.map((r) => {
       const on = this.online.get(r.id);
       const s = [...this.live.values()].find((x) => x.machineId === r.id) ?? null;
-      return { id: r.id, hostname: r.hostname, version: r.version, firstSeen: r.first_seen, lastSeen: on ? Date.now() : r.last_seen, online: !!on, consoleUser: on?.consoleUser ?? null, locked: on?.locked ?? true, session: s ? this.view(s) : null };
+      return { id: r.id, hostname: r.hostname, version: r.version, firstSeen: r.first_seen, lastSeen: on ? Date.now() : r.last_seen, online: !!on, consoleUser: on?.consoleUser ?? null, locked: on?.locked ?? true, session: s ? this.view(s) : null, sameName: (names.get(r.hostname.toLowerCase()) ?? 0) > 1 };
     });
   }
 

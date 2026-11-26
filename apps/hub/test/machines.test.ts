@@ -196,3 +196,22 @@ test('review fixes: a flood of new machines is refused', async () => {
   }
   assert.equal(refused, 2, 'thirty new PCs an hour are taken in, the rest refused');
 });
+
+test('review fixes, second round: no elevated control through the internet gateway; two PCs with one name are flagged', async () => {
+  const { hub, owner, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistElevated: true });
+  const a = machineKey();
+  const m1 = await service(hub, a.key, a.pub, 'DDS-PC-07');
+  await m1.next('m.ok');
+  const b = machineKey();
+  const m2 = await service(hub, b.key, b.pub, 'dds-pc-07');
+  await m2.next('m.ok');
+  const list: MachineInfo[] = await ravi.request('machine.list');
+  assert.equal(list.length, 2);
+  assert.ok(list.every((x) => x.sameName), 'both are flagged: one may be pretending');
+  // from outside the office network (the gateway): refused, whatever the policy says
+  const tech = hub.store.userById(me(ravi))!;
+  assert.throws(() => hub.machines.handle('machine.connect', tech, ravi.session!.deviceId, { machineId: m1.id }, true), /office network/);
+  await m1.close(); await m2.close();
+});

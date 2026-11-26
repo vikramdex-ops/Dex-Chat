@@ -24,6 +24,12 @@ export interface MachineInfo {
   lastSeen: number;
   /** The elevated session running on it now, if any. */
   session: ElevatedSession | null;
+  /**
+   * Another PC with the service has the same name. Names are what each PC says about itself, so a
+   * second one may be someone pretending: check the ID (the start of its key's fingerprint) and
+   * when it was first seen before connecting.
+   */
+  sameName: boolean;
 }
 
 export interface ElevatedSession {

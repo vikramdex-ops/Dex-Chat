@@ -214,16 +214,21 @@ service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
   anything elevated without that prompt. It is offered only when the app is installed for everyone
   (Program Files): a copy installed for one person lives in their own folder, where anything running
   as them could swap `DexSupport.exe` before the administrator approves, so the app refuses and
-  points to the setup switch below. A declined prompt is reported as declined, never as installed.
+  points to the setup switch below (Program Files is read from HKLM, not from environment variables).
+  A declined prompt is reported as declined (Windows error 1223, in any language), never as installed.
 - **For many PCs at once**: run the setup as an administrator (GPO, PsExec, Intune):
   `DexterityConnect-Setup-x.y.z.exe /S /SUPPORTHUB=hub-host:47900 /SUPPORTFP=AA:BB:…` (the hub's
   certificate fingerprint, shown in the hub's admin console).
 - Either way `DexSupport.exe --install --hub HOST:PORT --fingerprint FP` copies itself to
   `%ProgramFiles%\Dexterity Connect Support\` (only administrators can change it, so nobody can swap
   the program a SYSTEM service runs), writes `%ProgramData%\Dexterity Connect Support\config.json`
-  (owner Administrators, SYSTEM and Administrators only; a folder of that name someone else made
-  first, or a link, is removed and made again, and the service refuses a config.json an
-  administrator does not own), creates the PC's **P-256 key in the machine key store** (never
+  (owner Administrators, SYSTEM and Administrators only). A folder of that name someone else made
+  first, or a link, is moved aside (renamed, never deleted recursively, which as administrator could
+  be steered through a link inside it); the new folder is checked to really be ours, and the install
+  stops if someone made one in between. The installer logs only to the console, never into that
+  folder. The service reads `config.json` from one open handle and only when its folder and the file
+  can be changed by SYSTEM and Administrators alone, with no other name for the file (no hard link).
+  It creates the PC's **P-256 key in the machine key store** (never
   exported), sets `SoftwareSASGeneration` so services may send Ctrl+Alt+Del, and registers the
   automatic LocalSystem service `DexConnectSupport` (restarted on failure). `--uninstall` removes it
   all, puts `SoftwareSASGeneration` back as it was, and deletes the key; **Remove from this PC** does
@@ -236,13 +241,17 @@ service** (`apps/desktop/support-service/DexSupport.cs`), not through the app.
 authentication payload as people's devices with its P-256 key (`machineIdFor`,
 `verifyMachineSignature` in `packages/core/src/machine.ts`; the hub's certificate is pinned by its
 fingerprint) and is **accepted without approval** (`machine.added` in the audit log), on the office
-network only (a machine connecting through the internet gateway is refused) and at most 30 new PCs
+network only (a machine connecting through the internet gateway is refused, and so is a technician
+trying to connect, type or send Ctrl+Alt+Del through it) and at most 30 new PCs
 an hour (2,000 in all). Control room lists every PC with the service; **Remove** blocks that key for
 good (`machine.removed`; to add the PC again, remove the service from it and install it again, which
 makes a new key).
 
 **Connecting.** The Help desk lists the office PCs with the service (online, who is signed in, locked
-or at the sign-in screen). **Connect** (`machine.connect`) is refused unless the caller is on the IT
+or at the sign-in screen), each with a short ID (the start of its key's fingerprint). Names are what
+each PC says about itself: two PCs with one name are both marked **SAME NAME**, and connecting to
+either asks the technician to check the ID and when it was first seen (a pretend PC could show a
+fake sign-in or UAC screen to collect a password). **Connect** (`machine.connect`) is refused unless the caller is on the IT
 desk and the policy is on; one technician per PC at a time. The hub opens a ticket held by the
 technician for the person signed in to the PC (matched by Windows account; the technician's own when
 nobody is signed in or the account is unknown) and records *"Connected to DDS-PC-07 with
@@ -272,7 +281,8 @@ ticket). With nobody signed in IT may still connect; the strip is on the sign-in
 **Restarts.** The service stopping (a restart, an update) closes its link without ending the session,
 so with `assistReconnect` the session waits and goes on when the PC is back; if the PC returns before
 the hub noticed it left, the session starts again on the new link. A session the person stopped is
-remembered by the service and never taken up again, even if the hub did not hear the stop.
+remembered by the service for a day (in its own folder, so also across a restart of the PC) and
+never taken up again, even if the hub did not hear the stop.
 
 **Recorded:** `help.elevated.started` (PC, who was signed in, locked), `help.elevated.sas`,
 `help.elevated.ended` (duration, pictures sent, why), `help.session.paused` / `resumed` when the PC
