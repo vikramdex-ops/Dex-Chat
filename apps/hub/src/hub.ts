@@ -1278,6 +1278,7 @@ export class Hub {
 
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
+    if (conn.deviceId && conn.ready && ![...this.conns].some((c) => c.ready && c.deviceId === conn.deviceId)) this.helpdesk.deviceGone(conn.deviceId);
     if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.pointers.dropDevice(conn.deviceId); this.webinars.leaveDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }

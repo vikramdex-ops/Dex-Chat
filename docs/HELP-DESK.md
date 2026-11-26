@@ -158,8 +158,11 @@ Ctrl+Alt+Shift+S. Nothing is given again by itself after they stop it (the hub r
 session, `stopped`), unless IT presses Connect now again. The hub chooses the **one PC** of theirs
 that IT reaches: only a desktop app that said it can be controlled (`help.device`; never a phone or
 the web app), the one already in the session, or else the one in use, on the office network; their
-other devices never join or act on it. Everything Connect now needs is checked before anything is
-written, so a refused connect leaves no ticket behind. It needs the app running and someone signed
+other devices never join or act on it. If the person is already in the session on a device that
+cannot be controlled (a phone, a Mac, from outside), Connect now is refused rather than switching to
+another PC of theirs. Everything Connect now needs is checked before anything is written, so a
+refused connect leaves no ticket and no half-made session behind. Taking someone off the IT desk
+ends their running sessions at once, and they cannot rejoin them. It needs the app running and someone signed
 in to Windows. An administrator turning the policy off stops control and the screen the app shared
 by itself at once in running unattended sessions (they go on as ordinary sessions the person decides
 in). Recorded: `help.unattended.started` / `help.unattended.ended`,
@@ -188,7 +191,12 @@ and nothing is overwritten (`COPYFILE_EXCL`, the next free name).
 dropping out (a network drop, a PC restarting) pauses the session instead of ending it: sharing and
 control stop at once (`help.session.paused`), nothing can be shared while one side is away, and it
 waits **10 minutes** (`reconnectGraceMs`) for **both** to be back; one side returning alone does not
-end the wait. (Without the policy, either person leaving stops what was shared.) Each app joins
+end the wait. (Without the policy, either person leaving stops what was shared.) A Room that ends
+before both people were ever in it ends the session: there is nothing to come back to. An app joins
+by itself only an unattended session the hub chose that very device for, or a paused session that
+very device was already in; never an attended session the person has not joined, and never on
+another of their devices. Files cannot be dropped while the session waits or while the other person
+is not in the Room. Each app joins
 it again when it is back online or starts (`help.live`), and the session resumes
 (`help.session.resumed`, with how long it was paused). After a network drop, the requester's app
 shares the same screen again and, if they had given control, gives it again (it tells them); after
