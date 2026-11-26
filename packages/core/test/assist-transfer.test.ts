@@ -2,7 +2,7 @@
 // what the other side may send, and where a dropped file may land on this PC.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLIP_MAX, decodeClip, decodeDroppedFile, safeRelativePath } from '../src/assist.ts';
+import { CLIP_MAX, decodeClip, safeRelativePath } from '../src/assist.ts';
 
 test('clipboard messages: text only, bounded', () => {
   assert.equal(decodeClip({ k: 'clip', text: 'hello' }), 'hello');
@@ -25,12 +25,4 @@ test('a dropped file keeps its place in the folder, never outside the ticket fol
   assert.equal(safeRelativePath('../..'), null);
   assert.equal(safeRelativePath(''), null);
   assert.equal(safeRelativePath(Array(13).fill('d').join('/')), null);
-});
-
-test('dropped-file messages: a hub file id and a clean path', () => {
-  const id = '01JABCDEFGHJKMNPQRSTVWXYZ0';
-  assert.deepEqual(decodeDroppedFile({ k: 'file', fileId: id, path: 'a/../b.txt', size: 3 }), { fileId: id, path: 'a/b.txt', size: 3 });
-  assert.equal(decodeDroppedFile({ k: 'file', fileId: '../x', path: 'b.txt' }), null);
-  assert.equal(decodeDroppedFile({ k: 'file', fileId: id, path: '..' }), null);
-  assert.equal(decodeDroppedFile({ k: 'clip', fileId: id, path: 'b.txt' }), null);
 });

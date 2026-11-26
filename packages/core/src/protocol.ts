@@ -1181,8 +1181,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'machine.end': { req: { s: string }; res: { ok: true } };
   /** Remove a PC's service from the office (it can no longer connect with that key). */
   'admin.machine.remove': { req: { machineId: string }; res: { ok: true } };
-  /** Files dropped into a running support session (policy assistFiles), up to 100 a call; the other side saves them. */
-  'help.drop': { req: { id: string; fileIds: string[]; folder?: string | null }; res: { ok: true; count: number } };
+  /** Files dropped into a running support session (policy assistFiles), up to 100 a call; the other side is told (help.dropped) and saves them. */
+  'help.drop': { req: { id: string; files: Array<{ fileId: string; path: string }>; folder?: string | null }; res: { ok: true; count: number } };
   /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
   'help.consent': { req: { id: string; kind: 'screen' | 'control'; on: boolean; scope?: 'screen' | 'window' }; res: SupportSession };
   /** The technician asks the requester for something (each needs the requester's own yes). */
@@ -1297,6 +1297,8 @@ export interface Events extends FlowEvents, BotEvents, NibEvents {
   'help.entry': HelpEntry;
   /** A support session started, changed (consent) or ended. */
   'help.session': SupportSession;
+  /** Files the other person dropped into the session, for the session's device of yours to save. */
+  'help.dropped': { ticketId: string; sessionId: string; files: Array<{ fileId: string; path: string; size: number }> };
   /** To the requester: the technician asks for screen, control or diagnostics. */
   'help.ask': { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string };
   'help.staff': string[];
