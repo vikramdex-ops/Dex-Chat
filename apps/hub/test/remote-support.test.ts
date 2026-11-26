@@ -285,3 +285,34 @@ test('a dropped file attached afterwards shows on the ticket', async () => {
   const after = await priya.request('help.attach', { id: t.id, fileId: f.id, kind: 'file' });
   assert.equal(after.files.length, 1);
 });
+
+test('third review: leaving the IT desk ends the session; a Room ended before both met ends it; drops wait for both; Connect now never switches PCs', async () => {
+  const { owner, priya, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistReconnect: true, assistUnattended: true, assistFiles: true });
+
+  // the technician alone in the Room, whose app goes away: nothing to wait for, the session ends
+  const t1 = await priya.request('help.create', { summary: 'Mouse lag', category: 'hardware' });
+  await ravi.request('help.take', { id: t1.id });
+  const s1 = await ravi.request('help.session.start', { id: t1.id });
+  const ended1 = nextEvent<SupportSession>(priya, 'help.session', (x) => x.ticketId === t1.id && !!x.endedAt);
+  await ravi.request('room.leave', { roomId: s1.room.id });
+  assert.ok((await ended1).endedAt, 'no pause before both had met');
+
+  // a drop while the other person is not in the Room is refused
+  const t2 = await priya.request('help.create', { summary: 'Fonts', category: 'software' });
+  await ravi.request('help.take', { id: t2.id });
+  await ravi.request('help.session.start', { id: t2.id });
+  await assert.rejects(ravi.request('help.drop', { id: t2.id, files: [{ fileId: '01JABCDEFGHJKMNPQRSTVWXYZ0', path: 'a.txt' }] }), /not in the session right now/);
+
+  // Priya joins from a device that cannot be controlled (it never said it can): Connect now refuses, never switches PCs
+  await priya.request('help.session.join', { id: t2.id });
+  await assert.rejects(ravi.request('help.connect', { id: t2.id }), /cannot be controlled from here/);
+
+  // Ravi leaves the IT desk: his session ends at once, and he cannot come back to it
+  const ended2 = nextEvent<SupportSession>(priya, 'help.session', (x) => x.ticketId === t2.id && !!x.endedAt);
+  await owner.request('admin.help.staff', { userId: me(ravi), on: false });
+  assert.ok((await ended2).endedAt);
+  const { timeline } = await priya.request('help.get', { id: t2.id });
+  assert.equal(timeline.filter((e) => e.kind === 'session.ended').at(-1)!.text, 'The technician is no longer on the IT desk.');
+});

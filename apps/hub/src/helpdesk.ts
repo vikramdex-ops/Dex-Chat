@@ -86,6 +86,8 @@ interface LiveSession extends SupportSession {
   grants: Grant[];
   /** Both people have been in the Room together: from then on one of them missing pauses the session. */
   together: boolean;
+  /** Both people are in the Room now. */
+  bothIn: boolean;
   /** Ends a paused session when the connection does not come back in time. */
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -166,6 +168,7 @@ export class HelpDesk {
     if (on === true) this.db.prepare('INSERT OR IGNORE INTO help_staff (user_id, granted_by, granted_at) VALUES (?, ?, ?)').run(u.id, admin.id, Date.now());
     else this.db.prepare('DELETE FROM help_staff WHERE user_id = ?').run(u.id);
     this.host.store.audit(admin.id, on === true ? 'help.staff.granted' : 'help.staff.removed', u.id, { account: u.account });
+    if (on !== true) for (const x of [...this.live.values()]) if (x.techId === u.id) this.endSession(x.ticketId, admin.id, 'The technician is no longer on the IT desk.');
     const list = this.staff();
     this.host.broadcast('help.staff', list);
     return list;
@@ -233,6 +236,9 @@ export class HelpDesk {
   private requireIt(me: PublicUser): void {
     if (!this.isIt(me.id)) throw new HelpError('Only people on the IT desk can do that.');
   }
+
+  /** A device went offline (its last connection closed): it no longer counts as controllable. */
+  deviceGone(deviceId: string): void { this.controllable.delete(deviceId); }
 
   /** Files attached to a ticket can be opened by whoever can see the ticket. */
   canRead(userId: string, fileId: string): boolean {
@@ -455,6 +461,7 @@ export class HelpDesk {
           if (requester.id === me.id) throw new HelpError('Someone else on the IT desk connects to your own PC.');
         }
         const existing = r ? this.live.get(r.id) : undefined;
+        if (existing?.techDevice && existing.techDevice !== deviceId) throw new HelpError('You are in this session on another of your devices.');
         const target = this.unattendedTarget(requester, existing);
         if (!target) throw new HelpError(`${requester.displayName}'s PC is not online. Unattended access needs Dexterity Connect running on their Windows or Linux PC, on the office network.`);
         if (r && r.tech_id !== me.id) {
@@ -473,12 +480,19 @@ export class HelpDesk {
           this.entry(r.id, me.id, 'session.started', 'IT connected without asking (unattended access).', { sessionId: s.id, unattended: true });
           this.host.store.audit(me.id, 'help.unattended.started', r.id, { session: s.id, requester: requester.account });
         }
+        const fresh = !s;
         s ??= this.openSession(r, me, requester, true);
         s.requesterDevice = target;
         // IT connecting again is a new request: what the person stopped before may be given again
         s.stopped = false;
         this.lockDevice(s, me, deviceId);
-        const room = this.enter(s, me, deviceId, fromOutside);
+        let room: RoomInfo;
+        try { room = this.enter(s, me, deviceId, fromOutside); } catch (e) {
+          // the Room would not take the technician: nothing is left running half-made
+          if (fresh) this.endSession(r.id, me.id, 'IT could not connect.');
+          else { s.unattended = false; s.stopped = true; this.pushSession(s); }
+          throw e;
+        }
         this.pushSession(s);
         this.publish(r.id);
         return { session: this.publicSession(s), room };
@@ -496,6 +510,7 @@ export class HelpDesk {
         if (this.host.policy().assistFiles !== true) throw new HelpError('Dropping files into a session is off for this office. Use Send a file.');
         const myDevice = me.id === s.requesterId ? s.requesterDevice : s.techDevice;
         if (myDevice && myDevice !== deviceId) throw new HelpError('Drop files from the device that is in the session.');
+        if (s.pausedAt !== null || !s.bothIn) throw new HelpError('The other person is not in the session right now. Drop the files when you are both in it.');
         const list = Array.isArray(d.files) ? d.files.slice(0, DROP_MAX_FILES) : [];
         if (!list.length) throw new HelpError('Nothing to send.');
         // every file checked before any is attached: all of them or none, and always audited
@@ -532,6 +547,7 @@ export class HelpDesk {
         if (!s) throw new HelpError('There is no session on this ticket now.');
         // only the requester and the assigned technician, never another colleague
         if (me.id !== s.requesterId && me.id !== s.techId) throw new HelpError('Only the person who asked and their technician are in a support session.');
+        if (me.id === s.techId) this.requireIt(me);
         this.lockDevice(s, me, deviceId);
         if (me.id === s.requesterId) s.controlAvailable = d.controlAvailable === true;
         const room = this.enter(s, me, deviceId, fromOutside);
@@ -609,7 +625,7 @@ export class HelpDesk {
     const s: LiveSession = {
       id: ulid(), ticketId: r.id, roomId: null, requesterId: requester.id, techId: me.id, startedAt: Date.now(), endedAt: null,
       consent: { screen: false, scope: null, control: false, screenSince: null, controlSince: null }, controlAvailable: false,
-      unattended, pausedAt: null, requesterDevice: null, techDevice: null, stopped: false, together: false, convId: conv.id, grants: [], timer: null,
+      unattended, pausedAt: null, requesterDevice: null, techDevice: null, stopped: false, together: false, bothIn: false, convId: conv.id, grants: [], timer: null,
     };
     this.live.set(r.id, s);
     this.db.prepare('INSERT INTO help_sessions (id, ticket_id, requester_id, tech_id, started_at, unattended) VALUES (?, ?, ?, ?, ?, ?)').run(s.id, r.id, s.requesterId, s.techId, s.startedAt, unattended ? 1 : 0);
@@ -750,7 +766,8 @@ export class HelpDesk {
     if (room.purpose?.kind !== 'support') return;
     const s = this.live.get(room.purpose.ticketId);
     if (!s || s.roomId !== room.id) return;
-    if (this.host.policy().assistReconnect !== true) { this.endSession(s.ticketId, null, null); return; }
+    s.bothIn = false;
+    if (this.host.policy().assistReconnect !== true || !s.together) { this.endSession(s.ticketId, null, null); return; }
     s.roomId = null;
     this.pause(s);
   }
@@ -760,10 +777,11 @@ export class HelpDesk {
    * nothing is shared again until both are back in the Room; it ends if they are not back in time.
    */
   private pause(s: LiveSession): void {
+    const first = s.pausedAt === null;
+    if (first) s.pausedAt = Date.now();
     if (s.consent.control) this.setConsent(s, 'control', false, 'screen', null);
     if (s.consent.screen) this.setConsent(s, 'screen', false, 'screen', null);
-    if (s.pausedAt !== null) return;
-    s.pausedAt = Date.now();
+    if (!first) return;
     const minutes = Math.round(this.reconnectGraceMs / 60_000);
     this.entry(s.ticketId, null, 'session.paused', `The connection dropped. The session waits ${minutes} minute${minutes === 1 ? '' : 's'} for it to come back.`, { sessionId: s.id });
     this.host.store.audit(null, 'help.session.paused', s.ticketId, { session: s.id, unattended: s.unattended });
@@ -786,6 +804,7 @@ export class HelpDesk {
     if (!s || s.roomId !== room.id) return;
     const requesterIn = room.participants.some((p) => p.userId === s.requesterId);
     const techIn = room.participants.some((p) => p.userId === s.techId);
+    s.bothIn = requesterIn && techIn;
     if (requesterIn && techIn) {
       s.together = true;
       if (s.pausedAt !== null) { this.resumed(s, null); this.pushSession(s); this.publish(s.ticketId); }
@@ -797,9 +816,14 @@ export class HelpDesk {
 
   /** The PC unattended access reaches: the one already in the session, or the person's controllable desktop in use. */
   private unattendedTarget(requester: PublicUser, s: LiveSession | undefined): string | null {
-    const online = this.host.devicesOf(requester.id).filter((x) => !x.remote && this.controllable.has(x.deviceId));
-    // a device chosen before that never came (or went away) may be chosen again
-    if (s?.requesterDevice && online.some((x) => x.deviceId === s.requesterDevice)) return s.requesterDevice;
+    const all = this.host.devicesOf(requester.id);
+    const online = all.filter((x) => !x.remote && this.controllable.has(x.deviceId));
+    if (s?.requesterDevice) {
+      // the device the person is in the session on stays theirs: never silently switched to another PC
+      if (online.some((x) => x.deviceId === s.requesterDevice)) return s.requesterDevice;
+      if (all.some((x) => x.deviceId === s.requesterDevice)) throw new HelpError(`${requester.displayName} is in this session on a device that cannot be controlled from here (a phone, a Mac, or from outside the office). Ask them to join from their office PC.`);
+      // a device chosen before that went away may be chosen again
+    }
     return (online.filter((x) => !x.idle).at(-1) ?? online.at(-1))?.deviceId ?? null;
   }
 }

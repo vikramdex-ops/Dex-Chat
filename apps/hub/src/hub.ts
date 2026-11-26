@@ -1296,8 +1296,8 @@ export class Hub {
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
     if (conn.machineId && conn.machine) { this.machines.closed(conn.machineId, conn.machine); return; }
-    // the technician's app went away (not only an old link of a device that is still connected)
-    if (conn.deviceId && conn.ready && ![...this.conns].some((c) => c.ready && c.deviceId === conn.deviceId)) this.machines.deviceGone(conn.deviceId);
+    // the app went away (not only an old link of a device that is still connected)
+    if (conn.deviceId && conn.ready && ![...this.conns].some((c) => c.ready && c.deviceId === conn.deviceId)) { this.machines.deviceGone(conn.deviceId); this.helpdesk.deviceGone(conn.deviceId); }
     if (conn.deviceId && conn.ready) { this.rooms.leaveAll(conn.deviceId); this.pointers.dropDevice(conn.deviceId); this.webinars.leaveDevice(conn.deviceId); }
     // keep the token briefly so a download that is already running can finish
     if (conn.fileToken) { const t = conn.fileToken; setTimeout(() => this.fileTokens.delete(t), 10 * 60 * 1000).unref(); }

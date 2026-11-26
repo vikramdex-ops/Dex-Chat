@@ -105,7 +105,10 @@ export async function startHelp(me: string): Promise<void> {
   // back online (or the app started): rejoin a session that is waiting for us
   try {
     const policy = await window.dex.request('policy.get');
-    for (const s of await window.dex.request('help.live')) if (!inSessionRoom(s) && onMyDevice(s)) void rejoin(s, policy);
+    for (const s of await window.dex.request('help.live')) {
+      if (state.session?.id === s.id) { takeBack(s); set({ session: s }); }
+      if (!inSessionRoom(s) && mayRejoin(s)) void rejoin(s, policy);
+    }
   } catch { /* offline, or an older hub */ }
 }
 let caps: Promise<void> = Promise.resolve();
@@ -117,6 +120,18 @@ export async function refreshQueue(): Promise<void> {
 
 const inSessionRoom = (s: SupportSession) => { const p = callState().room?.purpose; return p?.kind === 'support' && p.ticketId === s.ticketId; };
 /** Is this the device of mine that is in the session (or nobody's device is set yet)? Others never join or act on it. */
+/**
+ * May this device join a session by itself? Only an unattended one the hub chose this device for
+ * (the requester's), or a paused one this very device was already in. Never an attended session
+ * the person has not joined, and never on another device of theirs.
+ */
+function mayRejoin(s: SupportSession): boolean {
+  const me = selfDevice();
+  if (meId === s.requesterId) return (s.unattended && s.requesterDevice === me) || (s.pausedAt !== null && s.requesterDevice === me);
+  if (meId === s.techId) return s.pausedAt !== null && s.techDevice === me;
+  return false;
+}
+
 function onMyDevice(s: SupportSession): boolean {
   const mine = meId === s.requesterId ? s.requesterDevice : meId === s.techId ? s.techDevice : null;
   return !mine || mine === selfDevice();
@@ -136,19 +151,27 @@ function onSession(s: SupportSession): void {
   }
   // the hub took something back (the connection dropped, an administrator turned unattended access
   // off, a stop from another path): this PC stops it too, at once
-  const before = state.session?.id === s.id ? state.session.consent : null;
-  if (meId === s.requesterId && before) {
-    if (before.control && !s.consent.control) { if (resume && s.pausedAt === null) resume = { ...resume, control: false }; void applyLocal(!!state.shared && s.consent.screen, false); }
-    if (before.screen && !s.consent.screen && state.shared) { if (s.pausedAt === null) resume = null; void stopScreenHere(); }
-  }
+  takeBack(s);
   if (meId === s.requesterId && !inSessionRoom(s)) {
     set({ invite: s, session: state.session?.id === s.id ? s : state.session });
-    if ((s.unattended || s.pausedAt !== null) && onMyDevice(s)) void rejoin(s, policyNow());
+    if (mayRejoin(s)) void rejoin(s, policyNow());
     return;
   }
   set({ session: s, invite: state.invite?.id === s.id ? null : state.invite });
-  if (s.pausedAt !== null && !inSessionRoom(s)) void rejoin(s, policyNow());
+  if (s.pausedAt !== null && !inSessionRoom(s) && mayRejoin(s)) void rejoin(s, policyNow());
   else void maybeShare();
+}
+
+/**
+ * What the hub took back (the connection dropped, an administrator turned unattended access off, a
+ * stop from another path), this PC stops too, at once. A pause keeps what to share again after it.
+ */
+function takeBack(s: SupportSession): void {
+  const before = state.session?.id === s.id ? state.session.consent : null;
+  if (meId !== s.requesterId || !before) return;
+  const paused = s.pausedAt !== null;
+  if (before.control && !s.consent.control) { if (resume && !paused) resume = { ...resume, control: false }; void applyLocal(!!state.shared && s.consent.screen, false); }
+  if (state.shared && !s.consent.screen && (before.screen || paused)) { if (!paused) resume = null; void stopScreenHere(); }
 }
 
 /** This PC stops sharing (the frame, the bar, the capture) without telling the hub again. */
@@ -174,7 +197,7 @@ let stops = 0;
  */
 async function rejoin(s: SupportSession, policy: OfficePolicy): Promise<void> {
   const requester = meId === s.requesterId;
-  if (!onMyDevice(s)) return;
+  if (!mayRejoin(s)) return;
   const unattended = requester && s.unattended && !s.stopped && policy.assistUnattended === true && !!window.dex.assist;
   if (!unattended && policy.assistReconnect !== true) return;
   if (joining === s.id || inSessionRoom(s)) return;
@@ -371,6 +394,7 @@ export async function connectNow(target: { id: string } | { userId: string }): P
 export async function joinSession(ticketId: string, opts: { noMic?: boolean } = {}): Promise<void> {
   await enterSpecial(async () => {
     const r = await window.dex.request('help.session.join', { id: ticketId, controlAvailable: state.control.available });
+    takeBack(r.session);
     set({ session: r.session, invite: null });
     return r.room;
   }, opts);
