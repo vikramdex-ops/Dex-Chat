@@ -1192,6 +1192,7 @@ namespace DexSupport {
           bool own = string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase);
           if (v.Privacy && own && !PrivacyForm.Supported) { if (privacyFailed != null) privacyFailed(); }
           else if (v.Privacy && own) foreach (var screen in Screen.AllScreens) { var c = new PrivacyForm(screen.Bounds, v.Tech); c.Show(); covers.Add(c); if (!c.OutOfCapture) { foreach (var x in covers) x.Close(); covers.Clear(); if (privacyFailed != null) privacyFailed(); break; } }
+          if (v.Privacy) Note("privacy screen " + (covers.Count > 0 ? "shown on " : "not shown on ") + name);
           var panel = new PanelForm(v);
           made = panel;
           panel.Shown += delegate { shown = true; ready.Set(); };
