@@ -34,7 +34,7 @@ async function service(hub: { port: number; fingerprint: string }, key: crypto.K
   };
   const hello = await next('hello');
   const id = machineIdFor(pub);
-  const sig = crypto.sign('sha256', authPayload(hello.nonce as string, hub.fingerprint, id), { key, dsaEncoding: 'der' }).toString('base64');
+  const sig = crypto.sign('sha256', authPayload(hello.nonce as string, hub.fingerprint, id), { key, dsaEncoding: 'ieee-p1363' }).toString('base64');
   ws.send(JSON.stringify({ t: 'machine', id, publicKey: pub, hostname, version: '1.0.0', sig, consoleUser: 'DEX\\Priya', locked: false }));
   const send = (m: unknown) => ws.send(JSON.stringify(m));
   const close = () => new Promise<void>((r) => { ws.once('close', () => r()); ws.close(); });
@@ -56,7 +56,7 @@ test('a machine proves its key and joins without approval; a wrong signature or 
   const other = machineKey();
   const ws = new WebSocket(`wss://127.0.0.1:${hub.port}/ws`, { rejectUnauthorized: false });
   const first = await new Promise<Msg>((r) => ws.once('message', (raw) => r(JSON.parse(raw.toString()))));
-  const sig = crypto.sign('sha256', authPayload(first.nonce as string, hub.fingerprint, m.id), { key: other.key, dsaEncoding: 'der' }).toString('base64');
+  const sig = crypto.sign('sha256', authPayload(first.nonce as string, hub.fingerprint, m.id), { key: other.key, dsaEncoding: 'ieee-p1363' }).toString('base64');
   ws.send(JSON.stringify({ t: 'machine', id: m.id, publicKey: k.pub, hostname: 'X', version: '1', sig }));
   const rej = await new Promise<Msg>((r) => ws.once('message', (raw) => r(JSON.parse(raw.toString()))));
   assert.equal(rej.t, 'rejected');

@@ -43,7 +43,7 @@ export interface ElevatedSession {
 /** A picture of the PC's screen, relayed to the technician. */
 export interface MachineFrame { s: string; w: number; h: number; d: string; seq: number }
 
-/** The service's hello. `sig` is DER ECDSA (P-256, SHA-256) over authPayload(nonce, hub fingerprint, id). */
+/** The service's hello. `sig` is ECDSA P-256 / SHA-256 as r||s (IEEE P1363, what .NET's ECDsaCng makes) over authPayload(nonce, hub fingerprint, id). */
 export interface MachineHello {
   t: 'machine';
   id: string;
@@ -66,7 +66,7 @@ export function verifyMachineSignature(publicKeyB64: string, payload: Uint8Array
   try {
     const key = crypto.createPublicKey({ key: Buffer.from(publicKeyB64, 'base64'), format: 'der', type: 'spki' });
     if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') return false;
-    return crypto.verify('sha256', payload, { key, dsaEncoding: 'der' }, Buffer.from(sigB64, 'base64'));
+    return crypto.verify('sha256', payload, { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(sigB64, 'base64'));
   } catch {
     return false;
   }
