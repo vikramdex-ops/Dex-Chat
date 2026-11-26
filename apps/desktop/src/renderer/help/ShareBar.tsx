@@ -27,7 +27,7 @@ export function ShareBar() {
       <span className="share-bar-pip" aria-hidden="true" />
       <span className="share-bar-text">
         <b>{s.control ? `${s.peer} is using your mouse and keyboard` : s.scope === 'window' ? `Sharing your window with ${s.peer}` : `Sharing your screen with ${s.peer}`}</b>
-        <span className="mono">{s.control ? `STOP: ${s.hotkey.toUpperCase()}` : meeting ? 'DEXTERITY CONNECT · MEETING' : 'DEXTERITY CONNECT · IT SUPPORT'}</span>
+        <span className="mono">{s.unattended ? 'IT CONNECTED WITHOUT ASKING · ' : ''}{s.control ? `STOP: ${s.hotkey.toUpperCase()}` : meeting ? 'DEXTERITY CONNECT · MEETING' : 'DEXTERITY CONNECT · IT SUPPORT'}</span>
       </span>
       {s.control && <button className="share-bar-btn stop" onClick={() => act('stop-control')}>Stop control</button>}
       <button className={`share-bar-btn${s.control ? '' : ' stop'}`} onClick={() => act('stop-screen')}>Stop sharing</button>

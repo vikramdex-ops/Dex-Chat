@@ -209,7 +209,7 @@ test('a session cut short by a hub restart is closed on the timeline', async () 
   await ravi.request('help.session.start', { id: t.id });
   const { HelpDesk } = await import('../src/helpdesk.ts');
   // a second desk on the same database, as after a restart
-  new HelpDesk({ store: hub.store, messaging: hub.messaging, files: hub.files, rooms: hub.rooms, deliver: () => {}, broadcast: () => {} });
+  new HelpDesk({ store: hub.store, messaging: hub.messaging, files: hub.files, rooms: hub.rooms, deliver: () => {}, broadcast: () => {}, policy: () => hub.policies.get(), devicesOf: () => [] });
   const row = hub.store.db.prepare('SELECT ended_at FROM help_sessions WHERE ticket_id = ?').get(t.id) as { ended_at: number | null };
   assert.ok(row.ended_at, 'the session has an end');
   const { timeline } = await priya.request('help.get', { id: t.id });

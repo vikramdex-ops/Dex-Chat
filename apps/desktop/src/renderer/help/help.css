@@ -318,3 +318,14 @@ body:has(.sup-dock) .scrim, body:has(.sup-stage) .scrim { z-index: 40; }
   .hm-form .dialog-actions .btn { min-height: 40px; }
   .hm-form .dialog-actions .btn.primary { margin-left: auto; }
 }
+
+/* remote support: unattended note, drop zones, dropped files (policies assistUnattended, assistFiles) */
+.hd-connect { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.hd-connect select { min-width: 220px; max-width: 100%; }
+.sup-unattended { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--amber, #d98a00); background: color-mix(in srgb, var(--amber, #d98a00) 12%, transparent); font-size: 13px; }
+.sup-field.drop-over, .sup-dock.drop-over { outline: 2px dashed var(--amber, #d98a00); outline-offset: -6px; }
+.sup-field { position: relative; }
+.sup-dropzone { position: absolute; inset: 12px; display: grid; place-items: center; z-index: 5; pointer-events: none; background: color-mix(in srgb, var(--layer-solid, #fff) 70%, transparent); font-weight: 600; }
+.sup-dropped { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; font-size: 13px; }
+
+.hd-privacy { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }

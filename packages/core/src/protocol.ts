@@ -216,6 +216,22 @@ export interface OfficePolicy {
    * encryption key yet (an older version) until they update. Conversations with an integration are exempt.
    */
   requireE2E?: boolean;
+  /**
+   * Remote support (docs/HELP-DESK.md), each off unless an administrator turns it on:
+   * IT staff may connect to any office PC without the person accepting (they are told and can stop it);
+   */
+  assistUnattended?: boolean;
+  /** text copied on one side of a support session can be pasted on the other while control is on; */
+  assistClipboard?: boolean;
+  /** files and folders dropped on a support session are saved at the other end; */
+  assistFiles?: boolean;
+  /** a support session survives a network drop or a reboot for a few minutes and resumes by itself. */
+  assistReconnect?: boolean;
+  /**
+   * IT may cover the person's screen while they work when they connect without asking (privacy
+   * screen): the person sees "IT is working on this PC", IT sees the real screen; Stop stays there.
+   */
+  assistPrivacy?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -1147,6 +1163,16 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   /** The requester (or the assigned technician, again) comes into the session's Room. */
   'help.session.join': { req: { id: string; controlAvailable?: boolean }; res: { session: SupportSession; room: RoomInfo } };
   'help.session.end': { req: { id: string }; res: { ok: true } };
+  /** IT connects to a person's PC without them accepting (policy assistUnattended): on a ticket, or a new one for that person. */
+  'help.connect': { req: { id?: string; userId?: string; privacy?: boolean }; res: { session: SupportSession; room: RoomInfo } };
+  /** The privacy screen on or off (the technician, policy assistPrivacy; the person's app only turns it off when it cannot show it). */
+  'help.privacy': { req: { id: string; on: boolean; unavailable?: boolean; reason?: string }; res: SupportSession };
+  /** This desktop app can be controlled (Windows, Linux): unattended access may choose it. */
+  'help.device': { req: { control: boolean }; res: { ok: true } };
+  /** Support sessions running now that you are part of (to rejoin after a dropped connection or a restart). */
+  'help.live': { req: void; res: SupportSession[] };
+  /** Files dropped into a running support session (policy assistFiles), up to 100 a call; the other side is told (help.dropped) and saves them. */
+  'help.drop': { req: { id: string; files: Array<{ fileId: string; path: string }>; folder?: string | null }; res: { ok: true; count: number } };
   /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
   'help.consent': { req: { id: string; kind: 'screen' | 'control'; on: boolean; scope?: 'screen' | 'window' }; res: SupportSession };
   /** The technician asks the requester for something (each needs the requester's own yes). */
@@ -1261,6 +1287,8 @@ export interface Events extends FlowEvents, BotEvents, NibEvents {
   'help.entry': HelpEntry;
   /** A support session started, changed (consent) or ended. */
   'help.session': SupportSession;
+  /** Files the other person dropped into the session, for the session's device of yours to save. */
+  'help.dropped': { ticketId: string; sessionId: string; files: Array<{ fileId: string; path: string; size: number }> };
   /** To the requester: the technician asks for screen, control or diagnostics. */
   'help.ask': { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string };
   'help.staff': string[];

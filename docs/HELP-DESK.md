@@ -119,7 +119,8 @@ How it works:
   elevated, so Windows itself keeps its input out of an elevated (administrator) window and off
   the secure desktop of a UAC prompt or Ctrl+Alt+Del: the person in control sees such a prompt
   but cannot answer it; the person whose PC it is answers it. The app makes no attempt to get
-  around this, in support sessions or in meetings.
+  around this, in support sessions or in meetings. (Elevated control through a Windows service,
+  installed by an administrator and behind its own policy, is planned as a separate stage.)
 - **Linux (X11):** `xdotool`, kept running and fed one command per line. Without it, or on Wayland,
   control is not offered and the requester is told why.
 - **macOS:** view only. Control would need Accessibility permission, which the app does not ask
@@ -134,6 +135,92 @@ chords and mapping, and the injectors. The main process's `assist:consent` takes
 (`support` or `meeting`) and, in a meeting, the one device whose input it accepts; in a support
 session the window checks that input comes from the technician. In a meeting the frame and bar show
 only while someone has control, since the meeting's own sheet shows the share.
+
+## Remote support (Control room ▸ Policies ▸ Remote support)
+
+Four policies, **each off until an administrator turns it on** (`OfficePolicy.assistUnattended`,
+`assistClipboard`, `assistFiles`, `assistReconnect`; stored by `apps/hub/src/policies.ts`, changes
+audited as `policy.set`). They work in the signed-in desktop app; what needs a Windows service
+(administrator windows, UAC prompts, Ctrl+Alt+Del, the sign-in screen) is a later stage.
+
+**Unattended access** (`assistUnattended`). Anyone on the IT desk may connect to any office PC
+without the person accepting: **Connect now** on a ticket, or *Connect to someone's PC…* at the top
+of the Help desk (which opens a ticket for that person, held by the technician). The hub
+(`help.connect`) refuses it unless the policy is on and the caller is IT staff; the session is
+marked `unattended`. The person's app, if the policy is on, joins by itself (not when they are in
+another Room or meeting: then the invite card stays) **with no microphone at all** (turning it on
+asks), and once the technician is in the Room too, shares its main screen and gives control
+(the policy is checked again before each step). It says so everywhere: a notification, the dock (*"Ravi connected without
+asking"*), the amber banner (*"… connected without asking (unattended access is on for this
+office)"*), the amber frame and the share bar (*IT CONNECTED WITHOUT ASKING*). **The person can
+always stop it** exactly as in an attended session: Stop control, Stop sharing, End, Shift+Esc or
+Ctrl+Alt+Shift+S. Nothing is given again by itself after they stop it (the hub remembers it for the
+session, `stopped`), unless IT presses Connect now again. The hub chooses the **one PC** of theirs
+that IT reaches: only a desktop app that said it can be controlled (`help.device`; never a phone or
+the web app), the one already in the session, or else the one in use, on the office network; their
+other devices never join or act on it. If the person is already in the session on a device that
+cannot be controlled (a phone, a Mac, from outside), Connect now is refused rather than switching to
+another PC of theirs. Everything Connect now needs is checked before anything is written, so a
+refused connect leaves no ticket and no half-made session behind. Taking someone off the IT desk
+ends their running sessions at once, and they cannot rejoin them. It needs the app running and someone signed
+in to Windows. An administrator turning the policy off stops control and the screen the app shared
+by itself at once in running unattended sessions (they go on as ordinary sessions the person decides
+in). Recorded: `help.unattended.started` / `help.unattended.ended`,
+`unattended: true` on `help.session.started`, `help.consent.granted` and `help.session.ended`, and
+*"connected without asking"* on the ticket.
+
+**Privacy screen** (`assistPrivacy`, with unattended access). Some of IT's work should not be seen by
+everyone (typing an administrator password, account settings). With this policy on, IT can tick
+**Privacy screen** when they press Connect now, or turn it on and off in the session. The person then
+sees a calm full-screen notice on every display, *"Ravi Kumar from IT is working on this PC"*, with
+the share bar (and its Stop) and the stop keys still on top; IT sees the real screen. The notice is
+kept out of screen capture (Windows' exclude-from-capture display affinity, Electron
+`setContentProtection`), so it never reaches IT's picture, and clicks pass through it so IT's input
+reaches the apps underneath. So do the person's own clicks and keys: the notice asks them to leave
+the mouse and keyboard alone while it shows. While it is up the stop keys (Shift+Esc,
+Ctrl+Alt+Shift+S) always work and **end the session** (not only control), and it follows monitors
+being plugged in, removed or resized. It needs Windows 10 version 2004 or later: on older Windows the
+person's app turns it off and IT is told. Only IT turns it on; the person can always stop the
+session. Every change is on the ticket and in the audit log (`help.privacy`), and an administrator
+turning the policy (or unattended access) off removes it at once. One support session per person at
+a time from Connect now.
+
+**Clipboard** (`assistClipboard`). While control is on, text copied on either PC can be pasted on
+the other (`{ k: 'clip', text }` on the data channel; text only; up to 8,000 characters of JSON, what
+the hub relays when a Room has no data channel: longer text is not sent and the person is told).
+What was on the clipboard before control began is not sent; only what is copied from then on. Each
+side takes it only from the other person's device in the session.
+
+**Files and folders** (`assistFiles`). Drop files, or a whole folder (up to 500 files at a time), on
+the technician's picture or on the requester's dock. Each is uploaded to the hub's file store and
+kept on the ticket (`help.drop`: every file checked first and attached in one transaction, one
+timeline line per drop (every file is uploaded first, then one `help.drop`), audit
+`help.files.dropped`; up to 2,000 dropped files a ticket, which do not
+count toward its 40 attachments and are not in its list of files; only `help.drop` can attach them).
+The hub tells the other side (`help.dropped`), whose device in the session saves them one at a
+time under **Downloads\Dexterity IT\T-0042\** at their place in the folder; paths are
+cleaned (`safeRelativePath`: no drive, no "..", no reserved names, on the hub and again on the PC)
+and nothing is overwritten (`COPYFILE_EXCL`, the next free name).
+**Send a file** still works without the policy.
+
+**Reconnect** (`assistReconnect`). Once both people have been in the session's Room, either of them
+dropping out (a network drop, a PC restarting) pauses the session instead of ending it: sharing and
+control stop at once (`help.session.paused`), nothing can be shared while one side is away, and it
+waits **10 minutes** (`reconnectGraceMs`) for **both** to be back; one side returning alone does not
+end the wait. (Without the policy, either person leaving stops what was shared.) A Room that ends
+before both people were ever in it ends the session: there is nothing to come back to. An app joins
+by itself only an unattended session the hub chose that very device for, or a paused session that
+very device was already in; never an attended session the person has not joined, and never on
+another of their devices. Files cannot be dropped while the session waits or while the other person
+is not in the Room. Each app joins
+it again when it is back online or starts (`help.live`), and the session resumes
+(`help.session.resumed`, with how long it was paused). After a network drop, the requester's app
+shares the same screen again and, if they had given control, gives it again (it tells them); after
+a restart it remembers nothing, so they choose again, unless the session is unattended. A
+connection that does not come back in time ends the session (*"The connection did not come back in
+time."*). Without the policy a dropped Room ends the session, as before. Each person rejoins only
+from the device they were in the session on (`requesterDevice`, `techDevice`); the hub refuses any
+other device of theirs.
 
 ## What is recorded
 
@@ -166,6 +253,15 @@ and **Solved: close it** or **It still needs work** (which keeps or reopens the 
 
 - Hub: `apps/hub/test/helpdesk.test.ts` (tickets and the queue, the `it` capability, who may join a
   session, consent as the protocol carries it, the audit trail, a restart).
+- Remote support: `apps/hub/test/remote-support.test.ts` (the four policies off by default and
+  admin-only, unattended access for IT staff only and its audit trail, pause and resume after a
+  dropped Room, the grace period running out, dropped files) and
+  `packages/core/test/assist-transfer.test.ts` (clipboard messages, cleaned paths for dropped files).
+- End to end: `apps/desktop/e2e/unattended.mts` (Connect now from the Help desk, the person's app
+  joining muted and sharing and giving control by itself, the notices, dropped files landing in
+  Downloads\Dexterity IT\T-0001, rejoining by itself after a reload, the person stopping control,
+  the audit log). Runs on Windows as well as under Xvfb. Clipboard sync is not covered end to end:
+  both apps of the script share one clipboard.
 - Units: `packages/core/test/assist.test.ts` (the event decoder, the rate limit, the chord list,
   coordinates), `apps/desktop/test/assist.test.ts` (the generated C# and PowerShell, the JSON lines
   both sides speak, xdotool's commands, the control gate, input only from the device allowed in a

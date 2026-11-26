@@ -19,7 +19,8 @@ export const HELP_CATEGORIES: ReadonlyArray<{ id: HelpCategory; label: string; h
 /** open: waiting in the IT queue; taken: a technician is on it; closed: done (the requester can reopen it). */
 export type TicketStatus = 'open' | 'taken' | 'closed';
 
-export type HelpFileKind = 'screenshot' | 'diagnostics' | 'file';
+/** 'dropped': dropped into a support session (policy assistFiles); kept on the ticket but not in its list of files. */
+export type HelpFileKind = 'screenshot' | 'diagnostics' | 'file' | 'dropped';
 
 export interface HelpFile {
   fileId: string;
@@ -57,6 +58,23 @@ export interface SupportSession {
   consent: SupportConsent;
   /** The requester's PC can take remote mouse and keyboard input (Windows and Linux; not macOS). */
   controlAvailable: boolean;
+  /**
+   * IT connected without the person accepting (Control room ▸ Policies ▸ Remote support): their app
+   * joins, shares its whole screen and gives control by itself, shows that it did, and they can stop it.
+   */
+  unattended: boolean;
+  /** The connection dropped at this time and the session waits for it to come back (null: running). */
+  pausedAt: number | null;
+  /**
+   * The one device of each person that is in this session (set when they first join; unattended:
+   * the requester's device the hub chose). Other devices of theirs neither join nor act on it.
+   */
+  requesterDevice: string | null;
+  techDevice: string | null;
+  /** In an unattended session the person stopped sharing or control: nothing is given again by itself. */
+  stopped: boolean;
+  /** The privacy screen is on: the person sees that IT is working, not what IT does (policy assistPrivacy). */
+  privacy: boolean;
 }
 
 export interface HelpTicket {
@@ -85,7 +103,7 @@ export interface HelpTicket {
 
 export type HelpEntryKind =
   | 'opened' | 'taken' | 'released' | 'note' | 'file' | 'diagnostics'
-  | 'session.started' | 'session.joined' | 'session.ended'
+  | 'session.started' | 'session.joined' | 'session.ended' | 'session.paused' | 'session.resumed'
   | 'consent.granted' | 'consent.revoked' | 'asked'
   | 'closed' | 'reopened' | 'rated';
 

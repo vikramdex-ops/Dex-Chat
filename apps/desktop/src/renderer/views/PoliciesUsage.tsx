@@ -80,6 +80,30 @@ export function PoliciesAdmin() {
         </div>
       </section>
       <MeetingPolicies p={p} save={save} />
+      <section className="card" aria-label="Remote support">
+        <div className="eyebrow">Remote support</div>
+        <p className="faint" style={{ margin: '6px 0 0' }}>For people on the IT desk (Help desk). Everything here is off until you turn it on; every session is shown on the PC and kept on the ticket and in the Audit log.</p>
+        <div className="setting" style={{ marginTop: 6 }}>
+          <div className="txt"><div>IT can connect to any office PC without the person accepting</div><div className="faint">From the Help desk, IT staff press Connect now. The person's app shares the whole screen and gives control by itself, shows an amber frame and a banner saying IT connected without asking, and they can stop it at any time (Stop control, or Shift+Esc). Needs the app running and someone signed in to Windows.</div></div>
+          <Toggle label="IT can connect to any office PC without the person accepting" checked={p.assistUnattended === true} onChange={(v) => save({ assistUnattended: v })} />
+        </div>
+        <div className="setting">
+          <div className="txt"><div>Share the clipboard in support sessions</div><div className="faint">While IT has control, text copied on one PC can be pasted on the other, both ways.</div></div>
+          <Toggle label="Share the clipboard in support sessions" checked={p.assistClipboard === true} onChange={(v) => save({ assistClipboard: v })} />
+        </div>
+        <div className="setting">
+          <div className="txt"><div>Drop files and folders into support sessions</div><div className="faint">Files and whole folders dropped on the session are saved at the other end in Downloads\Dexterity IT\ the ticket's number, and kept on the ticket.</div></div>
+          <Toggle label="Drop files and folders into support sessions" checked={p.assistFiles === true} onChange={(v) => save({ assistFiles: v })} />
+        </div>
+        <div className="setting">
+          <div className="txt"><div>Support sessions reconnect by themselves</div><div className="faint">After a network drop or a restart of either PC, the session waits up to 10 minutes and both apps join it again. After a network drop, what the person was sharing is shared again; after a restart they choose again, unless the session is unattended. They see it and can stop it.</div></div>
+          <Toggle label="Support sessions reconnect by themselves" checked={p.assistReconnect === true} onChange={(v) => save({ assistReconnect: v })} />
+        </div>
+        <div className="setting">
+          <div className="txt"><div>IT may cover the screen while they work (privacy screen)</div><div className="faint">When IT connects without asking they can tick Privacy screen: the person sees "IT is working on this PC" instead of what IT does (typing administrator passwords, settings), while IT sees the real screen. Stop stays on top, and every use is on the ticket and in the Audit log. Needs Windows 10 version 2004 or later.</div></div>
+          <Toggle label="IT may cover the screen while they work" checked={p.assistPrivacy === true} onChange={(v) => save({ assistPrivacy: v })} />
+        </div>
+      </section>
       <section className="card">
         <div className="eyebrow">Personal devices</div>
         <div className="setting" style={{ marginTop: 6 }}>

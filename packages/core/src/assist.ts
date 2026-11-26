@@ -282,3 +282,32 @@ export class InputBatcher {
     return { k: 'in', e };
   }
 }
+
+// ------------------------------------------------------------------ clipboard and files (policies assistClipboard, assistFiles)
+/** A clipboard message (JSON) at most: what the hub relays when a Room has no data channel (rooms.ts, 8 KB). */
+export const CLIP_MAX = 8000;
+/** Files one drop may carry, at most (a folder is walked to this many). */
+export const DROP_MAX_FILES = 500;
+
+/** A clipboard message from the other side ({ k: 'clip', text }), or null. */
+export function decodeClip(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object' || (raw as { k?: unknown }).k !== 'clip') return null;
+  const text = (raw as { text?: unknown }).text;
+  return typeof text === 'string' && text.length <= CLIP_MAX ? text : null;
+}
+
+const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+
+/**
+ * A path from the other PC (a dropped file's place in its folder) as safe folder and file names
+ * under the ticket's folder: no drive, no "..", no characters Windows refuses, no reserved device
+ * names, at most 12 levels and 240 characters. Null when nothing usable is left.
+ */
+export function safeRelativePath(raw: string): string[] | null {
+  const segs = raw.split(/[\\/]/)
+    .map((s) => s.replace(/[\u0000-\u001f<>:"|?*]/g, '_').replace(/[. ]+$/g, '').trim())
+    .filter((s) => s && s !== '.' && s !== '..')
+    .map((s) => (RESERVED.test(s) ? `_${s}` : s).slice(0, 120));
+  if (!segs.length || segs.length > 12 || segs.join('/').length > 240) return null;
+  return segs;
+}
