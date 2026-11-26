@@ -188,7 +188,7 @@ export type AssistContext = 'support' | 'meeting';
  * The share bar on the requester's or presenter's screen (an always-on-top window of its own):
  * in a support session while the screen is shared, in a meeting while someone has control.
  */
-export interface ShareBarState { peer: string; scope: 'screen' | 'window'; control: boolean; hotkey: string; context: AssistContext }
+export interface ShareBarState { peer: string; scope: 'screen' | 'window'; control: boolean; hotkey: string; context: AssistContext; /** IT connected without asking (policy assistUnattended). */ unattended?: boolean }
 
 export interface AssistBridge {
   caps(): Promise<AssistCaps>;
@@ -198,7 +198,15 @@ export interface AssistBridge {
    * meeting they show while someone has control. Control injects the input of `peer`: in a
    * meeting only from the device `from`.
    */
-  consent(c: { screen: boolean; sourceId?: string | null; scope?: 'screen' | 'window'; control: boolean; peer: string; context?: AssistContext; from?: string | null }): Promise<{ screen: boolean; control: boolean; error: string | null }>;
+  consent(c: { screen: boolean; sourceId?: string | null; scope?: 'screen' | 'window'; control: boolean; peer: string; context?: AssistContext; from?: string | null; unattended?: boolean }): Promise<{ screen: boolean; control: boolean; error: string | null }>;
+  /** The source id of the main screen (what an unattended session shares). */
+  primaryScreen(): Promise<string | null>;
+  /** This PC's clipboard text; with `text`, put that on it first (clipboard sync, policy assistClipboard). */
+  clipboard(text?: string): Promise<string>;
+  /** Save a file the other side dropped into a support session under Downloads\Dexterity IT\<ref>\<path>; returns where. */
+  saveDropped(fileId: string, ref: string, path: string): Promise<string>;
+  /** Open the ticket's folder of dropped files. */
+  openDropped(ref: string): Promise<void>;
   /** A message of input events from the person in control, sent by device `from` (checked and limited in the main process). */
   input(msg: unknown, from?: string): void;
   /** Something was stopped from the share bar, with the stop hotkey, or because the window or hub went away (context null). */

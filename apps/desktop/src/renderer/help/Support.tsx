@@ -14,7 +14,8 @@ import { RoomPointers } from '../pointers/surfaces.tsx';
 import { Files, StatusStamp, Timeline, categoryLabel, platformLabel } from './parts.tsx';
 import { ControlConsent, DiagnosticsSheet, ScreenConsent } from './Consent.tsx';
 import { ControlBanner, ControlSurface } from './control.tsx';
-import { clearAsk, endSession, screenEnded, sendFile, stopControl, stopScreen, useHelp } from './store.ts';
+import { clearAsk, clearDropped, dropItems, endSession, screenEnded, sendDropped, sendFile, stopControl, stopScreen, useHelp } from './store.ts';
+import { usePolicy } from '../policy.ts';
 import './help.css';
 
 interface Props { users: Map<string, PublicUser>; meId: string; meDevice: string }
@@ -57,6 +58,47 @@ function useFileSend(ticketId: string): { pick: () => void; progress: { name: st
   };
 }
 
+/** Files and folders dropped on the session go to the other side (policy assistFiles). */
+function useDrop(ticketId: string, to: string): { on: boolean; over: boolean; handlers: React.HTMLAttributes<HTMLElement>; progress: { name: string; p: number } | null } {
+  const toast = useToast();
+  const on = usePolicy().assistFiles === true;
+  const [over, setOver] = useState(false);
+  const [progress, setProgress] = useState<{ name: string; p: number } | null>(null);
+  const hasFiles = (e: React.DragEvent) => [...e.dataTransfer.types].includes('Files');
+  const handlers: React.HTMLAttributes<HTMLElement> = !on ? {} : {
+    onDragOver: (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOver(true); },
+    onDragLeave: (e) => { if (e.currentTarget === e.target) setOver(false); },
+    onDrop: (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setOver(false);
+      const dt = e.dataTransfer;
+      void (async () => {
+        try {
+          const drop = await dropItems(dt);
+          if (!drop.items.length) { toast('Nothing to send in what was dropped.', true); return; }
+          const n = await sendDropped(ticketId, drop, (done, total, name) => setProgress({ name: name || 'Done', p: total ? done / total : 1 }));
+          toast(`Sent ${n} file${n === 1 ? '' : 's'} to ${to}${drop.skipped ? ` (${drop.skipped} more left out: up to 500 at a time)` : ''}`);
+        } catch (err) { toast((err as Error).message, true); } finally { setProgress(null); }
+      })();
+    },
+  };
+  return { on, over, handlers, progress };
+}
+
+/** Files the other side dropped, saved on this PC. */
+function DroppedNote() {
+  const d = useHelp((s) => s.dropped);
+  if (!d) return null;
+  return (
+    <div className="sup-dropped" role="status">
+      <span>{d.count === 1 ? `Saved ${d.last}` : `Saved ${d.count} files`} in <span className="mono">Downloads\Dexterity IT\{d.ref}</span></span>
+      <button className="btn sm" onClick={() => void window.dex.assist?.openDropped(d.ref)}>Open folder</button>
+      <button className="icon-btn" onClick={clearDropped} aria-label="Dismiss"><Icon name="x" size={14} /></button>
+    </div>
+  );
+}
+
 function SendProgress({ progress }: { progress: { name: string; p: number } | null }) {
   if (!progress) return null;
   return (
@@ -93,6 +135,7 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
   const files = useFileSend(session.ticketId);
   const name = users.get(session.requesterId)?.displayName ?? 'Someone';
   const first = name.split(' ')[0];
+  const drop = useDrop(session.ticketId, first);
   useEffect(() => { if (!session.consent.control) setControlling(false); }, [session.consent.control]);
   const ask = (kind: 'screen' | 'control' | 'diagnostics') => void window.dex.request('help.ask', { id: session.ticketId, kind })
     .then(() => toast(kind === 'screen' ? `Asked ${first} to share their screen` : kind === 'control' ? `Asked ${first} for the mouse and keyboard` : `Asked ${first} for diagnostics`))
@@ -111,7 +154,8 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
   return createPortal(
     <div className="sup-stage" role="dialog" aria-label={`Support session with ${name}`}>
       <SessionAudio />
-      <section className={`sup-field${controlling ? ' controlling' : ''}`} aria-label={`${name}'s screen`}>
+      <section className={`sup-field${controlling ? ' controlling' : ''}${drop.over ? ' drop-over' : ''}`} aria-label={`${name}'s screen`} {...drop.handlers}>
+        {drop.over && <div className="sup-dropzone" aria-hidden="true">Drop to send to {first}: saved in Downloads\Dexterity IT</div>}
         {screen ? (
           <figure className="sup-screen">
             <Video stream={screen} muted fit="contain" />
@@ -130,8 +174,9 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
       </section>
       <aside className="sup-side">
         <div className="sup-block">
-          <span className="label">Support session</span>
+          <span className="label">Support session{session.unattended ? ' · unattended' : ''}</span>
           <h2 translate="no">{ticket?.summary ?? ''}</h2>
+          {session.unattended && <p className="faint sup-reason">You connected without {first} accepting. They see that you are connected and can stop it.</p>}
           <dl className="hd-facts">
             <div><dt>Ref</dt><dd className="mono">{ticket ? ticketRef(ticket.number) : '—'}</dd></div>
             <div><dt>With</dt><dd><Avatar user={{ id: session.requesterId, displayName: name }} size="sm" /> {name}</dd></div>
@@ -162,7 +207,8 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
           <button className="end" onClick={() => void endSession()} title="End the session for both of you"><Icon name="phone-off" size={17} /><span>End session</span></button>
         </div>
         {files.input}
-        <SendProgress progress={files.progress} />
+        <SendProgress progress={files.progress ?? drop.progress} />
+        <DroppedNote />
         <div className="sup-scroll">
           {ticket && ticket.files.length > 0 && <><div className="label hd-sec">Files · {ticket.files.length}</div><Files files={ticket.files} users={users} meId={meId} /></>}
           <div className="label hd-sec">Timeline</div>
@@ -187,6 +233,7 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
   const files = useFileSend(session.ticketId);
   const tech = users.get(session.techId)?.displayName ?? 'IT';
   const techFirst = tech.split(' ')[0];
+  const drop = useDrop(session.ticketId, techFirst);
   const techHere = useCall((s) => !!s.room?.participants.some((p) => p.userId === session.techId));
   // the picture stopped on its own (they closed the window they shared, or the screen went away)
   const wasSharing = useRef(false);
@@ -204,13 +251,13 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
       <SessionAudio />
       {/* the technician's pointers on this screen (the click-through window), while it is shared */}
       {screen && <div className="pt-hidden"><RoomPointers presenterDevice={meDevice} users={users} meId={meId} /></div>}
-      {c.control && <ControlBanner who={tech} onStop={() => run(stopControl())} />}
+      {c.control && <ControlBanner who={tech} unattended={session.unattended} onStop={() => run(stopControl())} />}
       {minimized ? (
         <button className={`sup-chip for-requester${c.screen ? ' sharing' : ''}`} onClick={() => setMinimized(false)} title="Open the support session">
           <span className="room-chip-pip" aria-hidden="true" /><span className="mono">IT · {techFirst.toUpperCase()}{c.screen ? ' · SHARING' : ''} · </span><Clock since={session.startedAt} className="mono" />
         </button>
       ) : (
-        <aside className="sup-dock" role="dialog" aria-label={`Support session with ${tech}`}>
+        <aside className={`sup-dock${drop.over ? ' drop-over' : ''}`} role="dialog" aria-label={`Support session with ${tech}`} {...drop.handlers}>
           <header className="sup-dock-head">
             <span className="label">IT is with you</span>
             <button className="icon-btn" onClick={() => setMinimized(true)} title="Fold to a small chip (the session goes on)" aria-label="Fold"><Icon name="minimize" size={15} /></button>
@@ -222,6 +269,8 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
               <span className="mono faint">{techHere ? 'IT DESK · IN THE SESSION' : 'IT DESK · CONNECTING'} · <Clock since={session.startedAt} /></span>
             </div>
           </div>
+          {session.unattended && <p className="sup-unattended" role="note"><b>{techFirst} connected without asking.</b> Your office lets IT connect to its PCs (unattended access). You can stop it at any time: Stop control, Stop sharing, or End.</p>}
+          {drop.on && <p className="faint sup-reason">Drop files or a folder here to send them to {techFirst}.</p>}
           {ticket && <div className="sup-ticket"><span className="mono">{ticketRef(ticket.number)}</span><span translate="no">{ticket.summary}</span><StatusStamp t={ticket} /></div>}
           {ask && (
             <div className="sup-ask" role="alertdialog" aria-label="IT asks">
@@ -254,7 +303,8 @@ function RequesterDock({ users, meId, meDevice, session }: Props & { session: Su
             <button className="end" onClick={() => run(endSession())}><Icon name="phone-off" size={17} /><span>End</span></button>
           </div>
           {files.input}
-          <SendProgress progress={files.progress} />
+          <SendProgress progress={files.progress ?? drop.progress} />
+          <DroppedNote />
           {ticket && ticket.files.length > 0 && <div className="sup-scroll"><div className="label hd-sec">Files · {ticket.files.length}</div><Files files={ticket.files} users={users} meId={meId} /></div>}
         </aside>
       )}

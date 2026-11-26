@@ -1162,6 +1162,8 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   'help.connect': { req: { id?: string; userId?: string }; res: { session: SupportSession; room: RoomInfo } };
   /** Support sessions running now that you are part of (to rejoin after a dropped connection or a restart). */
   'help.live': { req: void; res: SupportSession[] };
+  /** Files dropped into a running support session (policy assistFiles), up to 100 a call; the other side saves them. */
+  'help.drop': { req: { id: string; fileIds: string[]; folder?: string | null }; res: { ok: true; count: number } };
   /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
   'help.consent': { req: { id: string; kind: 'screen' | 'control'; on: boolean; scope?: 'screen' | 'window' }; res: SupportSession };
   /** The technician asks the requester for something (each needs the requester's own yes). */

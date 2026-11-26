@@ -171,7 +171,7 @@ export class HelpDesk {
 
   private filesOf(ticketId: string): HelpFile[] {
     const rows = this.db.prepare(`SELECT hf.file_id, hf.kind, hf.by_id, hf.at, f.name, f.size, f.mime FROM help_files hf JOIN files f ON f.id = hf.file_id
-      WHERE hf.ticket_id = ? ORDER BY hf.at`).all(ticketId) as Array<{ file_id: string; kind: HelpFileKind; by_id: string; at: number; name: string; size: number; mime: string }>;
+      WHERE hf.ticket_id = ? AND hf.kind != 'dropped' ORDER BY hf.at`).all(ticketId) as Array<{ file_id: string; kind: HelpFileKind; by_id: string; at: number; name: string; size: number; mime: string }>;
     return rows.map((r) => ({ fileId: r.file_id, name: r.name, size: r.size, mime: r.mime, kind: r.kind, by: r.by_id, at: r.at }));
   }
 
@@ -234,11 +234,11 @@ export class HelpDesk {
   }
 
   private attachFile(r: TicketRow, me: PublicUser, fileId: unknown, kindIn: unknown): HelpFile {
-    const kind: HelpFileKind = kindIn === 'screenshot' || kindIn === 'diagnostics' ? kindIn : 'file';
+    const kind: HelpFileKind = kindIn === 'screenshot' || kindIn === 'diagnostics' || kindIn === 'dropped' ? kindIn : 'file';
     const info = typeof fileId === 'string' ? this.host.files.info(fileId) : null;
     // only a file you uploaded yourself (or can already read) can be attached
     if (!info || (info.uploaderId !== me.id && !this.host.files.canRead(me.id, info.id))) throw new HelpError('File not found.');
-    if ((this.db.prepare('SELECT COUNT(*) AS n FROM help_files WHERE ticket_id = ?').get(r.id) as { n: number }).n >= MAX_FILES) throw new HelpError(`A ticket holds up to ${MAX_FILES} files. Close this one and open another.`);
+    if (kind !== 'dropped' && (this.db.prepare(`SELECT COUNT(*) AS n FROM help_files WHERE ticket_id = ? AND kind != 'dropped'`).get(r.id) as { n: number }).n >= MAX_FILES) throw new HelpError(`A ticket holds up to ${MAX_FILES} files. Close this one and open another.`);
     const at = Date.now();
     this.db.prepare('INSERT OR IGNORE INTO help_files (ticket_id, file_id, kind, by_id, at) VALUES (?, ?, ?, ?, ?)').run(r.id, info.id, kind, me.id, at);
     return { fileId: info.id, name: info.name, size: info.size, mime: info.mime, kind, by: me.id, at };
@@ -465,6 +465,22 @@ export class HelpDesk {
         this.pushSession(s);
         this.publish(r.id);
         return { session: this.publicSession(s), room };
+      }
+
+      case 'help.drop': {
+        const r = this.visible(me, d.id);
+        const s = this.live.get(r.id);
+        if (!s || (me.id !== s.requesterId && me.id !== s.techId)) throw new HelpError('Drop files from inside the session.');
+        if (this.host.policy().assistFiles !== true) throw new HelpError('Dropping files into a session is off for this office. Use Send a file.');
+        const ids = Array.isArray(d.fileIds) ? d.fileIds.filter((x): x is string => typeof x === 'string').slice(0, 100) : [];
+        if (!ids.length) throw new HelpError('Nothing to send.');
+        const files = ids.map((id) => this.attachFile(r, me, id, 'dropped'));
+        const size = files.reduce((n, f) => n + f.size, 0);
+        const folder = oneLine(d.folder, 120) || null;
+        const what = folder ? `${files.length} file${files.length === 1 ? '' : 's'} from the folder ${folder}` : files.length === 1 ? files[0].name : `${files.length} files`;
+        this.entry(r.id, me.id, 'file', what, { dropped: files.length, size, folder, names: files.slice(0, 5).map((f) => f.name) });
+        this.host.store.audit(me.id, 'help.files.dropped', r.id, { session: s.id, count: files.length, size, folder, to: me.id === s.techId ? s.requesterId : s.techId });
+        return { ok: true, count: files.length };
       }
 
       case 'help.live':

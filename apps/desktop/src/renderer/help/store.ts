@@ -3,8 +3,11 @@
 // window (for "Send diagnostics"). The requester's consent is applied here in order: this PC first
 // (the frame, the bar, the input gate in the main process), then the hub (the record and audit).
 import { useSyncExternalStore } from 'react';
-import type { HelpTicket, SupportSession } from '@dex/core';
-import { callState, enterSpecial, leave, onRoomData, toggleScreen } from '../rooms/engine.ts';
+import { ticketRef } from '@dex/core';
+import type { HelpTicket, OfficePolicy, SupportSession } from '@dex/core';
+import { DROP_MAX_FILES, decodeClip, decodeDroppedFile, safeRelativePath } from '@dex/core/assist';
+import { callState, enterSpecial, leave, onRoomData, sendRoomData, toggleMute, toggleScreen } from '../rooms/engine.ts';
+import { policyNow } from '../policy.ts';
 
 export interface HelpState {
   staff: string[];
@@ -22,9 +25,11 @@ export interface HelpState {
   control: { available: boolean; reason: string | null };
   /** The source the requester shares (for the main process's frame and control mapping). */
   shared: { sourceId: string; scope: 'screen' | 'window' } | null;
+  /** Files the other side dropped into the session, saved on this PC (policy assistFiles). */
+  dropped: { ref: string; count: number; last: string } | null;
 }
 
-let state: HelpState = { staff: [], mine: [], queue: [], session: null, invite: null, ask: null, rate: null, control: { available: false, reason: null }, shared: null };
+let state: HelpState = { staff: [], mine: [], queue: [], session: null, invite: null, ask: null, rate: null, control: { available: false, reason: null }, shared: null, dropped: null };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<HelpState>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
 export const useHelp = <T,>(sel: (s: HelpState) => T): T => useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => sel(state));
@@ -60,12 +65,19 @@ export async function startHelp(me: string): Promise<void> {
       } else if (name === 'help.session') onSession(data as SupportSession);
       else if (name === 'help.ask') set({ ask: { ...(data as { ticketId: string; kind: 'screen' | 'control' | 'diagnostics'; by: string }), at: Date.now() } });
     });
-    // the technician's input reaches this PC over the session's data channel: only the main process injects it
+    // the technician's input reaches this PC over the session's data channel: only the main process injects it;
+    // clipboard text and dropped files come from the other person in the session, when the office allows them
     onRoomData((dev, user, data) => {
       const s = state.session;
-      if (!s || !s.consent.control || user !== s.techId || meId !== s.requesterId || callState().room?.purpose?.kind !== 'support') return;
-      if ((data as { k?: unknown } | null)?.k === 'in') window.dex.assist?.input(data, dev);
+      if (!s || callState().room?.purpose?.kind !== 'support') return;
+      const peer = meId === s.requesterId ? s.techId : meId === s.techId ? s.requesterId : null;
+      if (!peer || user !== peer) return;
+      const k = (data as { k?: unknown } | null)?.k;
+      if (k === 'in') { if (s.consent.control && meId === s.requesterId) window.dex.assist?.input(data, dev); return; }
+      if (k === 'clip') { const text = decodeClip(data); if (text !== null && s.consent.control && policyNow().assistClipboard === true) void clipIn(text); return; }
+      if (k === 'file') { const f = decodeDroppedFile(data); if (f && policyNow().assistFiles === true) void saveDropped(s, f.fileId, f.path); }
     });
+    setInterval(() => void clipTick(), 1000);
     window.dex.assist?.onStop((what, context) => {
       // a meeting's "Give control" has its own (meet/control-store.ts)
       if (context === 'meeting' || !state.session) return;
@@ -73,14 +85,20 @@ export async function startHelp(me: string): Promise<void> {
       else if (what === 'screen') void stopScreen();
       else void endSession();
     });
-    if (window.dex.assist) void window.dex.assist.caps().then((c) => set({ control: { available: c.control, reason: c.reason } })).catch(() => {});
+    caps = window.dex.assist ? window.dex.assist.caps().then((c) => set({ control: { available: c.control, reason: c.reason } })).catch(() => {}) : Promise.resolve();
   }
   try {
     const [staff, mine] = await Promise.all([window.dex.request('help.staff'), window.dex.request('help.mine')]);
     set({ staff, mine });
     await refreshQueue();
   } catch { /* offline: kept as they were */ }
+  // back online (or the app started): rejoin a session that is waiting for us
+  try {
+    const policy = await window.dex.request('policy.get');
+    for (const s of await window.dex.request('help.live')) if (!inSessionRoom(s)) void rejoin(s, policy);
+  } catch { /* offline, or an older hub */ }
 }
+let caps: Promise<void> = Promise.resolve();
 
 export async function refreshQueue(): Promise<void> {
   if (!isIt()) { if (state.queue.length) set({ queue: [] }); return; }
@@ -92,15 +110,171 @@ const inSessionRoom = (s: SupportSession) => { const p = callState().room?.purpo
 function onSession(s: SupportSession): void {
   if (s.endedAt) {
     const wasMine = state.session?.id === s.id || state.invite?.id === s.id;
+    if (resume?.sessionId === s.id) resume = null;
     if (!wasMine) return;
     if (meId === s.requesterId) { void applyLocal(false, false); set({ rate: s.ticketId }); }
-    set({ session: null, invite: null, ask: null, shared: null });
+    set({ session: null, invite: null, ask: null, shared: null, dropped: null });
     if (inSessionRoom(s)) leave();
     return;
   }
-  if (meId === s.requesterId && !inSessionRoom(s)) { set({ invite: s, session: state.session?.id === s.id ? s : state.session }); return; }
+  if (s.pausedAt !== null) {
+    // the connection dropped: this PC stops sharing at once; what was shared is remembered to share again
+    if (meId === s.requesterId && state.session?.id === s.id) { void applyLocal(false, false); set({ shared: null }); }
+    if (inSessionRoom(s)) leave();
+    set({ session: state.session?.id === s.id ? s : state.session });
+    void rejoin(s, policyNow());
+    return;
+  }
+  if (meId === s.requesterId && !inSessionRoom(s)) {
+    set({ invite: s, session: state.session?.id === s.id ? s : state.session });
+    if (s.unattended && policyNow().assistUnattended === true) void rejoin(s, policyNow());
+    return;
+  }
   set({ session: s, invite: state.invite?.id === s.id ? null : state.invite });
 }
+
+// ------------------------------------------------------------------ unattended access and reconnecting
+/** What the requester shared before the connection dropped, to share again when it is back (same app run only). */
+let resume: { sessionId: string; sourceId: string; scope: 'screen' | 'window'; control: boolean } | null = null;
+let joining: string | null = null;
+/** Counts the person's own stops: one during an automatic rejoin cancels what is left of it. */
+let stops = 0;
+
+/**
+ * Join a session without a click: an unattended one (IT connected without asking, policy
+ * assistUnattended) or one that waits for its dropped connection (policy assistReconnect).
+ * Unattended: this PC shares its main screen and gives control by itself, with the microphone off,
+ * and says so (the banner, the share bar, a notification); the person can stop it as always.
+ */
+async function rejoin(s: SupportSession, policy: OfficePolicy): Promise<void> {
+  const requester = meId === s.requesterId;
+  const unattended = requester && s.unattended && policy.assistUnattended === true && !!window.dex.assist;
+  if (!unattended && policy.assistReconnect !== true) return;
+  if (joining === s.id || inSessionRoom(s)) return;
+  // someone in another Room or meeting is not pulled out of it: the invite card stays
+  if (callState().room) return;
+  joining = s.id;
+  const at = stops;
+  const stopped = () => stops !== at || state.session?.id !== s.id;
+  try {
+    await caps;
+    await joinSession(s.ticketId);
+    if (!requester) return;
+    if (unattended) {
+      if (!callState().muted) toggleMute();
+      const source = await window.dex.assist!.primaryScreen();
+      if (!source) throw new Error('No screen to share.');
+      if (stopped()) return;
+      await shareScreen(source, 'screen');
+      if (stopped()) return;
+      if (state.control.available) await allowControl();
+      if (stopped()) { await stopControl(); return; }
+      window.dex.notify(`${techNameOf(s.techId)} from IT connected to this PC`, 'Unattended access: they see your screen and can use your mouse and keyboard. Press Shift+Esc to stop control.', 'dexconnect://help');
+    } else if (resume?.sessionId === s.id) {
+      const r = resume;
+      await shareScreen(r.sourceId, r.scope);
+      if (stopped()) return;
+      if (r.control && state.control.available && r.scope === 'screen') await allowControl();
+      if (stopped()) { await stopControl(); return; }
+      window.dex.notify(`Reconnected with ${techNameOf(s.techId)}`, r.control ? 'Your screen is shared again and IT has control again. Press Shift+Esc to stop control.' : 'Your screen is shared again.', 'dexconnect://help');
+    }
+  } catch (e) {
+    console.warn('support session: could not join by itself', (e as Error).message);
+  } finally {
+    joining = null;
+  }
+}
+
+// ------------------------------------------------------------------ clipboard (policy assistClipboard)
+/** The last text seen on this PC's clipboard and the last one received, so nothing echoes back. */
+let clipSeen: string | null = null;
+let clipGot: string | null = null;
+
+async function clipTick(): Promise<void> {
+  const s = state.session;
+  const on = !!s && s.consent.control && policyNow().assistClipboard === true && !!window.dex.assist && callState().room?.purpose?.kind === 'support';
+  if (!on) { clipSeen = null; clipGot = null; return; }
+  const text = await window.dex.assist!.clipboard().catch(() => null);
+  if (text === null) return;
+  // what was on the clipboard before control began is not sent; only what is copied from now on
+  if (clipSeen === null) { clipSeen = text; return; }
+  if (text === clipSeen) return;
+  clipSeen = text;
+  if (text && text !== clipGot) sendRoomData({ k: 'clip', text });
+}
+
+async function clipIn(text: string): Promise<void> {
+  clipGot = text;
+  clipSeen = text;
+  await window.dex.assist?.clipboard(text).catch(() => {});
+}
+
+// ------------------------------------------------------------------ files and folders dropped in (policy assistFiles)
+async function saveDropped(s: SupportSession, fileId: string, rel: string): Promise<void> {
+  const t = ticketById(s.ticketId);
+  if (!t || !window.dex.assist) return;
+  const ref = ticketRef(t.number);
+  try {
+    await window.dex.assist.saveDropped(fileId, ref, rel);
+    const d = state.dropped?.ref === ref ? state.dropped : null;
+    set({ dropped: { ref, count: (d?.count ?? 0) + 1, last: rel.split('/').pop() ?? rel } });
+  } catch (e) { console.warn('support session: a dropped file was not saved', (e as Error).message); }
+}
+
+/** One file from a drop, with its place in the dropped folder. */
+export interface DropItem { file: File; path: string }
+
+/** The files of a drop (folders walked, up to DROP_MAX_FILES), with their paths inside the folders dropped. */
+export async function dropItems(dt: DataTransfer): Promise<{ items: DropItem[]; folder: string | null; skipped: number }> {
+  const items: DropItem[] = [];
+  let skipped = 0;
+  let folder: string | null = null;
+  const fileOf = (e: FileSystemFileEntry) => new Promise<File>((res, rej) => e.file(res, rej));
+  const readAll = async (r: FileSystemDirectoryReader) => {
+    const out: FileSystemEntry[] = [];
+    for (;;) { const batch = await new Promise<FileSystemEntry[]>((res, rej) => r.readEntries(res, rej)); if (!batch.length) return out; out.push(...batch); }
+  };
+  const walk = async (e: FileSystemEntry, at: string): Promise<void> => {
+    if (items.length >= DROP_MAX_FILES) { skipped++; return; }
+    if (e.isFile) { items.push({ file: await fileOf(e as FileSystemFileEntry), path: at ? `${at}/${e.name}` : e.name }); return; }
+    if (e.isDirectory) for (const c of await readAll((e as FileSystemDirectoryEntry).createReader())) await walk(c, at ? `${at}/${e.name}` : e.name);
+  };
+  const entries = [...dt.items].map((i) => i.webkitGetAsEntry?.() ?? null);
+  if (entries.some((e) => e)) {
+    for (const e of entries) if (e) { if (e.isDirectory && !folder) folder = e.name; await walk(e, ''); }
+  } else {
+    for (const f of [...dt.files]) { if (items.length >= DROP_MAX_FILES) skipped++; else items.push({ file: f, path: f.name }); }
+  }
+  return { items: items.filter((i) => safeRelativePath(i.path)), folder, skipped };
+}
+
+/** Send dropped files to the other side of the session: through the hub's file store, saved at their end. */
+export async function sendDropped(ticketId: string, drop: { items: DropItem[]; folder: string | null }, onProgress: (done: number, total: number, name: string) => void): Promise<number> {
+  if (!window.dex.uploadFile) throw new Error('Dropping files works from the desktop app.');
+  if (policyNow().assistFiles !== true) throw new Error('Dropping files into a session is off for this office. Use Send a file.');
+  const total = drop.items.length;
+  let done = 0;
+  let batch: Array<{ fileId: string; path: string; size: number }> = [];
+  const flush = async () => {
+    if (!batch.length) return;
+    await window.dex.request('help.drop', { id: ticketId, fileIds: batch.map((b) => b.fileId), folder: drop.folder });
+    for (const b of batch) sendRoomData({ k: 'file', ...b });
+    batch = [];
+  };
+  for (const it of drop.items) {
+    onProgress(done, total, it.path);
+    const path = window.dex.pathForFile?.(it.file);
+    const info = await window.dex.uploadFile(`help-drop-${Date.now().toString(36)}-${done}`, path ? { path, name: it.file.name, mime: it.file.type || undefined } : { data: await it.file.arrayBuffer(), name: it.file.name, mime: it.file.type || undefined });
+    batch.push({ fileId: info.id, path: it.path, size: it.file.size });
+    done++;
+    if (batch.length >= 50) await flush();
+  }
+  await flush();
+  onProgress(done, total, '');
+  return done;
+}
+
+export const clearDropped = () => set({ dropped: null });
 
 // ------------------------------------------------------------------ requests
 export async function createRequest(input: { summary: string; detail: string; category: HelpTicket['category']; screenshot: { data: ArrayBuffer; name: string; mime: string } | null }): Promise<HelpTicket> {
@@ -125,6 +299,15 @@ export async function startSession(ticketId: string): Promise<void> {
   });
 }
 
+/** IT connects to a person's PC without them accepting (policy assistUnattended): on a ticket, or a new one for them. */
+export async function connectNow(target: { id: string } | { userId: string }): Promise<void> {
+  await enterSpecial(async () => {
+    const r = await window.dex.request('help.connect', target);
+    set({ session: r.session });
+    return r.room;
+  });
+}
+
 /** The requester (or the technician coming back) joins the session's Room. */
 export async function joinSession(ticketId: string): Promise<void> {
   await enterSpecial(async () => {
@@ -136,6 +319,8 @@ export async function joinSession(ticketId: string): Promise<void> {
 
 export async function endSession(): Promise<void> {
   const s = state.session;
+  resume = null;
+  stops++;
   await applyLocal(false, false);
   if (s) await window.dex.request('help.session.end', { id: s.ticketId }).catch(() => {});
   if (s && inSessionRoom(s)) leave();
@@ -150,7 +335,7 @@ async function applyLocal(screen: boolean, control: boolean): Promise<{ screen: 
   const s = state.session;
   const techName = s ? techNameOf(s.techId) : 'IT';
   if (!window.dex.assist) return { screen, control: false, error: control ? 'Remote control works from the desktop app.' : null };
-  return window.dex.assist.consent({ screen, sourceId: state.shared?.sourceId ?? null, scope: state.shared?.scope ?? 'screen', control, peer: techName, context: 'support' });
+  return window.dex.assist.consent({ screen, sourceId: state.shared?.sourceId ?? null, scope: state.shared?.scope ?? 'screen', control, peer: techName, context: 'support', unattended: !!s?.unattended });
 }
 let techNameOf: (id: string) => string = () => 'IT';
 export function setNames(f: (id: string) => string): void { techNameOf = f; }
@@ -163,12 +348,15 @@ export async function shareScreen(sourceId: string, scope: 'screen' | 'window'):
   await toggleScreen(sourceId);
   if (!callState().screen) throw new Error('The screen could not be shared.');
   set({ shared: { sourceId, scope } });
+  resume = { sessionId: s.id, sourceId, scope, control: false };
   await applyLocal(true, false);
   try { set({ session: await window.dex.request('help.consent', { id: s.ticketId, kind: 'screen', on: true, scope }) }); } catch (e) { await stopScreen(); throw e; }
 }
 
 export async function stopScreen(): Promise<void> {
   const s = state.session;
+  resume = null;
+  stops++;
   await applyLocal(false, false);
   if (callState().screen && callState().room?.purpose?.kind === 'support') await toggleScreen();
   set({ shared: null });
@@ -182,10 +370,13 @@ export async function allowControl(): Promise<void> {
   const r = await applyLocal(true, true);
   if (!r.control) throw new Error(r.error ?? 'Remote control could not start.');
   try { set({ session: await window.dex.request('help.consent', { id: s.ticketId, kind: 'control', on: true }) }); } catch (e) { await applyLocal(true, false); throw e; }
+  if (resume?.sessionId === s.id) resume = { ...resume, control: true };
 }
 
 export async function stopControl(): Promise<void> {
   const s = state.session;
+  if (resume) resume = { ...resume, control: false };
+  stops++;
   // this PC stops first, whatever the hub says
   await applyLocal(!!state.shared, false);
   if (s?.consent.control) set({ session: await window.dex.request('help.consent', { id: s.ticketId, kind: 'control', on: false }).catch(() => s) });

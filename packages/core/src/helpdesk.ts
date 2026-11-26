@@ -19,7 +19,8 @@ export const HELP_CATEGORIES: ReadonlyArray<{ id: HelpCategory; label: string; h
 /** open: waiting in the IT queue; taken: a technician is on it; closed: done (the requester can reopen it). */
 export type TicketStatus = 'open' | 'taken' | 'closed';
 
-export type HelpFileKind = 'screenshot' | 'diagnostics' | 'file';
+/** 'dropped': dropped into a support session (policy assistFiles); kept on the ticket but not in its list of files. */
+export type HelpFileKind = 'screenshot' | 'diagnostics' | 'file' | 'dropped';
 
 export interface HelpFile {
   fileId: string;

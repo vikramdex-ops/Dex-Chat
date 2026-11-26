@@ -7,7 +7,8 @@ import type { HelpEntry, HelpTicket, PublicUser } from '@dex/core';
 import { Avatar, Icon, Segmented, relativeTime, useToast } from '../ui.tsx';
 import { clock, useCall } from '../rooms/engine.ts';
 import { Files, StatusStamp, Timeline, categoryLabel, platformLabel } from './parts.tsx';
-import { joinSession, startSession, useHelp } from './store.ts';
+import { connectNow, joinSession, startSession, useHelp } from './store.ts';
+import { usePolicy } from '../policy.ts';
 
 export function TicketView({ id, users, meId, onBack }: { id: string; users: Map<string, PublicUser>; meId: string; onBack?: () => void }) {
   const toast = useToast();
@@ -17,6 +18,7 @@ export function TicketView({ id, users, meId, onBack }: { id: string; users: Map
   const staff = useHelp((s) => s.staff);
   const fresh = useHelp((s) => s.queue.find((t) => t.id === id) ?? s.mine.find((t) => t.id === id) ?? null);
   const inRoom = useCall((s) => s.room);
+  const unattendedOn = usePolicy().assistUnattended === true;
   useEffect(() => {
     let alive = true;
     void window.dex.request('help.get', { id }).then((d) => { if (alive) setData(d); }).catch((e: Error) => toast(e.message, true));
@@ -68,6 +70,12 @@ export function TicketView({ id, users, meId, onBack }: { id: string; users: Map
             <Icon name="screen" size={15} />{t.session ? 'Back to the session' : 'Start a support session'}
           </button>
         )}
+        {it && !requester && t.status !== 'closed' && !t.session && unattendedOn && (
+          <button className="btn" disabled={busy || !!inRoom} title={inRoom ? 'Leave the Room you are in first' : `Connect to ${nameOf(t.requesterId)}'s PC now, without them accepting. They are told and can stop it.`}
+            onClick={() => void run(() => connectNow({ id: t.id }))}>
+            <Icon name="monitor" size={15} />Connect now
+          </button>
+        )}
         {requester && t.session && !inThisSession && (
           <button className="btn primary" disabled={busy} onClick={() => void run(() => joinSession(t.id))}><Icon name="screen" size={15} />Join the session</button>
         )}
@@ -116,6 +124,29 @@ function ScreenshotPreview({ fileId, name }: { fileId: string; name: string }) {
 }
 
 /** IT's queue: open requests first, then those being worked on; closed ones on their own tab. */
+/** Unattended access (policy assistUnattended): connect to someone's PC without a request. */
+function ConnectToPc({ users, meId }: { users: Map<string, PublicUser>; meId: string }) {
+  const toast = useToast();
+  const on = usePolicy().assistUnattended === true;
+  const inRoom = useCall((s) => s.room);
+  const [who, setWho] = useState('');
+  const [busy, setBusy] = useState(false);
+  const people = useMemo(() => [...users.values()].filter((u) => u.id !== meId && u.role !== 'guest' && u.role !== 'bot').sort((a, b) => a.displayName.localeCompare(b.displayName)), [users, meId]);
+  if (!on) return null;
+  return (
+    <div className="hd-connect" role="group" aria-label="Connect to a PC">
+      <select value={who} onChange={(e) => setWho(e.target.value)} aria-label="Whose PC">
+        <option value="">Connect to someone's PC…</option>
+        {people.map((u) => <option key={u.id} value={u.id}>{u.displayName}</option>)}
+      </select>
+      <button className="btn sm" disabled={!who || busy || !!inRoom} title={inRoom ? 'Leave the Room you are in first' : 'Unattended: their app shares the screen and gives control by itself. They are told and can stop it.'}
+        onClick={() => { setBusy(true); void connectNow({ userId: who }).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(false)); }}>
+        <Icon name="monitor" size={14} />Connect now
+      </button>
+    </div>
+  );
+}
+
 export function HelpDesk({ users, meId, focus }: { users: Map<string, PublicUser>; meId: string; focus?: string | null }) {
   const queue = useHelp((s) => s.queue);
   const [tab, setTab] = useState<'active' | 'closed'>('active');
@@ -134,6 +165,7 @@ export function HelpDesk({ users, meId, focus }: { users: Map<string, PublicUser
         <div>
           <h1>Help desk</h1>
           <p className="muted">Requests from the office. Take one, then open a support session from it: they decide what you see and touch.</p>
+          <ConnectToPc users={users} meId={meId} />
         </div>
         <dl className="hd-counts">
           <div><dt>In the queue</dt><dd className="mono">{counts.open}</dd></div>

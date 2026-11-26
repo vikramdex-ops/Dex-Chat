@@ -282,3 +282,44 @@ export class InputBatcher {
     return { k: 'in', e };
   }
 }
+
+// ------------------------------------------------------------------ clipboard and files (policies assistClipboard, assistFiles)
+/** Clipboard text carried in one data-channel message, at most. */
+export const CLIP_MAX = 60_000;
+/** Files one drop may carry, at most (a folder is walked to this many). */
+export const DROP_MAX_FILES = 500;
+
+/** A clipboard message from the other side ({ k: 'clip', text }), or null. */
+export function decodeClip(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object' || (raw as { k?: unknown }).k !== 'clip') return null;
+  const text = (raw as { text?: unknown }).text;
+  return typeof text === 'string' && text.length <= CLIP_MAX ? text : null;
+}
+
+/** A file sent into the session ({ k: 'file', fileId, path, size }): where it goes under the ticket's folder. */
+export interface DroppedFile { fileId: string; path: string; size: number }
+
+export function decodeDroppedFile(raw: unknown): DroppedFile | null {
+  if (!raw || typeof raw !== 'object' || (raw as { k?: unknown }).k !== 'file') return null;
+  const v = raw as { fileId?: unknown; path?: unknown; size?: unknown };
+  if (typeof v.fileId !== 'string' || !/^[0-9A-Z]{26}$/.test(v.fileId)) return null;
+  const segs = typeof v.path === 'string' ? safeRelativePath(v.path) : null;
+  if (!segs) return null;
+  return { fileId: v.fileId, path: segs.join('/'), size: typeof v.size === 'number' && v.size >= 0 ? v.size : 0 };
+}
+
+const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+
+/**
+ * A path from the other PC (a dropped file's place in its folder) as safe folder and file names
+ * under the ticket's folder: no drive, no "..", no characters Windows refuses, no reserved device
+ * names, at most 12 levels and 240 characters. Null when nothing usable is left.
+ */
+export function safeRelativePath(raw: string): string[] | null {
+  const segs = raw.split(/[\\/]/)
+    .map((s) => s.replace(/[\u0000-\u001f<>:"|?*]/g, '_').replace(/[. ]+$/g, '').trim())
+    .filter((s) => s && s !== '.' && s !== '..')
+    .map((s) => (RESERVED.test(s) ? `_${s}` : s).slice(0, 120));
+  if (!segs.length || segs.length > 12 || segs.join('/').length > 240) return null;
+  return segs;
+}

@@ -44,11 +44,11 @@ export function ControlConsentSheet({ who, lead, ends, available, reason, whole,
 }
 
 /** Across the top of the controlled PC's app while someone uses its mouse and keyboard. */
-export function ControlBanner({ who, guest, onStop }: { who: string; guest?: boolean; onStop: () => void }) {
+export function ControlBanner({ who, guest, unattended, onStop }: { who: string; guest?: boolean; unattended?: boolean; onStop: () => void }) {
   return (
     <div className="sup-banner" role="alert">
       <span className="sup-banner-pip" aria-hidden="true" />
-      <span><b translate="no">{who}</b>{guest && <span className="role-tag">GUEST</span>} is using your mouse and keyboard</span>
+      <span><b translate="no">{who}</b>{guest && <span className="role-tag">GUEST</span>} is using your mouse and keyboard{unattended && <> · <b>connected without asking</b> (unattended access is on for this office)</>}</span>
       <button className="sup-stop" onClick={onStop}>Stop control</button>
       <span className="mono sup-banner-keys">{STOP_QUICK} · {STOP_HOTKEY}</span>
     </div>

@@ -119,7 +119,8 @@ How it works:
   elevated, so Windows itself keeps its input out of an elevated (administrator) window and off
   the secure desktop of a UAC prompt or Ctrl+Alt+Del: the person in control sees such a prompt
   but cannot answer it; the person whose PC it is answers it. The app makes no attempt to get
-  around this, in support sessions or in meetings.
+  around this, in support sessions or in meetings. (Elevated control through a Windows service,
+  installed by an administrator and behind its own policy, is planned as a separate stage.)
 - **Linux (X11):** `xdotool`, kept running and fed one command per line. Without it, or on Wayland,
   control is not offered and the requester is told why.
 - **macOS:** view only. Control would need Accessibility permission, which the app does not ask
@@ -134,6 +135,52 @@ chords and mapping, and the injectors. The main process's `assist:consent` takes
 (`support` or `meeting`) and, in a meeting, the one device whose input it accepts; in a support
 session the window checks that input comes from the technician. In a meeting the frame and bar show
 only while someone has control, since the meeting's own sheet shows the share.
+
+## Remote support (Control room ▸ Policies ▸ Remote support)
+
+Four policies, **each off until an administrator turns it on** (`OfficePolicy.assistUnattended`,
+`assistClipboard`, `assistFiles`, `assistReconnect`; stored by `apps/hub/src/policies.ts`, changes
+audited as `policy.set`). They work in the signed-in desktop app; what needs a Windows service
+(administrator windows, UAC prompts, Ctrl+Alt+Del, the sign-in screen) is a later stage.
+
+**Unattended access** (`assistUnattended`). Anyone on the IT desk may connect to any office PC
+without the person accepting: **Connect now** on a ticket, or *Connect to someone's PC…* at the top
+of the Help desk (which opens a ticket for that person, held by the technician). The hub
+(`help.connect`) refuses it unless the policy is on and the caller is IT staff; the session is
+marked `unattended`. The person's app, if the policy is on, joins by itself (not when they are in
+another Room or meeting: then the invite card stays), with **its microphone off**, shares its main
+screen and gives control. It says so everywhere: a notification, the dock (*"Ravi connected without
+asking"*), the amber banner (*"… connected without asking (unattended access is on for this
+office)"*), the amber frame and the share bar (*IT CONNECTED WITHOUT ASKING*). **The person can
+always stop it** exactly as in an attended session: Stop control, Stop sharing, End, Shift+Esc or
+Ctrl+Alt+Shift+S. Nothing is given again by itself after they stop it, unless IT connects again.
+One PC of theirs takes an unattended session (the first that joins). It needs the app running and
+someone signed in to Windows. Recorded: `help.unattended.started` / `help.unattended.ended`,
+`unattended: true` on `help.session.started`, `help.consent.granted` and `help.session.ended`, and
+*"connected without asking"* on the ticket.
+
+**Clipboard** (`assistClipboard`). While control is on, text copied on either PC can be pasted on
+the other (`{ k: 'clip', text }` on the data channel, at most 60,000 characters; text only). What
+was on the clipboard before control began is not sent; only what is copied from then on. Each side
+takes it only from the other person in the session.
+
+**Files and folders** (`assistFiles`). Drop files, or a whole folder (up to 500 files at a time), on
+the technician's picture or on the requester's dock. Each is uploaded to the hub's file store and
+kept on the ticket (`help.drop`: one timeline line per drop, audit `help.files.dropped`; dropped
+files do not count toward the ticket's 40 attachments and are not in its list of files). The other
+side saves them under **Downloads\Dexterity IT\T-0042\** at their place in the folder; paths are
+cleaned (`safeRelativePath`: no drive, no "..", no reserved names) and nothing is overwritten.
+**Send a file** still works without the policy.
+
+**Reconnect** (`assistReconnect`). When a session's Room ends without anyone ending the session
+(a network drop, a PC restarting), the hub pauses it instead of ending it: sharing and control stop
+at once (`help.session.paused`), and it waits **10 minutes** (`reconnectGraceMs`). Each app joins
+it again when it is back online or starts (`help.live`), and the session resumes
+(`help.session.resumed`, with how long it was paused). After a network drop, the requester's app
+shares the same screen again and, if they had given control, gives it again (it tells them); after
+a restart it remembers nothing, so they choose again, unless the session is unattended. A
+connection that does not come back in time ends the session (*"The connection did not come back in
+time."*). Without the policy a dropped Room ends the session, as before.
 
 ## What is recorded
 
@@ -166,6 +213,15 @@ and **Solved: close it** or **It still needs work** (which keeps or reopens the 
 
 - Hub: `apps/hub/test/helpdesk.test.ts` (tickets and the queue, the `it` capability, who may join a
   session, consent as the protocol carries it, the audit trail, a restart).
+- Remote support: `apps/hub/test/remote-support.test.ts` (the four policies off by default and
+  admin-only, unattended access for IT staff only and its audit trail, pause and resume after a
+  dropped Room, the grace period running out, dropped files) and
+  `packages/core/test/assist-transfer.test.ts` (clipboard messages, cleaned paths for dropped files).
+- End to end: `apps/desktop/e2e/unattended.mts` (Connect now from the Help desk, the person's app
+  joining muted and sharing and giving control by itself, the notices, dropped files landing in
+  Downloads\Dexterity IT\T-0001, rejoining by itself after a reload, the person stopping control,
+  the audit log). Runs on Windows as well as under Xvfb. Clipboard sync is not covered end to end:
+  both apps of the script share one clipboard.
 - Units: `packages/core/test/assist.test.ts` (the event decoder, the rate limit, the chord list,
   coordinates), `apps/desktop/test/assist.test.ts` (the generated C# and PowerShell, the JSON lines
   both sides speak, xdotool's commands, the control gate, input only from the device allowed in a

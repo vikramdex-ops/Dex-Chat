@@ -5,9 +5,9 @@
 // things back.
 import path from 'node:path';
 import os from 'node:os';
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, screen } from 'electron';
 import type { Display } from 'electron';
-import { STOP_HOTKEY, STOP_QUICK } from '@dex/core/assist';
+import { CLIP_MAX, STOP_HOTKEY, STOP_QUICK } from '@dex/core/assist';
 import type { Rect } from '@dex/core/assist';
 import type { AssistCaps, AssistContext, ShareBarState, UpdateChannel } from '../../shared/bridge.ts';
 import { appLog } from '../applog.ts';
@@ -125,7 +125,21 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
 
   ipcMain.handle('assist:caps', () => caps());
 
-  ipcMain.handle('assist:consent', async (e, raw: { screen?: unknown; sourceId?: unknown; scope?: unknown; control?: unknown; peer?: unknown; context?: unknown; from?: unknown }) => {
+  ipcMain.handle('assist:primary', async (e) => {
+    if (!fromMain(e)) return null;
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
+    const main = String(screen.getPrimaryDisplay().id);
+    return (sources.find((s) => s.display_id === main) ?? sources[0])?.id ?? null;
+  });
+
+  // clipboard sync in a support session (policy assistClipboard): the window decides when; text only
+  ipcMain.handle('assist:clipboard', async (e, text: unknown) => {
+    if (!fromMain(e)) return '';
+    if (typeof text === 'string' && text.length <= CLIP_MAX) await clipboard.writeText(text);
+    return String(await clipboard.readText()).slice(0, CLIP_MAX);
+  });
+
+  ipcMain.handle('assist:consent', async (e, raw: { screen?: unknown; sourceId?: unknown; scope?: unknown; control?: unknown; peer?: unknown; context?: unknown; from?: unknown; unattended?: unknown }) => {
     if (!fromMain(e)) return { screen: false, control: false, error: 'Not allowed from this window.' };
     const wantScreen = raw?.screen === true;
     const wantControl = raw?.control === true;
@@ -137,13 +151,15 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
     if (!wantScreen) { stopAll(context === 'meeting' ? 'the presenter stopped sharing' : 'the requester stopped sharing'); return { screen: false, control: false, error: null }; }
     const sourceId = typeof raw?.sourceId === 'string' ? raw.sourceId : null;
     const display = scope === 'screen' ? await displayOf(sourceId) : null;
-    const state: ShareBarState = { peer, scope, control: false, hotkey: `${STOP_HOTKEY} · ${STOP_QUICK}`, context };
+    const unattended = context === 'support' && raw?.unattended === true;
+    const state: ShareBarState = { peer, scope, control: false, hotkey: `${STOP_HOTKEY} · ${STOP_QUICK}`, context, unattended };
     if (!share || share.display?.id !== display?.id || share.state.scope !== scope || share.state.context !== context) {
       if (share?.shown) overlays.hideShare();
       share = { display, state, shown: false };
       if (context === 'support') { overlays.showShare(display, state); share.shown = true; }
       log('info', context === 'meeting' ? 'screen shared in a meeting' : 'screen shared with IT', { scope, display: display ? `${display.bounds.width}x${display.bounds.height}` : 'one window' });
     }
+    if (share.state.unattended !== unattended) { share.state = { ...share.state, unattended }; if (share.shown) overlays.updateBar(share.state); }
     control?.setDisplay(display ? injectorRect(display) : null);
     if (!wantControl) { stopControl(context === 'meeting' ? 'the presenter took control back' : 'the requester took control back'); return { screen: true, control: false, error: null }; }
     const c = caps();
@@ -158,7 +174,7 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
       return { screen: true, control: false, error: `Remote control could not start on this PC: ${(err as Error).message}` };
     }
     setHotkey(true);
-    share.state = { ...share.state, peer, control: true };
+    share.state = { ...share.state, peer, control: true, unattended };
     if (share.shown) overlays.updateBar(share.state);
     else { overlays.showShare(display, share.state); share.shown = true; }
     return { screen: true, control: true, error: null };

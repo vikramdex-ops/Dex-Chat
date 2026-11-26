@@ -260,3 +260,26 @@ export async function pruneCache(): Promise<void> {
     }
   } catch { /* nothing cached */ }
 }
+
+/** Downloads\Dexterity IT\<ticket ref>: where files dropped into a support session land. */
+export const supportFolder = (ref: string) => path.join(app.getPath('downloads'), 'Dexterity IT', safeName(ref));
+
+/**
+ * A file the other side dropped into a support session (policy assistFiles), saved at its place
+ * in the dropped folder under the ticket's folder; an existing file is never overwritten.
+ */
+export async function saveSupportFile(access: HubAccess, id: string, ref: string, segs: string[]): Promise<string> {
+  const root = supportFolder(ref);
+  const name = segs[segs.length - 1];
+  const cached = await fetchToCache(access, id, name);
+  const dir = path.join(root, ...segs.slice(0, -1));
+  // the segments are clean already (safeRelativePath); stay inside the folder whatever happens
+  if (path.relative(root, dir).startsWith('..') || path.isAbsolute(path.relative(root, dir))) throw new Error('That path is outside the support folder.');
+  await fsp.mkdir(dir, { recursive: true });
+  const ext = path.extname(name);
+  const base = path.basename(name, ext);
+  let target = path.join(dir, name);
+  for (let i = 2; fs.existsSync(target); i++) target = path.join(dir, `${base} (${i})${ext}`);
+  await fsp.copyFile(cached, target);
+  return target;
+}

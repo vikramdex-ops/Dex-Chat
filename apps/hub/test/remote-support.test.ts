@@ -3,8 +3,27 @@
 // administrator turns it on.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import https from 'node:https';
 import type { SupportSession } from '@dex/core';
+import type { HubClient } from '@dex/core/client';
 import { office, nextEvent, me } from './office.ts';
+
+function upload(hub: { port: number }, c: HubClient, name: string, body: string): Promise<{ id: string }> {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ host: '127.0.0.1', port: hub.port, method: 'POST', path: `/files?name=${encodeURIComponent(name)}&type=text/plain`, rejectUnauthorized: false,
+      headers: { authorization: `Bearer ${c.session!.fileToken}`, 'content-length': Buffer.byteLength(body) } }, (res) => {
+      let raw = ''; res.on('data', (x) => { raw += x; }); res.on('end', () => { try { resolve(JSON.parse(raw)); } catch (e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+function status(hub: { port: number }, c: HubClient, fileId: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    https.get({ host: '127.0.0.1', port: hub.port, path: `/files/${fileId}`, rejectUnauthorized: false, headers: { authorization: `Bearer ${c.session!.fileToken}` } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); }).on('error', reject);
+  });
+}
 
 test('remote support policies are off until an administrator turns them on', async () => {
   const { owner, priya } = await office();
@@ -121,4 +140,31 @@ test('reconnect: with the policy on, a dropped session waits, then resumes; with
   assert.ok(g.endedAt);
   const after = await priya.request('help.get', { id: b.t.id });
   assert.equal(after.timeline.at(-1)!.text, 'The connection did not come back in time.');
+});
+
+test('dropped files: only in a running session with the policy on; the other side can read them; one timeline line per drop', async () => {
+  const { owner, priya, ravi, hub } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  const t = await priya.request('help.create', { summary: 'Need the template folder', category: 'drawings' });
+  await ravi.request('help.take', { id: t.id });
+  const files = await Promise.all(Array.from({ length: 45 }, (_, i) => upload(hub, ravi, `sheet-${i}.txt`, `sheet ${i}`)));
+  const ids = files.map((f) => f.id);
+  await assert.rejects(ravi.request('help.drop', { id: t.id, fileIds: ids.slice(0, 1) }), /inside the session/);
+  await ravi.request('help.session.start', { id: t.id });
+  await priya.request('help.session.join', { id: t.id });
+  await assert.rejects(ravi.request('help.drop', { id: t.id, fileIds: ids.slice(0, 1) }), /off for this office/);
+  await owner.request('admin.policy.set', { assistFiles: true });
+  // more than a ticket's 40 files: drops do not count toward that limit
+  const r = await ravi.request('help.drop', { id: t.id, fileIds: ids, folder: 'Templates' });
+  assert.equal(r.count, 45);
+  assert.equal(await status(hub, priya, ids[44]), 200);
+  const { ticket, timeline } = await priya.request('help.get', { id: t.id });
+  assert.equal(ticket.files.length, 0, 'dropped files are not listed as ticket attachments');
+  const line = timeline.filter((e) => e.kind === 'file').at(-1)!;
+  assert.equal(line.text, '45 files from the folder Templates');
+  // someone else's file cannot be dropped
+  const other = await upload(hub, owner, 'secret.txt', 'x');
+  await assert.rejects(ravi.request('help.drop', { id: t.id, fileIds: [other.id] }), /not found/);
+  const audit = await owner.request('admin.audit', { limit: 10 });
+  assert.ok(audit.some((a) => a.action === 'help.files.dropped' && (a.detail as { count: number }).count === 45));
 });

@@ -9,7 +9,8 @@ import { detectAccount } from './account.ts';
 import { Controller } from './controller.ts';
 import { loadConfig, loadEncKeys, loadIdentity, saveConfig } from './persist.ts';
 import { Updater } from './updater.ts';
-import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, uploadFile, useEncryption } from './files.ts';
+import { cachedFile, handleFileScheme, openFile, pruneCache, registerFileScheme, saveFile, saveSupportFile, supportFolder, uploadFile, useEncryption } from './files.ts';
+import { safeRelativePath } from '@dex/core/assist';
 import { editInSlate, slateExe, stopWatching } from './slate.ts';
 import { PeerNet } from './peer.ts';
 import { installedTools, openToolLink } from './tools.ts';
@@ -305,6 +306,15 @@ function wireIpc(c: Controller): void {
   ipcMain.handle('file:open', (_e, id: string, name: string) => wrap(() => openFile(access(), String(id), String(name))));
   // saving reports progress as "save:<id>" on the upload progress channel
   ipcMain.handle('file:save', (e, id: string, name: string) => wrap(() => saveFile(access(), String(id), String(name), (got, total) => e.sender.send('file:progress', `save:${String(id)}`, got, total))));
+  // files dropped into a support session (policy assistFiles): saved under Downloads\Dexterity IT\<ticket>
+  const ticketFolder = (ref: unknown) => (typeof ref === 'string' && /^T-\d{1,9}$/.test(ref) ? ref : null);
+  ipcMain.handle('assist:save-file', (_e, id: unknown, ref: unknown, rel: unknown) => wrap(async () => {
+    const segs = typeof rel === 'string' ? safeRelativePath(rel) : null;
+    const t = ticketFolder(ref);
+    if (typeof id !== 'string' || !/^[0-9A-Z]{26}$/.test(id) || !segs || !t) throw new Error('That file cannot be saved here.');
+    return saveSupportFile(access(), id, t, segs);
+  }));
+  ipcMain.handle('assist:open-folder', async (_e, ref: unknown) => { const t = ticketFolder(ref); if (t) await shell.openPath(supportFolder(t)); });
   ipcMain.handle('e2e:status', (_e, convId: string) => wrap(() => controller!.e2e.status(String(convId))));
   // the file viewer: open a temporary copy in the default app, or save, from bytes or a hub file
   const viewerSource = async (name: string, src: { id?: unknown; data?: unknown }) => {
