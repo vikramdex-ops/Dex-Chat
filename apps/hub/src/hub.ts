@@ -298,6 +298,8 @@ export class Hub {
     this.compliance = new Compliance(this.store, this.messaging, this.files);
     this.policies = new Policies(this.store, this.files, (p) => {
       this.emit('policy.updated', p);
+      // remote support turned off takes effect in sessions already running
+      (this.helpdesk as HelpDesk | undefined)?.policyChanged(p);
       // a narrower list of outside networks applies at once
       for (const c of [...this.conns]) {
         if (c.remote && !this.outsideAllowed(c)) { this.send(c, { t: 'rejected', reason: 'Your office allows access from outside only from approved networks.' }); c.ws.close(); }
@@ -454,7 +456,8 @@ export class Hub {
     });
     this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
     const deliverNow = (userIds: string[], name: string, data: unknown) => this.deliver(userIds, name, () => data);
-    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data), policy: () => this.policies.get() });
+    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data), policy: () => this.policies.get(),
+      devicesOf: (userId) => [...this.conns].filter((c) => c.ready && c.userId === userId && c.deviceId).map((c) => ({ deviceId: c.deviceId!, idle: c.idle, remote: c.remote })) });
     this.lounges = new Lounges({
       db: this.store.db, messaging: this.messaging, rooms: this.rooms, deliver: deliverNow,
       // Space members see the lounge's name; everyone else only that the person is in a lounge

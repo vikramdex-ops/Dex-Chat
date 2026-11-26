@@ -278,8 +278,10 @@ export async function saveSupportFile(access: HubAccess, id: string, ref: string
   await fsp.mkdir(dir, { recursive: true });
   const ext = path.extname(name);
   const base = path.basename(name, ext);
-  let target = path.join(dir, name);
-  for (let i = 2; fs.existsSync(target); i++) target = path.join(dir, `${base} (${i})${ext}`);
-  await fsp.copyFile(cached, target);
-  return target;
+  // COPYFILE_EXCL: a name another save took in the meantime is never written over; the next number is tried
+  for (let i = 1; i < 1000; i++) {
+    const target = path.join(dir, i === 1 ? name : `${base} (${i})${ext}`);
+    try { await fsp.copyFile(cached, target, fs.constants.COPYFILE_EXCL); return target; } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
+  }
+  throw new Error('Too many files of that name.');
 }

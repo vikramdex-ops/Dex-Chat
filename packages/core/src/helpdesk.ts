@@ -65,6 +65,14 @@ export interface SupportSession {
   unattended: boolean;
   /** The connection dropped at this time and the session waits for it to come back (null: running). */
   pausedAt: number | null;
+  /**
+   * The one device of each person that is in this session (set when they first join; unattended:
+   * the requester's device the hub chose). Other devices of theirs neither join nor act on it.
+   */
+  requesterDevice: string | null;
+  techDevice: string | null;
+  /** In an unattended session the person stopped sharing or control: nothing is given again by itself. */
+  stopped: boolean;
 }
 
 export interface HelpTicket {

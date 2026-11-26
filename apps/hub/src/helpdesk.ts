@@ -7,6 +7,7 @@
 // injects any input (apps/desktop/src/main/assist).
 import type { DatabaseSync } from 'node:sqlite';
 import { HELP_CATEGORIES, ticketRef, ulid } from '@dex/core';
+import { safeRelativePath } from '@dex/core/assist';
 import type { HelpCategory, HelpEntry, HelpEntryKind, HelpFile, HelpFileKind, HelpTicket, OfficePolicy, PublicUser, RoomInfo, SupportConsent, SupportSession, TicketStatus } from '@dex/core';
 import type { Store } from './store.ts';
 import type { Messaging } from './messaging.ts';
@@ -83,8 +84,6 @@ interface Grant { kind: 'screen' | 'control'; scope: 'screen' | 'window' | null;
 interface LiveSession extends SupportSession {
   convId: string;
   grants: Grant[];
-  /** Unattended: the one PC of the requester's that joined (another of their devices is not let in). */
-  deviceId: string | null;
   /** Ends a paused session when the connection does not come back in time. */
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -94,6 +93,8 @@ const MAX_SUMMARY = 140;
 const MAX_DETAIL = 4000;
 const MAX_NOTE = 2000;
 const MAX_FILES = 40;
+/** Files dropped into one ticket's sessions, at most (policy assistFiles). */
+const MAX_DROPPED = 2000;
 /** Open requests one person may have at once (a stuck button pressed many times is still one problem). */
 const MAX_OPEN_PER_PERSON = 10;
 
@@ -111,6 +112,8 @@ export interface HelpHost {
   broadcast(name: string, data: unknown): void;
   /** The office's policies now (remote support is off unless an administrator turns it on). */
   policy(): OfficePolicy;
+  /** A person's devices connected now, most recently connected last (to choose the PC unattended access reaches). */
+  devicesOf(userId: string): Array<{ deviceId: string; idle: boolean; remote: boolean }>;
 }
 
 export class HelpDesk {
@@ -176,7 +179,8 @@ export class HelpDesk {
   }
 
   private publicSession(s: LiveSession): SupportSession {
-    return { id: s.id, ticketId: s.ticketId, roomId: s.roomId, requesterId: s.requesterId, techId: s.techId, startedAt: s.startedAt, endedAt: s.endedAt, consent: { ...s.consent }, controlAvailable: s.controlAvailable, unattended: s.unattended, pausedAt: s.pausedAt };
+    return { id: s.id, ticketId: s.ticketId, roomId: s.roomId, requesterId: s.requesterId, techId: s.techId, startedAt: s.startedAt, endedAt: s.endedAt, consent: { ...s.consent }, controlAvailable: s.controlAvailable, unattended: s.unattended, pausedAt: s.pausedAt,
+      requesterDevice: s.requesterDevice, techDevice: s.techDevice, stopped: s.stopped };
   }
 
   private view(r: TicketRow): HelpTicket {
@@ -233,12 +237,18 @@ export class HelpDesk {
     return rows.some((r) => r.requester_id === userId || r.tech_id === userId) || this.isIt(userId);
   }
 
-  private attachFile(r: TicketRow, me: PublicUser, fileId: unknown, kindIn: unknown): HelpFile {
-    const kind: HelpFileKind = kindIn === 'screenshot' || kindIn === 'diagnostics' || kindIn === 'dropped' ? kindIn : 'file';
+  /** A file the caller may attach (uploaded by them, or one they can already read), or an error. */
+  private fileFor(me: PublicUser, fileId: unknown): { id: string; name: string; size: number; mime: string } {
     const info = typeof fileId === 'string' ? this.host.files.info(fileId) : null;
-    // only a file you uploaded yourself (or can already read) can be attached
     if (!info || (info.uploaderId !== me.id && !this.host.files.canRead(me.id, info.id))) throw new HelpError('File not found.');
-    if (kind !== 'dropped' && (this.db.prepare(`SELECT COUNT(*) AS n FROM help_files WHERE ticket_id = ? AND kind != 'dropped'`).get(r.id) as { n: number }).n >= MAX_FILES) throw new HelpError(`A ticket holds up to ${MAX_FILES} files. Close this one and open another.`);
+    return info;
+  }
+
+  /** Attach a file from the client: a screenshot, diagnostics or a file ('dropped' only comes from help.drop). */
+  private attachFile(r: TicketRow, me: PublicUser, fileId: unknown, kindIn: unknown): HelpFile {
+    const kind: HelpFileKind = kindIn === 'screenshot' || kindIn === 'diagnostics' ? kindIn : 'file';
+    const info = this.fileFor(me, fileId);
+    if ((this.db.prepare(`SELECT COUNT(*) AS n FROM help_files WHERE ticket_id = ? AND kind != 'dropped'`).get(r.id) as { n: number }).n >= MAX_FILES) throw new HelpError(`A ticket holds up to ${MAX_FILES} files. Close this one and open another.`);
     const at = Date.now();
     this.db.prepare('INSERT OR IGNORE INTO help_files (ticket_id, file_id, kind, by_id, at) VALUES (?, ?, ?, ?, ?)').run(r.id, info.id, kind, me.id, at);
     return { fileId: info.id, name: info.name, size: info.size, mime: info.mime, kind, by: me.id, at };
@@ -413,6 +423,7 @@ export class HelpDesk {
         const requester = this.host.store.userById(r.requester_id);
         if (!requester) throw new HelpError('The person who asked has left the office.');
         const s = this.live.get(r.id) ?? this.openSession(r, me, requester, false);
+        this.lockDevice(s, me, deviceId);
         this.resumed(s, me.id);
         const room = this.enter(s, me, deviceId, fromOutside);
         this.pushSession(s);
@@ -452,6 +463,13 @@ export class HelpDesk {
         const requester = this.host.store.userById(r.requester_id);
         if (!requester) throw new HelpError('The person who asked has left the office.');
         let s = this.live.get(r.id);
+        // the one PC unattended access reaches: the device already in the session, or the person's
+        // device that is in use (not idle), most recently connected; never several of theirs
+        const target = s?.requesterDevice ?? (() => {
+          const devs = this.host.devicesOf(requester.id).filter((x) => !x.remote);
+          return (devs.filter((x) => !x.idle).at(-1) ?? devs.at(-1))?.deviceId ?? null;
+        })();
+        if (!target) throw new HelpError(`${requester.displayName}'s PC is not online. Unattended access needs Dexterity Connect running on it, on the office network.`);
         if (s && !s.unattended) {
           // an attended session already running becomes unattended from here on
           s.unattended = true;
@@ -460,6 +478,10 @@ export class HelpDesk {
           this.host.store.audit(me.id, 'help.unattended.started', r.id, { session: s.id, requester: requester.account });
         }
         s ??= this.openSession(r, me, requester, true);
+        s.requesterDevice = target;
+        // IT connecting again is a new request: what the person stopped before may be given again
+        s.stopped = false;
+        this.lockDevice(s, me, deviceId);
         this.resumed(s, me.id);
         const room = this.enter(s, me, deviceId, fromOutside);
         this.pushSession(s);
@@ -472,14 +494,32 @@ export class HelpDesk {
         const s = this.live.get(r.id);
         if (!s || (me.id !== s.requesterId && me.id !== s.techId)) throw new HelpError('Drop files from inside the session.');
         if (this.host.policy().assistFiles !== true) throw new HelpError('Dropping files into a session is off for this office. Use Send a file.');
-        const ids = Array.isArray(d.fileIds) ? d.fileIds.filter((x): x is string => typeof x === 'string').slice(0, 100) : [];
-        if (!ids.length) throw new HelpError('Nothing to send.');
-        const files = ids.map((id) => this.attachFile(r, me, id, 'dropped'));
-        const size = files.reduce((n, f) => n + f.size, 0);
+        const myDevice = me.id === s.requesterId ? s.requesterDevice : s.techDevice;
+        if (myDevice && myDevice !== deviceId) throw new HelpError('Drop files from the device that is in the session.');
+        const list = Array.isArray(d.files) ? d.files.slice(0, 100) : [];
+        if (!list.length) throw new HelpError('Nothing to send.');
+        // every file checked before any is attached: all of them or none, and always audited
+        const files = list.map((x) => {
+          const v = (x ?? {}) as { fileId?: unknown; path?: unknown };
+          const info = this.fileFor(me, v.fileId);
+          const segs = typeof v.path === 'string' ? safeRelativePath(v.path) : null;
+          if (!segs) throw new HelpError(`A file has a name that cannot be saved: ${info.name}`);
+          return { info, path: segs.join('/') };
+        });
+        const already = (this.db.prepare(`SELECT COUNT(*) AS n FROM help_files WHERE ticket_id = ? AND kind = 'dropped'`).get(r.id) as { n: number }).n;
+        if (already + files.length > MAX_DROPPED) throw new HelpError(`A ticket takes up to ${MAX_DROPPED} dropped files. Send the rest as a zip, or open another ticket.`);
+        const at = Date.now();
+        const insert = this.db.prepare('INSERT OR IGNORE INTO help_files (ticket_id, file_id, kind, by_id, at) VALUES (?, ?, ?, ?, ?)');
+        this.db.exec('BEGIN');
+        try { for (const f of files) insert.run(r.id, f.info.id, 'dropped', me.id, at); this.db.exec('COMMIT'); } catch (e) { this.db.exec('ROLLBACK'); throw e; }
+        const size = files.reduce((n, f) => n + f.info.size, 0);
         const folder = oneLine(d.folder, 120) || null;
-        const what = folder ? `${files.length} file${files.length === 1 ? '' : 's'} from the folder ${folder}` : files.length === 1 ? files[0].name : `${files.length} files`;
-        this.entry(r.id, me.id, 'file', what, { dropped: files.length, size, folder, names: files.slice(0, 5).map((f) => f.name) });
-        this.host.store.audit(me.id, 'help.files.dropped', r.id, { session: s.id, count: files.length, size, folder, to: me.id === s.techId ? s.requesterId : s.techId });
+        const what = folder ? `${files.length} file${files.length === 1 ? '' : 's'} from the folder ${folder}` : files.length === 1 ? files[0].info.name : `${files.length} files`;
+        const to = me.id === s.techId ? s.requesterId : s.techId;
+        this.entry(r.id, me.id, 'file', what, { dropped: files.length, size, folder, names: files.slice(0, 5).map((f) => f.info.name) });
+        this.host.store.audit(me.id, 'help.files.dropped', r.id, { session: s.id, count: files.length, size, folder, to });
+        // the other side hears through the hub (not the data channel: nothing is lost to its limits)
+        this.host.deliver([to], 'help.dropped', { ticketId: r.id, sessionId: s.id, files: files.map((f) => ({ fileId: f.info.id, path: f.path, size: f.info.size })) });
         return { ok: true, count: files.length };
       }
 
@@ -492,11 +532,7 @@ export class HelpDesk {
         if (!s) throw new HelpError('There is no session on this ticket now.');
         // only the requester and the assigned technician, never another colleague
         if (me.id !== s.requesterId && me.id !== s.techId) throw new HelpError('Only the person who asked and their technician are in a support session.');
-        if (me.id === s.requesterId && s.unattended) {
-          // unattended: one PC of theirs, the first that joined
-          if (s.deviceId && s.deviceId !== deviceId) throw new HelpError('IT is connected to another of your devices.');
-          s.deviceId = deviceId;
-        }
+        this.lockDevice(s, me, deviceId);
         if (me.id === s.requesterId) s.controlAvailable = d.controlAvailable === true;
         this.resumed(s, me.id);
         const room = this.enter(s, me, deviceId, fromOutside);
@@ -547,7 +583,7 @@ export class HelpDesk {
     const s: LiveSession = {
       id: ulid(), ticketId: r.id, roomId: null, requesterId: requester.id, techId: me.id, startedAt: Date.now(), endedAt: null,
       consent: { screen: false, scope: null, control: false, screenSince: null, controlSince: null }, controlAvailable: false,
-      unattended, pausedAt: null, convId: conv.id, grants: [], deviceId: null, timer: null,
+      unattended, pausedAt: null, requesterDevice: null, techDevice: null, stopped: false, convId: conv.id, grants: [], timer: null,
     };
     this.live.set(r.id, s);
     this.db.prepare('INSERT INTO help_sessions (id, ticket_id, requester_id, tech_id, started_at, unattended) VALUES (?, ?, ?, ?, ?, ?)').run(s.id, r.id, s.requesterId, s.techId, s.startedAt, unattended ? 1 : 0);
@@ -555,6 +591,35 @@ export class HelpDesk {
     this.host.store.audit(me.id, 'help.session.started', r.id, { session: s.id, requester: requester.account, ...(unattended ? { unattended: true } : {}) });
     if (unattended) this.host.store.audit(me.id, 'help.unattended.started', r.id, { session: s.id, requester: requester.account });
     return s;
+  }
+
+  /** Each person is in a session from one device: the first they join from (unattended: the one the hub chose). */
+  private lockDevice(s: LiveSession, me: PublicUser, deviceId: string): void {
+    if (me.id === s.requesterId) {
+      if (s.requesterDevice && s.requesterDevice !== deviceId) throw new HelpError(s.unattended ? 'IT is connected to another of your devices.' : 'You are in this session on another of your devices.');
+      s.requesterDevice = deviceId;
+    } else if (me.id === s.techId) {
+      if (s.techDevice && s.techDevice !== deviceId) throw new HelpError('You are in this session on another of your devices.');
+      s.techDevice = deviceId;
+    }
+  }
+
+  /**
+   * An administrator changed the policies: unattended access turned off takes control back at once
+   * in sessions IT connected to without asking (they go on as ordinary sessions the person decides
+   * in); reconnect turned off ends sessions waiting for a dropped connection.
+   */
+  policyChanged(p: OfficePolicy): void {
+    for (const s of [...this.live.values()]) {
+      if (s.unattended && p.assistUnattended !== true) {
+        s.unattended = false;
+        if (s.consent.control) this.setConsent(s, 'control', false, 'screen', null);
+        this.entry(s.ticketId, null, 'note', 'An administrator turned unattended access off: control stopped. The person decides from here.', { sessionId: s.id });
+        this.host.store.audit(null, 'help.unattended.ended', s.ticketId, { session: s.id, why: 'policy turned off' });
+        this.pushSession(s);
+      }
+      if (s.pausedAt !== null && p.assistReconnect !== true) this.endSession(s.ticketId, null, 'Reconnecting was turned off by an administrator.');
+    }
   }
 
   /** Someone came back to a session that was waiting for its connection. */
@@ -585,6 +650,8 @@ export class HelpDesk {
   /** Grant or take back screen or control; every change is on the timeline and in the audit log. */
   private setConsent(s: LiveSession, kind: 'screen' | 'control', on: boolean, scope: 'screen' | 'window', actor: string | null): void {
     const c: SupportConsent = s.consent;
+    // the person stopping something in an unattended session: it is not given again by itself
+    if (!on && actor === s.requesterId && s.unattended && (kind === 'control' ? c.control : c.screen)) s.stopped = true;
     const now = Date.now();
     if (kind === 'control' && on) {
       if (!c.screen || c.scope !== 'screen') throw new HelpError('Share your whole screen first: control works on a whole screen.');

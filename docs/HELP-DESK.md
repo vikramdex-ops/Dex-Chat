@@ -153,23 +153,30 @@ screen and gives control. It says so everywhere: a notification, the dock (*"Rav
 asking"*), the amber banner (*"… connected without asking (unattended access is on for this
 office)"*), the amber frame and the share bar (*IT CONNECTED WITHOUT ASKING*). **The person can
 always stop it** exactly as in an attended session: Stop control, Stop sharing, End, Shift+Esc or
-Ctrl+Alt+Shift+S. Nothing is given again by itself after they stop it, unless IT connects again.
-One PC of theirs takes an unattended session (the first that joins). It needs the app running and
-someone signed in to Windows. Recorded: `help.unattended.started` / `help.unattended.ended`,
+Ctrl+Alt+Shift+S. Nothing is given again by itself after they stop it (the hub remembers it for the
+session, `stopped`), unless IT presses Connect now again. The hub chooses the **one PC** of theirs
+that IT reaches (the device already in the session, or their device in use, connected on the office
+network); their other devices never join or act on it. It needs the app running and someone signed
+in to Windows. An administrator turning the policy off takes control back at once in running
+unattended sessions (they go on as ordinary sessions the person decides in). Recorded: `help.unattended.started` / `help.unattended.ended`,
 `unattended: true` on `help.session.started`, `help.consent.granted` and `help.session.ended`, and
 *"connected without asking"* on the ticket.
 
 **Clipboard** (`assistClipboard`). While control is on, text copied on either PC can be pasted on
-the other (`{ k: 'clip', text }` on the data channel, at most 60,000 characters; text only). What
-was on the clipboard before control began is not sent; only what is copied from then on. Each side
-takes it only from the other person in the session.
+the other (`{ k: 'clip', text }` on the data channel; text only; up to 8,000 characters of JSON, what
+the hub relays when a Room has no data channel: longer text is not sent and the person is told).
+What was on the clipboard before control began is not sent; only what is copied from then on. Each
+side takes it only from the other person's device in the session.
 
 **Files and folders** (`assistFiles`). Drop files, or a whole folder (up to 500 files at a time), on
 the technician's picture or on the requester's dock. Each is uploaded to the hub's file store and
-kept on the ticket (`help.drop`: one timeline line per drop, audit `help.files.dropped`; dropped
-files do not count toward the ticket's 40 attachments and are not in its list of files). The other
-side saves them under **Downloads\Dexterity IT\T-0042\** at their place in the folder; paths are
-cleaned (`safeRelativePath`: no drive, no "..", no reserved names) and nothing is overwritten.
+kept on the ticket (`help.drop`: every file checked first and attached in one transaction, one
+timeline line per drop, audit `help.files.dropped`; up to 2,000 dropped files a ticket, which do not
+count toward its 40 attachments and are not in its list of files; only `help.drop` can attach them).
+The hub tells the other side (`help.dropped`), whose device in the session saves them one at a
+time under **Downloads\Dexterity IT\T-0042\** at their place in the folder; paths are
+cleaned (`safeRelativePath`: no drive, no "..", no reserved names, on the hub and again on the PC)
+and nothing is overwritten (`COPYFILE_EXCL`, the next free name).
 **Send a file** still works without the policy.
 
 **Reconnect** (`assistReconnect`). When a session's Room ends without anyone ending the session
@@ -180,7 +187,9 @@ it again when it is back online or starts (`help.live`), and the session resumes
 shares the same screen again and, if they had given control, gives it again (it tells them); after
 a restart it remembers nothing, so they choose again, unless the session is unattended. A
 connection that does not come back in time ends the session (*"The connection did not come back in
-time."*). Without the policy a dropped Room ends the session, as before.
+time."*). Without the policy a dropped Room ends the session, as before. Each person rejoins only
+from the device they were in the session on (`requesterDevice`, `techDevice`); the hub refuses any
+other device of theirs.
 
 ## What is recorded
 

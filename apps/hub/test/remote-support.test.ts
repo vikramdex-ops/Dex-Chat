@@ -5,8 +5,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import https from 'node:https';
 import type { SupportSession } from '@dex/core';
-import type { HubClient } from '@dex/core/client';
-import { office, nextEvent, me } from './office.ts';
+import { createIdentity } from '@dex/core';
+import { HubClient } from '@dex/core/client';
+import { parsePairCode } from '@dex/core/remote';
+import { office, nextEvent, me, until, cleanups } from './office.ts';
 
 function upload(hub: { port: number }, c: HubClient, name: string, body: string): Promise<{ id: string }> {
   return new Promise((resolve, reject) => {
@@ -149,22 +151,92 @@ test('dropped files: only in a running session with the policy on; the other sid
   await ravi.request('help.take', { id: t.id });
   const files = await Promise.all(Array.from({ length: 45 }, (_, i) => upload(hub, ravi, `sheet-${i}.txt`, `sheet ${i}`)));
   const ids = files.map((f) => f.id);
-  await assert.rejects(ravi.request('help.drop', { id: t.id, fileIds: ids.slice(0, 1) }), /inside the session/);
+  const one = (id: string, path = 'a.txt') => [{ fileId: id, path }];
+  await assert.rejects(ravi.request('help.drop', { id: t.id, files: one(ids[0]) }), /inside the session/);
   await ravi.request('help.session.start', { id: t.id });
   await priya.request('help.session.join', { id: t.id });
-  await assert.rejects(ravi.request('help.drop', { id: t.id, fileIds: ids.slice(0, 1) }), /off for this office/);
+  await assert.rejects(ravi.request('help.drop', { id: t.id, files: one(ids[0]) }), /off for this office/);
   await owner.request('admin.policy.set', { assistFiles: true });
+  // someone else's file in the batch: nothing is attached, not even the good ones (all or none, always audited)
+  const other = await upload(hub, owner, 'secret.txt', 'x');
+  await assert.rejects(ravi.request('help.drop', { id: t.id, files: [...one(ids[0]), ...one(other.id, 'b.txt')] }), /not found/);
+  assert.equal(await status(hub, priya, ids[0]), 404, 'nothing from a refused drop is readable by the other side');
+  // the other side is told through the hub, with the cleaned paths
+  const told = nextEvent<{ files: Array<{ fileId: string; path: string }> }>(priya, 'help.dropped');
   // more than a ticket's 40 files: drops do not count toward that limit
-  const r = await ravi.request('help.drop', { id: t.id, fileIds: ids, folder: 'Templates' });
+  const r = await ravi.request('help.drop', { id: t.id, files: ids.map((id, i) => ({ fileId: id, path: `Templates/../sheet-${i}.txt` })), folder: 'Templates' });
+  const heard = await told;
+  assert.equal(heard.files.length, 45);
+  assert.equal(heard.files[0].path, 'Templates/sheet-0.txt');
   assert.equal(r.count, 45);
   assert.equal(await status(hub, priya, ids[44]), 200);
   const { ticket, timeline } = await priya.request('help.get', { id: t.id });
   assert.equal(ticket.files.length, 0, 'dropped files are not listed as ticket attachments');
   const line = timeline.filter((e) => e.kind === 'file').at(-1)!;
   assert.equal(line.text, '45 files from the folder Templates');
-  // someone else's file cannot be dropped
-  const other = await upload(hub, owner, 'secret.txt', 'x');
-  await assert.rejects(ravi.request('help.drop', { id: t.id, fileIds: [other.id] }), /not found/);
+  // a client cannot attach hidden "dropped" files through help.attach: they are ordinary files, counted and listed
+  const extra = await upload(hub, priya, 'note.txt', 'n');
+  const after = await priya.request('help.attach', { id: t.id, fileId: extra.id, kind: 'dropped' as never });
+  assert.equal(after.files.length, 1);
+  assert.equal(after.files[0].kind, 'file');
   const audit = await owner.request('admin.audit', { limit: 10 });
   assert.ok(audit.some((a) => a.action === 'help.files.dropped' && (a.detail as { count: number }).count === 45));
+});
+
+test('one device per person: the requester\'s other devices and the technician\'s other devices are kept out', async () => {
+  const { owner, priya, ravi, hub } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  const t = await priya.request('help.create', { summary: 'Outlook keeps asking for a password', category: 'account' });
+  await ravi.request('help.take', { id: t.id });
+  const started = await ravi.request('help.session.start', { id: t.id });
+  const j = await priya.request('help.session.join', { id: t.id });
+  assert.equal(j.session.requesterDevice, priya.session!.deviceId);
+  assert.equal(started.session.techDevice, ravi.session!.deviceId);
+  // a second device of Priya's (paired as her) cannot join the same session
+  const made = await priya.request('pair.create', { kind: 'laptop' });
+  const laptop = new HubClient({ identity: createIdentity(), account: { username: 'priya-laptop', domain: 'DEX', displayName: 'Laptop', hostname: 'priya-laptop' } });
+  laptop.setPair(parsePairCode(made.code)!.token);
+  cleanups.push(() => laptop.disconnect());
+  laptop.connect({ host: '127.0.0.1', port: hub.port, fp: hub.fingerprint });
+  await until(laptop, (x) => x.kind === 'ready');
+  assert.equal(me(laptop), me(priya));
+  await assert.rejects(laptop.request('help.session.join', { id: t.id }), /another of your devices/);
+  // and Ravi's second device cannot take over his place either
+  await assert.rejects(laptop.request('help.drop', { id: t.id, files: [] }), /.+/);
+});
+
+test('unattended: the hub picks one PC of the person; their stop is remembered; turning the policy off takes control back', async () => {
+  const { owner, priya, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistUnattended: true });
+  const r = await ravi.request('help.connect', { userId: me(priya) });
+  assert.equal(r.session.requesterDevice, priya.session!.deviceId, 'the PC IT reaches is chosen by the hub, not the first to join');
+  const id = r.session.ticketId;
+  await priya.request('help.session.join', { id, controlAvailable: true });
+  await priya.request('help.consent', { id, kind: 'screen', on: true, scope: 'screen' });
+  await priya.request('help.consent', { id, kind: 'control', on: true });
+  const stopped = await priya.request('help.consent', { id, kind: 'control', on: false });
+  assert.equal(stopped.stopped, true, 'her stop is remembered for this session');
+  // IT connecting again is a new request
+  const again = await ravi.request('help.connect', { id });
+  assert.equal(again.session.stopped, false);
+  await priya.request('help.consent', { id, kind: 'control', on: true });
+  // the administrator turns unattended access off: control is taken back at once
+  const back = nextEvent<SupportSession>(priya, 'help.session', (s) => !s.consent.control);
+  await owner.request('admin.policy.set', { assistUnattended: false });
+  const s = await back;
+  assert.equal(s.unattended, false);
+  assert.equal(s.consent.screen, true, 'what she shares herself stays hers to stop');
+  const audit = (await owner.request('admin.audit', { limit: 20 })).filter((a) => a.action === 'help.unattended.ended');
+  assert.ok(audit.some((a) => (a.detail as { why?: string }).why === 'policy turned off'));
+});
+
+test('unattended needs the person online', async () => {
+  const { owner, priya, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistUnattended: true });
+  const priyaId = me(priya);
+  priya.disconnect();
+  await new Promise((r) => setTimeout(r, 300));
+  await assert.rejects(ravi.request('help.connect', { userId: priyaId }), /not online/);
 });
