@@ -590,6 +590,12 @@ export class HelpDesk {
     return id;
   }
 
+  /** A ticket's reference as people see it (T-0042), or '' when there is none. */
+  refOf(ticketId: string): string {
+    const r = this.row(ticketId);
+    return r ? ticketRef(r.number) : '';
+  }
+
   /** A line on a ticket's timeline from elsewhere in the hub (elevated sessions), told to its audience. */
   record(ticketId: string, actor: string | null, kind: HelpEntryKind, text: string | null, detail: Record<string, unknown>): void {
     if (!this.row(ticketId)) return;

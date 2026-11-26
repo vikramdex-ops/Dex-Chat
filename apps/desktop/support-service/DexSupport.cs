@@ -59,6 +59,7 @@ namespace DexSupport {
         if (mode == "--console") { Paths.ConfigOverride = Program.Arg(args, "--config"); var a = new Agent(true); a.Start(); Console.WriteLine("Running. Press Enter to stop."); Console.ReadLine(); a.Stop(); return 0; }
         // --check-file FILE: is that file only in the hands of SYSTEM and Administrators (what the service asks of config.json)?
         if (mode == "--check-file") { using (var fs = new FileStream(args[1], FileMode.Open, FileAccess.Read, FileShare.Read)) Console.WriteLine(Trusted.File(fs) ? "trusted" : "not trusted"); return 0; }
+        if (mode == "--preview-notice") return Worker.Preview(args.Length > 1 ? args[1] : "Ravi Kumar", args.Length > 2 ? args[2] : "T-0042", args.Length > 3 ? int.Parse(args[3]) : 20);
         if (mode == "--drop-dev-key") { if (CngKey.Exists("DexterityConnectSupport-dev")) CngKey.Open("DexterityConnectSupport-dev").Delete(); return 0; }
         if (Environment.UserInteractive && mode != "--service") {
           Console.WriteLine("Dexterity Connect IT Support " + Version);
@@ -677,7 +678,7 @@ namespace DexSupport {
           Post(Json.Write(d));
           return;
         }
-        session = s; tech = Json.Str(m, "tech") ?? "IT"; credits = 2;
+        session = s; tech = (Json.Str(m, "tech") ?? "IT").Replace('\t', ' ') + "\t" + (Json.Str(m, "ticket") ?? "").Replace('\t', ' ') + "\t" + s; credits = 2;
         Log.Write("IT connected: " + tech + " (" + s + ")");
         Tell('S', tech);
       } else if (s == null || s != session) {
@@ -1017,6 +1018,17 @@ namespace DexSupport {
       heldKeys.Clear(); heldButtons.Clear();
     }
 
+    /** What the person sees while IT is connected, on this desktop for a while, without the service or the hub. */
+    public static int Preview(string tech, string ticket, int seconds) {
+      Dpi();
+      var b = new Banner();
+      var done = new ManualResetEventSlim(false);
+      b.Show(tech + "\t" + ticket + "\tpreview", delegate { Console.WriteLine("Stop pressed"); done.Set(); });
+      done.Wait(seconds * 1000);
+      b.Hide();
+      return 0;
+    }
+
     /** One picture of this screen to a file, and the pointer moved and back (a check without the service or the hub). */
     public static int SelfTest(string path) {
       Dpi();
@@ -1034,56 +1046,85 @@ namespace DexSupport {
     }
   }
 
-  // ------------------------------------------------------------------ the banner on the PC
+  // ------------------------------------------------------------------ what the person at the PC sees
   /**
-   * While IT is connected: a topmost strip at the top of whatever desktop is showing (the person's,
-   * the lock or sign-in screen, a UAC prompt) saying who from IT is connected with administrator
-   * rights, with Stop and the keys Ctrl+Alt+Shift+S. It runs on a thread of its own so it can move
-   * to another desktop (a thread with windows cannot change desktops: a new one is made each time).
+   * While IT is connected, on whatever desktop is showing (the person's, the lock or sign-in screen,
+   * a UAC prompt), in the Dexterity look (deep teal, amber call to action, mono labels, the Di mark):
+   *  - an arrival screen when a session starts: full screen, who from IT, with administrator rights,
+   *    the ticket, OK and Stop now; a line runs down and hands over to the panel;
+   *  - an amber frame around every monitor, breathing slowly, that clicks pass through;
+   *  - a floating panel at the top: the Di mark, a live dot, who, for how long, the stop keys and a
+   *    big Stop. It can be dragged out of the way.
+   * Stop (the button or Ctrl+Alt+Shift+S) ends the session for good. Everything runs on a thread of
+   * its own so it can move to another desktop (a thread with windows cannot change desktops: it is
+   * made again on the new one, without the arrival screen).
    */
   class Banner {
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenDesktop(string name, uint flags, bool inherit, uint access);
     [DllImport("user32.dll", SetLastError = true)] static extern bool SetThreadDesktop(IntPtr desk);
     [DllImport("user32.dll", SetLastError = true)] static extern bool CloseDesktop(IntPtr desk);
-    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hwnd, int id, uint mods, uint vk);
 
     readonly object gate = new object();
-    string who;
-    Action onStop;
+    Visit visit;
     string desktop = "Default";
     Form form;
     Thread thread;
+    /** Sessions whose arrival screen was shown in this worker (it is shown once per session). */
+    readonly HashSet<string> welcomed = new HashSet<string>();
 
-    public void Show(string tech, Action stop) { lock (gate) { who = tech; onStop = stop; Restart(); } }
-    public void Hide() { lock (gate) { who = null; Close(); } }
-    public void MoveTo(string desktopName) { lock (gate) { if (desktopName == desktop && form != null) return; desktop = desktopName; if (who != null) Restart(); } }
+    public class Visit { public string Tech; public string Ticket; public string Session; public DateTime Since; public Action Stop; public bool Arrive; }
 
-    // called with the gate held; the banner thread never takes it, so waiting here cannot deadlock
+    /** "tech\tticket\tsession" from the service. */
+    public void Show(string payload, Action stop) {
+      var p = (payload ?? "").Split('\t');
+      lock (gate) {
+        string session = p.Length > 2 ? p[2] : "";
+        bool same = visit != null && visit.Session == session;
+        visit = new Visit {
+          Tech = p[0].Length > 0 ? p[0] : "IT", Ticket = p.Length > 1 ? p[1] : "", Session = session,
+          Since = same ? visit.Since : DateTime.Now, Stop = stop, Arrive = !welcomed.Contains(session),
+        };
+        welcomed.Add(session);
+        Restart();
+      }
+    }
+    public void Hide() { lock (gate) { visit = null; Close(); } }
+    public void MoveTo(string desktopName) {
+      lock (gate) {
+        if (desktopName == desktop && form != null) return;
+        desktop = desktopName;
+        if (visit != null) { visit.Arrive = false; Restart(); }
+      }
+    }
+
+    // called with the gate held; the UI thread never takes it, so waiting here cannot deadlock
     void Close() {
       var f = form;
       var t = thread;
       form = null;
       thread = null;
       if (f != null) { try { f.BeginInvoke(new Action(delegate { f.Close(); })); } catch { } }
-      if (t != null && t != Thread.CurrentThread && !t.Join(3000)) Log.Write("banner: a strip did not close in time");
+      if (t != null && t != Thread.CurrentThread && !t.Join(3000)) Log.Write("banner: the notice did not close in time");
     }
 
     void Restart() {
       Close();
-      string text = who, name = desktop;
-      Action stop = onStop;
+      var v = visit;
+      string name = desktop;
       var ready = new ManualResetEventSlim(false);
       Form made = null;
       var t = new Thread(delegate() {
         IntPtr d = OpenDesktop(name, 0, false, 0x10000000);
         try {
           if (d != IntPtr.Zero) SetThreadDesktop(d);
-          var f = new StripForm(text, stop);
-          made = f;
-          // the window exists before anyone may close it
-          f.HandleCreated += delegate { ready.Set(); };
-          f.FormClosed += delegate { Application.ExitThread(); };
-          Application.Run(f);
+          var panel = new PanelForm(v);
+          made = panel;
+          panel.HandleCreated += delegate { ready.Set(); };
+          panel.FormClosed += delegate { Application.ExitThread(); };
+          // the frame around every monitor, owned by the panel: they close together
+          foreach (var screen in Screen.AllScreens) new FrameForm(screen.Bounds).Show(panel);
+          if (v.Arrive) panel.Shown += delegate { new ArrivalForm(v, panel).Show(panel); };
+          Application.Run(panel);
         } catch (Exception e) {
           Log.Write("banner: " + e.Message);
         } finally {
@@ -1099,21 +1140,130 @@ namespace DexSupport {
       thread = t;
     }
 
-    class StripForm : Form {
-      readonly Action stop;
-      public StripForm(string tech, Action stop) {
-        this.stop = stop;
-        FormBorderStyle = FormBorderStyle.None; TopMost = true; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
-        BackColor = Color.FromArgb(217, 138, 0); ForeColor = Color.Black; Font = new Font("Segoe UI", 10f, FontStyle.Bold);
-        var screen = Screen.PrimaryScreen.Bounds;
-        Width = Math.Min(760, screen.Width); Height = 40; Left = screen.Left + (screen.Width - Width) / 2; Top = screen.Top;
-        var label = new Label { Text = tech + " from IT is connected to this PC with administrator rights", AutoSize = false, Left = 14, Top = 0, Width = Width - 210, Height = Height, TextAlign = ContentAlignment.MiddleLeft };
-        var keys = new Label { Text = "Ctrl+Alt+Shift+S", AutoSize = false, Left = Width - 196, Top = 0, Width = 110, Height = Height, TextAlign = ContentAlignment.MiddleRight, Font = new Font("Consolas", 8f) };
-        var button = new Button { Text = "Stop", Left = Width - 80, Top = 6, Width = 68, Height = 28, BackColor = Color.White, FlatStyle = FlatStyle.Flat };
-        button.Click += delegate { Fire(); };
-        Controls.Add(label); Controls.Add(keys); Controls.Add(button);
+    // ---------------------------------------------------------------- look
+    static class Look {
+      public static readonly Color Ink = Color.FromArgb(0x13, 0x2b, 0x2e);       // teal-900
+      public static readonly Color Deep = Color.FromArgb(0x14, 0x3f, 0x45);      // teal-800
+      public static readonly Color Teal = Color.FromArgb(0x2a, 0x8c, 0x98);      // brand teal
+      public static readonly Color Mist = Color.FromArgb(0xcf, 0xe6, 0xe8);      // teal-100
+      public static readonly Color Paper = Color.FromArgb(0xf6, 0xfa, 0xfa);
+      public static readonly Color Amber = Color.FromArgb(0xf7, 0xaf, 0x44);     // brand amber
+      public static readonly Color AmberHi = Color.FromArgb(0xff, 0xc4, 0x6b);
+      public static readonly Color Red = Color.FromArgb(0xb2, 0x36, 0x28);
+      static Image mark;
+      public static Image Mark {
+        get {
+          if (mark == null) {
+            try { using (var s = typeof(Look).Assembly.GetManifestResourceStream("DexSupport.di.png")) if (s != null) mark = Image.FromStream(s); } catch { }
+          }
+          return mark;
+        }
       }
-      void Fire() { if (stop != null) stop(); }
+      /** Screen scaling (1 at 100 %, 1.5 at 150 %): every size below is in 96-dpi units, drawn through it. */
+      static float k;
+      public static float K { get { if (k == 0) { try { using (var g = Graphics.FromHwnd(IntPtr.Zero)) k = Math.Max(1f, g.DpiX / 96f); } catch { k = 1f; } } return k; } }
+      public static int Px(float v) { return (int)Math.Round(v * K); }
+      // fonts in pixels (of 96-dpi units), so the one scale transform sizes them with everything else
+      static Font Make(string name, float pt) { return new Font(name, pt * 96f / 72f, FontStyle.Regular, GraphicsUnit.Pixel); }
+      public static Font Light(float size) { return Make("Segoe UI Light", size); }
+      public static Font Body(float size, bool bold) { return Make(bold ? "Segoe UI Semibold" : "Segoe UI", size); }
+      public static Font Mono(float size) { return Make("Consolas", size); }
+      public static GraphicsPath Round(RectangleF r, float radius) {
+        var p = new GraphicsPath();
+        float d = radius * 2;
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+      }
+      public static void Smooth(Graphics g) { g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit; g.InterpolationMode = InterpolationMode.HighQualityBicubic; }
+      public static string Elapsed(DateTime since) {
+        var t = DateTime.Now - since;
+        return t.TotalHours >= 1 ? string.Format("{0}:{1:00}:{2:00}", (int)t.TotalHours, t.Minutes, t.Seconds) : string.Format("{0:00}:{1:00}", t.Minutes, t.Seconds);
+      }
+    }
+
+    /** A window that never takes the focus from what the person (or IT) is typing in. */
+    class QuietForm : Form {
+      protected bool ClickThrough;
+      public QuietForm() {
+        FormBorderStyle = FormBorderStyle.None; TopMost = true; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
+        DoubleBuffered = true;
+      }
+      protected override CreateParams CreateParams {
+        get {
+          var p = base.CreateParams;
+          p.ExStyle |= 0x00000008 /* TOPMOST */ | 0x00000080 /* TOOLWINDOW */ | 0x08000000 /* NOACTIVATE */;
+          if (ClickThrough) p.ExStyle |= 0x00080000 /* LAYERED */ | 0x00000020 /* TRANSPARENT */;
+          return p;
+        }
+      }
+      protected override bool ShowWithoutActivation { get { return true; } }
+    }
+
+    // ---------------------------------------------------------------- the amber frame
+    class FrameForm : QuietForm {
+      readonly int W = Look.Px(6);
+      readonly System.Windows.Forms.Timer breath = new System.Windows.Forms.Timer { Interval = 80 };
+      double phase;
+      public FrameForm(Rectangle bounds) {
+        ClickThrough = true;
+        Bounds = bounds;
+        BackColor = Color.Magenta; TransparencyKey = Color.Magenta;
+        breath.Tick += delegate {
+          phase += 0.08;
+          // only the edges are painted again
+          Invalidate(new Rectangle(0, 0, Width, W + 2)); Invalidate(new Rectangle(0, Height - W - 2, Width, W + 2));
+          Invalidate(new Rectangle(0, 0, W + 2, Height)); Invalidate(new Rectangle(Width - W - 2, 0, W + 2, Height));
+        };
+        breath.Start();
+        FormClosed += delegate { breath.Dispose(); };
+      }
+      protected override void OnPaint(PaintEventArgs e) {
+        // a slow breath between brand amber and a lighter amber: alive, never flashing
+        double k = (Math.Sin(phase) + 1) / 2;
+        var c = Color.FromArgb((int)(Look.Amber.R + (Look.AmberHi.R - Look.Amber.R) * k), (int)(Look.Amber.G + (Look.AmberHi.G - Look.Amber.G) * k), (int)(Look.Amber.B + (Look.AmberHi.B - Look.Amber.B) * k));
+        using (var b = new SolidBrush(c)) {
+          e.Graphics.FillRectangle(b, 0, 0, Width, W);
+          e.Graphics.FillRectangle(b, 0, Height - W, Width, W);
+          e.Graphics.FillRectangle(b, 0, 0, W, Height);
+          e.Graphics.FillRectangle(b, Width - W, 0, W, Height);
+        }
+        // a teal hairline inside the amber: the brand's title-block edge
+        using (var pen = new Pen(Look.Ink, 1)) e.Graphics.DrawRectangle(pen, W, W, Width - 2 * W - 1, Height - 2 * W - 1);
+      }
+    }
+
+    // ---------------------------------------------------------------- the floating panel
+    class PanelForm : QuietForm {
+      [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hwnd, int id, uint mods, uint vk);
+      readonly Visit v;
+      readonly System.Windows.Forms.Timer tick = new System.Windows.Forms.Timer { Interval = 50 };
+      readonly Font who = Look.Body(12f, true), meta = Look.Mono(8.5f), button = Look.Body(11f, true), tag = Look.Mono(7.5f);
+      Rectangle stopRect;
+      bool hover, down;
+      Point drag;
+      bool dragging;
+      double pulse;
+
+      const int LW = 620, LH = 78;
+      public PanelForm(Visit v) {
+        this.v = v;
+        Width = Look.Px(LW); Height = Look.Px(LH);
+        var s = Screen.PrimaryScreen.Bounds;
+        Left = s.Left + (s.Width - Width) / 2; Top = s.Top + Look.Px(18);
+        BackColor = Look.Ink;
+        using (var path = Look.Round(new RectangleF(0, 0, Width, Height), Look.K * 16)) Region = new Region(path);
+        stopRect = new Rectangle(LW - 136, 16, 120, 46);
+        tick.Tick += delegate { pulse += 0.12; Invalidate(); };
+        tick.Start();
+        FormClosed += delegate { tick.Dispose(); };
+      }
+
+      void Fire() { var a = v.Stop; if (a != null) a(); }
+
       protected override void OnHandleCreated(EventArgs e) {
         base.OnHandleCreated(e);
         RegisterHotKey(Handle, 1, 0x0001 | 0x0002 | 0x0004 | 0x4000 /* Alt Ctrl Shift NoRepeat */, 0x53 /* S */);
@@ -1122,10 +1272,179 @@ namespace DexSupport {
         if (m.Msg == 0x0312 /* WM_HOTKEY */) Fire();
         base.WndProc(ref m);
       }
-      protected override CreateParams CreateParams {
-        get { var p = base.CreateParams; p.ExStyle |= 0x00000008 /* TOPMOST */ | 0x00000080 /* TOOLWINDOW */ | 0x08000000 /* NOACTIVATE */; return p; }
+
+      static Point L(MouseEventArgs e) { return new Point((int)(e.X / Look.K), (int)(e.Y / Look.K)); }
+      protected override void OnMouseMove(MouseEventArgs e) {
+        bool h = stopRect.Contains(L(e));
+        if (h != hover) { hover = h; Cursor = h ? Cursors.Hand : Cursors.SizeAll; Invalidate(); }
+        if (dragging) { Left += e.X - drag.X; Top += e.Y - drag.Y; }
       }
-      protected override bool ShowWithoutActivation { get { return true; } }
+      protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); }
+      protected override void OnMouseDown(MouseEventArgs e) {
+        if (stopRect.Contains(L(e))) { down = true; Invalidate(); return; }
+        dragging = true; drag = e.Location;
+      }
+      protected override void OnMouseUp(MouseEventArgs e) {
+        dragging = false;
+        if (down && stopRect.Contains(L(e))) Fire();
+        down = false; Invalidate();
+      }
+
+      protected override void OnPaint(PaintEventArgs e) {
+        var g = e.Graphics;
+        Look.Smooth(g);
+        g.ScaleTransform(Look.K, Look.K);
+        // the panel: deep teal, a hairline, an amber edge on the left (the brand's call to action)
+        using (var bg = new LinearGradientBrush(new Rectangle(0, 0, LW, LH), Look.Deep, Look.Ink, LinearGradientMode.Vertical)) g.FillRectangle(bg, 0, 0, LW, LH);
+        using (var edge = new SolidBrush(Look.Amber)) g.FillRectangle(edge, 0, 0, 6, LH);
+        using (var path = Look.Round(new RectangleF(0.5f, 0.5f, LW - 1, LH - 1), 16)) using (var pen = new Pen(Color.FromArgb(110, Look.Amber), 1)) g.DrawPath(pen, path);
+        // the Di mark
+        var mark = Look.Mark;
+        if (mark != null) g.DrawImage(mark, new Rectangle(20, 15, 48, 48));
+        // the live dot, breathing
+        double k = (Math.Sin(pulse) + 1) / 2;
+        int halo = (int)(8 + 6 * k);
+        using (var b = new SolidBrush(Color.FromArgb((int)(70 * (1 - k)) + 20, Look.Amber))) g.FillEllipse(b, 88 - halo / 2f, 22 - halo / 2f, halo, halo);
+        using (var b = new SolidBrush(Look.Amber)) g.FillEllipse(b, 84, 18, 8, 8);
+        using (var b = new SolidBrush(Look.Amber)) g.DrawString("LIVE \u00b7 IT SUPPORT \u00b7 ADMINISTRATOR RIGHTS", tag, b, 98, 14);
+        using (var b = new SolidBrush(Look.Paper)) g.DrawString(v.Tech + " from IT is connected to this PC", who, b, 80, 30);
+        string line = (v.Ticket.Length > 0 ? v.Ticket + "  \u00b7  " : "") + Look.Elapsed(v.Since) + "  \u00b7  Stop: Ctrl+Alt+Shift+S";
+        using (var b = new SolidBrush(Look.Mist)) g.DrawString(line.ToUpperInvariant(), meta, b, 82, 55);
+        // Stop: the big amber button
+        var r = new RectangleF(stopRect.X, stopRect.Y, stopRect.Width, stopRect.Height);
+        using (var path = Look.Round(r, 10))
+        using (var b = new SolidBrush(down ? Look.Amber : hover ? Look.AmberHi : Look.Amber)) {
+          g.FillPath(b, path);
+          if (hover) using (var pen = new Pen(Look.Paper, 2)) g.DrawPath(pen, path);
+        }
+        using (var b = new SolidBrush(Look.Ink)) {
+          var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+          g.DrawString("\u25a0  Stop", button, b, r, sf);
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------- the other monitors, while the arrival screen shows
+    class DimForm : QuietForm {
+      readonly string tech;
+      readonly Font big = Look.Light(20f), label = Look.Mono(9.5f);
+      public DimForm(Rectangle bounds, string tech) {
+        this.tech = tech;
+        Bounds = bounds; BackColor = Look.Ink; Opacity = 0.93;
+      }
+      protected override void OnPaint(PaintEventArgs e) {
+        var g = e.Graphics;
+        Look.Smooth(g);
+        g.ScaleTransform(Look.K, Look.K);
+        float lw = Width / Look.K, lh = Height / Look.K;
+        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        using (var b = new SolidBrush(Look.Amber)) g.DrawString("DEXTERITY CONNECT  \u00b7  IT SUPPORT", label, b, new RectangleF(0, lh / 2 - 44, lw, 20), sf);
+        using (var b = new SolidBrush(Look.Paper)) g.DrawString(tech + " from IT is connecting. See your main screen.", big, b, new RectangleF(40, lh / 2 - 20, lw - 80, 60), sf);
+      }
+    }
+
+    // ---------------------------------------------------------------- the arrival screen
+    class ArrivalForm : QuietForm {
+      const int Seconds = 12;
+      readonly Visit v;
+      readonly PanelForm panel;
+      readonly System.Windows.Forms.Timer tick = new System.Windows.Forms.Timer { Interval = 30 };
+      readonly DateTime opened = DateTime.Now;
+      readonly Font label = Look.Mono(10f), head = Look.Light(30f), body = Look.Body(13f, false), button = Look.Body(12.5f, true), small = Look.Mono(9f);
+      Rectangle card, ok, stop;
+      readonly int lw, lh;
+      int hover; // 1 ok, 2 stop
+      double flow;
+
+      public ArrivalForm(Visit v, PanelForm panel) {
+        this.v = v; this.panel = panel;
+        var s = Screen.PrimaryScreen.Bounds;
+        Bounds = s;
+        BackColor = Look.Ink;
+        Opacity = 0.97;
+        // layout in 96-dpi units over the screen's size in those units
+        lw = (int)(s.Width / Look.K); lh = (int)(s.Height / Look.K);
+        int cw = Math.Min(780, lw - 80), ch = 470;
+        card = new Rectangle((lw - cw) / 2, (lh - ch) / 2, cw, ch);
+        ok = new Rectangle(card.X + 56, card.Bottom - 108, 220, 56);
+        stop = new Rectangle(ok.Right + 16, ok.Y, 180, 56);
+        // the other monitors go dark too, pointing here
+        Shown += delegate { foreach (var other in Screen.AllScreens) if (!other.Primary) new DimForm(other.Bounds, v.Tech).Show(this); };
+        KeyPreview = true;
+        tick.Tick += delegate {
+          flow += 0.03;
+          if ((DateTime.Now - opened).TotalSeconds >= Seconds) { Close(); return; }
+          Invalidate();
+        };
+        tick.Start();
+        FormClosed += delegate { tick.Dispose(); };
+      }
+
+      // this one may take the keyboard: Enter is OK, Escape is OK too (Stop needs a deliberate click)
+      protected override bool ShowWithoutActivation { get { return false; } }
+      protected override void OnShown(EventArgs e) { base.OnShown(e); Activate(); }
+      protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == System.Windows.Forms.Keys.Enter || e.KeyCode == System.Windows.Forms.Keys.Escape) Close(); }
+      static Point L(MouseEventArgs e) { return new Point((int)(e.X / Look.K), (int)(e.Y / Look.K)); }
+      protected override void OnMouseMove(MouseEventArgs e) {
+        int h = ok.Contains(L(e)) ? 1 : stop.Contains(L(e)) ? 2 : 0;
+        if (h != hover) { hover = h; Cursor = h != 0 ? Cursors.Hand : Cursors.Default; Invalidate(); }
+      }
+      protected override void OnMouseUp(MouseEventArgs e) {
+        if (ok.Contains(L(e))) Close();
+        else if (stop.Contains(L(e))) { var a = v.Stop; Close(); if (a != null) a(); }
+      }
+
+      protected override void OnPaint(PaintEventArgs e) {
+        var g = e.Graphics;
+        Look.Smooth(g);
+        g.ScaleTransform(Look.K, Look.K);
+        // a faint grid of the drawing office behind it all (the brand's hairlines)
+        using (var pen = new Pen(Color.FromArgb(18, Look.Mist), 1)) {
+          for (int x = 0; x < lw; x += 48) g.DrawLine(pen, x, 0, x, lh);
+          for (int gy = 0; gy < lh; gy += 48) g.DrawLine(pen, 0, gy, lw, gy);
+        }
+        // the card
+        var c = new RectangleF(card.X, card.Y, card.Width, card.Height);
+        using (var path = Look.Round(c, 22)) {
+          using (var b = new LinearGradientBrush(card, Look.Deep, Look.Ink, LinearGradientMode.ForwardDiagonal)) g.FillPath(b, path);
+          using (var pen = new Pen(Color.FromArgb(120, Look.Amber), 1.5f)) g.DrawPath(pen, path);
+        }
+        int x0 = card.X + 56, y = card.Y + 48;
+        var mark = Look.Mark;
+        if (mark != null) g.DrawImage(mark, new Rectangle(x0, y, 64, 64));
+        using (var b = new SolidBrush(Look.Amber)) g.DrawString("DEXTERITY CONNECT  \u00b7  IT SUPPORT  \u00b7  ADMINISTRATOR RIGHTS", label, b, x0 + 84, y + 8);
+        using (var b = new SolidBrush(Look.Mist)) g.DrawString((v.Ticket.Length > 0 ? "TICKET " + v.Ticket + "  \u00b7  " : "") + "RECORDED IN THE AUDIT LOG", small, b, x0 + 84, y + 34);
+        y += 92;
+        // the headline is measured, so a long name never runs into the words below it
+        string title = v.Tech + " from IT is connecting to this PC";
+        var th = g.MeasureString(title, head, card.Width - 112);
+        using (var b = new SolidBrush(Look.Paper)) g.DrawString(title, head, b, new RectangleF(x0, y, card.Width - 112, th.Height + 4));
+        y += (int)th.Height + 20;
+        using (var pen = new Pen(Color.FromArgb(70, Look.Mist), 1)) g.DrawLine(pen, x0, y - 10, x0 + 120, y - 10);
+        using (var b = new SolidBrush(Look.Mist))
+          g.DrawString("They will see your screen and can use the mouse and keyboard, including administrator windows and Windows security prompts. You can stop it at any time: Stop on the panel at the top, or Ctrl+Alt+Shift+S.", body, b, new RectangleF(x0, y, card.Width - 112, ok.Y - y - 12));
+        // OK and Stop now
+        DrawButton(g, ok, "OK, carry on", hover == 1, true);
+        DrawButton(g, stop, "Stop now", hover == 2, false);
+        // the line of flow: runs from left to right while the notice counts down
+        double left = Math.Max(0, 1 - (DateTime.Now - opened).TotalSeconds / Seconds);
+        int run = (int)((card.Width - 112) * left);
+        using (var b = new SolidBrush(Color.FromArgb(50, Look.Mist))) g.FillRectangle(b, x0, card.Bottom - 30, card.Width - 112, 3);
+        using (var b = new LinearGradientBrush(new Rectangle(x0, card.Bottom - 30, Math.Max(1, run), 3), Look.Teal, Look.Amber, LinearGradientMode.Horizontal)) g.FillRectangle(b, x0, card.Bottom - 30, run, 3);
+        using (var b = new SolidBrush(Color.FromArgb(160, Look.Mist))) g.DrawString("THIS NOTICE MOVES TO THE PANEL AT THE TOP IN " + Math.Ceiling(left * Seconds) + " S", small, b, x0, card.Bottom - 24);
+      }
+
+      void DrawButton(Graphics g, Rectangle r, string text, bool hot, bool primary) {
+        using (var path = Look.Round(new RectangleF(r.X, r.Y, r.Width, r.Height), 12)) {
+          if (primary) using (var b = new SolidBrush(hot ? Look.AmberHi : Look.Amber)) g.FillPath(b, path);
+          else using (var b = new SolidBrush(hot ? Color.FromArgb(60, Look.Red) : Color.FromArgb(0, 0, 0, 0))) g.FillPath(b, path);
+          if (!primary) using (var pen = new Pen(hot ? Look.Paper : Look.Mist, 1.5f)) g.DrawPath(pen, path);
+        }
+        using (var b = new SolidBrush(primary ? Look.Ink : Look.Paper)) {
+          var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+          g.DrawString(text, button, b, new RectangleF(r.X, r.Y, r.Width, r.Height), sf);
+        }
+      }
     }
   }
 }

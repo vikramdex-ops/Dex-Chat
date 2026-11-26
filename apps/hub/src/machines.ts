@@ -125,7 +125,7 @@ export class Machines {
     for (const s of this.live.values()) {
       if (s.machineId !== id) continue;
       if (s.pausedAt !== null) this.resume(s);
-      else { s.inFlight = 0; conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT' }); }
+      else { s.inFlight = 0; conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT', ticket: this.host.helpdesk.refOf(s.ticketId) }); }
     }
     this.changed();
     return id;
@@ -200,7 +200,7 @@ export class Machines {
         const detail = { session: s.id, machine: m.hostname, consoleUser: on.consoleUser, locked: on.locked };
         this.host.helpdesk.record(ticketId, me.id, 'session.started', `Connected to ${m.hostname} with administrator rights (elevated control)${on.consoleUser ? `, ${on.consoleUser} signed in` : ', nobody signed in'}.`, { ...detail, elevated: true });
         this.host.store.audit(me.id, 'help.elevated.started', ticketId, detail);
-        on.conn.send({ t: 'm.start', s: s.id, tech: me.displayName });
+        on.conn.send({ t: 'm.start', s: s.id, tech: me.displayName, ticket: this.host.helpdesk.refOf(ticketId) });
         this.changed();
         return this.view(s);
       }
@@ -321,7 +321,7 @@ export class Machines {
     const on = this.online.get(s.machineId);
     this.host.helpdesk.record(s.ticketId, null, 'session.resumed', `${s.hostname} is back.`, { session: s.id, pausedMs, elevated: true });
     this.host.store.audit(null, 'help.session.resumed', s.ticketId, { session: s.id, machine: s.hostname, pausedMs, elevated: true });
-    on?.conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT' });
+    on?.conn.send({ t: 'm.start', s: s.id, tech: this.host.store.userById(s.techId)?.displayName ?? 'IT', ticket: this.host.helpdesk.refOf(s.ticketId) });
     this.tell(s);
   }
 

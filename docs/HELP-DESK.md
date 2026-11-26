@@ -272,10 +272,19 @@ the **input desktop** (Default, Winlogon, the UAC prompt's) with `OpenInputDeskt
 `SendInput`, and lets go of every held key and button when a session stops. A sign-in, sign-out or
 switch of user moves the worker to the new console session.
 
-**The person at the PC always sees it and can stop it.** While IT is connected, an amber strip at the
-top of whatever desktop is showing (theirs, the lock or sign-in screen, a UAC prompt) says *"Ravi
-Kumar from IT is connected to this PC with administrator rights"*, with **Stop** and
-**Ctrl+Alt+Shift+S**. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
+**The person at the PC always sees it and can stop it**, on whatever desktop is showing (theirs, the
+lock or sign-in screen, a UAC prompt), in the Dexterity look (deep teal, amber, the Di mark):
+
+- **Arrival screen** when a session starts: full screen on the main monitor (the others dim and point
+  to it): *"Ravi Kumar from IT is connecting to this PC"*, with administrator rights, the ticket, what
+  IT can do, **OK, carry on** and **Stop now**. A line runs down for 12 seconds and hands over to the
+  panel (Enter or Escape is OK). Shown once per session, not again when the desktop changes.
+- **An amber frame** around every monitor while IT is connected, breathing slowly; clicks pass through.
+- **A floating panel** at the top: the Di mark, a live dot, who, the ticket and for how long, the stop
+  keys and a big **Stop**. It never takes the keyboard, and can be dragged out of the way.
+
+Sizes follow the screen's scaling. `DexSupport.exe --preview-notice "Name" T-0042 20` shows it on the
+current desktop without the service. **Stop** (or **Ctrl+Alt+Shift+S**) ends the session. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
 ticket). With nobody signed in IT may still connect; the strip is on the sign-in screen.
 
 **Restarts.** The service stopping (a restart, an update) closes its link without ending the session,
