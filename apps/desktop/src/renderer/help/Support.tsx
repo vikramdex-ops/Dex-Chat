@@ -15,7 +15,7 @@ import { Files, StatusStamp, Timeline, categoryLabel, platformLabel } from './pa
 import { ControlConsent, DiagnosticsSheet, ScreenConsent } from './Consent.tsx';
 import { ControlBanner, ControlSurface } from './control.tsx';
 import { clearAsk, clearDropped, dropItems, endSession, screenEnded, sendDropped, sendFile, stopControl, stopScreen, useHelp } from './store.ts';
-import { usePolicy } from '../policy.ts';
+import { policyNow as usePolicyNow, usePolicy } from '../policy.ts';
 import './help.css';
 
 interface Props { users: Map<string, PublicUser>; meId: string; meDevice: string }
@@ -177,6 +177,13 @@ function TechStage({ users, meId, session }: Props & { session: SupportSession }
           <span className="label">Support session{session.unattended ? ' · unattended' : ''}</span>
           <h2 translate="no">{ticket?.summary ?? ''}</h2>
           {session.unattended && <p className="faint sup-reason">You connected without {first} accepting. They see that you are connected and can stop it.</p>}
+          {session.unattended && usePolicyNow().assistPrivacy === true && (
+            <button className={`btn sm${session.privacy ? ' amber' : ''}`} aria-pressed={session.privacy}
+              title={session.privacy ? `${first} sees 'IT is working on this PC', not what you do` : `Cover ${first}'s screen while you work (passwords, administration)`}
+              onClick={() => void window.dex.request('help.privacy', { id: session.ticketId, on: !session.privacy }).catch((e: Error) => toast(e.message, true))}>
+              {session.privacy ? 'Privacy screen on' : 'Turn the privacy screen on'}
+            </button>
+          )}
           <dl className="hd-facts">
             <div><dt>Ref</dt><dd className="mono">{ticket ? ticketRef(ticket.number) : '—'}</dd></div>
             <div><dt>With</dt><dd><Avatar user={{ id: session.requesterId, displayName: name }} size="sm" /> {name}</dd></div>

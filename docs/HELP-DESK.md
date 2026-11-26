@@ -169,6 +169,19 @@ in). Recorded: `help.unattended.started` / `help.unattended.ended`,
 `unattended: true` on `help.session.started`, `help.consent.granted` and `help.session.ended`, and
 *"connected without asking"* on the ticket.
 
+**Privacy screen** (`assistPrivacy`, with unattended access). Some of IT's work should not be seen by
+everyone (typing an administrator password, account settings). With this policy on, IT can tick
+**Privacy screen** when they press Connect now, or turn it on and off in the session. The person then
+sees a calm full-screen notice on every display, *"Ravi Kumar from IT is working on this PC"*, with
+the share bar (and its Stop) and the stop keys still on top; IT sees the real screen. The notice is
+kept out of screen capture (Windows' exclude-from-capture display affinity, Electron
+`setContentProtection`), so it never reaches IT's picture, and clicks pass through it so IT's input
+reaches the apps underneath. It needs Windows 10 version 2004 or later: on older Windows the
+person's app turns it off and IT is told. Only IT turns it on; the person can always stop the
+session. Every change is on the ticket and in the audit log (`help.privacy`), and an administrator
+turning the policy (or unattended access) off removes it at once. One support session per person at
+a time from Connect now.
+
 **Clipboard** (`assistClipboard`). While control is on, text copied on either PC can be pasted on
 the other (`{ k: 'clip', text }` on the data channel; text only; up to 8,000 characters of JSON, what
 the hub relays when a Room has no data channel: longer text is not sent and the person is told).

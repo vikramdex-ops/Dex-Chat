@@ -187,7 +187,7 @@ export class HelpDesk {
 
   private publicSession(s: LiveSession): SupportSession {
     return { id: s.id, ticketId: s.ticketId, roomId: s.roomId, requesterId: s.requesterId, techId: s.techId, startedAt: s.startedAt, endedAt: s.endedAt, consent: { ...s.consent }, controlAvailable: s.controlAvailable, unattended: s.unattended, pausedAt: s.pausedAt,
-      requesterDevice: s.requesterDevice, techDevice: s.techDevice, stopped: s.stopped };
+      requesterDevice: s.requesterDevice, techDevice: s.techDevice, stopped: s.stopped, privacy: s.privacy };
   }
 
   private view(r: TicketRow): HelpTicket {
@@ -235,6 +235,15 @@ export class HelpDesk {
 
   private requireIt(me: PublicUser): void {
     if (!this.isIt(me.id)) throw new HelpError('Only people on the IT desk can do that.');
+  }
+
+  /** The privacy screen on or off: on the timeline and in the audit log, every time. */
+  private setPrivacy(s: LiveSession, on: boolean, actor: string | null, why: string | null): void {
+    if (s.privacy === on) return;
+    s.privacy = on;
+    this.entry(s.ticketId, actor, 'note', why ?? (on ? 'IT turned the privacy screen on: the person sees that IT is working, not what IT does.' : 'IT turned the privacy screen off.'), { sessionId: s.id, privacy: on });
+    this.host.store.audit(actor, 'help.privacy', s.ticketId, { session: s.id, on, why });
+    this.pushSession(s);
   }
 
   /** A device went offline (its last connection closed): it no longer counts as controllable. */
@@ -445,6 +454,8 @@ export class HelpDesk {
       case 'help.connect': {
         this.requireIt(me);
         if (this.host.policy().assistUnattended !== true) throw new HelpError('Unattended access is off for this office. An administrator turns it on in Control room ▸ Policies ▸ Remote support.');
+        const privacy = d.privacy === true;
+        if (privacy && this.host.policy().assistPrivacy !== true) throw new HelpError('The privacy screen is off for this office. An administrator turns it on in Control room ▸ Policies ▸ Remote support.');
         // first everything that can fail: the ticket or the person, and the PC IT will reach; only then any write
         let r: TicketRow | null = null;
         let requester: PublicUser | null;
@@ -461,6 +472,8 @@ export class HelpDesk {
           if (requester.id === me.id) throw new HelpError('Someone else on the IT desk connects to your own PC.');
         }
         const existing = r ? this.live.get(r.id) : undefined;
+        const other = [...this.live.values()].find((x) => x.requesterId === requester!.id && x !== existing);
+        if (other) throw new HelpError(`${requester.displayName} is already in a support session (${ticketRef(this.row(other.ticketId)?.number ?? 0)}). Join that one, or wait until it ends.`);
         if (existing?.techDevice && existing.techDevice !== deviceId) throw new HelpError('You are in this session on another of your devices.');
         const target = this.unattendedTarget(requester, existing);
         if (!target) throw new HelpError(`${requester.displayName}'s PC is not online. Unattended access needs Dexterity Connect running on their Windows or Linux PC, on the office network.`);
@@ -471,8 +484,10 @@ export class HelpDesk {
           this.host.store.audit(me.id, 'help.taken', r.id, { number: ticketRef(r.number), from: r.tech_id });
           r = this.row(r.id)!;
         }
+        const opened = !r;
         r ??= this.row(this.openForIt(me, requester.id, `Remote support from ${me.displayName}`, { unattended: true }))!;
         let s = this.live.get(r.id);
+        const before = s ? { unattended: s.unattended, requesterDevice: s.requesterDevice, techDevice: s.techDevice, stopped: s.stopped } : null;
         if (s && !s.unattended) {
           // an attended session already running becomes unattended from here on
           s.unattended = true;
@@ -485,17 +500,49 @@ export class HelpDesk {
         s.requesterDevice = target;
         // IT connecting again is a new request: what the person stopped before may be given again
         s.stopped = false;
+        if (privacy !== s.privacy) this.setPrivacy(s, privacy, me.id, null);
         this.lockDevice(s, me, deviceId);
         let room: RoomInfo;
         try { room = this.enter(s, me, deviceId, fromOutside); } catch (e) {
-          // the Room would not take the technician: nothing is left running half-made
-          if (fresh) this.endSession(r.id, me.id, 'IT could not connect.');
-          else { s.unattended = false; s.stopped = true; this.pushSession(s); }
+          // the Room would not take the technician: everything goes back to how it was
+          if (fresh) {
+            this.endSession(r.id, me.id, 'IT could not connect.');
+            if (opened) {
+              const now = Date.now();
+              this.db.prepare(`UPDATE help_tickets SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`).run(now, now, r.id);
+              this.entry(r.id, me.id, 'closed', 'IT could not connect; nothing was done on this PC.');
+              this.publish(r.id);
+            }
+          } else if (before) {
+            if (!before.unattended && s.unattended) {
+              this.db.prepare('UPDATE help_sessions SET unattended = 0 WHERE id = ?').run(s.id);
+              this.host.store.audit(me.id, 'help.unattended.ended', r.id, { session: s.id, why: 'IT could not connect' });
+            }
+            s.unattended = before.unattended; s.requesterDevice = before.requesterDevice; s.techDevice = before.techDevice; s.stopped = before.stopped;
+            this.pushSession(s);
+          }
           throw e;
         }
         this.pushSession(s);
         this.publish(r.id);
         return { session: this.publicSession(s), room };
+      }
+
+      case 'help.privacy': {
+        const r = this.visible(me, d.id);
+        const s = this.live.get(r.id);
+        if (!s) throw new HelpError('There is no session on this ticket now.');
+        const on = d.on === true;
+        if (me.id === s.requesterId) {
+          // the person's app turns it off only when it cannot show it (older Windows)
+          if (on || d.unavailable !== true) throw new HelpError('Only IT turns the privacy screen on or off. Press Stop to end the session.');
+          this.setPrivacy(s, false, me.id, 'It cannot be shown on this PC (it needs Windows 10 version 2004 or later).');
+          return this.publicSession(s);
+        }
+        if (me.id !== s.techId) throw new HelpError('Only the technician in the session can do that.');
+        if (on && (this.host.policy().assistPrivacy !== true || !s.unattended)) throw new HelpError('The privacy screen is for unattended sessions, with the policy on.');
+        this.setPrivacy(s, on, me.id, null);
+        return this.publicSession(s);
       }
 
       // a desktop app says whether it can be controlled (what unattended access may choose)
@@ -612,7 +659,7 @@ export class HelpDesk {
     const s: LiveSession = {
       id: ulid(), ticketId: r.id, roomId: null, requesterId: requester.id, techId: me.id, startedAt: Date.now(), endedAt: null,
       consent: { screen: false, scope: null, control: false, screenSince: null, controlSince: null }, controlAvailable: false,
-      unattended, pausedAt: null, requesterDevice: null, techDevice: null, stopped: false, together: false, bothIn: false, convId: conv.id, grants: [], timer: null,
+      unattended, pausedAt: null, requesterDevice: null, techDevice: null, stopped: false, privacy: false, together: false, bothIn: false, convId: conv.id, grants: [], timer: null,
     };
     this.live.set(r.id, s);
     this.db.prepare('INSERT INTO help_sessions (id, ticket_id, requester_id, tech_id, started_at, unattended) VALUES (?, ?, ?, ?, ?, ?)').run(s.id, r.id, s.requesterId, s.techId, s.startedAt, unattended ? 1 : 0);
@@ -649,6 +696,7 @@ export class HelpDesk {
         this.host.store.audit(null, 'help.unattended.ended', s.ticketId, { session: s.id, why: 'policy turned off' });
         this.pushSession(s);
       }
+      if (s.privacy && (p.assistPrivacy !== true || !s.unattended)) this.setPrivacy(s, false, null, 'The privacy screen was turned off by an administrator.');
       if (s.pausedAt !== null && p.assistReconnect !== true) this.endSession(s.ticketId, null, 'Reconnecting was turned off by an administrator.');
     }
   }

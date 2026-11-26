@@ -99,6 +99,10 @@ export function PoliciesAdmin() {
           <div className="txt"><div>Support sessions reconnect by themselves</div><div className="faint">After a network drop or a restart of either PC, the session waits up to 10 minutes and both apps join it again. After a network drop, what the person was sharing is shared again; after a restart they choose again, unless the session is unattended. They see it and can stop it.</div></div>
           <Toggle label="Support sessions reconnect by themselves" checked={p.assistReconnect === true} onChange={(v) => save({ assistReconnect: v })} />
         </div>
+        <div className="setting">
+          <div className="txt"><div>IT may cover the screen while they work (privacy screen)</div><div className="faint">When IT connects without asking they can tick Privacy screen: the person sees "IT is working on this PC" instead of what IT does (typing administrator passwords, settings), while IT sees the real screen. Stop stays on top, and every use is on the ticket and in the Audit log. Needs Windows 10 version 2004 or later.</div></div>
+          <Toggle label="IT may cover the screen while they work" checked={p.assistPrivacy === true} onChange={(v) => save({ assistPrivacy: v })} />
+        </div>
       </section>
       <section className="card">
         <div className="eyebrow">Personal devices</div>

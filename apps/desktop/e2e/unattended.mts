@@ -31,7 +31,7 @@ try {
   assert.equal(await b.page.locator('.hd-connect').count(), 0, 'Connect now is hidden while the policy is off');
 
   // ---- the administrator turns remote support on
-  await owner.request('admin.policy.set', { assistUnattended: true, assistClipboard: true, assistFiles: true, assistReconnect: true });
+  await owner.request('admin.policy.set', { assistUnattended: true, assistClipboard: true, assistFiles: true, assistReconnect: true, assistPrivacy: true });
   const connect = b.page.locator('.hd-connect');
   await connect.waitFor({ timeout: 10000 });
   await shot(b.page, 'unattended-01-desk');
@@ -69,6 +69,35 @@ try {
   await a.page.reload();
   await a.page.locator('.sup-banner', { hasText: 'connected without asking' }).waitFor({ timeout: 40000 });
   await b.page.locator('.sup-perm.on', { hasText: 'Allowed by Priya' }).waitFor({ timeout: 20000 });
+
+  // ---- the privacy screen: Priya sees it on every display, Ravi's picture does not (it is kept out of capture)
+  const privacyWindows = () => a.app.evaluate(({ BrowserWindow, screen }) => {
+    const ds = screen.getAllDisplays().map((d) => d.bounds);
+    return BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && w.getOpacity() < 1 && ds.some((b) => { const r = w.getBounds(); return r.width === b.width && r.height === b.height; })).length;
+  });
+  const sample = () => b.page.evaluate(() => {
+    const v = document.querySelector('.sup-screen video') as HTMLVideoElement;
+    const c = document.createElement('canvas'); c.width = 64; c.height = 36;
+    const g = c.getContext('2d')!; g.drawImage(v, 0, 0, 64, 36);
+    const d = g.getImageData(0, 0, 64, 36).data;
+    let teal = 0;
+    // the privacy screen's teal (#132b2e) covering the picture would make nearly every pixel this colour
+    for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 0x13) < 12 && Math.abs(d[i + 1] - 0x2b) < 12 && Math.abs(d[i + 2] - 0x2e) < 12) teal++;
+    return teal / (d.length / 4);
+  });
+  await b.page.getByRole('button', { name: 'Turn the privacy screen on' }).click();
+  await b.page.getByRole('button', { name: 'Privacy screen on' }).waitFor({ timeout: 10000 });
+  await sleep(1500);
+  assert.ok(await privacyWindows() >= 1, 'the privacy screen covers Priya\'s displays');
+  await sleep(1500);
+  const covered = await sample();
+  console.log(`share of Ravi's picture in the privacy screen's colour: ${covered.toFixed(3)}`);
+  assert.ok(covered < 0.6, 'Ravi sees the real screen, not the privacy screen');
+  await shot(b.page, 'unattended-04-ravi-privacy');
+  await b.page.getByRole('button', { name: 'Privacy screen on' }).click();
+  await b.page.getByRole('button', { name: 'Turn the privacy screen on' }).waitFor({ timeout: 10000 });
+  await sleep(1000);
+  assert.equal(await privacyWindows(), 0, 'the privacy screen is gone when IT turns it off');
 
   // ---- she can always stop it
   await a.page.locator('.sup-banner').getByRole('button', { name: 'Stop control' }).click();

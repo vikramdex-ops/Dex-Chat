@@ -316,3 +316,42 @@ test('third review: leaving the IT desk ends the session; a Room ended before bo
   const { timeline } = await priya.request('help.get', { id: t2.id });
   assert.equal(timeline.filter((e) => e.kind === 'session.ended').at(-1)!.text, 'The technician is no longer on the IT desk.');
 });
+
+test('fourth review: one support session per person from Connect now; a refused connect closes the ticket it opened', async () => {
+  const { owner, priya, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistUnattended: true });
+  await priya.request('help.device', { control: true });
+  const first = await ravi.request('help.connect', { userId: me(priya) });
+  // a second Connect now for the same person is refused while the first runs
+  await assert.rejects(ravi.request('help.connect', { userId: me(priya) }), /already in a support session/);
+  const queue = await ravi.request('help.queue', { status: 'all' });
+  assert.equal(queue.filter((t) => t.requesterId === me(priya) && t.status !== 'closed').length, 1, 'no second ticket was opened');
+  await ravi.request('help.session.end', { id: first.session.ticketId });
+});
+
+test('privacy screen: only with its policy, only IT turns it on, the person\'s app turns it off when it cannot show it, all audited', async () => {
+  const { owner, priya, ravi } = await office();
+  await owner.request('admin.help.staff', { userId: me(ravi), on: true });
+  await owner.request('admin.policy.set', { assistUnattended: true });
+  await priya.request('help.device', { control: true });
+  await assert.rejects(ravi.request('help.connect', { userId: me(priya), privacy: true }), /privacy screen is off/);
+  await owner.request('admin.policy.set', { assistPrivacy: true });
+  const r = await ravi.request('help.connect', { userId: me(priya), privacy: true });
+  assert.equal(r.session.privacy, true);
+  const id = r.session.ticketId;
+  await assert.rejects(priya.request('help.privacy', { id, on: true }), /Only IT/);
+  await assert.rejects(priya.request('help.privacy', { id, on: false }), /Only IT/);
+  const off = await priya.request('help.privacy', { id, on: false, unavailable: true });
+  assert.equal(off.privacy, false);
+  const on = await ravi.request('help.privacy', { id, on: true });
+  assert.equal(on.privacy, true);
+  // the administrator turns the policy off: the privacy screen goes at once
+  const gone = nextEvent<SupportSession>(priya, 'help.session', (x) => !x.privacy);
+  await owner.request('admin.policy.set', { assistPrivacy: false });
+  await gone;
+  const audit = (await owner.request('admin.audit', { limit: 30 })).filter((a) => a.action === 'help.privacy');
+  assert.ok(audit.length >= 4);
+  const { timeline } = await priya.request('help.get', { id });
+  assert.ok(timeline.some((e) => /privacy screen on/.test(e.text ?? '')));
+});

@@ -131,6 +131,8 @@ function ConnectToPc({ users, meId }: { users: Map<string, PublicUser>; meId: st
   const inRoom = useCall((s) => s.room);
   const [who, setWho] = useState('');
   const [busy, setBusy] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const privacyOn = usePolicy().assistPrivacy === true;
   const people = useMemo(() => [...users.values()].filter((u) => u.id !== meId && u.role !== 'guest' && u.role !== 'bot').sort((a, b) => a.displayName.localeCompare(b.displayName)), [users, meId]);
   if (!on) return null;
   return (
@@ -140,9 +142,14 @@ function ConnectToPc({ users, meId }: { users: Map<string, PublicUser>; meId: st
         {people.map((u) => <option key={u.id} value={u.id}>{u.displayName}</option>)}
       </select>
       <button className="btn sm" disabled={!who || busy || !!inRoom} title={inRoom ? 'Leave the Room you are in first' : 'Unattended: their app shares the screen and gives control by itself. They are told and can stop it.'}
-        onClick={() => { setBusy(true); void connectNow({ userId: who }).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(false)); }}>
+        onClick={() => { setBusy(true); void connectNow({ userId: who }, privacy && privacyOn).catch((e: Error) => toast(e.message, true)).finally(() => setBusy(false)); }}>
         <Icon name="monitor" size={14} />Connect now
       </button>
+      {privacyOn && (
+        <label className="hd-privacy" title="Their screen shows 'IT is working on this PC' instead of what you do (for passwords and administration). They can still stop it, and it is recorded.">
+          <input type="checkbox" checked={privacy} onChange={(e) => setPrivacy(e.target.checked)} /> Privacy screen
+        </label>
+      )}
     </div>
   );
 }
