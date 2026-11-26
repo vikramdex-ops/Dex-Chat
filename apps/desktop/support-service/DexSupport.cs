@@ -57,6 +57,8 @@ namespace DexSupport {
         if (mode == "--worker") return Worker.Run(args.Length > 1 ? args[1] : "");
         if (mode == "--selftest") return Worker.SelfTest(args.Length > 1 ? args[1] : "selftest.jpg");
         if (mode == "--console") { Paths.ConfigOverride = Program.Arg(args, "--config"); var a = new Agent(true); a.Start(); Console.WriteLine("Running. Press Enter to stop."); Console.ReadLine(); a.Stop(); return 0; }
+        // --check-file FILE: is that file only in the hands of SYSTEM and Administrators (what the service asks of config.json)?
+        if (mode == "--check-file") { using (var fs = new FileStream(args[1], FileMode.Open, FileAccess.Read, FileShare.Read)) Console.WriteLine(Trusted.File(fs) ? "trusted" : "not trusted"); return 0; }
         if (mode == "--drop-dev-key") { if (CngKey.Exists("DexterityConnectSupport-dev")) CngKey.Open("DexterityConnectSupport-dev").Delete(); return 0; }
         if (Environment.UserInteractive && mode != "--service") {
           Console.WriteLine("Dexterity Connect IT Support " + Version);
@@ -140,7 +142,8 @@ namespace DexSupport {
   static class Trusted {
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);
     [StructLayout(LayoutKind.Sequential)]
-    struct BY_HANDLE_FILE_INFORMATION { public uint attrs; public long created, accessed, written; public uint volume, sizeHigh, sizeLow, links, indexHigh, indexLow; }
+    // FILETIMEs as two uints each: a long here would be 8-aligned and shift every field after it
+    struct BY_HANDLE_FILE_INFORMATION { public uint attrs; public uint created1, created2, accessed1, accessed2, written1, written2; public uint volume, sizeHigh, sizeLow, links, indexHigh, indexLow; }
 
     static readonly SecurityIdentifier Sys = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
     static readonly SecurityIdentifier Admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
