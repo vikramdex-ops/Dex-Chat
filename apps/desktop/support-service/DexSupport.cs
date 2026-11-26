@@ -721,7 +721,10 @@ namespace DexSupport {
         Log.Write("Ctrl+Alt+Del from " + tech);
         try { Native.SendSAS(false); } catch (Exception ex) { Log.Write("SendSAS: " + ex.Message); }
       } else if (t == "m.privacy") {
-        Tell('P', Json.Bool(m, "on") ? "1" : "0");
+        bool on = Json.Bool(m, "on");
+        // a worker started later (sign-out and in, another user) gets the current setting, not the first one
+        if (tech != null) { var f = tech.Split('\t'); if (f.Length > 4) { f[4] = on ? "1" : "0"; tech = string.Join("\t", f); } }
+        Tell('P', on ? "1" : "0");
       } else if (t == "m.stop") {
         Log.Write("IT session ended: " + Json.Str(m, "why"));
         session = null;
@@ -1143,6 +1146,9 @@ namespace DexSupport {
         Restart();
       }
     }
+    public Banner() {
+      SystemEvents.DisplaySettingsChanged += delegate { ThreadPool.QueueUserWorkItem(delegate { lock (gate) { if (visit != null) Restart(); } }); };
+    }
     public void SetPrivacy(bool on) { lock (gate) { if (visit == null || visit.Privacy == on) return; visit.Privacy = on; Restart(); } }
     public void Hide() { lock (gate) { visit = null; Close(); } }
     public void MoveTo(string desktopName) {
@@ -1182,7 +1188,10 @@ namespace DexSupport {
           if (d != IntPtr.Zero) SetThreadDesktop(d);
           // the privacy screen first, not owned by the panel: the panel (Stop), frame and arrival stay above it
           var covers = new List<PrivacyForm>();
-          if (v.Privacy) foreach (var screen in Screen.AllScreens) { var c = new PrivacyForm(screen.Bounds, v.Tech); c.Show(); covers.Add(c); if (!c.OutOfCapture) { foreach (var x in covers) x.Close(); covers.Clear(); if (privacyFailed != null) privacyFailed(); break; } }
+          // never over the sign-in screen, Ctrl+Alt+Del or a UAC prompt: the person always sees what is asked there
+          bool own = string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase);
+          if (v.Privacy && own && !PrivacyForm.Supported) { if (privacyFailed != null) privacyFailed(); }
+          else if (v.Privacy && own) foreach (var screen in Screen.AllScreens) { var c = new PrivacyForm(screen.Bounds, v.Tech); c.Show(); covers.Add(c); if (!c.OutOfCapture) { foreach (var x in covers) x.Close(); covers.Clear(); if (privacyFailed != null) privacyFailed(); break; } }
           var panel = new PanelForm(v);
           made = panel;
           panel.Shown += delegate { shown = true; ready.Set(); };
@@ -1408,6 +1417,19 @@ namespace DexSupport {
      */
     class PrivacyForm : QuietForm {
       [DllImport("user32.dll", SetLastError = true)] static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+      [DllImport("ntdll.dll")] static extern int RtlGetVersion(ref OSVERSIONINFOEX info);
+      [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+      struct OSVERSIONINFOEX { public int size, major, minor, build, platform; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string csd; public ushort spMajor, spMinor, suite; public byte type, reserved; }
+      /**
+       * Exclude-from-capture exists from Windows 10 version 2004 (build 19041). Before that Windows
+       * accepts the call but only blacks the window out in capture, which would blind IT: never shown there.
+       */
+      public static bool Supported {
+        get {
+          var v = new OSVERSIONINFOEX(); v.size = Marshal.SizeOf(typeof(OSVERSIONINFOEX));
+          try { return RtlGetVersion(ref v) == 0 && (v.major > 10 || (v.major == 10 && v.build >= 19041)); } catch { return false; }
+        }
+      }
       readonly string tech;
       readonly Font tag = Look.Mono(10f), head = Look.Light(30f), body = Look.Body(13f, false);
       public bool OutOfCapture;
@@ -1438,7 +1460,7 @@ namespace DexSupport {
         using (var b = new SolidBrush(Look.Amber)) g.DrawString("DEXTERITY CONNECT  \u00b7  IT SUPPORT  \u00b7  PRIVACY SCREEN", tag, b, x0, y0);
         using (var b = new SolidBrush(Look.Paper)) g.DrawString(tech + " from IT is working on this PC", head, b, new RectangleF(x0, y0 + 28, cw, 100));
         using (var b = new SolidBrush(Look.Mist))
-          g.DrawString("They asked for the screen to be covered while they work, so this is what you see. Please carry on with something else; your screen comes back when they finish. You can stop it at any time: Stop on the panel at the top, or Ctrl+Alt+Shift+S.", body, b, new RectangleF(x0, y0 + 136, cw, 110));
+          g.DrawString("They asked for the screen to be covered while they work, so this is what you see. Please leave the mouse and keyboard alone until it goes: anything you type or click reaches what IT is working on. You can end it at any time: Stop on the panel at the top, or Ctrl+Alt+Shift+S.", body, b, new RectangleF(x0, y0 + 136, cw, 110));
       }
     }
 

@@ -231,6 +231,7 @@ export class Machines {
         this.host.helpdesk.record(ticketId, me.id, 'session.started', `Connected to ${m.hostname} with administrator rights (elevated control)${on.consoleUser ? `, ${on.consoleUser} signed in` : ', nobody signed in'}.`, { ...detail, elevated: true });
         this.host.store.audit(me.id, 'help.elevated.started', ticketId, { ...detail, privacy });
         if (privacy) this.host.helpdesk.record(ticketId, me.id, 'note', 'IT turned the privacy screen on: the person sees that IT is working, not what IT does.', { session: s.id, privacy: true });
+        if (privacy) this.host.store.audit(me.id, 'help.privacy', ticketId, { session: s.id, machine: m.hostname, on: true, why: null });
         this.start(s);
         this.changed();
         return this.view(s);

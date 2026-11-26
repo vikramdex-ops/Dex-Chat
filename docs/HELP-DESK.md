@@ -328,7 +328,10 @@ lock or sign-in screen, a UAC prompt), in the Dexterity look (deep teal, amber, 
   it on and off in the viewer. Every monitor is covered by *"Ravi Kumar from IT is working on this
   PC"*, kept out of IT's picture (`SetWindowDisplayAffinity`, exclude from capture) and click-through,
   with the panel (Stop) and frame above it. Where Windows cannot keep it out of the picture (before
-  Windows 10 version 2004) it is not shown and IT is told. On the ticket and in the audit log.
+  Windows 10 version 2004, checked from the kernel's version) it is not shown and IT is told. It
+  covers only the person's own desktop, never the sign-in screen, Ctrl+Alt+Del or a UAC prompt, so
+  the person always sees what is asked there; it follows monitor changes and the setting IT chose
+  survives the worker restarting. On the ticket and in the audit log.
 
 Sizes follow the screen's scaling. `DexSupport.exe --preview-notice "Name" T-0042 20` shows it on the
 current desktop without the service. **Stop** (or **Ctrl+Alt+Shift+S**) ends the session. A stop ends the session for good (*"The person at the PC pressed Stop."* on the
