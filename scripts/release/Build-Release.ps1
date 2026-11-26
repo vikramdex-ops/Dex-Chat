@@ -16,7 +16,7 @@
 [CmdletBinding()]
 param(
   [ValidateSet('stable', 'beta')] [string] $Channel = '',
-  [string] $Out = 'D:\DexterityConnect-Releases',
+  [string] $Out = 'Q:\DexterityConnect-Releases',
   [string] $Version = '',
   [switch] $Publish,
   [switch] $SkipAndroid,
@@ -50,11 +50,26 @@ if (-not $Channel) { $Channel = if ($branch -eq 'main') { 'stable' } else { 'bet
 
 $android = -not $SkipAndroid
 if ($android) {
-  $java = Have java
+  # the Android SDK: this shell's ANDROID_HOME, or the user's (a shell opened before it was set has none)
   $sdk = $env:ANDROID_HOME; if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
-  if (-not $java -or -not $sdk -or -not (Test-Path $sdk)) {
+  if (-not $sdk) { $sdk = [Environment]::GetEnvironmentVariable('ANDROID_HOME', 'User') }
+  if (-not $sdk) { $sdk = Join-Path $env:USERPROFILE 'scoop\apps\android-clt\current' }
+  # JDK 21 for Gradle, for this build only (the machine's JAVA_HOME may deliberately be another JDK)
+  $jdk = $null
+  foreach ($c in @($env:JAVA_HOME, (Join-Path $env:USERPROFILE 'scoop\apps\temurin21-jdk\current')) + @(Get-ChildItem 'C:\Program Files\Eclipse Adoptium', 'C:\Program Files\Microsoft' -Directory -Filter 'jdk-21*' -ErrorAction SilentlyContinue | ForEach-Object FullName)) {
+    if ($c -and (Test-Path (Join-Path $c 'bin\java.exe'))) {
+      $v = & (Join-Path $c 'bin\java.exe') -version 2>&1 | Select-Object -First 1
+      if ("$v" -match '"21\.') { $jdk = $c; break }
+    }
+  }
+  if (-not $jdk -or -not (Test-Path $sdk)) {
     Write-Host 'Android: JDK 21 or the Android SDK (ANDROID_HOME) was not found, so the APK is skipped this time. See docs/RELEASING.md.' -ForegroundColor Yellow
     $android = $false
+  } else {
+    $env:ANDROID_HOME = $sdk
+    $env:JAVA_HOME = $jdk
+    $env:PATH = "$(Join-Path $jdk 'bin');$env:PATH"
+    Write-Host "Android: SDK $sdk, JDK $jdk"
   }
 }
 if ($Publish -and -not (Have gh)) { Fail 'Publishing needs the GitHub CLI: install it from https://cli.github.com, run "gh auth login", then run this again.' }
