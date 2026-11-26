@@ -38,7 +38,7 @@ const it = await join('it');
 for (const d of await owner.request('admin.devices')) if (d.status === 'pending') await owner.request('admin.decide', { deviceId: d.id, approve: true });
 await wait(() => it.state.kind === 'ready', 'IT approved');
 await owner.request('admin.help.staff', { userId: it.session!.me.id, on: true });
-await owner.request('admin.policy.set', { assistElevated: true });
+await owner.request('admin.policy.set', { assistElevated: true, assistPrivacy: true });
 const frames: MachineFrame[] = [];
 it.on('event', (name: string, f: unknown) => {
   if (name !== 'machine.frame') return;
@@ -56,7 +56,8 @@ try {
   await wait(async () => !!(await pc()), 'the service comes online', 300_000);
   const m = (await pc())!;
   console.log(`online: ${m.hostname} ${m.id} version ${m.version} user ${m.consoleUser} locked ${m.locked}`);
-  const s: ElevatedSession = await it.request('machine.connect', { machineId: m.id });
+  // with the privacy screen: the person sees the cover, IT's pictures must not
+  const s: ElevatedSession = await it.request('machine.connect', { machineId: m.id, privacy: true });
   const first = await nextFrame(0);
   save('1-desktop.jpg');
   console.log(`desktop picture ${first.w}x${first.h}`);
@@ -75,6 +76,9 @@ try {
   save('3-back.jpg');
   console.log('input on the secure desktop works: back on the desktop');
 
+  const after = ((await it.request('machine.mine')) as ElevatedSession[]).find((x) => x.id === s.id);
+  assert.equal(after?.privacy, true, 'the PC kept the privacy screen out of the picture (it did not report it could not)');
+  console.log('privacy screen: on as SYSTEM, still on after Ctrl+Alt+Del');
   await it.request('machine.end', { s: s.id });
   const audit = (await owner.request('admin.audit', { limit: 40 })).map((a: { action: string }) => a.action);
   for (const a of ['machine.added', 'help.elevated.started', 'help.elevated.sas', 'help.elevated.ended']) assert.ok(audit.includes(a), a);
