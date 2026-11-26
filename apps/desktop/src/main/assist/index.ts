@@ -96,8 +96,16 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   const fromMain = (e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => { const w = deps.win(); return !!w && e.sender.id === w.webContents.id; };
 
   let quick = false;
+  /** Who the privacy screen names, while it is up. */
+  let privacyWho: string | null = null;
   const setHotkey = (on: boolean) => {
-    const stop = (why: string) => () => { const ctx = share?.state.context ?? null; stopControl(why); tellMain('control', ctx); };
+    const stop = (why: string) => () => {
+      const ctx = share?.state.context ?? null;
+      // under the privacy screen the person cannot see what is going on: the keys end the session
+      if (overlays.privacyOn) { stopAll(`${why} (privacy screen)`); tellMain('session', ctx); return; }
+      stopControl(why);
+      tellMain('control', ctx);
+    };
     if (on && !hotkey) {
       try { hotkey = globalShortcut.register(HOTKEY, stop('the stop keys')); } catch { hotkey = false; }
       if (!hotkey) log('warn', 'the stop keys are taken by another program; the share bar still stops control');
@@ -109,14 +117,17 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
 
   const stopControl = (why: string) => {
     control?.revoke(why);
-    setHotkey(false);
+    // the keys stay while the privacy screen is up (they end the session then)
+    if (!overlays.privacyOn) setHotkey(false);
     if (!share) return;
     share.state = { ...share.state, control: false };
     if (share.state.context === 'meeting') { overlays.hideShare(); share.shown = false; } else overlays.updateBar(share.state);
   };
 
   const stopAll = (why: string) => {
+    overlays.hidePrivacy();
     stopControl(why);
+    setHotkey(false);
     control?.setDisplay(null);
     if (share) log('info', share.state.context === 'meeting' ? 'screen given in a meeting stopped' : 'screen sharing for IT stopped', { why });
     share = null;
@@ -183,11 +194,14 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   // the privacy screen, while the whole screen is shared with IT in a support session (policy assistPrivacy)
   ipcMain.handle('assist:privacy', (e, raw: { on?: unknown; peer?: unknown }) => {
     if (!fromMain(e)) return { ok: false, error: 'Not allowed from this window.' };
-    if (raw?.on !== true) { overlays.hidePrivacy(); return { ok: true, error: null }; }
+    if (raw?.on !== true) { overlays.hidePrivacy(); privacyWho = null; if (!control?.active) setHotkey(false); return { ok: true, error: null }; }
     if (!privacySupported(os.release())) return { ok: false, error: 'The privacy screen needs Windows 10 version 2004 or later.' };
     if (!share || share.state.context !== 'support' || share.state.scope !== 'screen') return { ok: false, error: 'The privacy screen covers a whole shared screen.' };
     const who = typeof raw.peer === 'string' ? raw.peer.slice(0, 80) : 'IT';
     if (!overlays.privacyOn) { overlays.showPrivacy(who); log('info', 'privacy screen on', {}); }
+    privacyWho = who;
+    // the stop keys work while the cover is up, whether or not IT has control
+    setHotkey(true);
     return { ok: true, error: null };
   });
 
@@ -249,6 +263,8 @@ export function wireAssist(deps: AssistDeps): { stopAll(why: string): void; over
   const displays = () => {
     const all = screen.getAllDisplays();
     overlays.displaysChanged(all);
+    // a monitor plugged in, removed or resized under the privacy screen: covered again, all of it
+    if (overlays.privacyOn && privacyWho) overlays.showPrivacy(privacyWho);
     if (share?.display) {
       const now = all.find((x) => x.id === share!.display!.id) ?? null;
       if (now) share.display = now;

@@ -176,7 +176,10 @@ sees a calm full-screen notice on every display, *"Ravi Kumar from IT is working
 the share bar (and its Stop) and the stop keys still on top; IT sees the real screen. The notice is
 kept out of screen capture (Windows' exclude-from-capture display affinity, Electron
 `setContentProtection`), so it never reaches IT's picture, and clicks pass through it so IT's input
-reaches the apps underneath. It needs Windows 10 version 2004 or later: on older Windows the
+reaches the apps underneath. So do the person's own clicks and keys: the notice asks them to leave
+the mouse and keyboard alone while it shows. While it is up the stop keys (Shift+Esc,
+Ctrl+Alt+Shift+S) always work and **end the session** (not only control), and it follows monitors
+being plugged in, removed or resized. It needs Windows 10 version 2004 or later: on older Windows the
 person's app turns it off and IT is told. Only IT turns it on; the person can always stop the
 session. Every change is on the ticket and in the audit log (`help.privacy`), and an administrator
 turning the policy (or unattended access) off removes it at once. One support session per person at
