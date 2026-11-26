@@ -454,7 +454,7 @@ export class Hub {
     });
     this.reports.recordingsFor = (roomId, viewer) => this.recordings.forRoom(roomId, viewer);
     const deliverNow = (userIds: string[], name: string, data: unknown) => this.deliver(userIds, name, () => data);
-    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data) });
+    this.helpdesk = new HelpDesk({ store: this.store, messaging: this.messaging, files: this.files, rooms: this.rooms, deliver: deliverNow, broadcast: (name, data) => this.emit(name, data), policy: () => this.policies.get() });
     this.lounges = new Lounges({
       db: this.store.db, messaging: this.messaging, rooms: this.rooms, deliver: deliverNow,
       // Space members see the lounge's name; everyone else only that the person is in a lounge

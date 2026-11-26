@@ -7,7 +7,7 @@
 // injects any input (apps/desktop/src/main/assist).
 import type { DatabaseSync } from 'node:sqlite';
 import { HELP_CATEGORIES, ticketRef, ulid } from '@dex/core';
-import type { HelpCategory, HelpEntry, HelpEntryKind, HelpFile, HelpFileKind, HelpTicket, PublicUser, RoomInfo, SupportConsent, SupportSession, TicketStatus } from '@dex/core';
+import type { HelpCategory, HelpEntry, HelpEntryKind, HelpFile, HelpFileKind, HelpTicket, OfficePolicy, PublicUser, RoomInfo, SupportConsent, SupportSession, TicketStatus } from '@dex/core';
 import type { Store } from './store.ts';
 import type { Messaging } from './messaging.ts';
 import type { FileStore } from './files.ts';
@@ -80,7 +80,14 @@ interface TicketRow {
 /** One grant in a session: what, when it began and ended (for the audit and the timeline). */
 interface Grant { kind: 'screen' | 'control'; scope: 'screen' | 'window' | null; from: number; to: number | null }
 
-interface LiveSession extends SupportSession { convId: string; grants: Grant[] }
+interface LiveSession extends SupportSession {
+  convId: string;
+  grants: Grant[];
+  /** Unattended: the one PC of the requester's that joined (another of their devices is not let in). */
+  deviceId: string | null;
+  /** Ends a paused session when the connection does not come back in time. */
+  timer: ReturnType<typeof setTimeout> | null;
+}
 
 const CATEGORY_IDS = HELP_CATEGORIES.map((c) => c.id);
 const MAX_SUMMARY = 140;
@@ -102,6 +109,8 @@ export interface HelpHost {
   deliver(userIds: string[], name: string, data: unknown): void;
   /** Send an event to everyone connected. */
   broadcast(name: string, data: unknown): void;
+  /** The office's policies now (remote support is off unless an administrator turns it on). */
+  policy(): OfficePolicy;
 }
 
 export class HelpDesk {
@@ -109,11 +118,14 @@ export class HelpDesk {
   private readonly host: HelpHost;
   /** Support sessions running now, by ticket id. */
   private readonly live = new Map<string, LiveSession>();
+  /** How long a session whose connection dropped waits for it to come back (policy assistReconnect). */
+  reconnectGraceMs = 10 * 60_000;
 
   constructor(host: HelpHost) {
     this.host = host;
     this.db = host.store.db;
     this.db.exec(SCHEMA);
+    try { this.db.exec('ALTER TABLE help_sessions ADD COLUMN unattended INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
     // sessions cut short by a hub restart end where they were
     const open = this.db.prepare('SELECT id, ticket_id, started_at, grants FROM help_sessions WHERE ended_at IS NULL').all() as Array<{ id: string; ticket_id: string; started_at: number; grants: string }>;
     for (const s of open) {
@@ -164,7 +176,7 @@ export class HelpDesk {
   }
 
   private publicSession(s: LiveSession): SupportSession {
-    return { id: s.id, ticketId: s.ticketId, roomId: s.roomId, requesterId: s.requesterId, techId: s.techId, startedAt: s.startedAt, endedAt: s.endedAt, consent: { ...s.consent }, controlAvailable: s.controlAvailable };
+    return { id: s.id, ticketId: s.ticketId, roomId: s.roomId, requesterId: s.requesterId, techId: s.techId, startedAt: s.startedAt, endedAt: s.endedAt, consent: { ...s.consent }, controlAvailable: s.controlAvailable, unattended: s.unattended, pausedAt: s.pausedAt };
   }
 
   private view(r: TicketRow): HelpTicket {
@@ -400,24 +412,63 @@ export class HelpDesk {
         if (r.tech_id !== me.id || r.status !== 'taken') throw new HelpError('Take the ticket first: only its technician starts a session.');
         const requester = this.host.store.userById(r.requester_id);
         if (!requester) throw new HelpError('The person who asked has left the office.');
-        let s = this.live.get(r.id);
-        if (!s) {
-          const conv = this.host.messaging.handle('conv.create', me, { kind: 'direct', members: [requester.id] }) as { id: string };
-          s = {
-            id: ulid(), ticketId: r.id, roomId: null, requesterId: requester.id, techId: me.id, startedAt: Date.now(), endedAt: null,
-            consent: { screen: false, scope: null, control: false, screenSince: null, controlSince: null }, controlAvailable: false,
-            convId: conv.id, grants: [],
-          };
-          this.live.set(r.id, s);
-          this.db.prepare('INSERT INTO help_sessions (id, ticket_id, requester_id, tech_id, started_at) VALUES (?, ?, ?, ?, ?)').run(s.id, r.id, s.requesterId, s.techId, s.startedAt);
-          this.entry(r.id, me.id, 'session.started', null, { sessionId: s.id });
-          this.host.store.audit(me.id, 'help.session.started', r.id, { session: s.id, requester: requester.account });
-        }
+        const s = this.live.get(r.id) ?? this.openSession(r, me, requester, false);
+        this.resumed(s, me.id);
         const room = this.enter(s, me, deviceId, fromOutside);
         this.pushSession(s);
         this.publish(r.id);
         return { session: this.publicSession(s), room };
       }
+
+      case 'help.connect': {
+        this.requireIt(me);
+        if (this.host.policy().assistUnattended !== true) throw new HelpError('Unattended access is off for this office. An administrator turns it on in Control room ▸ Policies ▸ Remote support.');
+        let r: TicketRow;
+        if (typeof d.id === 'string' && d.id) {
+          r = this.visible(me, d.id);
+          if (r.status === 'closed') throw new HelpError('This ticket is closed. Connect from a new one.');
+          if (r.requester_id === me.id) throw new HelpError('Someone else on the IT desk connects to your own PC.');
+          if (r.tech_id !== me.id) {
+            if (this.live.has(r.id)) throw new HelpError('A colleague is in a session on this ticket. Wait until it ends.');
+            const now = Date.now();
+            this.db.prepare(`UPDATE help_tickets SET status = 'taken', tech_id = ?, taken_at = ?, updated_at = ? WHERE id = ?`).run(me.id, now, now, r.id);
+            this.entry(r.id, me.id, 'taken', null, r.tech_id ? { from: r.tech_id } : null);
+            this.host.store.audit(me.id, 'help.taken', r.id, { number: ticketRef(r.number), from: r.tech_id });
+            r = this.row(r.id)!;
+          }
+        } else {
+          const target = typeof d.userId === 'string' ? this.host.store.userById(d.userId) : null;
+          if (!target || target.role === 'bot' || target.role === 'guest') throw new HelpError('Choose someone in the office.');
+          if (target.id === me.id) throw new HelpError('Someone else on the IT desk connects to your own PC.');
+          const id = ulid();
+          const now = Date.now();
+          const number = ((this.db.prepare('SELECT MAX(number) AS n FROM help_tickets').get() as { n: number | null }).n ?? 0) + 1;
+          this.db.prepare(`INSERT INTO help_tickets (id, number, requester_id, summary, detail, category, status, tech_id, created_at, updated_at, taken_at)
+            VALUES (?, ?, ?, ?, '', 'other', 'taken', ?, ?, ?, ?)`).run(id, number, target.id, oneLine(`Remote support from ${me.displayName}`, MAX_SUMMARY), me.id, now, now, now);
+          this.entry(id, me.id, 'opened', 'Opened by IT to connect to this PC.', { category: 'other', byIt: true });
+          this.host.store.audit(me.id, 'help.opened', id, { number: ticketRef(number), category: 'other', for: target.id, unattended: true });
+          r = this.row(id)!;
+        }
+        const requester = this.host.store.userById(r.requester_id);
+        if (!requester) throw new HelpError('The person who asked has left the office.');
+        let s = this.live.get(r.id);
+        if (s && !s.unattended) {
+          // an attended session already running becomes unattended from here on
+          s.unattended = true;
+          this.db.prepare('UPDATE help_sessions SET unattended = 1 WHERE id = ?').run(s.id);
+          this.entry(r.id, me.id, 'session.started', 'IT connected without asking (unattended access).', { sessionId: s.id, unattended: true });
+          this.host.store.audit(me.id, 'help.unattended.started', r.id, { session: s.id, requester: requester.account });
+        }
+        s ??= this.openSession(r, me, requester, true);
+        this.resumed(s, me.id);
+        const room = this.enter(s, me, deviceId, fromOutside);
+        this.pushSession(s);
+        this.publish(r.id);
+        return { session: this.publicSession(s), room };
+      }
+
+      case 'help.live':
+        return [...this.live.values()].filter((s) => s.requesterId === me.id || s.techId === me.id).map((s) => this.publicSession(s));
 
       case 'help.session.join': {
         const r = this.visible(me, d.id);
@@ -425,7 +476,13 @@ export class HelpDesk {
         if (!s) throw new HelpError('There is no session on this ticket now.');
         // only the requester and the assigned technician, never another colleague
         if (me.id !== s.requesterId && me.id !== s.techId) throw new HelpError('Only the person who asked and their technician are in a support session.');
+        if (me.id === s.requesterId && s.unattended) {
+          // unattended: one PC of theirs, the first that joined
+          if (s.deviceId && s.deviceId !== deviceId) throw new HelpError('IT is connected to another of your devices.');
+          s.deviceId = deviceId;
+        }
         if (me.id === s.requesterId) s.controlAvailable = d.controlAvailable === true;
+        this.resumed(s, me.id);
         const room = this.enter(s, me, deviceId, fromOutside);
         if (me.id === s.requesterId) this.entry(r.id, me.id, 'session.joined', null, { sessionId: s.id });
         this.pushSession(s);
@@ -468,6 +525,33 @@ export class HelpDesk {
     return undefined;
   }
 
+  /** A new session on a ticket the technician holds; unattended when IT connected without asking. */
+  private openSession(r: TicketRow, me: PublicUser, requester: PublicUser, unattended: boolean): LiveSession {
+    const conv = this.host.messaging.handle('conv.create', me, { kind: 'direct', members: [requester.id] }) as { id: string };
+    const s: LiveSession = {
+      id: ulid(), ticketId: r.id, roomId: null, requesterId: requester.id, techId: me.id, startedAt: Date.now(), endedAt: null,
+      consent: { screen: false, scope: null, control: false, screenSince: null, controlSince: null }, controlAvailable: false,
+      unattended, pausedAt: null, convId: conv.id, grants: [], deviceId: null, timer: null,
+    };
+    this.live.set(r.id, s);
+    this.db.prepare('INSERT INTO help_sessions (id, ticket_id, requester_id, tech_id, started_at, unattended) VALUES (?, ?, ?, ?, ?, ?)').run(s.id, r.id, s.requesterId, s.techId, s.startedAt, unattended ? 1 : 0);
+    this.entry(r.id, me.id, 'session.started', unattended ? 'IT connected without asking (unattended access).' : null, { sessionId: s.id, ...(unattended ? { unattended: true } : {}) });
+    this.host.store.audit(me.id, 'help.session.started', r.id, { session: s.id, requester: requester.account, ...(unattended ? { unattended: true } : {}) });
+    if (unattended) this.host.store.audit(me.id, 'help.unattended.started', r.id, { session: s.id, requester: requester.account });
+    return s;
+  }
+
+  /** Someone came back to a session that was waiting for its connection. */
+  private resumed(s: LiveSession, actor: string): void {
+    if (s.pausedAt === null) return;
+    if (s.timer) clearTimeout(s.timer);
+    s.timer = null;
+    const pausedMs = Date.now() - s.pausedAt;
+    s.pausedAt = null;
+    this.entry(s.ticketId, actor, 'session.resumed', null, { sessionId: s.id, pausedMs });
+    this.host.store.audit(actor, 'help.session.resumed', s.ticketId, { session: s.id, pausedMs, unattended: s.unattended });
+  }
+
   private enter(s: LiveSession, me: PublicUser, deviceId: string, fromOutside: boolean): RoomInfo {
     const room = this.host.rooms.enterPurpose({ convId: s.convId, purpose: { kind: 'support', ticketId: s.ticketId }, only: [s.requesterId, s.techId] }, me, deviceId, fromOutside);
     s.roomId = room.id;
@@ -506,7 +590,7 @@ export class HelpDesk {
         c.screen = true; c.scope = scope; c.screenSince = now;
         s.grants.push({ kind: 'screen', scope, from: now, to: null });
         this.entry(s.ticketId, actor, 'consent.granted', null, { kind: 'screen', scope });
-        this.host.store.audit(actor, 'help.consent.granted', s.ticketId, { session: s.id, kind: 'screen', scope, technician: s.techId });
+        this.host.store.audit(actor, 'help.consent.granted', s.ticketId, { session: s.id, kind: 'screen', scope, technician: s.techId, ...(s.unattended ? { unattended: true } : {}) });
       } else {
         if (!c.screen) return;
         // control needs the screen: it stops with it
@@ -519,7 +603,7 @@ export class HelpDesk {
       c.control = true; c.controlSince = now;
       s.grants.push({ kind: 'control', scope: 'screen', from: now, to: null });
       this.entry(s.ticketId, actor, 'consent.granted', null, { kind: 'control' });
-      this.host.store.audit(actor, 'help.consent.granted', s.ticketId, { session: s.id, kind: 'control', technician: s.techId });
+      this.host.store.audit(actor, 'help.consent.granted', s.ticketId, { session: s.id, kind: 'control', technician: s.techId, ...(s.unattended ? { unattended: true } : {}) });
     } else {
       if (!c.control) return;
       close('control');
@@ -537,11 +621,14 @@ export class HelpDesk {
     if (s.consent.control) this.setConsent(s, 'control', false, 'screen', actor);
     if (s.consent.screen) this.setConsent(s, 'screen', false, 'screen', actor);
     this.live.delete(ticketId);
+    if (s.timer) clearTimeout(s.timer);
+    s.timer = null;
     s.endedAt = Date.now();
     this.db.prepare('UPDATE help_sessions SET ended_at = ?, grants = ? WHERE id = ?').run(s.endedAt, JSON.stringify(s.grants), s.id);
     const durationMs = s.endedAt - s.startedAt;
     this.entry(ticketId, actor, 'session.ended', why, { sessionId: s.id, durationMs });
-    this.host.store.audit(actor, 'help.session.ended', ticketId, { session: s.id, durationMs, grants: s.grants });
+    this.host.store.audit(actor, 'help.session.ended', ticketId, { session: s.id, durationMs, grants: s.grants, ...(s.unattended ? { unattended: true } : {}) });
+    if (s.unattended) this.host.store.audit(actor, 'help.unattended.ended', ticketId, { session: s.id, durationMs });
     this.host.rooms.endPurpose({ kind: 'support', ticketId }, actor ?? undefined);
     this.host.deliver([s.requesterId, s.techId], 'help.session', this.publicSession(s));
     this.publish(ticketId);
@@ -551,7 +638,23 @@ export class HelpDesk {
   roomEnded(room: RoomInfo): void {
     if (room.purpose?.kind !== 'support') return;
     const s = this.live.get(room.purpose.ticketId);
-    if (s && s.roomId === room.id) this.endSession(s.ticketId, null, null);
+    if (!s || s.roomId !== room.id) return;
+    if (this.host.policy().assistReconnect !== true) { this.endSession(s.ticketId, null, null); return; }
+    // the connection dropped (or a PC restarted): what was shared stops, and the session waits for both to come back
+    if (s.consent.control) this.setConsent(s, 'control', false, 'screen', null);
+    if (s.consent.screen) this.setConsent(s, 'screen', false, 'screen', null);
+    s.roomId = null;
+    if (s.pausedAt !== null) return;
+    s.pausedAt = Date.now();
+    const minutes = Math.round(this.reconnectGraceMs / 60_000);
+    this.entry(s.ticketId, null, 'session.paused', `The connection dropped. The session waits ${minutes} minute${minutes === 1 ? '' : 's'} for it to come back.`, { sessionId: s.id });
+    this.host.store.audit(null, 'help.session.paused', s.ticketId, { session: s.id, unattended: s.unattended });
+    s.timer = setTimeout(() => {
+      if (this.live.get(s.ticketId) === s && s.pausedAt !== null) this.endSession(s.ticketId, null, 'The connection did not come back in time.');
+    }, this.reconnectGraceMs);
+    s.timer.unref?.();
+    this.pushSession(s);
+    this.publish(s.ticketId);
   }
 
   /** The Room changed: the requester left, so anything they shared stops being shared. */

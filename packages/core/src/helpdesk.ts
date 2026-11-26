@@ -57,6 +57,13 @@ export interface SupportSession {
   consent: SupportConsent;
   /** The requester's PC can take remote mouse and keyboard input (Windows and Linux; not macOS). */
   controlAvailable: boolean;
+  /**
+   * IT connected without the person accepting (Control room ▸ Policies ▸ Remote support): their app
+   * joins, shares its whole screen and gives control by itself, shows that it did, and they can stop it.
+   */
+  unattended: boolean;
+  /** The connection dropped at this time and the session waits for it to come back (null: running). */
+  pausedAt: number | null;
 }
 
 export interface HelpTicket {
@@ -85,7 +92,7 @@ export interface HelpTicket {
 
 export type HelpEntryKind =
   | 'opened' | 'taken' | 'released' | 'note' | 'file' | 'diagnostics'
-  | 'session.started' | 'session.joined' | 'session.ended'
+  | 'session.started' | 'session.joined' | 'session.ended' | 'session.paused' | 'session.resumed'
   | 'consent.granted' | 'consent.revoked' | 'asked'
   | 'closed' | 'reopened' | 'rated';
 

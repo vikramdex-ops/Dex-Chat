@@ -216,6 +216,17 @@ export interface OfficePolicy {
    * encryption key yet (an older version) until they update. Conversations with an integration are exempt.
    */
   requireE2E?: boolean;
+  /**
+   * Remote support (docs/HELP-DESK.md), each off unless an administrator turns it on:
+   * IT staff may connect to any office PC without the person accepting (they are told and can stop it);
+   */
+  assistUnattended?: boolean;
+  /** text copied on one side of a support session can be pasted on the other while control is on; */
+  assistClipboard?: boolean;
+  /** files and folders dropped on a support session are saved at the other end; */
+  assistFiles?: boolean;
+  /** a support session survives a network drop or a reboot for a few minutes and resumes by itself. */
+  assistReconnect?: boolean;
 }
 
 /** A message someone reported to the administrators. */
@@ -1147,6 +1158,10 @@ export interface Ops extends FlowOps, BotOps, MessageKindOps, NibOps {
   /** The requester (or the assigned technician, again) comes into the session's Room. */
   'help.session.join': { req: { id: string; controlAvailable?: boolean }; res: { session: SupportSession; room: RoomInfo } };
   'help.session.end': { req: { id: string }; res: { ok: true } };
+  /** IT connects to a person's PC without them accepting (policy assistUnattended): on a ticket, or a new one for that person. */
+  'help.connect': { req: { id?: string; userId?: string }; res: { session: SupportSession; room: RoomInfo } };
+  /** Support sessions running now that you are part of (to rejoin after a dropped connection or a restart). */
+  'help.live': { req: void; res: SupportSession[] };
   /** The requester grants or takes back screen sharing or control; recorded on the ticket and in the audit log. */
   'help.consent': { req: { id: string; kind: 'screen' | 'control'; on: boolean; scope?: 'screen' | 'window' }; res: SupportSession };
   /** The technician asks the requester for something (each needs the requester's own yes). */

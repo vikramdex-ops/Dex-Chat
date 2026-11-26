@@ -39,7 +39,9 @@ export function entryText(e: HelpEntry, name: (id: string | null) => string): st
     case 'note': return `${who} wrote`;
     case 'file': return `${who} attached ${e.text ?? 'a file'}`;
     case 'diagnostics': return `${who} sent diagnostics`;
-    case 'session.started': return `${who} started a support session`;
+    case 'session.started': return d.unattended ? `${who} connected without asking (unattended access)` : `${who} started a support session`;
+    case 'session.paused': return 'The connection dropped; the session waits for it to come back';
+    case 'session.resumed': return `${who} reconnected${typeof d.pausedMs === 'number' ? ` after ${durationText(d.pausedMs)}` : ''}`;
     case 'session.joined': return `${who} joined the session`;
     case 'session.ended': return `The session ended${typeof d.durationMs === 'number' ? ` after ${durationText(d.durationMs)}` : ''}`;
     case 'consent.granted': return `${who} allowed ${kind}`;
