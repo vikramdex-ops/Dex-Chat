@@ -2,7 +2,7 @@
   Builds a Dexterity Connect release on this Windows PC, and (with -Publish) puts it where the
   installed apps look for updates. It does locally what the GitHub build used to do on every push.
 
-    Build-Release.cmd                         build everything into D:\DexterityConnect-Releases\<version>
+    Build-Release.cmd                         build everything into Q:\DexterityConnect-Releases\<version>
     Build-Release.cmd -Publish                build, then publish to the release page and the update feed
     Build-Release.cmd -Channel beta -Publish  publish to the beta channel (people who opted in)
     Build-Release.cmd -SkipAndroid            Windows app and hub only
